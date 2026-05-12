@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useStatsStore } from '../stores/useStatsStore';
+import { Download, Upload, AlertTriangle } from 'lucide-react';
 
 // ─── ヒートマップ色定義 ─────────────────────────────────────────
 const TASK_COLORS = [
@@ -39,7 +40,6 @@ function getHabitLevel(count: number, allComplete: boolean): number {
 function generateDateRange(days: number): string[] {
     const dates: string[] = [];
     const now = new Date();
-    // JST offset
     const jstOffset = 9 * 60 * 60 * 1000;
     for (let i = days - 1; i >= 0; i--) {
         const d = new Date(now.getTime() + jstOffset - i * 86400000);
@@ -51,15 +51,13 @@ function generateDateRange(days: number): string[] {
 /** 日付を週ごとにグループ化 */
 function groupByWeeks(dates: string[]): string[][] {
     const weeks: string[][] = [];
-    // 最初の日付の曜日を取得して先頭パディング
     const firstDate = new Date(dates[0] + 'T00:00:00+09:00');
-    const firstDay = firstDate.getDay(); // 0=日曜
+    const firstDay = firstDate.getDay();
     const paddedDates = [...Array(firstDay).fill(''), ...dates];
 
     for (let i = 0; i < paddedDates.length; i += 7) {
         weeks.push(paddedDates.slice(i, i + 7));
     }
-    // 最後の週を7日に揃える
     const lastWeek = weeks[weeks.length - 1];
     while (lastWeek.length < 7) lastWeek.push('');
     return weeks;
@@ -83,13 +81,55 @@ function getMonthLabels(weeks: string[][]): { label: string; weekIndex: number }
     return labels;
 }
 
+// ─── データバックアップ/復元 ────────────────────────────────────
+const BACKUP_VERSION = 1;
+
+interface BackupData {
+    version: number;
+    exportedAt: string;
+    tasks: unknown;
+    habits: unknown;
+    game: unknown;
+    stats: unknown;
+}
+
+function exportAllData(): BackupData {
+    return {
+        version: BACKUP_VERSION,
+        exportedAt: new Date().toISOString(),
+        tasks: JSON.parse(localStorage.getItem('quest-board-tasks') || '{}'),
+        habits: JSON.parse(localStorage.getItem('quest-board-habits') || '{}'),
+        game: JSON.parse(localStorage.getItem('quest-board-game') || '{}'),
+        stats: JSON.parse(localStorage.getItem('quest-board-stats') || '{}'),
+    };
+}
+
+function importAllData(data: BackupData): boolean {
+    try {
+        if (!data.version || !data.tasks || !data.game) {
+            return false;
+        }
+        localStorage.setItem('quest-board-tasks', JSON.stringify(data.tasks));
+        localStorage.setItem('quest-board-habits', JSON.stringify(data.habits));
+        localStorage.setItem('quest-board-game', JSON.stringify(data.game));
+        localStorage.setItem('quest-board-stats', JSON.stringify(data.stats));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 type TabMode = 'tasks' | 'habits';
 
 export function StatsPage() {
     const [mode, setMode] = useState<TabMode>('tasks');
     const { taskXpLog, habitLog } = useStatsStore();
+    const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const [showImportConfirm, setShowImportConfirm] = useState(false);
+    const [pendingFile, setPendingFile] = useState<File | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const TOTAL_DAYS = 119; // ~17 weeks
+    const TOTAL_DAYS = 119;
     const dates = useMemo(() => generateDateRange(TOTAL_DAYS), []);
     const weeks = useMemo(() => groupByWeeks(dates), [dates]);
     const monthLabels = useMemo(() => getMonthLabels(weeks), [weeks]);
@@ -114,7 +154,6 @@ export function StatsPage() {
                     tempStreak = 0;
                 }
             }
-            // 現在のストリークは末尾から連続したアクティブ日
             for (let i = dates.length - 1; i >= 0; i--) {
                 if ((taskXpLog[dates[i]] || 0) > 0) currentStreak++;
                 else break;
@@ -150,8 +189,51 @@ export function StatsPage() {
 
     const [tooltipInfo, setTooltipInfo] = useState<{ date: string; value: string } | null>(null);
 
+    // エクスポート処理
+    const handleExport = () => {
+        const data = exportAllData();
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `life-quest-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // インポート処理（ファイル選択）
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setPendingFile(file);
+        setShowImportConfirm(true);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    // インポート確定
+    const handleImportConfirm = async () => {
+        if (!pendingFile) return;
+        try {
+            const text = await pendingFile.text();
+            const data = JSON.parse(text) as BackupData;
+            const success = importAllData(data);
+            if (success) {
+                setImportStatus('success');
+                setShowImportConfirm(false);
+                setPendingFile(null);
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                setImportStatus('error');
+            }
+        } catch {
+            setImportStatus('error');
+        }
+        setTimeout(() => setImportStatus('idle'), 3000);
+    };
+
     return (
-        <div className="max-w-lg mx-auto px-4 pt-6">
+        <div className="max-w-lg mx-auto px-4 pt-6 pb-8">
             {/* ヘッダー */}
             <h1 className="text-2xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>統計</h1>
 
@@ -291,6 +373,88 @@ export function StatsPage() {
                     ))}
                     <span className="text-[10px] ml-1" style={{ color: 'var(--color-text-muted)' }}>多</span>
                 </div>
+            </div>
+
+            {/* ─── データバックアップ ─── */}
+            <div className="mt-6 rounded-xl p-4" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                <h2 className="text-sm font-semibold mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                    💾 データバックアップ
+                </h2>
+                <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>
+                    セーブデータをJSONファイルとして保存・復元できます
+                </p>
+
+                <div className="flex gap-3">
+                    <button
+                        onClick={handleExport}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-all active:scale-95"
+                        style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}
+                    >
+                        <Download size={16} />
+                        バックアップ保存
+                    </button>
+
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-all active:scale-95"
+                        style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-default)' }}
+                    >
+                        <Upload size={16} />
+                        復元する
+                    </button>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".json"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                    />
+                </div>
+
+                {/* インポート確認ダイアログ */}
+                {showImportConfirm && (
+                    <div className="mt-3 px-4 py-3 rounded-xl animate-fade-in" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                        <div className="flex items-start gap-2 mb-3">
+                            <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-text-danger)' }} />
+                            <div>
+                                <div className="text-sm font-medium" style={{ color: 'var(--color-text-danger)' }}>データを上書きしますか？</div>
+                                <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                    現在のセーブデータはバックアップファイルの内容に置き換わります。この操作は取り消せません。
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleImportConfirm}
+                                className="flex-1 py-2 rounded-lg text-sm font-medium"
+                                style={{ backgroundColor: 'var(--color-text-danger)', color: 'white' }}
+                            >
+                                上書きする
+                            </button>
+                            <button
+                                onClick={() => { setShowImportConfirm(false); setPendingFile(null); }}
+                                className="flex-1 py-2 rounded-lg text-sm"
+                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}
+                            >
+                                キャンセル
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* インポート結果フィードバック */}
+                {importStatus === 'success' && (
+                    <div className="mt-3 px-4 py-2 rounded-xl text-center text-sm font-medium animate-fade-in"
+                        style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--color-accent-emerald)' }}>
+                        ✅ データを復元しました。ページを再読み込みします...
+                    </div>
+                )}
+                {importStatus === 'error' && (
+                    <div className="mt-3 px-4 py-2 rounded-xl text-center text-sm font-medium animate-fade-in"
+                        style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--color-text-danger)' }}>
+                        ❌ ファイルの読み込みに失敗しました。正しいバックアップファイルか確認してください。
+                    </div>
+                )}
             </div>
         </div>
     );
