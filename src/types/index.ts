@@ -141,6 +141,15 @@ export interface HabitStoreState {
     checkAndResetHabits: () => void;
 }
 
+export interface LevelUpEvent {
+    id: string;
+    fromLevel: number;
+    toLevel: number;
+    attackGain: number;
+    defenseGain: number;
+    hpGain: number;
+}
+
 export interface GameStoreState {
     character: CharacterStats;
     debuff: Debuff;
@@ -148,6 +157,8 @@ export interface GameStoreState {
     gachaCount: number;
     chestQueue: ChestReward[];
     battle: BattleState;
+    levelUpEvent: LevelUpEvent | null;
+    clearLevelUpEvent: () => void;
     addXp: (baseXp: number) => void;
     incrementGachaCount: () => void;
     checkGachaMilestones: () => void;

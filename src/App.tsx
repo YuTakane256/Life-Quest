@@ -6,6 +6,7 @@ import { CharacterPage, InventoryPage } from './pages/CharacterPage';
 import { MapBattlePage } from './pages/MapBattlePage';
 import { StatsPage } from './pages/StatsPage';
 import { SnackbarProvider } from './components/ui/SnackbarProvider';
+import { LevelUpOverlay } from './components/ui/LevelUpOverlay';
 import './App.css';
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
                         </Routes>
                     </main>
                     <BottomNav />
+                    <LevelUpOverlay />
                 </div>
             </SnackbarProvider>
         </BrowserRouter>

@@ -10,6 +10,7 @@ import type {
     Enemy,
     BattleLog,
     GameStoreState,
+    LevelUpEvent,
 } from '../types';
 import {
     XP_CONFIG,
@@ -160,6 +161,9 @@ export const useGameStore = create<GameStoreState>()(
             gachaCount: 0,
             chestQueue: [],
             battle: { ...initialBattle },
+            levelUpEvent: null,
+
+            clearLevelUpEvent: () => set({ levelUpEvent: null }),
 
             updateCharacter: (updates) => set((state) => ({
                 character: { ...state.character, ...updates }
@@ -182,6 +186,16 @@ export const useGameStore = create<GameStoreState>()(
                 const newAttack = character.baseAttack + levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.attack;
                 const newDefense = character.baseDefense + levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.defense;
                 const newMaxHp = character.baseMaxHp + levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.maxHp;
+
+                const levelUpEvent: LevelUpEvent | null = levelDiff > 0 ? {
+                    id: generateId(),
+                    fromLevel: character.level,
+                    toLevel: newLevel,
+                    attackGain: levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.attack,
+                    defenseGain: levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.defense,
+                    hpGain: levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.maxHp,
+                } : null;
+
                 set({
                     character: {
                         ...character,
@@ -191,6 +205,7 @@ export const useGameStore = create<GameStoreState>()(
                         baseDefense: newDefense,
                         baseMaxHp: newMaxHp,
                     },
+                    ...(levelUpEvent ? { levelUpEvent } : {}),
                 });
             },
 
