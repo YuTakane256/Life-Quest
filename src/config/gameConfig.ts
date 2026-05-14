@@ -190,6 +190,17 @@ export const BATTLE_CONFIG = {
         { stage: 28, name: 'ホーリーナイト', hp: 3500, attack: 130, defense: 90, xpReward: 1000 },
         { stage: 29, name: 'アークエンジェル', hp: 4500, attack: 160, defense: 110, xpReward: 1500 },
         { stage: 30, name: '光の神', hp: 6000, attack: 200, defense: 150, xpReward: 2500 },
+        // ─── マップ4: 深海エリア (ステージ31〜40) ───
+        { stage: 31, name: 'ジャイアントクラブ', hp: 8000, attack: 250, defense: 180, xpReward: 3000 },
+        { stage: 32, name: 'サハギン', hp: 10000, attack: 280, defense: 200, xpReward: 3500 },
+        { stage: 33, name: 'マーマン', hp: 12000, attack: 320, defense: 220, xpReward: 4000 },
+        { stage: 34, name: 'セイレーン', hp: 15000, attack: 350, defense: 250, xpReward: 5000 },
+        { stage: 35, name: '水の精霊', hp: 18000, attack: 400, defense: 280, xpReward: 6000 },
+        { stage: 36, name: 'キラーシャーク', hp: 22000, attack: 450, defense: 320, xpReward: 7500 },
+        { stage: 37, name: 'シーサーペント', hp: 28000, attack: 500, defense: 380, xpReward: 9000 },
+        { stage: 38, name: 'クラーケン', hp: 35000, attack: 600, defense: 450, xpReward: 12000 },
+        { stage: 39, name: 'ウォータードラゴン', hp: 45000, attack: 750, defense: 550, xpReward: 16000 },
+        { stage: 40, name: 'リヴァイアサン', hp: 60000, attack: 1000, defense: 700, xpReward: 25000 },
     ] as const,
 
     /** バトルのターン間隔（ミリ秒） */
@@ -212,6 +223,7 @@ export const MAP_CONFIG: readonly MapDefinition[] = [
     { id: 1, name: '草原エリア', theme: 'grassland', stageRange: [1, 10] },
     { id: 2, name: '古城エリア', theme: 'castle', stageRange: [11, 20] },
     { id: 3, name: '天界エリア', theme: 'heaven', stageRange: [21, 30] },
+    { id: 4, name: '深海エリア', theme: 'deep_sea', stageRange: [31, 40] },
 ] as const;
 
 /** ステージ番号 → 敵画像キーのマッピング */
@@ -249,6 +261,17 @@ export const ENEMY_IMAGE_KEYS: Record<number, string> = {
     28: 'holy_knight',
     29: 'archangel',
     30: 'god_of_light',
+    // マップ4: 深海
+    31: 'giant_crab',
+    32: 'sahagin',
+    33: 'merman',
+    34: 'siren',
+    35: 'water_elemental',
+    36: 'killer_shark',
+    37: 'sea_serpent',
+    38: 'kraken',
+    39: 'water_dragon',
+    40: 'leviathan',
 };
 
 // ─── 装備設定 ─────────────────────────────────────────────────
