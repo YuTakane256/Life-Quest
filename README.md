@@ -98,6 +98,36 @@ npm run dev
 ```
 
 ブラウザで `http://localhost:5173` を開いてください。
+---
+
+## Github周り
+
+```bash
+# メインブランチに切り替え
+git checkout main
+
+# リモートのリポジトリから最新の変更を取り込む
+git pull origin main
+
+# 新しい機能ブランチを作成して切り替え
+# ブランチ名は「feat/issue-number-description」のようにすると分かりやすいです
+git checkout -b feat/2-deep-sea-map
+
+# 変更
+
+# 追加された画像ファイルなどを確認
+git status
+
+# 全ての変更をステージング（または個別にファイルを指定）
+git add .
+
+# コミットメッセージを作成（Issue番号を含めるとGitHub上で紐付きます）
+git commit -m "feat: マップ4「深海エリア」の背景と敵キャラ画像を追加 #2"
+
+# 作成したブランチをリモートにプッシュ
+git push origin feat/2-deep-sea-map
+
+```
 
 ---
 
