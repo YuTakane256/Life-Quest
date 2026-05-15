@@ -5,14 +5,17 @@ import { HabitsPage } from './pages/HabitsPage';
 import { CharacterPage, InventoryPage } from './pages/CharacterPage';
 import { MapBattlePage } from './pages/MapBattlePage';
 import { StatsPage } from './pages/StatsPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { SnackbarProvider } from './components/ui/SnackbarProvider';
 import { LevelUpOverlay } from './components/ui/LevelUpOverlay';
+import { ThemeController } from './components/ui/ThemeController';
 import './App.css';
 
 function App() {
     return (
         <BrowserRouter>
             <SnackbarProvider>
+                <ThemeController />
                 <div className="flex flex-col relative" style={{ minHeight: '100dvh' }}>
                     <main className="flex-1 pb-20">
                         <Routes>
@@ -23,6 +26,7 @@ function App() {
                             <Route path="/character/inventory" element={<InventoryPage />} />
                             <Route path="/map" element={<MapBattlePage />} />
                             <Route path="/stats" element={<StatsPage />} />
+                            <Route path="/settings" element={<SettingsPage />} />
                         </Routes>
                     </main>
                     <BottomNav />
