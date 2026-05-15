@@ -13,6 +13,15 @@ export interface Task {
     dueDate: string | null; // ISO 8601
     priority: Priority;
     tags: string[]; // ユーザー定義タグ
+    subtasks: Subtask[];
+    completed: boolean;
+    completedAt: string | null; // ISO 8601
+    createdAt: string; // ISO 8601
+}
+
+export interface Subtask {
+    id: string;
+    name: string;
     completed: boolean;
     completedAt: string | null; // ISO 8601
     createdAt: string; // ISO 8601
@@ -123,6 +132,9 @@ export interface TaskStoreState {
     updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags'>>) => void;
     deleteTask: (id: string) => void;
     toggleComplete: (id: string) => void;
+    addSubtask: (taskId: string, name: string) => void;
+    deleteSubtask: (taskId: string, subtaskId: string) => void;
+    toggleSubtaskComplete: (taskId: string, subtaskId: string) => void;
     cancelPendingCompletion: (taskId: string) => void;
 }
 

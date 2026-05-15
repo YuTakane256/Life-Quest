@@ -12,6 +12,9 @@ export const XP_CONFIG = {
         high: 30,
     } as const,
 
+    /** サブタスク完了時の親タスク報酬に対する倍率 */
+    SUBTASK_REWARD_RATIO: 0.5,
+
     /** 習慣全達成時のボーナスXP */
     HABIT_ALL_COMPLETE_BONUS: 15,
 

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag } from 'lucide-react';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
 import { isOverdue } from '../utils/dateUtils';
@@ -9,7 +9,7 @@ const PRIORITY_LABELS: Record<Priority, string> = { low: '低', medium: '中', h
 const PRIORITY_COLORS: Record<Priority, string> = { low: 'var(--color-priority-low)', medium: 'var(--color-priority-medium)', high: 'var(--color-priority-high)' };
 
 export function TasksPage() {
-    const { tasks, addTask, updateTask, deleteTask, toggleComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
+    const { tasks, addTask, updateTask, deleteTask, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -19,6 +19,8 @@ export function TasksPage() {
     const [tagInput, setTagInput] = useState('');
     const [tags, setTags] = useState<string[]>([]);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+    const [subtaskInputs, setSubtaskInputs] = useState<Record<string, string>>({});
 
     // 全タスクからユニークなタグを抽出
     const allTags = useMemo(() => {
@@ -68,6 +70,10 @@ export function TasksPage() {
     };
 
     const handleToggleComplete = (task: Task) => {
+        if ((task.subtasks || []).length > 0) {
+            setExpandedTaskIds((prev) => new Set(prev).add(task.id));
+            return;
+        }
         if (!task.completed) {
             toggleComplete(task.id);
             showUndo(`「${task.name}」を完了しました`, () => cancelPendingCompletion(task.id));
@@ -77,6 +83,24 @@ export function TasksPage() {
     };
 
     const isPending = (taskId: string) => pendingCompletions.some((p) => p.taskId === taskId);
+
+    const toggleExpanded = (taskId: string) => {
+        setExpandedTaskIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(taskId)) next.delete(taskId);
+            else next.add(taskId);
+            return next;
+        });
+    };
+
+    const handleAddSubtask = (taskId: string, e: React.FormEvent) => {
+        e.preventDefault();
+        const value = subtaskInputs[taskId]?.trim();
+        if (!value) return;
+        addSubtask(taskId, value);
+        setSubtaskInputs((prev) => ({ ...prev, [taskId]: '' }));
+        setExpandedTaskIds((prev) => new Set(prev).add(taskId));
+    };
 
     const handleAddTag = () => {
         const trimmed = tagInput.trim();
@@ -228,32 +252,78 @@ export function TasksPage() {
                     </div>
                 )}
                 {sortedTasks.map((task) => {
+                    const subtasks = task.subtasks || [];
+                    const completedSubtaskCount = subtasks.filter((subtask) => subtask.completed).length;
+                    const isExpanded = expandedTaskIds.has(task.id);
                     const overdue = !task.completed && isOverdue(task.dueDate);
                     const pending = isPending(task.id);
                     return (
-                        <div key={task.id} className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${pending ? 'animate-pulse-glow' : ''}`}
+                        <div key={task.id} className={`rounded-xl transition-all duration-200 ${pending ? 'animate-pulse-glow' : ''}`}
                             style={{ backgroundColor: task.completed ? 'var(--color-bg-secondary)' : 'var(--color-bg-card)', border: `1px solid ${overdue ? 'var(--color-text-danger)' : 'var(--color-border-default)'}`, opacity: task.completed && !pending ? 0.6 : 1 }}>
-                            <button onClick={() => handleToggleComplete(task)} className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
-                                style={{ borderColor: task.completed ? 'var(--color-accent-emerald)' : PRIORITY_COLORS[task.priority], backgroundColor: task.completed ? 'var(--color-accent-emerald)' : 'transparent' }}>
-                                {task.completed && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
-                            </button>
-                            <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-medium ${task.completed ? 'line-through' : ''}`} style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-primary)' }}>{task.name}</p>
-                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                    {task.dueDate && <span className="text-[11px]" style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-muted)' }}>📅 {task.dueDate}</span>}
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: `${PRIORITY_COLORS[task.priority]}22`, color: PRIORITY_COLORS[task.priority] }}>{PRIORITY_LABELS[task.priority]}</span>
-                                    {(task.tags || []).map((tag) => (
-                                        <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border-default)' }}>
-                                            {tag}
-                                        </span>
-                                    ))}
+                            <div className="group flex items-center gap-2 px-3 py-3">
+                                <button onClick={() => toggleExpanded(task.id)} className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors" style={{ color: 'var(--color-text-muted)' }}>
+                                    {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                </button>
+                                <button onClick={() => handleToggleComplete(task)} className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
+                                    style={{ borderColor: task.completed ? 'var(--color-accent-emerald)' : PRIORITY_COLORS[task.priority], backgroundColor: task.completed ? 'var(--color-accent-emerald)' : 'transparent' }}>
+                                    {task.completed && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
+                                </button>
+                                <div className="flex-1 min-w-0">
+                                    <p className={`text-sm font-medium ${task.completed ? 'line-through' : ''}`} style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-primary)' }}>{task.name}</p>
+                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                        {task.dueDate && <span className="text-[11px]" style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-muted)' }}>📅 {task.dueDate}</span>}
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: `${PRIORITY_COLORS[task.priority]}22`, color: PRIORITY_COLORS[task.priority] }}>{PRIORITY_LABELS[task.priority]}</span>
+                                        {subtasks.length > 0 && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-accent-emerald)', border: '1px solid var(--color-border-default)' }}>
+                                                {completedSubtaskCount}/{subtasks.length}
+                                            </span>
+                                        )}
+                                        {(task.tags || []).map((tag) => (
+                                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border-default)' }}>
+                                                {tag}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => handleEdit(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }}><Edit3 size={14} /></button>
+                                    <button onClick={() => deleteTask(task.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
                                 </div>
                             </div>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleEdit(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }}><Edit3 size={14} /></button>
-                                <button onClick={() => deleteTask(task.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
-                            </div>
+                            {isExpanded && (
+                                <div className="px-4 pb-4 pl-12 animate-fade-in">
+                                    <div className="flex flex-col gap-2 mb-3">
+                                        {subtasks.map((subtask) => (
+                                            <div key={subtask.id} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
+                                                <button onClick={() => toggleSubtaskComplete(task.id, subtask.id)} className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
+                                                    style={{ borderColor: subtask.completed ? 'var(--color-accent-emerald)' : 'var(--color-text-muted)', backgroundColor: subtask.completed ? 'var(--color-accent-emerald)' : 'transparent' }}>
+                                                    {subtask.completed && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
+                                                </button>
+                                                <span className={`flex-1 min-w-0 text-sm ${subtask.completed ? 'line-through' : ''}`} style={{ color: subtask.completed ? 'var(--color-text-muted)' : 'var(--color-text-secondary)' }}>
+                                                    {subtask.name}
+                                                </span>
+                                                <button onClick={() => deleteSubtask(task.id, subtask.id)} className="p-1 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <form onSubmit={(e) => handleAddSubtask(task.id, e)} className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={subtaskInputs[task.id] || ''}
+                                            onChange={(e) => setSubtaskInputs((prev) => ({ ...prev, [task.id]: e.target.value }))}
+                                            placeholder="サブタスクを追加..."
+                                            className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
+                                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                                        />
+                                        <button type="submit" className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors hover:opacity-90" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
+                                            <ListPlus size={16} />
+                                        </button>
+                                    </form>
+                                </div>
+                            )}
                         </div>
                     );
                 })}
