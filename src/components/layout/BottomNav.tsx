@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { CheckSquare, Repeat, User, Map, BarChart3 } from 'lucide-react';
+import { CheckSquare, Repeat, User, Map, BarChart3, Settings } from 'lucide-react';
 import { useGameStore } from '../../stores/useGameStore';
 
 const NAV_ITEMS = [
@@ -8,6 +8,7 @@ const NAV_ITEMS = [
     { path: '/stats', label: '統計', icon: <BarChart3 size={22} /> },
     { path: '/character', label: 'キャラ', icon: <User size={22} /> },
     { path: '/map', label: 'マップ', icon: <Map size={22} />, requiresBattle: true },
+    { path: '/settings', label: '設定', icon: <Settings size={22} /> },
 ];
 
 export function BottomNav() {

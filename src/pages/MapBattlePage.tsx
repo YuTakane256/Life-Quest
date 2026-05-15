@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
 import { BATTLE_CONFIG, MAP_CONFIG, ENEMY_IMAGE_KEYS } from '../config/gameConfig';
-import { MapPin, Swords, Trophy, Skull, RotateCcw, ChevronRight } from 'lucide-react';
+import { Swords, Trophy, Skull, RotateCcw, ChevronRight } from 'lucide-react';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
 
