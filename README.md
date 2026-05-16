@@ -128,6 +128,14 @@ git commit -m "feat: マップ4「深海エリア」の背景と敵キャラ画�
 git push origin feat/2-deep-sea-map
 
 ```
+| CLI | VS Code GUI での正しい操作 |
+|---|---|
+|git checkout main | 左下のブランチ名をクリック → 一覧から main を選んでクリック（これでmainに戻る） |
+|git pull origin main | 左下のブランチ名の横にある 「くるくるマーク（Sync Changes）」 を押す、またはソース管理パネルの「...」から「Pull」 |
+| git checkout -b feat/ | 左下の main をクリック → Create new branch... を押して名前を入力 |
+| git status & git add . | 左のソース管理パネル（枝マーク）を開き、変更されたファイルの横の 「＋」 を押す（Staged Changesに入る） |
+| git commit -m """ | メッセージ欄に入力して 「✓ Commit」 ボタンを押す |
+| git push origin feat/ | 「Commit」ボタンの場所に出てくる 「Publish Branch」（または「Sync Changes」）を押す |
 
 ---
 
