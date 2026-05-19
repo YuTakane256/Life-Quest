@@ -2,8 +2,8 @@ import { useState, useMemo } from 'react';
 import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
-import { isOverdue } from '../utils/dateUtils';
-import type { Priority, Task } from '../types';
+import { isOverdue, generateId } from '../utils/dateUtils';
+import type { Priority, Task, Subtask } from '../types';
 
 const PRIORITY_LABELS: Record<Priority, string> = { low: '低', medium: '中', high: '高' };
 const PRIORITY_COLORS: Record<Priority, string> = { low: 'var(--color-priority-low)', medium: 'var(--color-priority-medium)', high: 'var(--color-priority-high)' };
@@ -19,8 +19,10 @@ export function TasksPage() {
     const [tagInput, setTagInput] = useState('');
     const [tags, setTags] = useState<string[]>([]);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
-    const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+    const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
     const [subtaskInputs, setSubtaskInputs] = useState<Record<string, string>>({});
+    const [formSubtasks, setFormSubtasks] = useState<Subtask[]>([]);
+    const [formSubtaskInput, setFormSubtaskInput] = useState('');
 
     // 全タスクからユニークなタグを抽出
     const allTags = useMemo(() => {
@@ -47,16 +49,23 @@ export function TasksPage() {
         });
     }, [filteredTasks]);
 
+    const resetForm = () => {
+        setName(''); setDueDate(''); setPriority('medium');
+        setTags([]); setTagInput('');
+        setFormSubtasks([]); setFormSubtaskInput('');
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) return;
         if (editingTask) {
-            updateTask(editingTask.id, { name: name.trim(), dueDate: dueDate || null, priority, tags });
+            updateTask(editingTask.id, { name: name.trim(), dueDate: dueDate || null, priority, tags, subtasks: formSubtasks });
             setEditingTask(null);
         } else {
-            addTask(name.trim(), dueDate || null, priority, tags);
+            addTask(name.trim(), dueDate || null, priority, tags, formSubtasks);
         }
-        setName(''); setDueDate(''); setPriority('medium'); setTags([]); setTagInput(''); setShowForm(false);
+        resetForm();
+        setShowForm(false);
     };
 
     const handleEdit = (task: Task) => {
@@ -66,12 +75,14 @@ export function TasksPage() {
         setPriority(task.priority);
         setTags(task.tags || []);
         setTagInput('');
+        setFormSubtasks(task.subtasks || []);
+        setFormSubtaskInput('');
         setShowForm(true);
     };
 
     const handleToggleComplete = (task: Task) => {
         if ((task.subtasks || []).length > 0) {
-            setExpandedTaskIds((prev) => new Set(prev).add(task.id));
+            setExpandOverrides((prev) => ({ ...prev, [task.id]: true }));
             return;
         }
         if (!task.completed) {
@@ -84,13 +95,13 @@ export function TasksPage() {
 
     const isPending = (taskId: string) => pendingCompletions.some((p) => p.taskId === taskId);
 
-    const toggleExpanded = (taskId: string) => {
-        setExpandedTaskIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(taskId)) next.delete(taskId);
-            else next.add(taskId);
-            return next;
-        });
+    /** サブタスクの有無を踏まえた既定の展開状態 */
+    const isTaskExpanded = (task: Task) =>
+        expandOverrides[task.id] ?? ((task.subtasks || []).length > 0);
+
+    const toggleExpanded = (task: Task) => {
+        const current = isTaskExpanded(task);
+        setExpandOverrides((prev) => ({ ...prev, [task.id]: !current }));
     };
 
     const handleAddSubtask = (taskId: string, e: React.FormEvent) => {
@@ -99,7 +110,32 @@ export function TasksPage() {
         if (!value) return;
         addSubtask(taskId, value);
         setSubtaskInputs((prev) => ({ ...prev, [taskId]: '' }));
-        setExpandedTaskIds((prev) => new Set(prev).add(taskId));
+        setExpandOverrides((prev) => ({ ...prev, [taskId]: true }));
+    };
+
+    const handleAddFormSubtask = () => {
+        const trimmed = formSubtaskInput.trim();
+        if (!trimmed) return;
+        const newSubtask: Subtask = {
+            id: generateId(),
+            name: trimmed,
+            completed: false,
+            completedAt: null,
+            createdAt: new Date().toISOString(),
+        };
+        setFormSubtasks((prev) => [...prev, newSubtask]);
+        setFormSubtaskInput('');
+    };
+
+    const handleFormSubtaskKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddFormSubtask();
+        }
+    };
+
+    const handleRemoveFormSubtask = (id: string) => {
+        setFormSubtasks((prev) => prev.filter((s) => s.id !== id));
     };
 
     const handleAddTag = () => {
@@ -137,7 +173,7 @@ export function TasksPage() {
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>タスク</h1>
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{tasks.filter((t) => !t.completed).length}件の未完了タスク</p>
                 </div>
-                <button onClick={() => { setEditingTask(null); setName(''); setDueDate(''); setPriority('medium'); setTags([]); setTagInput(''); setShowForm(!showForm); }}
+                <button onClick={() => { setEditingTask(null); resetForm(); setShowForm(!showForm); }}
                     className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105"
                     style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                     <Plus size={20} />
@@ -230,10 +266,50 @@ export function TasksPage() {
                         </div>
                     </div>
 
+                    {/* サブタスク入力 */}
+                    <div className="mb-3">
+                        <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>
+                            <ListPlus size={12} className="inline mr-1" />サブタスク
+                        </label>
+                        {formSubtasks.length > 0 && (
+                            <div className="flex flex-col gap-1.5 mb-1.5">
+                                {formSubtasks.map((subtask) => (
+                                    <div key={subtask.id} className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                                        style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
+                                        <span className={`flex-1 min-w-0 text-sm ${subtask.completed ? 'line-through' : ''}`}
+                                            style={{ color: subtask.completed ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>
+                                            {subtask.name}
+                                        </span>
+                                        <button type="button" onClick={() => handleRemoveFormSubtask(subtask.id)}
+                                            className="p-0.5 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={formSubtaskInput}
+                                onChange={(e) => setFormSubtaskInput(e.target.value)}
+                                onKeyDown={handleFormSubtaskKeyDown}
+                                placeholder="サブタスクを入力 (Enterで追加)"
+                                className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
+                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                            />
+                            <button type="button" onClick={handleAddFormSubtask}
+                                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors hover:opacity-90"
+                                style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
+                                <ListPlus size={16} />
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="flex gap-2">
                         <button type="submit" className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors hover:opacity-90"
                             style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>{editingTask ? '更新' : '追加'}</button>
-                        <button type="button" onClick={() => { setShowForm(false); setEditingTask(null); }}
+                        <button type="button" onClick={() => { setShowForm(false); setEditingTask(null); resetForm(); }}
                             className="px-4 py-2.5 rounded-lg text-sm transition-colors hover:opacity-70"
                             style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button>
                     </div>
@@ -254,14 +330,14 @@ export function TasksPage() {
                 {sortedTasks.map((task) => {
                     const subtasks = task.subtasks || [];
                     const completedSubtaskCount = subtasks.filter((subtask) => subtask.completed).length;
-                    const isExpanded = expandedTaskIds.has(task.id);
+                    const isExpanded = isTaskExpanded(task);
                     const overdue = !task.completed && isOverdue(task.dueDate);
                     const pending = isPending(task.id);
                     return (
                         <div key={task.id} className={`rounded-xl transition-all duration-200 ${pending ? 'animate-pulse-glow' : ''}`}
                             style={{ backgroundColor: task.completed ? 'var(--color-bg-secondary)' : 'var(--color-bg-card)', border: `1px solid ${overdue ? 'var(--color-text-danger)' : 'var(--color-border-default)'}`, opacity: task.completed && !pending ? 0.6 : 1 }}>
                             <div className="group flex items-center gap-2 px-3 py-3">
-                                <button onClick={() => toggleExpanded(task.id)} className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors" style={{ color: 'var(--color-text-muted)' }}>
+                                <button onClick={() => toggleExpanded(task)} className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors" style={{ color: 'var(--color-text-muted)' }}>
                                     {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                                 </button>
                                 <button onClick={() => handleToggleComplete(task)} className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Task, PendingCompletion, Priority, TaskStoreState } from '../types';
+import type { Task, Subtask, PendingCompletion, Priority, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { generateId } from '../utils/dateUtils';
 
@@ -35,14 +35,14 @@ export const useTaskStore = create<TaskStoreState>()(
             tasks: [],
             pendingCompletions: [],
 
-            addTask: (name: string, dueDate: string | null, priority: Priority, tags: string[] = []) => {
+            addTask: (name: string, dueDate: string | null, priority: Priority, tags: string[] = [], subtasks: Subtask[] = []) => {
                 const newTask: Task = {
                     id: generateId(),
                     name,
                     dueDate,
                     priority,
                     tags,
-                    subtasks: [],
+                    subtasks,
                     completed: false,
                     completedAt: null,
                     createdAt: new Date().toISOString(),
@@ -50,11 +50,44 @@ export const useTaskStore = create<TaskStoreState>()(
                 set((state) => ({ tasks: [...state.tasks, newTask] }));
             },
 
-            updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags'>>) => {
+            updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>) => {
+                // サブタスクが更新対象に含まれない場合は単純マージ
+                if (updates.subtasks === undefined) {
+                    set((state) => ({
+                        tasks: state.tasks.map((t) =>
+                            t.id === id ? { ...t, ...updates } : t
+                        ),
+                    }));
+                    return;
+                }
+
+                // サブタスク更新時は親タスクの完了状態を再計算する
+                const nextSubtasks = updates.subtasks;
+                const now = new Date().toISOString();
+                const allComplete = nextSubtasks.length > 0 && nextSubtasks.every((s) => s.completed);
+
+                // 5秒Undoタイマーとの競合を防ぐため、保留中の完了をキャンセル
+                if (nextSubtasks.length > 0) {
+                    const pending = get().pendingCompletions.find((p) => p.taskId === id);
+                    if (pending) {
+                        window.clearTimeout(pending.timeoutId);
+                    }
+                }
+
                 set((state) => ({
-                    tasks: state.tasks.map((t) =>
-                        t.id === id ? { ...t, ...updates } : t
-                    ),
+                    tasks: state.tasks.map((t) => {
+                        if (t.id !== id) return t;
+                        let completed = t.completed;
+                        let completedAt = t.completedAt;
+                        if (nextSubtasks.length > 0) {
+                            completed = allComplete;
+                            completedAt = allComplete ? (t.completedAt || now) : null;
+                        }
+                        return { ...t, ...updates, completed, completedAt };
+                    }),
+                    pendingCompletions: nextSubtasks.length > 0
+                        ? state.pendingCompletions.filter((p) => p.taskId !== id)
+                        : state.pendingCompletions,
                 }));
             },
 
