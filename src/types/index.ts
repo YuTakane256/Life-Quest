@@ -128,8 +128,8 @@ export interface BattleState {
 export interface TaskStoreState {
     tasks: Task[];
     pendingCompletions: PendingCompletion[];
-    addTask: (name: string, dueDate: string | null, priority: Priority, tags?: string[]) => void;
-    updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags'>>) => void;
+    addTask: (name: string, dueDate: string | null, priority: Priority, tags?: string[], subtasks?: Subtask[]) => void;
+    updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>) => void;
     deleteTask: (id: string) => void;
     toggleComplete: (id: string) => void;
     addSubtask: (taskId: string, name: string) => void;
