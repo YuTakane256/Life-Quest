@@ -38,6 +38,7 @@ export interface PendingCompletion {
 export interface Habit {
     id: string;
     name: string;
+    categoryId: string; // habitCategories.ts の HabitCategory.id
     createdAt: string; // ISO 8601
 }
 
@@ -142,7 +143,7 @@ export interface HabitStoreState {
     habits: Habit[];
     dailyRecords: HabitDailyRecord[];
     restDays: RestDay[];
-    addHabit: (name: string) => void;
+    addHabit: (name: string, categoryId?: string) => void;
     deleteHabit: (id: string) => void;
     toggleHabitCompletion: (habitId: string, date: string) => void;
     setHabitMemo: (habitId: string, date: string, memo: string) => void;
