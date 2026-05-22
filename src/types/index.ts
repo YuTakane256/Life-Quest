@@ -187,6 +187,24 @@ export interface GameStoreState {
     updateCharacter: (updates: Partial<Pick<CharacterStats, 'name' | 'avatar'>>) => void;
     sellItem: (equipmentId: string) => number; // 売却して得たXPを返す
     synthesizeItems: (equipmentIds: string[]) => Equipment | null; // 合成結果の装備を返す
+    grantChest: (chestType: ChestType, label: string) => void; // 任意の宝箱を宝箱キューに追加
+}
+
+// ─── デイリーログインボーナス関連 ─────────────────────────────
+/** 1回のログインボーナスの内容（モーダル表示用） */
+export interface LoginBonus {
+    date: string; // YYYY-MM-DD (JST)
+    streak: number; // 連続ログイン日数
+    xp: number; // 付与されたXP
+    chestLabel: string | null; // 特別宝箱を付与した場合のラベル（無ければnull）
+}
+
+export interface LoginBonusStoreState {
+    lastLoginDate: string | null; // 最後にボーナスを受け取った日 YYYY-MM-DD (JST)
+    streak: number; // 現在の連続ログイン日数
+    pendingBonus: LoginBonus | null; // 未表示のログインボーナス（モーダル表示待ち）
+    checkDailyLogin: () => void; // アプリ起動時に呼び出してボーナス判定を行う
+    clearPendingBonus: () => void; // モーダルを閉じたときに呼び出す
 }
 
 // ─── 統計関連 ──────────────────────────────────────────────────

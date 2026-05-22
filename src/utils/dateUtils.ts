@@ -47,3 +47,17 @@ export function isOverdue(dueDate: string | null): boolean {
     const today = getTodayJST();
     return dueDate < today;
 }
+
+/**
+ * YYYY-MM-DD の日付を指定日数だけずらして返す (YYYY-MM-DD)
+ * 負の値で過去方向へずらせる
+ */
+export function shiftDate(dateStr: string, days: number): string {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    date.setUTCDate(date.getUTCDate() + days);
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
