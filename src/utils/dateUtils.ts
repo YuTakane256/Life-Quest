@@ -3,6 +3,7 @@
  */
 
 import { TIME_CONFIG } from '../config/gameConfig';
+import type { Recurrence } from '../types';
 
 /**
  * 現在のJSTの日付文字列を返す (YYYY-MM-DD)
@@ -46,4 +47,26 @@ export function isOverdue(dueDate: string | null): boolean {
     if (!dueDate) return false;
     const today = getTodayJST();
     return dueDate < today;
+}
+
+/**
+ * 繰り返し周期に応じて日付を1周期分進める (YYYY-MM-DD)
+ * monthly で日付が翌月に存在しない場合（例: 1/31 → 2月）はJSの繰り上げ仕様に従う
+ */
+export function addRecurrenceInterval(dateStr: string, recurrence: Recurrence): string {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+
+    if (recurrence === 'daily') {
+        date.setUTCDate(date.getUTCDate() + 1);
+    } else if (recurrence === 'weekly') {
+        date.setUTCDate(date.getUTCDate() + 7);
+    } else if (recurrence === 'monthly') {
+        date.setUTCMonth(date.getUTCMonth() + 1);
+    }
+
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 }

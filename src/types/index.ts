@@ -7,6 +7,9 @@ import type { EquipmentTemplate, Rarity, EquipmentSlot, ChestType } from '../con
 // ─── タスク関連 ───────────────────────────────────────────────
 export type Priority = 'low' | 'medium' | 'high';
 
+/** タスクの繰り返し周期 */
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
+
 export interface Task {
     id: string;
     name: string;
@@ -14,6 +17,7 @@ export interface Task {
     priority: Priority;
     tags: string[]; // ユーザー定義タグ
     subtasks: Subtask[];
+    recurrence: Recurrence; // 繰り返し設定（none = 繰り返しなし）
     completed: boolean;
     completedAt: string | null; // ISO 8601
     createdAt: string; // ISO 8601
@@ -128,8 +132,8 @@ export interface BattleState {
 export interface TaskStoreState {
     tasks: Task[];
     pendingCompletions: PendingCompletion[];
-    addTask: (name: string, dueDate: string | null, priority: Priority, tags?: string[], subtasks?: Subtask[]) => void;
-    updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>) => void;
+    addTask: (name: string, dueDate: string | null, priority: Priority, recurrence: Recurrence, tags?: string[], subtasks?: Subtask[]) => void;
+    updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks' | 'recurrence'>>) => void;
     deleteTask: (id: string) => void;
     toggleComplete: (id: string) => void;
     addSubtask: (taskId: string, name: string) => void;
