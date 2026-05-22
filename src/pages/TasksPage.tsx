@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
-import { isOverdue, generateId } from '../utils/dateUtils';
+import { isOverdue, generateId, formatRelativeDate } from '../utils/dateUtils';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
 
 const PRIORITY_LABELS: Record<Priority, string> = { low: '低', medium: '中', high: '高' };
@@ -363,7 +363,7 @@ export function TasksPage() {
                                 <div className="flex-1 min-w-0">
                                     <p className={`text-sm font-medium ${task.completed ? 'line-through' : ''}`} style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-primary)' }}>{task.name}</p>
                                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                        {task.dueDate && <span className="text-[11px]" style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-muted)' }}>📅 {task.dueDate}</span>}
+                                        {task.dueDate && <span className="text-[11px]" title={task.dueDate} style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-muted)' }}>📅 {formatRelativeDate(task.dueDate)}</span>}
                                         <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: `${PRIORITY_COLORS[task.priority]}22`, color: PRIORITY_COLORS[task.priority] }}>{PRIORITY_LABELS[task.priority]}</span>
                                         {task.recurrence && task.recurrence !== 'none' && (
                                             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium inline-flex items-center gap-0.5"
