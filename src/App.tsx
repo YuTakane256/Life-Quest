@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { BottomNav } from './components/layout/BottomNav';
 import { TasksPage } from './pages/TasksPage';
@@ -8,10 +9,17 @@ import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SnackbarProvider } from './components/ui/SnackbarProvider';
 import { LevelUpOverlay } from './components/ui/LevelUpOverlay';
+import { LoginBonusOverlay } from './components/ui/LoginBonusOverlay';
 import { ThemeController } from './components/ui/ThemeController';
+import { useLoginBonusStore } from './stores/useLoginBonusStore';
 import './App.css';
 
 function App() {
+    // アプリ起動時にデイリーログインボーナスの判定を行う
+    useEffect(() => {
+        useLoginBonusStore.getState().checkDailyLogin();
+    }, []);
+
     return (
         <BrowserRouter>
             <SnackbarProvider>
@@ -31,6 +39,7 @@ function App() {
                     </main>
                     <BottomNav />
                     <LevelUpOverlay />
+                    <LoginBonusOverlay />
                 </div>
             </SnackbarProvider>
         </BrowserRouter>

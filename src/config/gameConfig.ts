@@ -136,6 +136,27 @@ export const GACHA_CONFIG = {
     } as const,
 } as const;
 
+// ─── デイリーログインボーナス設定 ─────────────────────────────
+export const LOGIN_BONUS_CONFIG = {
+    /** ログインボーナスの基本XP（連続1日目） */
+    BASE_XP: 20,
+
+    /** 連続ログイン1日ごとに加算されるXP */
+    XP_PER_STREAK_DAY: 5,
+
+    /** 1回のログインボーナスで付与されるXPの上限 */
+    MAX_XP: 100,
+
+    /** 特別宝箱を付与する連続ログイン日数の周期（7日ごと） */
+    SPECIAL_CHEST_INTERVAL: 7,
+
+    /** 特別宝箱のタイプ */
+    SPECIAL_CHEST_TYPE: 'gold' as ChestType,
+
+    /** 特別宝箱のラベル */
+    SPECIAL_CHEST_LABEL: '7日連続ログイン記念の金の宝箱',
+} as const;
+
 // ─── キャラクター / バトル設定 ────────────────────────────────
 export const CHARACTER_CONFIG = {
     /** 初期ステータス */

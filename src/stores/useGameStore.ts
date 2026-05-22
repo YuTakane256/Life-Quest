@@ -400,6 +400,17 @@ export const useGameStore = create<GameStoreState>()(
                 }));
                 return newItem;
             },
+
+            grantChest: (chestType: ChestType, label: string) => {
+                const newChest: ChestReward = {
+                    id: generateId(),
+                    chestType,
+                    label,
+                    opened: false,
+                    equipment: null,
+                };
+                set((state) => ({ chestQueue: [...state.chestQueue, newChest] }));
+            },
         }),
         { name: 'quest-board-game' }
     )
