@@ -157,6 +157,7 @@ export interface HabitStoreState {
     getTodayRecords: () => HabitDailyRecord[];
     areAllHabitsComplete: (date: string) => boolean;
     getHabitStreak: (habitId: string) => number; // 現在の連続達成日数
+    getHabitCompletionRate: (habitId: string) => number | null; // 過去30日の達成率(%)。対象日が無ければnull
     checkAndResetHabits: () => void;
 }
 

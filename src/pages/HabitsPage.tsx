@@ -6,7 +6,7 @@ import { HABIT_CATEGORIES, getCategoryById, DEFAULT_CATEGORY_ID } from '../confi
 import type { Habit } from '../types';
 
 export function HabitsPage() {
-    const { habits, dailyRecords, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak } = useHabitStore();
+    const { habits, dailyRecords, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak, getHabitCompletionRate } = useHabitStore();
     const [showForm, setShowForm] = useState(false);
     const [name, setName] = useState('');
     const [selectedCategoryId, setSelectedCategoryId] = useState(DEFAULT_CATEGORY_ID);
@@ -192,6 +192,7 @@ export function HabitsPage() {
                                     const record = getRecordForHabit(habit.id);
                                     const isCompleted = record?.completed ?? false;
                                     const streak = getHabitStreak(habit.id);
+                                    const completionRate = getHabitCompletionRate(habit.id);
 
                                     return (
                                         <div
@@ -223,6 +224,15 @@ export function HabitsPage() {
                                                             style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-accent-gold)', border: '1px solid var(--color-border-default)' }}
                                                         >
                                                             🔥 {streak}日連続
+                                                        </span>
+                                                    )}
+                                                    {completionRate !== null && (
+                                                        <span
+                                                            className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
+                                                            title="過去30日の達成率"
+                                                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-accent-emerald)', border: '1px solid var(--color-border-default)' }}
+                                                        >
+                                                            📊 {completionRate}%
                                                         </span>
                                                     )}
                                                 </div>
