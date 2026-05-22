@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus } from 'lucide-react';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
 import { isOverdue, generateId } from '../utils/dateUtils';
-import type { Priority, Task, Subtask } from '../types';
+import type { Priority, Recurrence, Task, Subtask } from '../types';
 
 const PRIORITY_LABELS: Record<Priority, string> = { low: '低', medium: '中', high: '高' };
 const PRIORITY_COLORS: Record<Priority, string> = { low: 'var(--color-priority-low)', medium: 'var(--color-priority-medium)', high: 'var(--color-priority-high)' };
+const RECURRENCE_LABELS: Record<Recurrence, string> = { none: 'なし', daily: '毎日', weekly: '毎週', monthly: '毎月' };
 
 export function TasksPage() {
     const { tasks, addTask, updateTask, deleteTask, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
@@ -16,6 +17,7 @@ export function TasksPage() {
     const [name, setName] = useState('');
     const [dueDate, setDueDate] = useState('');
     const [priority, setPriority] = useState<Priority>('medium');
+    const [recurrence, setRecurrence] = useState<Recurrence>('none');
     const [tagInput, setTagInput] = useState('');
     const [tags, setTags] = useState<string[]>([]);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -50,7 +52,7 @@ export function TasksPage() {
     }, [filteredTasks]);
 
     const resetForm = () => {
-        setName(''); setDueDate(''); setPriority('medium');
+        setName(''); setDueDate(''); setPriority('medium'); setRecurrence('none');
         setTags([]); setTagInput('');
         setFormSubtasks([]); setFormSubtaskInput('');
     };
@@ -59,10 +61,10 @@ export function TasksPage() {
         e.preventDefault();
         if (!name.trim()) return;
         if (editingTask) {
-            updateTask(editingTask.id, { name: name.trim(), dueDate: dueDate || null, priority, tags, subtasks: formSubtasks });
+            updateTask(editingTask.id, { name: name.trim(), dueDate: dueDate || null, priority, recurrence, tags, subtasks: formSubtasks });
             setEditingTask(null);
         } else {
-            addTask(name.trim(), dueDate || null, priority, tags, formSubtasks);
+            addTask(name.trim(), dueDate || null, priority, recurrence, tags, formSubtasks);
         }
         resetForm();
         setShowForm(false);
@@ -73,6 +75,7 @@ export function TasksPage() {
         setName(task.name);
         setDueDate(task.dueDate || '');
         setPriority(task.priority);
+        setRecurrence(task.recurrence || 'none');
         setTags(task.tags || []);
         setTagInput('');
         setFormSubtasks(task.subtasks || []);
@@ -237,6 +240,19 @@ export function TasksPage() {
                         </div>
                     </div>
 
+                    {/* 繰り返し設定 */}
+                    <div className="mb-3">
+                        <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}><Repeat size={12} className="inline mr-1" />繰り返し</label>
+                        <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)}
+                            className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}>
+                            <option value="none">なし</option>
+                            <option value="daily">毎日</option>
+                            <option value="weekly">毎週</option>
+                            <option value="monthly">毎月</option>
+                        </select>
+                    </div>
+
                     {/* タグ入力 */}
                     <div className="mb-3">
                         <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>
@@ -349,6 +365,12 @@ export function TasksPage() {
                                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                         {task.dueDate && <span className="text-[11px]" style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-muted)' }}>📅 {task.dueDate}</span>}
                                         <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: `${PRIORITY_COLORS[task.priority]}22`, color: PRIORITY_COLORS[task.priority] }}>{PRIORITY_LABELS[task.priority]}</span>
+                                        {task.recurrence && task.recurrence !== 'none' && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium inline-flex items-center gap-0.5"
+                                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-accent-primary)', border: '1px solid var(--color-border-default)' }}>
+                                                <Repeat size={10} />{RECURRENCE_LABELS[task.recurrence]}
+                                            </span>
+                                        )}
                                         {subtasks.length > 0 && (
                                             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-accent-emerald)', border: '1px solid var(--color-border-default)' }}>
                                                 {completedSubtaskCount}/{subtasks.length}

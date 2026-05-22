@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Habit, HabitDailyRecord, RestDay, HabitStoreState } from '../types';
 import { XP_CONFIG } from '../config/gameConfig';
+import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import { generateId, getTodayJST } from '../utils/dateUtils';
 
 export const useHabitStore = create<HabitStoreState>()(
@@ -11,10 +12,11 @@ export const useHabitStore = create<HabitStoreState>()(
             dailyRecords: [],
             restDays: [],
 
-            addHabit: (name: string) => {
+            addHabit: (name: string, categoryId?: string) => {
                 const newHabit: Habit = {
                     id: generateId(),
                     name,
+                    categoryId: categoryId || DEFAULT_CATEGORY_ID,
                     createdAt: new Date().toISOString(),
                 };
                 set((state) => ({ habits: [...state.habits, newHabit] }));
