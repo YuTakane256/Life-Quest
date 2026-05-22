@@ -136,6 +136,7 @@ export interface TaskStoreState {
     addTask: (name: string, dueDate: string | null, priority: Priority, recurrence: Recurrence, tags?: string[], subtasks?: Subtask[]) => void;
     updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks' | 'recurrence'>>) => void;
     deleteTask: (id: string) => void;
+    deleteCompletedTasks: () => void; // 完了タスクを一括削除（保留中は除外）
     toggleComplete: (id: string) => void;
     addSubtask: (taskId: string, name: string) => void;
     deleteSubtask: (taskId: string, subtaskId: string) => void;

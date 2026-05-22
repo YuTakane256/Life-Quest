@@ -132,6 +132,15 @@ export const useTaskStore = create<TaskStoreState>()(
                 }));
             },
 
+            deleteCompletedTasks: () => {
+                const { tasks, pendingCompletions } = get();
+                // 保留中（5秒Undo待ち）のタスクは削除対象から除外する
+                const pendingIds = new Set(pendingCompletions.map((p) => p.taskId));
+                set({
+                    tasks: tasks.filter((t) => !t.completed || pendingIds.has(t.id)),
+                });
+            },
+
             toggleComplete: (id: string) => {
                 const task = get().tasks.find((t) => t.id === id);
                 if (!task) return;

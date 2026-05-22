@@ -13,10 +13,11 @@ const RECURRENCE_LABELS: Record<Recurrence, string> = { none: 'なし', daily: '
 const PRIORITY_SORT_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
 
 export function TasksPage() {
-    const { tasks, addTask, updateTask, deleteTask, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
+    const { tasks, addTask, updateTask, deleteTask, deleteCompletedTasks, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
+    const [showDeleteCompletedConfirm, setShowDeleteCompletedConfirm] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [name, setName] = useState('');
     const [dueDate, setDueDate] = useState('');
@@ -118,6 +119,14 @@ export function TasksPage() {
     };
 
     const isPending = (taskId: string) => pendingCompletions.some((p) => p.taskId === taskId);
+
+    /** 一括削除の対象となる完了タスク数（保留中は除外） */
+    const deletableCompletedCount = tasks.filter((t) => t.completed && !isPending(t.id)).length;
+
+    const handleDeleteCompleted = () => {
+        deleteCompletedTasks();
+        setShowDeleteCompletedConfirm(false);
+    };
 
     /** サブタスクの有無を踏まえた既定の展開状態 */
     const isTaskExpanded = (task: Task) =>
@@ -242,6 +251,17 @@ export function TasksPage() {
                     <option value="priority">優先度順</option>
                     <option value="createdAt">作成日順</option>
                 </select>
+                {deletableCompletedCount > 0 && (
+                    <button
+                        type="button"
+                        onClick={() => setShowDeleteCompletedConfirm(true)}
+                        className="ml-auto flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs transition-colors hover:opacity-80"
+                        style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-danger)', border: '1px solid var(--color-border-default)' }}
+                    >
+                        <Trash2 size={13} />
+                        完了{deletableCompletedCount}件を削除
+                    </button>
+                )}
             </div>
 
             {/* タグフィルター */}
@@ -487,6 +507,20 @@ export function TasksPage() {
                     );
                 })}
             </div>
+
+            {/* 完了タスク一括削除の確認モーダル */}
+            {showDeleteCompletedConfirm && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4" onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteCompletedConfirm(false); }}>
+                    <div className="w-full max-w-sm rounded-2xl p-5 animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                        <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>完了タスクを削除しますか？</h3>
+                        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>完了済みのタスク{deletableCompletedCount}件をまとめて削除します。この操作は取り消せません。</p>
+                        <div className="flex gap-2">
+                            <button onClick={handleDeleteCompleted} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-text-danger)', color: 'white' }}>削除する</button>
+                            <button onClick={() => setShowDeleteCompletedConfirm(false)} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
