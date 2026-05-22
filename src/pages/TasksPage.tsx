@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown } from 'lucide-react';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
@@ -25,6 +25,7 @@ export function TasksPage() {
     const [tagInput, setTagInput] = useState('');
     const [tags, setTags] = useState<string[]>([]);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
     const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
     const [subtaskInputs, setSubtaskInputs] = useState<Record<string, string>>({});
     const [formSubtasks, setFormSubtasks] = useState<Subtask[]>([]);
@@ -37,13 +38,17 @@ export function TasksPage() {
         return Array.from(tagSet).sort();
     }, [tasks]);
 
-    // フィルタリング
+    // フィルタリング（タグ絞り込み + 名前検索）
     const filteredTasks = useMemo(() => {
-        if (selectedTags.length === 0) return tasks;
-        return tasks.filter((t) =>
-            selectedTags.every((tag) => (t.tags || []).includes(tag))
-        );
-    }, [tasks, selectedTags]);
+        const query = searchQuery.trim().toLowerCase();
+        return tasks.filter((t) => {
+            const matchesTags =
+                selectedTags.length === 0 ||
+                selectedTags.every((tag) => (t.tags || []).includes(tag));
+            const matchesSearch = query === '' || t.name.toLowerCase().includes(query);
+            return matchesTags && matchesSearch;
+        });
+    }, [tasks, selectedTags, searchQuery]);
 
     const sortedTasks = useMemo(() => {
         const compareByMode = (a: Task, b: Task): number => {
@@ -197,6 +202,30 @@ export function TasksPage() {
                     style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                     <Plus size={20} />
                 </button>
+            </div>
+
+            {/* 検索 */}
+            <div className="relative mb-3">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--color-text-muted)' }} />
+                <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="タスクを検索..."
+                    className="w-full pl-9 pr-9 py-2 rounded-lg text-sm outline-none"
+                    style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                />
+                {searchQuery && (
+                    <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors hover:opacity-70"
+                        style={{ color: 'var(--color-text-muted)' }}
+                        aria-label="検索をクリア"
+                    >
+                        <X size={14} />
+                    </button>
+                )}
             </div>
 
             {/* 並び替え */}
@@ -371,7 +400,7 @@ export function TasksPage() {
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" /></svg>
                         </div></div>
                         <p className="mt-4 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                            {selectedTags.length > 0 ? '該当するタスクがありません' : 'タスクがありません。\n+ボタンから追加しましょう！'}
+                            {selectedTags.length > 0 || searchQuery.trim() ? '該当するタスクがありません' : 'タスクがありません。\n+ボタンから追加しましょう！'}
                         </p>
                     </div>
                 )}
