@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { Habit, HabitDailyRecord, RestDay, HabitStoreState } from '../types';
 import { XP_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
-import { generateId, getTodayJST } from '../utils/dateUtils';
+import { generateId, getTodayJST, shiftDate } from '../utils/dateUtils';
 
 export const useHabitStore = create<HabitStoreState>()(
     persist(
@@ -139,6 +139,37 @@ export const useHabitStore = create<HabitStoreState>()(
                         (r) => r.habitId === habit.id && r.date === date && r.completed
                     )
                 );
+            },
+
+            getHabitStreak: (habitId: string) => {
+                const { dailyRecords, restDays } = get();
+                const today = getTodayJST();
+                let streak = 0;
+                let cursor = today;
+
+                // 今日から過去へ遡って連続達成日数を数える。
+                // dailyRecords は30日でクリーンアップされるため最大31日まで遡れば十分。
+                for (let i = 0; i < 31; i++) {
+                    const isRest = restDays.some((r) => r.date === cursor && r.isRest);
+                    if (isRest) {
+                        // お休み日はストリークを途切れさせず、カウントもしない
+                        cursor = shiftDate(cursor, -1);
+                        continue;
+                    }
+
+                    const completed = dailyRecords.some(
+                        (r) => r.habitId === habitId && r.date === cursor && r.completed
+                    );
+                    if (completed) {
+                        streak++;
+                    } else if (cursor === today) {
+                        // 今日はまだ未完了でも連続を途切れさせない（過去分のストリークを表示）
+                    } else {
+                        break;
+                    }
+                    cursor = shiftDate(cursor, -1);
+                }
+                return streak;
             },
 
             checkAndResetHabits: () => {

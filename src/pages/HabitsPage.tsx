@@ -6,7 +6,7 @@ import { HABIT_CATEGORIES, getCategoryById, DEFAULT_CATEGORY_ID } from '../confi
 import type { Habit } from '../types';
 
 export function HabitsPage() {
-    const { habits, dailyRecords, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete } = useHabitStore();
+    const { habits, dailyRecords, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak } = useHabitStore();
     const [showForm, setShowForm] = useState(false);
     const [name, setName] = useState('');
     const [selectedCategoryId, setSelectedCategoryId] = useState(DEFAULT_CATEGORY_ID);
@@ -191,6 +191,7 @@ export function HabitsPage() {
                                 {categoryHabits.map((habit) => {
                                     const record = getRecordForHabit(habit.id);
                                     const isCompleted = record?.completed ?? false;
+                                    const streak = getHabitStreak(habit.id);
 
                                     return (
                                         <div
@@ -214,7 +215,17 @@ export function HabitsPage() {
                                                 {isCompleted && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
                                             </button>
                                             <div className="flex-1 min-w-0">
-                                                <p className={`text-sm font-medium ${isCompleted ? 'line-through' : ''}`} style={{ color: 'var(--color-text-primary)' }}>{habit.name}</p>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <p className={`text-sm font-medium ${isCompleted ? 'line-through' : ''}`} style={{ color: 'var(--color-text-primary)' }}>{habit.name}</p>
+                                                    {streak > 0 && (
+                                                        <span
+                                                            className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
+                                                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-accent-gold)', border: '1px solid var(--color-border-default)' }}
+                                                        >
+                                                            🔥 {streak}日連続
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {record?.memo && <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}><MessageSquare size={10} />{record.memo}</p>}
                                             </div>
                                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
