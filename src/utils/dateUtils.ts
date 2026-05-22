@@ -34,6 +34,15 @@ export function getTodayJST(): string {
 }
 
 /**
+ * 現在のJSTの時（0〜23）を返す
+ */
+export function getJSTHour(): number {
+    const now = new Date();
+    const jstMs = now.getTime() + TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000;
+    return new Date(jstMs).getUTCHours();
+}
+
+/**
  * ユニークIDを生成
  */
 export function generateId(): string {

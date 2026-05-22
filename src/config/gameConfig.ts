@@ -373,3 +373,15 @@ export const TIME_CONFIG = {
     /** 習慣リセット時刻 (JST 0:00) */
     HABIT_RESET_HOUR_JST: 0,
 } as const;
+
+// ─── 通知設定 ─────────────────────────────────────────────────
+export const NOTIFICATION_CONFIG = {
+    /** タスク期限の何時間前から通知するか */
+    TASK_DEADLINE_NOTICE_HOURS: 24,
+
+    /** 未完了の習慣をリマインドするJST時刻（時） */
+    HABIT_REMINDER_HOUR_JST: 20,
+
+    /** 通知条件チェックの実行間隔（ミリ秒） */
+    CHECK_INTERVAL_MS: 30 * 60 * 1000, // 30分
+} as const;

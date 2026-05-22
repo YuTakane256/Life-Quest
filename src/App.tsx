@@ -12,12 +12,23 @@ import { LevelUpOverlay } from './components/ui/LevelUpOverlay';
 import { LoginBonusOverlay } from './components/ui/LoginBonusOverlay';
 import { ThemeController } from './components/ui/ThemeController';
 import { useLoginBonusStore } from './stores/useLoginBonusStore';
+import { runNotificationChecks } from './utils/notifications';
+import { NOTIFICATION_CONFIG } from './config/gameConfig';
 import './App.css';
 
 function App() {
     // アプリ起動時にデイリーログインボーナスの判定を行う
     useEffect(() => {
         useLoginBonusStore.getState().checkDailyLogin();
+    }, []);
+
+    // 通知条件を起動時および一定間隔でチェックする
+    useEffect(() => {
+        void runNotificationChecks();
+        const intervalId = window.setInterval(() => {
+            void runNotificationChecks();
+        }, NOTIFICATION_CONFIG.CHECK_INTERVAL_MS);
+        return () => window.clearInterval(intervalId);
     }, []);
 
     return (

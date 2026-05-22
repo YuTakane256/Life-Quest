@@ -212,6 +212,17 @@ export interface LoginBonusStoreState {
     clearPendingBonus: () => void; // モーダルを閉じたときに呼び出す
 }
 
+// ─── 通知関連 ──────────────────────────────────────────────────
+export interface NotificationStoreState {
+    enabled: boolean; // 通知のON/OFF
+    notifiedTaskIds: string[]; // 期限通知を済ませたタスクID（重複通知防止）
+    lastHabitReminderDate: string | null; // 習慣リマインダーを出した日 YYYY-MM-DD (JST)
+    setEnabled: (enabled: boolean) => void;
+    markTaskNotified: (taskId: string) => void;
+    markHabitReminded: (date: string) => void;
+    pruneNotifiedTasks: (validTaskIds: string[]) => void; // 削除済みタスクのIDを掃除
+}
+
 // ─── 統計関連 ──────────────────────────────────────────────────
 export interface StatsStoreState {
     taskXpLog: Record<string, number>; // YYYY-MM-DD => 合計XP
