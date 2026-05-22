@@ -172,6 +172,31 @@ export const useHabitStore = create<HabitStoreState>()(
                 return streak;
             },
 
+            getHabitCompletionRate: (habitId: string) => {
+                const { habits, dailyRecords, restDays } = get();
+                const habit = habits.find((h) => h.id === habitId);
+                if (!habit) return null;
+
+                const createdDate = habit.createdAt.split('T')[0];
+                const today = getTodayJST();
+                let total = 0;
+                let completed = 0;
+
+                // 今日から過去30日を遡る。習慣の作成前とお休み日は分母に含めない。
+                for (let i = 0; i < 30; i++) {
+                    const date = shiftDate(today, -i);
+                    if (date < createdDate) break;
+                    if (restDays.some((r) => r.date === date && r.isRest)) continue;
+                    total++;
+                    if (dailyRecords.some((r) => r.habitId === habitId && r.date === date && r.completed)) {
+                        completed++;
+                    }
+                }
+
+                if (total === 0) return null;
+                return Math.round((completed / total) * 100);
+            },
+
             checkAndResetHabits: () => {
                 // 古いレコードのクリーンアップ（30日以上前のものを削除）
                 const cutoffDate = new Date();
