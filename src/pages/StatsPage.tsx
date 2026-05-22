@@ -18,6 +18,12 @@ const HABIT_COLORS = [
 ];
 
 const WEEKDAY_LABELS = ['', '月', '', '水', '', '金', ''];
+const WEEKDAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+
+/** YYYY-MM-DD の曜日名を返す */
+function getWeekdayName(date: string): string {
+    return WEEKDAY_NAMES[new Date(date + 'T00:00:00+09:00').getDay()];
+}
 
 function getTaskLevel(xp: number): number {
     if (xp === 0) return 0;
@@ -91,6 +97,14 @@ export function StatsPage() {
     const weeks = useMemo(() => groupByWeeks(dates), [dates]);
     const monthLabels = useMemo(() => getMonthLabels(weeks), [weeks]);
 
+    // 直近7日間のXP集計
+    const weeklyXp = useMemo(() => {
+        const perDay = generateDateRange(7).map((date) => ({ date, xp: taskXpLog[date] || 0 }));
+        const total = perDay.reduce((sum, d) => sum + d.xp, 0);
+        const max = Math.max(...perDay.map((d) => d.xp), 0);
+        return { perDay, total, max };
+    }, [taskXpLog]);
+
     // 集計値
     const stats = useMemo(() => {
         if (mode === 'tasks') {
@@ -150,6 +164,38 @@ export function StatsPage() {
         <div className="max-w-lg mx-auto px-4 pt-6 pb-8">
             {/* ヘッダー */}
             <h1 className="text-2xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>統計</h1>
+
+            {/* 今週のXPサマリー */}
+            <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>今週のXP</h2>
+                    <span className="text-sm font-bold" style={{ color: 'var(--color-accent-primary)' }}>
+                        ⚡ 合計 {weeklyXp.total.toLocaleString()} XP
+                    </span>
+                </div>
+                <div className="flex items-stretch gap-1.5" style={{ height: '88px' }}>
+                    {weeklyXp.perDay.map(({ date, xp }) => {
+                        const barPct = weeklyXp.max > 0 ? (xp / weeklyXp.max) * 100 : 0;
+                        return (
+                            <div key={date} className="flex-1 flex flex-col items-center">
+                                <div className="flex-1 flex items-end w-full">
+                                    <div
+                                        className="w-full rounded-t transition-all"
+                                        title={`${date}: ${xp} XP`}
+                                        style={{
+                                            height: `${barPct}%`,
+                                            minHeight: '3px',
+                                            backgroundColor: xp > 0 ? 'var(--color-accent-primary)' : 'var(--color-border-default)',
+                                        }}
+                                    />
+                                </div>
+                                <span className="text-[10px] mt-1" style={{ color: 'var(--color-text-muted)' }}>{getWeekdayName(date)}</span>
+                                <span className="text-[9px]" style={{ color: 'var(--color-text-muted)' }}>{xp}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
 
             {/* セグメントコントロール */}
             <div className="flex rounded-xl p-1 mb-5" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
