@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Task, Subtask, PendingCompletion, Priority, TaskStoreState } from '../types';
+import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
-import { generateId } from '../utils/dateUtils';
+import { generateId, getTodayJST, addRecurrenceInterval } from '../utils/dateUtils';
 
 /** pending completions はLocalStorageに保存しない（タイマーは復元不可能） */
 interface TaskStorePersisted {
@@ -29,13 +29,41 @@ function getSubtaskXp(priority: Priority) {
     return Math.max(1, Math.floor(XP_CONFIG.REWARD_BY_PRIORITY[priority] * XP_CONFIG.SUBTASK_REWARD_RATIO));
 }
 
+/**
+ * 繰り返しタスクの次回分を生成する。recurrence が none なら null。
+ * 期限は元タスクの期限（無ければ今日）を1周期分進める。サブタスクは未完了状態で引き継ぐ。
+ */
+function buildNextRecurringTask(task: Task): Task | null {
+    if (!task.recurrence || task.recurrence === 'none') return null;
+    const base = task.dueDate ?? getTodayJST();
+    const now = new Date().toISOString();
+    return {
+        id: generateId(),
+        name: task.name,
+        dueDate: addRecurrenceInterval(base, task.recurrence),
+        priority: task.priority,
+        tags: [...(task.tags || [])],
+        subtasks: (task.subtasks || []).map((s) => ({
+            id: generateId(),
+            name: s.name,
+            completed: false,
+            completedAt: null,
+            createdAt: now,
+        })),
+        recurrence: task.recurrence,
+        completed: false,
+        completedAt: null,
+        createdAt: now,
+    };
+}
+
 export const useTaskStore = create<TaskStoreState>()(
     persist(
         (set, get) => ({
             tasks: [],
             pendingCompletions: [],
 
-            addTask: (name: string, dueDate: string | null, priority: Priority, tags: string[] = [], subtasks: Subtask[] = []) => {
+            addTask: (name: string, dueDate: string | null, priority: Priority, recurrence: Recurrence = 'none', tags: string[] = [], subtasks: Subtask[] = []) => {
                 const newTask: Task = {
                     id: generateId(),
                     name,
@@ -43,6 +71,7 @@ export const useTaskStore = create<TaskStoreState>()(
                     priority,
                     tags,
                     subtasks,
+                    recurrence,
                     completed: false,
                     completedAt: null,
                     createdAt: new Date().toISOString(),
@@ -138,6 +167,17 @@ export const useTaskStore = create<TaskStoreState>()(
                     }));
 
                     await awardTaskXp(pendingTask.priority, completedAt);
+
+                    // 繰り返しタスクなら次回分を自動生成する
+                    const next = buildNextRecurringTask(pendingTask);
+                    if (next) {
+                        const exists = get().tasks.some(
+                            (t) => !t.completed && t.recurrence === next.recurrence && t.name === next.name && t.dueDate === next.dueDate
+                        );
+                        if (!exists) {
+                            set((state) => ({ tasks: [...state.tasks, next] }));
+                        }
+                    }
                 }, UI_CONFIG.UNDO_DURATION_MS);
 
                 const pendingCompletion: PendingCompletion = {
@@ -239,6 +279,19 @@ export const useTaskStore = create<TaskStoreState>()(
 
                 if (isCompleting) {
                     void awardTaskXp(task.priority, completedAt, getSubtaskXp(task.priority));
+                }
+
+                // サブタスク完了で親タスクが完了したら、繰り返しタスクの次回分を生成
+                if (isCompleting && allSubtasksComplete && !task.completed) {
+                    const next = buildNextRecurringTask(task);
+                    if (next) {
+                        const exists = get().tasks.some(
+                            (t) => !t.completed && t.recurrence === next.recurrence && t.name === next.name && t.dueDate === next.dueDate
+                        );
+                        if (!exists) {
+                            set((state) => ({ tasks: [...state.tasks, next] }));
+                        }
+                    }
                 }
             },
 
