@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat } from 'lucide-react';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
+import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
 import { isOverdue, generateId, formatRelativeDate } from '../utils/dateUtils';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
@@ -8,9 +9,12 @@ import type { Priority, Recurrence, Task, Subtask } from '../types';
 const PRIORITY_LABELS: Record<Priority, string> = { low: '低', medium: '中', high: '高' };
 const PRIORITY_COLORS: Record<Priority, string> = { low: 'var(--color-priority-low)', medium: 'var(--color-priority-medium)', high: 'var(--color-priority-high)' };
 const RECURRENCE_LABELS: Record<Recurrence, string> = { none: 'なし', daily: '毎日', weekly: '毎週', monthly: '毎月' };
+// 優先度の並び順（高い順）
+const PRIORITY_SORT_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
 
 export function TasksPage() {
     const { tasks, addTask, updateTask, deleteTask, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
+    const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -42,14 +46,26 @@ export function TasksPage() {
     }, [tasks, selectedTags]);
 
     const sortedTasks = useMemo(() => {
-        return [...filteredTasks].sort((a, b) => {
-            if (a.completed !== b.completed) return a.completed ? 1 : -1;
+        const compareByMode = (a: Task, b: Task): number => {
+            if (sortMode === 'priority') {
+                return PRIORITY_SORT_ORDER[a.priority] - PRIORITY_SORT_ORDER[b.priority];
+            }
+            if (sortMode === 'createdAt') {
+                // 作成日が新しい順
+                return b.createdAt.localeCompare(a.createdAt);
+            }
+            // dueDate: 期限が近い順。期限なしは末尾
             if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
             if (a.dueDate) return -1;
             if (b.dueDate) return 1;
             return 0;
+        };
+        return [...filteredTasks].sort((a, b) => {
+            // 完了タスクは常に末尾にまとめる
+            if (a.completed !== b.completed) return a.completed ? 1 : -1;
+            return compareByMode(a, b);
         });
-    }, [filteredTasks]);
+    }, [filteredTasks, sortMode]);
 
     const resetForm = () => {
         setName(''); setDueDate(''); setPriority('medium'); setRecurrence('none');
@@ -181,6 +197,22 @@ export function TasksPage() {
                     style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                     <Plus size={20} />
                 </button>
+            </div>
+
+            {/* 並び替え */}
+            <div className="flex items-center gap-2 mb-4">
+                <ArrowUpDown size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+                <select
+                    value={sortMode}
+                    onChange={(e) => setSortMode(e.target.value as TaskSortMode)}
+                    aria-label="並び替え"
+                    className="px-3 py-1.5 rounded-lg text-xs outline-none"
+                    style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-default)' }}
+                >
+                    <option value="dueDate">期限順</option>
+                    <option value="priority">優先度順</option>
+                    <option value="createdAt">作成日順</option>
+                </select>
             </div>
 
             {/* タグフィルター */}
