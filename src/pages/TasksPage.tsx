@@ -1,10 +1,17 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search } from 'lucide-react';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
-import { isOverdue, generateId, formatRelativeDate } from '../utils/dateUtils';
+import { isOverdue, generateId, formatRelativeDate, getTodayJST } from '../utils/dateUtils';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
+
+type DueFilter = 'all' | 'dueSoon' | 'overdue';
+const DUE_FILTER_OPTIONS: { value: DueFilter; label: string }[] = [
+    { value: 'all', label: 'すべて' },
+    { value: 'dueSoon', label: '今日まで' },
+    { value: 'overdue', label: '期限切れ' },
+];
 
 const PRIORITY_LABELS: Record<Priority, string> = { low: '低', medium: '中', high: '高' };
 const PRIORITY_COLORS: Record<Priority, string> = { low: 'var(--color-priority-low)', medium: 'var(--color-priority-medium)', high: 'var(--color-priority-high)' };
@@ -27,6 +34,7 @@ export function TasksPage() {
     const [tags, setTags] = useState<string[]>([]);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [dueFilter, setDueFilter] = useState<DueFilter>('all');
     const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
     const [subtaskInputs, setSubtaskInputs] = useState<Record<string, string>>({});
     const [formSubtasks, setFormSubtasks] = useState<Subtask[]>([]);
@@ -39,17 +47,24 @@ export function TasksPage() {
         return Array.from(tagSet).sort();
     }, [tasks]);
 
-    // フィルタリング（タグ絞り込み + 名前検索）
+    // フィルタリング（タグ絞り込み + 名前検索 + 期限フィルタ）
     const filteredTasks = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
+        const today = getTodayJST();
         return tasks.filter((t) => {
             const matchesTags =
                 selectedTags.length === 0 ||
                 selectedTags.every((tag) => (t.tags || []).includes(tag));
             const matchesSearch = query === '' || t.name.toLowerCase().includes(query);
-            return matchesTags && matchesSearch;
+            let matchesDue = true;
+            if (dueFilter === 'overdue') {
+                matchesDue = !t.completed && isOverdue(t.dueDate);
+            } else if (dueFilter === 'dueSoon') {
+                matchesDue = !t.completed && t.dueDate !== null && t.dueDate <= today;
+            }
+            return matchesTags && matchesSearch && matchesDue;
         });
-    }, [tasks, selectedTags, searchQuery]);
+    }, [tasks, selectedTags, searchQuery, dueFilter]);
 
     const sortedTasks = useMemo(() => {
         const compareByMode = (a: Task, b: Task): number => {
@@ -237,6 +252,29 @@ export function TasksPage() {
                 )}
             </div>
 
+            {/* 期限クイックフィルタ */}
+            <div className="flex items-center gap-2 mb-3">
+                <CalendarClock size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+                {DUE_FILTER_OPTIONS.map((option) => {
+                    const isActive = dueFilter === option.value;
+                    return (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setDueFilter(option.value)}
+                            className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-200"
+                            style={{
+                                backgroundColor: isActive ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
+                                color: isActive ? 'white' : 'var(--color-text-secondary)',
+                                border: `1px solid ${isActive ? 'var(--color-accent-primary)' : 'var(--color-border-default)'}`,
+                            }}
+                        >
+                            {option.label}
+                        </button>
+                    );
+                })}
+            </div>
+
             {/* 並び替え */}
             <div className="flex items-center gap-2 mb-4">
                 <ArrowUpDown size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
@@ -420,7 +458,7 @@ export function TasksPage() {
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" /></svg>
                         </div></div>
                         <p className="mt-4 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                            {selectedTags.length > 0 || searchQuery.trim() ? '該当するタスクがありません' : 'タスクがありません。\n+ボタンから追加しましょう！'}
+                            {selectedTags.length > 0 || searchQuery.trim() || dueFilter !== 'all' ? '該当するタスクがありません' : 'タスクがありません。\n+ボタンから追加しましょう！'}
                         </p>
                     </div>
                 )}
