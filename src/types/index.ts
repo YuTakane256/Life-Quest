@@ -155,6 +155,7 @@ export interface HabitStoreState {
     isRestDay: (date: string) => boolean;
     getTodayRecords: () => HabitDailyRecord[];
     areAllHabitsComplete: (date: string) => boolean;
+    getHabitStreak: (habitId: string) => number; // 現在の連続達成日数
     checkAndResetHabits: () => void;
 }
 
