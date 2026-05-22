@@ -59,6 +59,25 @@ export function isOverdue(dueDate: string | null): boolean {
 }
 
 /**
+ * YYYY-MM-DD の日付を今日基準の相対表示文字列に変換する
+ * 例: 今日 / 明日 / 明後日 / 3日後 / 昨日 / 2日前
+ */
+export function formatRelativeDate(dateStr: string): string {
+    const [ty, tm, td] = getTodayJST().split('-').map(Number);
+    const [dy, dm, dd] = dateStr.split('-').map(Number);
+    const todayMs = Date.UTC(ty, tm - 1, td);
+    const dateMs = Date.UTC(dy, dm - 1, dd);
+    const diffDays = Math.round((dateMs - todayMs) / (24 * 60 * 60 * 1000));
+
+    if (diffDays === 0) return '今日';
+    if (diffDays === 1) return '明日';
+    if (diffDays === 2) return '明後日';
+    if (diffDays === -1) return '昨日';
+    if (diffDays > 0) return `${diffDays}日後`;
+    return `${-diffDays}日前`;
+}
+
+/**
  * YYYY-MM-DD の日付を指定日数だけずらして返す (YYYY-MM-DD)
  * 負の値で過去方向へずらせる
  */
