@@ -220,7 +220,9 @@ export interface NotificationStoreState {
     enabled: boolean; // 通知のON/OFF
     notifiedTaskIds: string[]; // 期限通知を済ませたタスクID（重複通知防止）
     lastHabitReminderDate: string | null; // 習慣リマインダーを出した日 YYYY-MM-DD (JST)
+    habitReminderHour: number; // 習慣リマインダーを出すJST時刻（時、0-23）
     setEnabled: (enabled: boolean) => void;
+    setHabitReminderHour: (hour: number) => void;
     markTaskNotified: (taskId: string) => void;
     markHabitReminded: (date: string) => void;
     pruneNotifiedTasks: (validTaskIds: string[]) => void; // 削除済みタスクのIDを掃除

@@ -10,6 +10,8 @@ import {
 export function NotificationSettings() {
     const enabled = useNotificationStore((s) => s.enabled);
     const setEnabled = useNotificationStore((s) => s.setEnabled);
+    const reminderHour = useNotificationStore((s) => s.habitReminderHour ?? 20);
+    const setReminderHour = useNotificationStore((s) => s.setHabitReminderHour);
     const [permission, setPermission] = useState(getNotificationPermission());
 
     const unsupported = permission === 'unsupported';
@@ -80,13 +82,31 @@ export function NotificationSettings() {
             )}
 
             {enabled && !disabled && (
-                <ul className="text-xs mt-3 flex flex-col gap-1" style={{ color: 'var(--color-text-muted)' }}>
-                    <li>・期限の24時間前になったタスク</li>
-                    <li>・20時以降に未完了の習慣が残っているとき</li>
-                    <li className="mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                <>
+                    <ul className="text-xs mt-3 flex flex-col gap-1" style={{ color: 'var(--color-text-muted)' }}>
+                        <li>・期限の24時間前になったタスク</li>
+                        <li>・指定時刻以降に未完了の習慣が残っているとき</li>
+                    </ul>
+                    <div className="mt-3 flex items-center justify-between gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
+                        <label htmlFor="habit-reminder-hour" className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                            習慣リマインダー時刻
+                        </label>
+                        <select
+                            id="habit-reminder-hour"
+                            value={reminderHour}
+                            onChange={(e) => setReminderHour(Number(e.target.value))}
+                            className="px-2 py-1 rounded text-xs outline-none"
+                            style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                        >
+                            {Array.from({ length: 24 }, (_, h) => (
+                                <option key={h} value={h}>{h}時</option>
+                            ))}
+                        </select>
+                    </div>
+                    <p className="text-[10px] mt-2" style={{ color: 'var(--color-text-muted)' }}>
                         ※ アプリを開いている間に通知します
-                    </li>
-                </ul>
+                    </p>
+                </>
             )}
         </section>
     );

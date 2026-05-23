@@ -95,11 +95,13 @@ export async function runNotificationChecks(): Promise<void> {
         }
     }
 
-    // ── 習慣リマインダー（JST 20:00以降、未完了の習慣がある、本日未通知）──
+    // ── 習慣リマインダー（指定時刻以降、未完了の習慣がある、本日未通知）──
     const today = getTodayJST();
+    // 旧データ（habitReminderHour 未設定）は既定の20時として扱う
+    const reminderHour = useNotificationStore.getState().habitReminderHour ?? NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST;
     if (
         useNotificationStore.getState().lastHabitReminderDate !== today &&
-        getJSTHour() >= NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST
+        getJSTHour() >= reminderHour
     ) {
         const habitStore = useHabitStore.getState();
         if (
