@@ -1,12 +1,21 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter } from 'lucide-react';
+import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown } from 'lucide-react';
 import { useHabitStore } from '../stores/useHabitStore';
+import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortStore';
 import { getTodayJST } from '../utils/dateUtils';
 import { HABIT_CATEGORIES, getCategoryById, DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import type { Habit } from '../types';
 
+const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
+    { value: 'createdAt', label: '作成順' },
+    { value: 'name', label: '名前順' },
+    { value: 'streak', label: 'ストリーク順' },
+    { value: 'completionRate', label: '達成率順' },
+];
+
 export function HabitsPage() {
     const { habits, dailyRecords, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak, getHabitCompletionRate } = useHabitStore();
+    const { sortMode, setSortMode } = useHabitSortStore();
     const [showForm, setShowForm] = useState(false);
     const [name, setName] = useState('');
     const [selectedCategoryId, setSelectedCategoryId] = useState(DEFAULT_CATEGORY_ID);
@@ -20,7 +29,7 @@ export function HabitsPage() {
     const allComplete = areAllHabitsComplete(today);
     const getRecordForHabit = (habitId: string) => dailyRecords.find((r) => r.habitId === habitId && r.date === today);
 
-    // カテゴリ別に習慣をグルーピング
+    // カテゴリ別に習慣をグルーピング（カテゴリ内は選択した並び順でソート）
     const groupedHabits = useMemo(() => {
         const groups: { categoryId: string; habits: Habit[] }[] = [];
         const categoryOrder = HABIT_CATEGORIES.map((c) => c.id);
@@ -30,16 +39,30 @@ export function HabitsPage() {
             ? habits.filter((h) => (h.categoryId || DEFAULT_CATEGORY_ID) === filterCategoryId)
             : habits;
 
+        const sortHabits = (a: Habit, b: Habit): number => {
+            if (sortMode === 'name') return a.name.localeCompare(b.name);
+            if (sortMode === 'streak') return getHabitStreak(b.id) - getHabitStreak(a.id);
+            if (sortMode === 'completionRate') {
+                // null（対象日なし）は最後に
+                const rateA = getHabitCompletionRate(a.id) ?? -1;
+                const rateB = getHabitCompletionRate(b.id) ?? -1;
+                return rateB - rateA;
+            }
+            // createdAt: 古い順（既定）
+            return a.createdAt.localeCompare(b.createdAt);
+        };
+
         for (const catId of categoryOrder) {
-            const habitsInCategory = filteredHabits.filter(
-                (h) => (h.categoryId || DEFAULT_CATEGORY_ID) === catId
-            );
+            const habitsInCategory = filteredHabits
+                .filter((h) => (h.categoryId || DEFAULT_CATEGORY_ID) === catId)
+                .sort(sortHabits);
             if (habitsInCategory.length > 0) {
                 groups.push({ categoryId: catId, habits: habitsInCategory });
             }
         }
         return groups;
-    }, [habits, filterCategoryId]);
+        // dailyRecords も並び順（ストリーク/達成率）に影響するため依存に含める
+    }, [habits, filterCategoryId, sortMode, dailyRecords, getHabitStreak, getHabitCompletionRate]);
 
     // 使用中のカテゴリID一覧（フィルタータブ用）
     const usedCategoryIds = useMemo(() => {
@@ -147,6 +170,24 @@ export function HabitsPage() {
 
                     <div className="flex gap-2"><button type="submit" className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>追加</button><button type="button" onClick={() => setShowForm(false)} className="px-4 py-2.5 rounded-lg text-sm transition-colors hover:opacity-70" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button></div>
                 </form>
+            )}
+
+            {/* 並び替え */}
+            {habits.length > 0 && (
+                <div className="flex items-center gap-2 mb-3">
+                    <ArrowUpDown size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+                    <select
+                        value={sortMode}
+                        onChange={(e) => setSortMode(e.target.value as HabitSortMode)}
+                        aria-label="習慣の並び替え"
+                        className="px-3 py-1.5 rounded-lg text-xs outline-none"
+                        style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-default)' }}
+                    >
+                        {HABIT_SORT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </select>
+                </div>
             )}
 
             {/* 習慣一覧（カテゴリ別グルーピング） */}
