@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { DataBackupSettings } from '../components/ui/DataBackupSettings';
 import { ThemeSettings } from '../components/ui/ThemeSettings';
 import { NotificationSettings } from '../components/ui/NotificationSettings';
+import { UsageStatsSettings } from '../components/ui/UsageStatsSettings';
 
 export function SettingsPage() {
     const navigate = useNavigate();
@@ -27,6 +28,7 @@ export function SettingsPage() {
             <div className="flex flex-col gap-4">
                 <ThemeSettings />
                 <NotificationSettings />
+                <UsageStatsSettings />
                 <DataBackupSettings />
             </div>
         </div>
