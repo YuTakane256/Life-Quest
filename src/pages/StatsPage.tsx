@@ -1,5 +1,31 @@
 import { useState, useMemo } from 'react';
 import { useStatsStore } from '../stores/useStatsStore';
+import { shiftDate } from '../utils/dateUtils';
+
+/** 日付セットから最長連続日数とその開始/終了日を返す */
+function computeLongestConsecutive(dateSet: Set<string>): { count: number; start: string; end: string } {
+    const dates = [...dateSet].sort();
+    if (dates.length === 0) return { count: 0, start: '', end: '' };
+    let maxLen = 1;
+    let maxStart = dates[0];
+    let maxEnd = dates[0];
+    let curLen = 1;
+    let curStart = dates[0];
+    for (let i = 1; i < dates.length; i++) {
+        if (shiftDate(dates[i - 1], 1) === dates[i]) {
+            curLen++;
+        } else {
+            curLen = 1;
+            curStart = dates[i];
+        }
+        if (curLen > maxLen) {
+            maxLen = curLen;
+            maxStart = curStart;
+            maxEnd = dates[i];
+        }
+    }
+    return { count: maxLen, start: maxStart, end: maxEnd };
+}
 
 // ─── ヒートマップ色定義 ─────────────────────────────────────────
 const TASK_COLORS = [
@@ -105,6 +131,37 @@ export function StatsPage() {
         return { perDay, total, max };
     }, [taskXpLog]);
 
+    // 自己ベスト記録（全期間集計）
+    const bestRecords = useMemo(() => {
+        // 1日の最高XP
+        let bestXp = 0;
+        let bestXpDate = '';
+        for (const [date, xp] of Object.entries(taskXpLog)) {
+            if (xp > bestXp) {
+                bestXp = xp;
+                bestXpDate = date;
+            }
+        }
+
+        // 最長アクティブ連続日数（XP獲得した連続日）
+        const activeDateSet = new Set(
+            Object.entries(taskXpLog)
+                .filter(([, xp]) => xp > 0)
+                .map(([date]) => date)
+        );
+        const longestActive = computeLongestConsecutive(activeDateSet);
+
+        // 最長全習慣達成連続日数
+        const perfectDateSet = new Set(
+            Object.entries(habitLog)
+                .filter(([, log]) => log.allComplete)
+                .map(([date]) => date)
+        );
+        const longestPerfect = computeLongestConsecutive(perfectDateSet);
+
+        return { bestXp, bestXpDate, longestActive, longestPerfect };
+    }, [taskXpLog, habitLog]);
+
     // 集計値
     const stats = useMemo(() => {
         if (mode === 'tasks') {
@@ -194,6 +251,33 @@ export function StatsPage() {
                             </div>
                         );
                     })}
+                </div>
+            </div>
+
+            {/* 自己ベスト記録 */}
+            <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                <h2 className="text-sm font-semibold mb-3 flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
+                    <span>🏆</span>自己ベスト記録
+                </h2>
+                <div className="flex flex-col gap-2">
+                    <BestRecordRow
+                        icon="⚡"
+                        label="1日の最高XP"
+                        value={bestRecords.bestXp > 0 ? `${bestRecords.bestXp.toLocaleString()} XP` : '—'}
+                        detail={bestRecords.bestXpDate}
+                    />
+                    <BestRecordRow
+                        icon="🔥"
+                        label="最長アクティブ連続"
+                        value={bestRecords.longestActive.count > 0 ? `${bestRecords.longestActive.count}日` : '—'}
+                        detail={formatStreakRange(bestRecords.longestActive)}
+                    />
+                    <BestRecordRow
+                        icon="🌟"
+                        label="最長 全習慣達成連続"
+                        value={bestRecords.longestPerfect.count > 0 ? `${bestRecords.longestPerfect.count}日` : '—'}
+                        detail={formatStreakRange(bestRecords.longestPerfect)}
+                    />
                 </div>
             </div>
 
@@ -346,4 +430,25 @@ function SummaryCard({ label, value, icon }: { label: string; value: number; ico
             <div className="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{value.toLocaleString()}</div>
         </div>
     );
+}
+
+function BestRecordRow({ icon, label, value, detail }: { icon: string; label: string; value: string; detail: string }) {
+    return (
+        <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
+            <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base flex-shrink-0">{icon}</span>
+                <span className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
+            </div>
+            <div className="flex flex-col items-end flex-shrink-0">
+                <span className="text-sm font-bold" style={{ color: 'var(--color-accent-gold)' }}>{value}</span>
+                {detail && <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{detail}</span>}
+            </div>
+        </div>
+    );
+}
+
+function formatStreakRange(record: { count: number; start: string; end: string }): string {
+    if (record.count === 0) return '';
+    if (record.count === 1) return record.start;
+    return `${record.start} 〜 ${record.end}`;
 }
