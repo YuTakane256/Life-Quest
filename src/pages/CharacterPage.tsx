@@ -1,7 +1,7 @@
 import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stores/useGameStore';
 import { SELL_XP_BY_RARITY, RARITY_ORDER, SYNTHESIS_CONFIG, GACHA_CONFIG } from '../config/gameConfig';
 import type { Equipment, Rarity, EquipmentSlot } from '../types';
-import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import heroImg from '../assets/images/hero.png';
@@ -99,6 +99,8 @@ export function CharacterPage() {
     const nextLevelXp = calculateNextLevelXp(character.level);
     const equippedItems = equipment.filter((e) => e.equipped);
     const unopenedChests = chestQueue.filter((c) => !c.opened);
+    // 開封済みの宝箱を新しい順に並べた獲得履歴（chestQueue は古い順に追加されている）
+    const openedChests = [...chestQueue].filter((c) => c.opened).reverse();
     
     const upcomingMilestones = getUpcomingMilestones(gachaCount, 3);
 
@@ -221,6 +223,38 @@ export function CharacterPage() {
             </div>
 
             <InventorySection visibleLimit={5} showViewAll />
+
+            {/* 獲得履歴 */}
+            {openedChests.length > 0 && (
+                <div className="mb-4 mt-4">
+                    <h2 className="text-base font-semibold mb-2 flex items-center gap-1" style={{ color: 'var(--color-text-primary)' }}>
+                        <History size={18} />獲得履歴 ({openedChests.length})
+                    </h2>
+                    <div className="rounded-xl" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', maxHeight: '320px', overflowY: 'auto' }}>
+                        {openedChests.map((chest, idx) => (
+                            <div
+                                key={chest.id}
+                                className="flex items-center gap-3 px-3 py-2.5"
+                                style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--color-border-default)' }}
+                            >
+                                <img src={CHEST_IMAGES[chest.chestType] || chestWoodImg} alt={chest.label} className="w-8 h-8 object-contain flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{chest.label}</div>
+                                    {chest.equipment ? (
+                                        <div className="text-sm font-medium truncate" style={{ color: RARITY_COLORS[chest.equipment.rarity] }}>
+                                            {chest.equipment.name}
+                                        </div>
+                                    ) : chest.isStarterCharacter ? (
+                                        <div className="text-sm font-medium" style={{ color: 'var(--color-accent-primary)' }}>キャラクター獲得</div>
+                                    ) : (
+                                        <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>—</div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* プロフィール編集モーダル */}
             {isEditingProfile && (
