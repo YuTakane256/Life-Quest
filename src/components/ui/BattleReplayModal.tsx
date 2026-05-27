@@ -3,6 +3,7 @@ import { X, Pause, Play, FastForward, Trophy, Skull } from 'lucide-react';
 import type { BattleHistoryEntry } from '../../types';
 import { BATTLE_CONFIG } from '../../config/gameConfig';
 import { HpBar } from './HpBar';
+import { BattleLogList } from './BattleLogList';
 
 interface Props {
     entry: BattleHistoryEntry | null;
@@ -130,11 +131,7 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                             まもなく開始…
                         </div>
                     )}
-                    {visibleLogs.map((log, i) => (
-                        <div key={i} className="text-sm py-1 animate-fade-in" style={{ color: 'var(--color-text-secondary)' }}>
-                            <span style={{ color: 'var(--color-text-muted)' }}>[{log.turn}] </span>{log.message}
-                        </div>
-                    ))}
+                    <BattleLogList logs={visibleLogs} />
                     {isFinished && (
                         <div
                             className="mt-3 px-3 py-2 rounded-lg text-center text-sm font-bold animate-fade-in"
