@@ -5,6 +5,7 @@ import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortSto
 import { getTodayJST } from '../utils/dateUtils';
 import { HABIT_CATEGORIES, getCategoryById, DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import type { Habit } from '../types';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
     { value: 'createdAt', label: '作成順' },
@@ -303,15 +304,15 @@ export function HabitsPage() {
             )}
 
             {/* お休み確認モーダル */}
-            {showRestConfirm && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4" onClick={(e) => { if (e.target === e.currentTarget) setShowRestConfirm(false); }}>
-                    <div className="w-full max-w-sm rounded-2xl p-5 animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                        <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>🩹 お休みにしますか？</h3>
-                        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>本当に今日はお休みにしますか？<br />未達成デバフは免除されます。</p>
-                        <div className="flex gap-2"><button onClick={handleRestDay} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-accent-sky)', color: 'white' }}>お休みにする</button><button onClick={() => setShowRestConfirm(false)} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button></div>
-                    </div>
-                </div>
-            )}
+            <ConfirmDialog
+                open={showRestConfirm}
+                title="🩹 お休みにしますか？"
+                message={<>本当に今日はお休みにしますか？<br />未達成デバフは免除されます。</>}
+                confirmLabel="お休みにする"
+                confirmColor="var(--color-accent-sky)"
+                onConfirm={handleRestDay}
+                onClose={() => setShowRestConfirm(false)}
+            />
         </div>
     );
 }
