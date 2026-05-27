@@ -29,8 +29,18 @@ export function HabitsPage() {
     const allComplete = areAllHabitsComplete(today);
     const getRecordForHabit = (habitId: string) => dailyRecords.find((r) => r.habitId === habitId && r.date === today);
 
-    // カテゴリ別に習慣をグルーピング（カテゴリ内は選択した並び順でソート）
-    const groupedHabits = useMemo(() => {
+    // カテゴリ別に習慣をグルーピング（カテゴリ内は選択した並び順でソート）。
+    // streak / rate は習慣ごとに 30 日分の走査が走るので、ソートと描画で再利用できるよう
+    // 1 度だけ計算してマップにキャッシュする。
+    const { groups: groupedHabits, statsMap } = useMemo(() => {
+        const statsMap = new Map<string, { streak: number; rate: number | null }>();
+        habits.forEach((h) => {
+            statsMap.set(h.id, {
+                streak: getHabitStreak(h.id),
+                rate: getHabitCompletionRate(h.id),
+            });
+        });
+
         const groups: { categoryId: string; habits: Habit[] }[] = [];
         const categoryOrder = HABIT_CATEGORIES.map((c) => c.id);
 
@@ -41,11 +51,13 @@ export function HabitsPage() {
 
         const sortHabits = (a: Habit, b: Habit): number => {
             if (sortMode === 'name') return a.name.localeCompare(b.name);
-            if (sortMode === 'streak') return getHabitStreak(b.id) - getHabitStreak(a.id);
+            if (sortMode === 'streak') {
+                return (statsMap.get(b.id)?.streak ?? 0) - (statsMap.get(a.id)?.streak ?? 0);
+            }
             if (sortMode === 'completionRate') {
                 // null（対象日なし）は最後に
-                const rateA = getHabitCompletionRate(a.id) ?? -1;
-                const rateB = getHabitCompletionRate(b.id) ?? -1;
+                const rateA = statsMap.get(a.id)?.rate ?? -1;
+                const rateB = statsMap.get(b.id)?.rate ?? -1;
                 return rateB - rateA;
             }
             // createdAt: 古い順（既定）
@@ -60,7 +72,7 @@ export function HabitsPage() {
                 groups.push({ categoryId: catId, habits: habitsInCategory });
             }
         }
-        return groups;
+        return { groups, statsMap };
         // dailyRecords も並び順（ストリーク/達成率）に影響するため依存に含める
     }, [habits, filterCategoryId, sortMode, dailyRecords, getHabitStreak, getHabitCompletionRate]);
 
@@ -232,8 +244,9 @@ export function HabitsPage() {
                                 {categoryHabits.map((habit) => {
                                     const record = getRecordForHabit(habit.id);
                                     const isCompleted = record?.completed ?? false;
-                                    const streak = getHabitStreak(habit.id);
-                                    const completionRate = getHabitCompletionRate(habit.id);
+                                    const stats = statsMap.get(habit.id);
+                                    const streak = stats?.streak ?? 0;
+                                    const completionRate = stats?.rate ?? null;
 
                                     return (
                                         <div
