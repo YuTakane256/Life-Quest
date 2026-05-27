@@ -29,7 +29,7 @@ import { generateId } from '../utils/dateUtils';
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
 
-function calculateLevel(totalXp: number): number {
+export function calculateLevel(totalXp: number): number {
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
     if (totalXp >= table[maxTableLevel]) {
