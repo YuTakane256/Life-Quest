@@ -78,6 +78,29 @@ export function formatRelativeDate(dateStr: string): string {
 }
 
 /**
+ * ISO 8601 タイムスタンプを「たった今 / N分前 / N時間前 / N日前 / YYYY/MM/DD」の相対表示にする。
+ * 未来時刻が渡されたら「たった今」扱い。
+ */
+export function formatRelativeTime(iso: string): string {
+    const ts = new Date(iso).getTime();
+    if (Number.isNaN(ts)) return '';
+    const now = Date.now();
+    const diffSec = Math.max(0, Math.floor((now - ts) / 1000));
+    if (diffSec < 60) return 'たった今';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}分前`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour}時間前`;
+    const diffDay = Math.floor(diffHour / 24);
+    if (diffDay < 7) return `${diffDay}日前`;
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}/${m}/${day}`;
+}
+
+/**
  * YYYY-MM-DD の日付を指定日数だけずらして返す (YYYY-MM-DD)
  * 負の値で過去方向へずらせる
  */
