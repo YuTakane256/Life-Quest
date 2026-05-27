@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
@@ -143,10 +143,18 @@ export function TasksPage() {
         }
     };
 
-    const isPending = (taskId: string) => pendingCompletions.some((p) => p.taskId === taskId);
+    // pendingCompletions を Set 化して O(1) 検索にする
+    const pendingIds = useMemo(
+        () => new Set(pendingCompletions.map((p) => p.taskId)),
+        [pendingCompletions]
+    );
+    const isPending = useCallback((taskId: string) => pendingIds.has(taskId), [pendingIds]);
 
     /** 一括削除の対象となる完了タスク数（保留中は除外） */
-    const deletableCompletedCount = tasks.filter((t) => t.completed && !isPending(t.id)).length;
+    const deletableCompletedCount = useMemo(
+        () => tasks.reduce((count, t) => count + (t.completed && !pendingIds.has(t.id) ? 1 : 0), 0),
+        [tasks, pendingIds]
+    );
 
     const handleDeleteCompleted = () => {
         deleteCompletedTasks();
