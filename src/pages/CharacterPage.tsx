@@ -3,7 +3,7 @@ import { SELL_XP_BY_RARITY, RARITY_ORDER, SYNTHESIS_CONFIG, GACHA_CONFIG } from 
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS, RARITY_LABELS } from '../config/equipmentAssets';
 import type { Equipment, Rarity, EquipmentSlot } from '../types';
 import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
@@ -38,20 +38,30 @@ function getUpcomingMilestones(currentCount: number, limit: number = 3) {
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
 export function CharacterPage() {
-    const { character, debuff, equipment, gachaCount, chestQueue, unequipItem, openChest, getEffectiveStats, updateCharacter } = useGameStore();
+    // 個別 selector で購読し、無関係な store 更新（バトル進行など）での再レンダーを防ぐ
+    const character = useGameStore((s) => s.character);
+    const debuff = useGameStore((s) => s.debuff);
+    const equipment = useGameStore((s) => s.equipment);
+    const gachaCount = useGameStore((s) => s.gachaCount);
+    const chestQueue = useGameStore((s) => s.chestQueue);
+    const unequipItem = useGameStore((s) => s.unequipItem);
+    const openChest = useGameStore((s) => s.openChest);
+    const getEffectiveStats = useGameStore((s) => s.getEffectiveStats);
+    const updateCharacter = useGameStore((s) => s.updateCharacter);
+
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [editName, setEditName] = useState(character.name);
     const [editAvatar, setEditAvatar] = useState(character.avatar);
 
-    const effectiveStats = getEffectiveStats();
+    const effectiveStats = useMemo(() => getEffectiveStats(), [getEffectiveStats, character, equipment, debuff]);
     const xpProgress = calculateXpProgress(character.totalXp, character.level);
     const nextLevelXp = calculateNextLevelXp(character.level);
-    const equippedItems = equipment.filter((e) => e.equipped);
-    const unopenedChests = chestQueue.filter((c) => !c.opened);
+    const equippedItems = useMemo(() => equipment.filter((e) => e.equipped), [equipment]);
+    const unopenedChests = useMemo(() => chestQueue.filter((c) => !c.opened), [chestQueue]);
     // 開封済みの宝箱を新しい順に並べた獲得履歴（chestQueue は古い順に追加されている）
-    const openedChests = [...chestQueue].filter((c) => c.opened).reverse();
-    
-    const upcomingMilestones = getUpcomingMilestones(gachaCount, 3);
+    const openedChests = useMemo(() => [...chestQueue].filter((c) => c.opened).reverse(), [chestQueue]);
+
+    const upcomingMilestones = useMemo(() => getUpcomingMilestones(gachaCount, 3), [gachaCount]);
 
     return (
         <div className="max-w-lg mx-auto px-5 pt-6 pb-28">
@@ -306,7 +316,10 @@ function StatBadge({ label, value, icon }: { label: string; value: number; icon:
 }
 
 function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?: number; showViewAll?: boolean }) {
-    const { equipment, equipItem, sellItem, synthesizeItems } = useGameStore();
+    const equipment = useGameStore((s) => s.equipment);
+    const equipItem = useGameStore((s) => s.equipItem);
+    const sellItem = useGameStore((s) => s.sellItem);
+    const synthesizeItems = useGameStore((s) => s.synthesizeItems);
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
     const [selectedForSynth, setSelectedForSynth] = useState<string[]>([]);
     const [sellFeedback, setSellFeedback] = useState<{ id: string; xp: number } | null>(null);
