@@ -13,6 +13,14 @@ const DUE_FILTER_OPTIONS: { value: DueFilter; label: string }[] = [
     { value: 'overdue', label: '期限切れ' },
 ];
 
+type PriorityFilter = 'all' | Priority;
+const PRIORITY_FILTER_OPTIONS: { value: PriorityFilter; label: string }[] = [
+    { value: 'all', label: 'すべて' },
+    { value: 'high', label: '高' },
+    { value: 'medium', label: '中' },
+    { value: 'low', label: '低' },
+];
+
 const PRIORITY_LABELS: Record<Priority, string> = { low: '低', medium: '中', high: '高' };
 const PRIORITY_COLORS: Record<Priority, string> = { low: 'var(--color-priority-low)', medium: 'var(--color-priority-medium)', high: 'var(--color-priority-high)' };
 const RECURRENCE_LABELS: Record<Recurrence, string> = { none: 'なし', daily: '毎日', weekly: '毎週', monthly: '毎月' };
@@ -35,6 +43,7 @@ export function TasksPage() {
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [dueFilter, setDueFilter] = useState<DueFilter>('all');
+    const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
     const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
     const [subtaskInputs, setSubtaskInputs] = useState<Record<string, string>>({});
     const [formSubtasks, setFormSubtasks] = useState<Subtask[]>([]);
@@ -47,7 +56,7 @@ export function TasksPage() {
         return Array.from(tagSet).sort();
     }, [tasks]);
 
-    // フィルタリング（タグ絞り込み + 名前検索 + 期限フィルタ）
+    // フィルタリング（タグ絞り込み + 名前検索 + 期限フィルタ + 優先度フィルタ）
     const filteredTasks = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
         const today = getTodayJST();
@@ -62,9 +71,10 @@ export function TasksPage() {
             } else if (dueFilter === 'dueSoon') {
                 matchesDue = !t.completed && t.dueDate !== null && t.dueDate <= today;
             }
-            return matchesTags && matchesSearch && matchesDue;
+            const matchesPriority = priorityFilter === 'all' || t.priority === priorityFilter;
+            return matchesTags && matchesSearch && matchesDue && matchesPriority;
         });
-    }, [tasks, selectedTags, searchQuery, dueFilter]);
+    }, [tasks, selectedTags, searchQuery, dueFilter, priorityFilter]);
 
     const sortedTasks = useMemo(() => {
         const compareByMode = (a: Task, b: Task): number => {
@@ -275,6 +285,30 @@ export function TasksPage() {
                 })}
             </div>
 
+            {/* 優先度クイックフィルタ */}
+            <div className="flex items-center gap-2 mb-3">
+                <Flag size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+                {PRIORITY_FILTER_OPTIONS.map((option) => {
+                    const isActive = priorityFilter === option.value;
+                    const activeColor = option.value === 'all' ? 'var(--color-accent-primary)' : PRIORITY_COLORS[option.value];
+                    return (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setPriorityFilter(option.value)}
+                            className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-200"
+                            style={{
+                                backgroundColor: isActive ? activeColor : 'var(--color-bg-secondary)',
+                                color: isActive ? 'white' : 'var(--color-text-secondary)',
+                                border: `1px solid ${isActive ? activeColor : 'var(--color-border-default)'}`,
+                            }}
+                        >
+                            {option.label}
+                        </button>
+                    );
+                })}
+            </div>
+
             {/* 並び替え */}
             <div className="flex items-center gap-2 mb-4">
                 <ArrowUpDown size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
@@ -458,7 +492,7 @@ export function TasksPage() {
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" /></svg>
                         </div></div>
                         <p className="mt-4 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                            {selectedTags.length > 0 || searchQuery.trim() || dueFilter !== 'all' ? '該当するタスクがありません' : 'タスクがありません。\n+ボタンから追加しましょう！'}
+                            {selectedTags.length > 0 || searchQuery.trim() || dueFilter !== 'all' || priorityFilter !== 'all' ? '該当するタスクがありません' : 'タスクがありません。\n+ボタンから追加しましょう！'}
                         </p>
                     </div>
                 )}
