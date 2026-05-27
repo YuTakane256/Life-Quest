@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, Pause, Play, FastForward, Trophy, Skull } from 'lucide-react';
 import type { BattleHistoryEntry } from '../../types';
 import { BATTLE_CONFIG } from '../../config/gameConfig';
+import { HpBar } from './HpBar';
 
 interface Props {
     entry: BattleHistoryEntry | null;
@@ -104,36 +105,12 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                     {/* プレイヤー */}
                     <div className="rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
                         <div className="text-[10px] mb-1" style={{ color: 'var(--color-text-muted)' }}>自分</div>
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 h-2.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-                                <div
-                                    className="h-full rounded-full transition-all duration-300"
-                                    style={{
-                                        width: `${maxPlayerHp > 0 ? (playerHp / maxPlayerHp) * 100 : 0}%`,
-                                        backgroundColor: maxPlayerHp > 0 && playerHp / maxPlayerHp > 0.3
-                                            ? 'var(--color-accent-emerald)'
-                                            : 'var(--color-text-danger)',
-                                    }}
-                                />
-                            </div>
-                            <span className="text-xs font-bold min-w-[36px] text-right" style={{ color: 'var(--color-text-primary)' }}>{playerHp}</span>
-                        </div>
+                        <HpBar current={playerHp} max={maxPlayerHp} variant="player" height="sm" trackColor="var(--color-bg-primary)" />
                     </div>
                     {/* 敵 */}
                     <div className="rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
                         <div className="text-[10px] mb-1 truncate" style={{ color: 'var(--color-text-muted)' }}>{enemyName}</div>
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 h-2.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-                                <div
-                                    className="h-full rounded-full transition-all duration-300"
-                                    style={{
-                                        width: `${enemyMaxHp > 0 ? (enemyHp / enemyMaxHp) * 100 : 0}%`,
-                                        backgroundColor: 'var(--color-text-danger)',
-                                    }}
-                                />
-                            </div>
-                            <span className="text-xs font-bold min-w-[36px] text-right" style={{ color: 'var(--color-text-primary)' }}>{enemyHp}</span>
-                        </div>
+                        <HpBar current={enemyHp} max={enemyMaxHp} variant="enemy" height="sm" trackColor="var(--color-bg-primary)" />
                     </div>
                 </div>
 
