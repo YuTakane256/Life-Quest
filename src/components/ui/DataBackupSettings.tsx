@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { AlertTriangle, Download, Upload } from 'lucide-react';
 
 const BACKUP_VERSION = 1;
+const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 interface BackupData {
     version: number;
@@ -11,6 +12,27 @@ interface BackupData {
     game: unknown;
     stats: unknown;
     theme?: unknown;
+}
+
+/** Plain object（配列・null は除く）かどうか */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** バックアップ JSON が想定する構造になっているか検証する型ガード */
+function isValidBackup(data: unknown): data is BackupData {
+    if (!isPlainObject(data)) return false;
+    if (data.version !== BACKUP_VERSION) return false;
+    if (typeof data.exportedAt !== 'string') return false;
+    // exportedAt は ISO 8601 形式（Date でパースできること）
+    if (Number.isNaN(new Date(data.exportedAt).getTime())) return false;
+    if (!isPlainObject(data.tasks)) return false;
+    if (!isPlainObject(data.habits)) return false;
+    if (!isPlainObject(data.game)) return false;
+    if (!isPlainObject(data.stats)) return false;
+    // theme は省略可だが、あればオブジェクト
+    if (data.theme !== undefined && !isPlainObject(data.theme)) return false;
+    return true;
 }
 
 function exportAllData(): BackupData {
@@ -27,9 +49,6 @@ function exportAllData(): BackupData {
 
 function importAllData(data: BackupData): boolean {
     try {
-        if (!data.version || !data.tasks || !data.game) {
-            return false;
-        }
         localStorage.setItem('quest-board-tasks', JSON.stringify(data.tasks));
         localStorage.setItem('quest-board-habits', JSON.stringify(data.habits));
         localStorage.setItem('quest-board-game', JSON.stringify(data.game));
@@ -61,18 +80,31 @@ export function DataBackupSettings() {
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        if (fileInputRef.current) fileInputRef.current.value = '';
         if (!file) return;
+        // ファイルサイズチェック (5MB 上限)。ここで弾けば巨大ファイルの読み込みを避けられる。
+        if (file.size > MAX_IMPORT_FILE_SIZE) {
+            setImportStatus('error');
+            setTimeout(() => setImportStatus('idle'), 3000);
+            return;
+        }
         setPendingFile(file);
         setShowImportConfirm(true);
-        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handleImportConfirm = async () => {
         if (!pendingFile) return;
         try {
             const text = await pendingFile.text();
-            const data = JSON.parse(text) as BackupData;
-            const success = importAllData(data);
+            const parsed: unknown = JSON.parse(text);
+            if (!isValidBackup(parsed)) {
+                setImportStatus('error');
+                setShowImportConfirm(false);
+                setPendingFile(null);
+                setTimeout(() => setImportStatus('idle'), 3000);
+                return;
+            }
+            const success = importAllData(parsed);
             if (success) {
                 setImportStatus('success');
                 setShowImportConfirm(false);
