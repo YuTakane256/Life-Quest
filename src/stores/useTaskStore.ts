@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { generateId, getTodayJST, addRecurrenceInterval } from '../utils/dateUtils';
+import { INPUT_LIMITS } from '../config/inputLimits';
 
 /** pending completions はLocalStorageに保存しない（タイマーは復元不可能） */
 interface TaskStorePersisted {
@@ -66,11 +67,11 @@ export const useTaskStore = create<TaskStoreState>()(
             addTask: (name: string, dueDate: string | null, priority: Priority, recurrence: Recurrence = 'none', tags: string[] = [], subtasks: Subtask[] = []) => {
                 const newTask: Task = {
                     id: generateId(),
-                    name,
+                    name: name.slice(0, INPUT_LIMITS.TASK_NAME),
                     dueDate,
                     priority,
-                    tags,
-                    subtasks,
+                    tags: tags.map((t) => t.slice(0, INPUT_LIMITS.TAG)),
+                    subtasks: subtasks.map((s) => ({ ...s, name: s.name.slice(0, INPUT_LIMITS.SUBTASK_NAME) })),
                     recurrence,
                     completed: false,
                     completedAt: null,
@@ -80,18 +81,24 @@ export const useTaskStore = create<TaskStoreState>()(
             },
 
             updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>) => {
+                // 文字長フォールバック
+                const sanitized: typeof updates = { ...updates };
+                if (sanitized.name !== undefined) sanitized.name = sanitized.name.slice(0, INPUT_LIMITS.TASK_NAME);
+                if (sanitized.tags !== undefined) sanitized.tags = sanitized.tags.map((t) => t.slice(0, INPUT_LIMITS.TAG));
+                if (sanitized.subtasks !== undefined) sanitized.subtasks = sanitized.subtasks.map((s) => ({ ...s, name: s.name.slice(0, INPUT_LIMITS.SUBTASK_NAME) }));
+
                 // サブタスクが更新対象に含まれない場合は単純マージ
-                if (updates.subtasks === undefined) {
+                if (sanitized.subtasks === undefined) {
                     set((state) => ({
                         tasks: state.tasks.map((t) =>
-                            t.id === id ? { ...t, ...updates } : t
+                            t.id === id ? { ...t, ...sanitized } : t
                         ),
                     }));
                     return;
                 }
 
                 // サブタスク更新時は親タスクの完了状態を再計算する
-                const nextSubtasks = updates.subtasks;
+                const nextSubtasks = sanitized.subtasks;
                 const now = new Date().toISOString();
                 const allComplete = nextSubtasks.length > 0 && nextSubtasks.every((s) => s.completed);
 
@@ -112,7 +119,7 @@ export const useTaskStore = create<TaskStoreState>()(
                             completed = allComplete;
                             completedAt = allComplete ? (t.completedAt || now) : null;
                         }
-                        return { ...t, ...updates, completed, completedAt };
+                        return { ...t, ...sanitized, completed, completedAt };
                     }),
                     pendingCompletions: nextSubtasks.length > 0
                         ? state.pendingCompletions.filter((p) => p.taskId !== id)
@@ -204,7 +211,7 @@ export const useTaskStore = create<TaskStoreState>()(
             },
 
             addSubtask: (taskId: string, name: string) => {
-                const trimmedName = name.trim();
+                const trimmedName = name.trim().slice(0, INPUT_LIMITS.SUBTASK_NAME);
                 if (!trimmedName) return;
 
                 set((state) => ({

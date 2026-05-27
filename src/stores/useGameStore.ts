@@ -26,6 +26,7 @@ import {
     type GachaMilestone,
 } from '../config/gameConfig';
 import { generateId } from '../utils/dateUtils';
+import { INPUT_LIMITS } from '../config/inputLimits';
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
 
@@ -169,9 +170,13 @@ export const useGameStore = create<GameStoreState>()(
 
             clearPendingChestReveal: () => set({ pendingChestReveal: null }),
 
-            updateCharacter: (updates) => set((state) => ({
-                character: { ...state.character, ...updates }
-            })),
+            updateCharacter: (updates) => set((state) => {
+                const sanitized = { ...updates };
+                if (typeof sanitized.name === 'string') {
+                    sanitized.name = sanitized.name.slice(0, INPUT_LIMITS.CHARACTER_NAME);
+                }
+                return { character: { ...state.character, ...sanitized } };
+            }),
 
             addXp: (baseXp: number) => {
                 const { debuff, character } = get();

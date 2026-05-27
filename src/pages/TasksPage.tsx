@@ -4,6 +4,7 @@ import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
 import { isOverdue, generateId, formatRelativeDate, getTodayJST } from '../utils/dateUtils';
+import { INPUT_LIMITS } from '../config/inputLimits';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
 
 type DueFilter = 'all' | 'dueSoon' | 'overdue';
@@ -374,6 +375,7 @@ export function TasksPage() {
             {showForm && (
                 <form onSubmit={handleSubmit} className="mb-6 p-4 rounded-xl animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
                     <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="タスク名を入力..." autoFocus
+                        maxLength={INPUT_LIMITS.TASK_NAME}
                         className="w-full px-3 py-2.5 rounded-lg text-sm outline-none mb-3"
                         style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} />
                     <div className="flex gap-3 mb-3">
@@ -428,6 +430,7 @@ export function TasksPage() {
                                 onChange={(e) => setTagInput(e.target.value)}
                                 onKeyDown={handleTagKeyDown}
                                 onBlur={handleAddTag}
+                                maxLength={INPUT_LIMITS.TAG}
                                 placeholder={tags.length === 0 ? "タグを入力 (Enter/スペースで追加)" : ""}
                                 className="flex-1 min-w-[80px] text-sm outline-none bg-transparent"
                                 style={{ color: 'var(--color-text-primary)' }}
@@ -463,6 +466,7 @@ export function TasksPage() {
                                 value={formSubtaskInput}
                                 onChange={(e) => setFormSubtaskInput(e.target.value)}
                                 onKeyDown={handleFormSubtaskKeyDown}
+                                maxLength={INPUT_LIMITS.SUBTASK_NAME}
                                 placeholder="サブタスクを入力 (Enterで追加)"
                                 className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
                                 style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
@@ -565,6 +569,7 @@ export function TasksPage() {
                                             type="text"
                                             value={subtaskInputs[task.id] || ''}
                                             onChange={(e) => setSubtaskInputs((prev) => ({ ...prev, [task.id]: e.target.value }))}
+                                            maxLength={INPUT_LIMITS.SUBTASK_NAME}
                                             placeholder="サブタスクを追加..."
                                             className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
                                             style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}

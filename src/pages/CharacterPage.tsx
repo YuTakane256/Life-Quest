@@ -1,6 +1,7 @@
 import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stores/useGameStore';
 import { SELL_XP_BY_RARITY, RARITY_ORDER, SYNTHESIS_CONFIG, GACHA_CONFIG } from '../config/gameConfig';
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS, RARITY_LABELS } from '../config/equipmentAssets';
+import { INPUT_LIMITS } from '../config/inputLimits';
 import type { Equipment, Rarity, EquipmentSlot } from '../types';
 import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History } from 'lucide-react';
 import { useState } from 'react';
@@ -225,7 +226,7 @@ export function CharacterPage() {
                                 className="w-full px-3 py-2.5 rounded-xl text-base outline-none"
                                 style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
                                 placeholder="名前を入力"
-                                maxLength={12}
+                                maxLength={INPUT_LIMITS.CHARACTER_NAME}
                             />
                         </div>
 

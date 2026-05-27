@@ -4,6 +4,7 @@ import type { Habit, HabitDailyRecord, RestDay, HabitStoreState } from '../types
 import { XP_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import { generateId, getTodayJST, shiftDate } from '../utils/dateUtils';
+import { INPUT_LIMITS } from '../config/inputLimits';
 
 export const useHabitStore = create<HabitStoreState>()(
     persist(
@@ -15,7 +16,7 @@ export const useHabitStore = create<HabitStoreState>()(
             addHabit: (name: string, categoryId?: string) => {
                 const newHabit: Habit = {
                     id: generateId(),
-                    name,
+                    name: name.slice(0, INPUT_LIMITS.HABIT_NAME),
                     categoryId: categoryId || DEFAULT_CATEGORY_ID,
                     createdAt: new Date().toISOString(),
                 };
@@ -81,6 +82,7 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             setHabitMemo: (habitId: string, date: string, memo: string) => {
+                const cappedMemo = memo.slice(0, INPUT_LIMITS.HABIT_MEMO);
                 const existingRecord = get().dailyRecords.find(
                     (r) => r.habitId === habitId && r.date === date
                 );
@@ -89,7 +91,7 @@ export const useHabitStore = create<HabitStoreState>()(
                     set((state) => ({
                         dailyRecords: state.dailyRecords.map((r) =>
                             r.habitId === habitId && r.date === date
-                                ? { ...r, memo }
+                                ? { ...r, memo: cappedMemo }
                                 : r
                         ),
                     }));
@@ -99,7 +101,7 @@ export const useHabitStore = create<HabitStoreState>()(
                         habitId,
                         date,
                         completed: false,
-                        memo,
+                        memo: cappedMemo,
                     };
                     set((state) => ({
                         dailyRecords: [...state.dailyRecords, newRecord],
