@@ -72,21 +72,21 @@ export interface GachaMilestone {
 export const GACHA_CONFIG = {
     /** マイルストーン定義（1サイクル内） */
     MILESTONES: [
-        { count: 5, chestType: 'blue' as ChestType, label: '青色の宝箱' },
-        { count: 10, chestType: 'wood' as ChestType, label: '木の宝箱' },
-        { count: 25, chestType: 'wood' as ChestType, label: '木の宝箱' },
-        { count: 50, chestType: 'silver' as ChestType, label: '銀の宝箱' },
-        { count: 100, chestType: 'gold' as ChestType, label: '金の宝箱' },
-    ] as readonly GachaMilestone[],
+        { count: 5, chestType: 'blue', label: '青色の宝箱' },
+        { count: 10, chestType: 'wood', label: '木の宝箱' },
+        { count: 25, chestType: 'wood', label: '木の宝箱' },
+        { count: 50, chestType: 'silver', label: '銀の宝箱' },
+        { count: 100, chestType: 'gold', label: '金の宝箱' },
+    ] satisfies readonly GachaMilestone[],
 
     /** 100個ごとにループするサイクル長 */
     CYCLE_LENGTH: 100,
 
     /** 特殊マイルストーン */
     SPECIAL_MILESTONES: {
-        500: { chestType: 'red_gold' as ChestType, label: '赤と金の宝箱' },
-        1000: { chestType: 'rainbow' as ChestType, label: '虹色の宝箱' },
-    } as const,
+        500: { chestType: 'red_gold', label: '赤と金の宝箱' },
+        1000: { chestType: 'rainbow', label: '虹色の宝箱' },
+    } satisfies Record<number, { chestType: ChestType; label: string }>,
 
     /** 宝箱タイプ別の排出確率テーブル (rarity => 確率) */
     DROP_RATES: {
@@ -151,7 +151,7 @@ export const LOGIN_BONUS_CONFIG = {
     SPECIAL_CHEST_INTERVAL: 7,
 
     /** 特別宝箱のタイプ */
-    SPECIAL_CHEST_TYPE: 'gold' as ChestType,
+    SPECIAL_CHEST_TYPE: 'gold' satisfies ChestType,
 
     /** 特別宝箱のラベル */
     SPECIAL_CHEST_LABEL: '7日連続ログイン記念の金の宝箱',
