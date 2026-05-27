@@ -196,6 +196,7 @@ export interface GameStoreState {
     openChest: (chestId: string) => void;
     equipItem: (equipmentId: string) => void;
     unequipItem: (equipmentId: string) => void;
+    autoEquipBest: () => boolean; // 各スロットで最強の装備を装着。変更があれば true。
     applyDebuff: () => void;
     clearExpiredDebuffs: () => void;
     getEffectiveStats: () => { attack: number; defense: number; maxHp: number };

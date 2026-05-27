@@ -38,7 +38,7 @@ function getUpcomingMilestones(currentCount: number, limit: number = 3) {
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
 export function CharacterPage() {
-    const { character, debuff, equipment, gachaCount, chestQueue, unequipItem, openChest, getEffectiveStats, updateCharacter } = useGameStore();
+    const { character, debuff, equipment, gachaCount, chestQueue, unequipItem, openChest, getEffectiveStats, updateCharacter, autoEquipBest } = useGameStore();
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [editName, setEditName] = useState(character.name);
     const [editAvatar, setEditAvatar] = useState(character.avatar);
@@ -143,7 +143,18 @@ export function CharacterPage() {
 
             {/* 装備中 */}
             <div className="mb-4">
-                <h2 className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>装備中</h2>
+                <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>装備中</h2>
+                    <button
+                        onClick={autoEquipBest}
+                        disabled={equipment.length === 0}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-40"
+                        style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-accent-gold)', border: '1px solid var(--color-border-default)' }}
+                        aria-label="最強装備を自動装着"
+                    >
+                        <Sparkles size={12} /> 最強装備
+                    </button>
+                </div>
                 <div className="grid grid-cols-3 gap-2.5">
                     {(['weapon', 'armor', 'accessory'] as EquipmentSlot[]).map((slot) => {
                         const item = equippedItems.find((e) => e.slot === slot);
