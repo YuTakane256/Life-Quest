@@ -26,6 +26,7 @@ import {
     type GachaMilestone,
 } from '../config/gameConfig';
 import { generateId } from '../utils/dateUtils';
+import { pickRandom } from '../utils/random';
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
 
@@ -82,8 +83,8 @@ function rollEquipment(chestType: ChestType): Equipment | null {
         }
     }
     const candidates = EQUIPMENT_POOL.filter((e) => e.rarity === selectedRarity);
-    if (candidates.length === 0) return null;
-    const template = candidates[Math.floor(Math.random() * candidates.length)];
+    const template = pickRandom(candidates);
+    if (!template) return null;
     return {
         id: generateId(),
         templateId: template.id,
@@ -128,7 +129,8 @@ function pickSynthesisSlot(items: Equipment[]): EquipmentSlot {
     }, { weapon: 0, armor: 0, accessory: 0 });
     const maxCount = Math.max(...Object.values(slotCounts));
     const tiedSlots = (Object.keys(slotCounts) as EquipmentSlot[]).filter((slot) => slotCounts[slot] === maxCount);
-    return tiedSlots[Math.floor(Math.random() * tiedSlots.length)];
+    // tiedSlots は maxCount でフィルタしているため必ず 1 要素以上含む（! で安全）
+    return pickRandom(tiedSlots)!;
 }
 
 const initialCharacter: CharacterStats = {
@@ -392,8 +394,8 @@ export const useGameStore = create<GameStoreState>()(
                 // 素材で一番多い装備種別を引き継ぐ。同数なら対象種別をランダムに決める。
                 const synthesisSlot = pickSynthesisSlot(items);
                 const candidates = EQUIPMENT_POOL.filter((e) => e.rarity === nextRarity && e.slot === synthesisSlot);
-                if (candidates.length === 0) return null;
-                const template = candidates[Math.floor(Math.random() * candidates.length)];
+                const template = pickRandom(candidates);
+                if (!template) return null;
                 const newItem: import('../types').Equipment = {
                     id: generateId(),
                     templateId: template.id,
