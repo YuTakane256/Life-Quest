@@ -11,6 +11,7 @@ import type {
     BattleLog,
     GameStoreState,
     LevelUpEvent,
+    ChestRevealEvent,
 } from '../types';
 import {
     XP_CONFIG,
@@ -162,8 +163,11 @@ export const useGameStore = create<GameStoreState>()(
             chestQueue: [],
             battle: { ...initialBattle },
             levelUpEvent: null,
+            pendingChestReveal: null,
 
             clearLevelUpEvent: () => set({ levelUpEvent: null }),
+
+            clearPendingChestReveal: () => set({ pendingChestReveal: null }),
 
             updateCharacter: (updates) => set((state) => ({
                 character: { ...state.character, ...updates }
@@ -232,12 +236,21 @@ export const useGameStore = create<GameStoreState>()(
                 const chest = chestQueue.find((c) => c.id === chestId);
                 if (!chest || chest.opened) return;
                 const equipment = rollEquipment(chest.chestType);
+                const reveal: ChestRevealEvent = {
+                    id: generateId(),
+                    chestId: chest.id,
+                    chestType: chest.chestType,
+                    label: chest.label,
+                    equipment,
+                    isStarterCharacter: chest.isStarterCharacter ?? false,
+                };
                 set((state) => ({
                     chestQueue: state.chestQueue.map((c) =>
                         c.id === chestId ? { ...c, opened: true, equipment } : c
                     ),
                     equipment: equipment ? [...state.equipment, equipment] : state.equipment,
                     battle: chest.isStarterCharacter ? { ...state.battle, battleUnlocked: true } : state.battle,
+                    pendingChestReveal: reveal,
                 }));
             },
 

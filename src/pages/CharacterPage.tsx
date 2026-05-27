@@ -1,66 +1,15 @@
 import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stores/useGameStore';
 import { SELL_XP_BY_RARITY, RARITY_ORDER, SYNTHESIS_CONFIG, GACHA_CONFIG } from '../config/gameConfig';
+import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS, RARITY_LABELS } from '../config/equipmentAssets';
 import type { Equipment, Rarity, EquipmentSlot } from '../types';
 import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
-import chestGoldImg from '../assets/images/chest_gold.png';
-import chestWoodImg from '../assets/images/chest_wood.png';
-import chestSilverImg from '../assets/images/chest_silver.png';
-import chestBlueImg from '../assets/images/chest_blue.png';
-import chestRedGoldImg from '../assets/images/chest_red_gold.png';
-import chestRainbowImg from '../assets/images/chest_rainbow.png';
 
-// 装備アイコン
-import itemWoodenSword from '../assets/images/item_wooden_sword.png';
-import itemIronSword from '../assets/images/item_iron_sword.png';
-import itemSteelBlade from '../assets/images/item_steel_blade.png';
-import itemMysticStaff from '../assets/images/item_mystic_staff.png';
-import itemExcalibur from '../assets/images/item_excalibur.png';
-import itemLeatherArmor from '../assets/images/item_leather_armor.png';
-import itemChainMail from '../assets/images/item_chain_mail.png';
-import itemPlateArmor from '../assets/images/item_plate_armor.png';
-import itemDragonArmor from '../assets/images/item_dragon_armor.png';
-import itemAegisShield from '../assets/images/item_aegis_shield.png';
-import itemWoodenRing from '../assets/images/item_wooden_ring.png';
-import itemSilverRing from '../assets/images/item_silver_ring.png';
-import itemGoldAmulet from '../assets/images/item_gold_amulet.png';
-import itemPhoenixRing from '../assets/images/item_phoenix_ring.png';
-import itemRingOfGod from '../assets/images/item_ring_of_god.png';
-
-const ITEM_IMAGES: Record<string, string> = {
-    wooden_sword: itemWoodenSword,
-    iron_sword: itemIronSword,
-    steel_blade: itemSteelBlade,
-    mystic_staff: itemMysticStaff,
-    excalibur: itemExcalibur,
-    leather_armor: itemLeatherArmor,
-    chain_mail: itemChainMail,
-    plate_armor: itemPlateArmor,
-    dragon_armor: itemDragonArmor,
-    aegis_shield: itemAegisShield,
-    wooden_ring: itemWoodenRing,
-    silver_ring: itemSilverRing,
-    gold_amulet: itemGoldAmulet,
-    phoenix_ring: itemPhoenixRing,
-    ring_of_god: itemRingOfGod,
-};
-
-const RARITY_COLORS: Record<Rarity, string> = { common: 'var(--color-rarity-common)', uncommon: 'var(--color-rarity-uncommon)', rare: 'var(--color-rarity-rare)', epic: 'var(--color-rarity-epic)', legendary: 'var(--color-rarity-legendary)' };
-const RARITY_LABELS: Record<Rarity, string> = { common: 'コモン', uncommon: 'アンコモン', rare: 'レア', epic: 'エピック', legendary: 'レジェンダリー' };
 const SLOT_LABELS: Record<EquipmentSlot, string> = { weapon: '武器', armor: '防具', accessory: 'アクセサリー' };
 const SLOT_ICONS: Record<EquipmentSlot, React.ReactNode> = { weapon: <Sword size={18} />, armor: <Shield size={18} />, accessory: <Gem size={18} /> };
-
-const CHEST_IMAGES: Record<string, string> = {
-    wood: chestWoodImg,
-    silver: chestSilverImg,
-    gold: chestGoldImg,
-    blue: chestBlueImg,
-    red_gold: chestRedGoldImg,
-    rainbow: chestRainbowImg,
-};
 
 function getUpcomingMilestones(currentCount: number, limit: number = 3) {
     const upcoming: { count: number; chestType: string; label: string }[] = [];
@@ -162,7 +111,7 @@ export function CharacterPage() {
                                     残り {remaining}
                                 </div>
                                 <div className="w-12 h-12 rounded-full flex items-center justify-center mb-1 shadow-md transition-transform hover:scale-110" style={{ backgroundColor: 'var(--color-bg-card)', border: `2px solid ${idx === 0 ? 'var(--color-accent-gold)' : 'var(--color-border-default)'}` }}>
-                                    <img src={CHEST_IMAGES[m.chestType] || chestWoodImg} alt={m.label} className="w-8 h-8 object-contain" />
+                                    <img src={CHEST_IMAGES[m.chestType as keyof typeof CHEST_IMAGES] || CHEST_FALLBACK_IMAGE} alt={m.label} className="w-8 h-8 object-contain" />
                                 </div>
                                 <div className="text-[10px] text-center leading-tight font-medium" style={{ color: idx === 0 ? 'var(--color-accent-gold)' : 'var(--color-text-secondary)' }}>
                                     {m.count}個目<br />{m.label}
@@ -184,7 +133,7 @@ export function CharacterPage() {
                             <button key={chest.id} onClick={() => openChest(chest.id)}
                                 className="px-4 py-3 rounded-xl animate-pulse-glow transition-all hover:scale-105 flex flex-col items-center"
                                 style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-accent-gold)', minWidth: '120px' }}>
-                                <img src={CHEST_IMAGES[chest.chestType] || chestWoodImg} alt={chest.label} className="w-14 h-14 object-contain mb-1" />
+                                <img src={CHEST_IMAGES[chest.chestType] || CHEST_FALLBACK_IMAGE} alt={chest.label} className="w-14 h-14 object-contain mb-1" />
                                 <div className="text-xs font-medium" style={{ color: 'var(--color-accent-gold)' }}>{chest.label}</div>
                             </button>
                         ))}

@@ -170,6 +170,15 @@ export interface LevelUpEvent {
     hpGain: number;
 }
 
+export interface ChestRevealEvent {
+    id: string;
+    chestId: string;
+    chestType: ChestType;
+    label: string;
+    equipment: Equipment | null; // 青宝箱（スターターキャラ）は null
+    isStarterCharacter: boolean;
+}
+
 export interface GameStoreState {
     character: CharacterStats;
     debuff: Debuff;
@@ -179,6 +188,8 @@ export interface GameStoreState {
     battle: BattleState;
     levelUpEvent: LevelUpEvent | null;
     clearLevelUpEvent: () => void;
+    pendingChestReveal: ChestRevealEvent | null;
+    clearPendingChestReveal: () => void;
     addXp: (baseXp: number) => void;
     incrementGachaCount: () => void;
     checkGachaMilestones: () => void;
