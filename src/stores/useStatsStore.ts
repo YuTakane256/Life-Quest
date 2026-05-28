@@ -2,9 +2,42 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { StatsStoreState } from '../types';
 
+// ─── persisted state の per-entry バリデーション ─────────────────
+// localStorage の細工された値が NaN 連鎖や型不整合を引き起こさないよう、
+// rehydrate 時にマップの各エントリを型ガードで弾く。
+
+function isValidDateKey(key: string): boolean {
+    return /^\d{4}-\d{2}-\d{2}$/.test(key);
+}
+
+function sanitizeTaskXpLog(raw: unknown): Record<string, number> {
+    if (typeof raw !== 'object' || raw === null) return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (isValidDateKey(k) && typeof v === 'number' && Number.isFinite(v) && v >= 0) {
+            out[k] = Math.floor(v);
+        }
+    }
+    return out;
+}
+
+function sanitizeHabitLog(raw: unknown): Record<string, { count: number; allComplete: boolean }> {
+    if (typeof raw !== 'object' || raw === null) return {};
+    const out: Record<string, { count: number; allComplete: boolean }> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (!isValidDateKey(k) || typeof v !== 'object' || v === null) continue;
+        const entry = v as Record<string, unknown>;
+        if (typeof entry.count === 'number' && Number.isFinite(entry.count) && entry.count >= 0
+            && typeof entry.allComplete === 'boolean') {
+            out[k] = { count: Math.floor(entry.count), allComplete: entry.allComplete };
+        }
+    }
+    return out;
+}
+
 export const useStatsStore = create<StatsStoreState>()(
     persist(
-        (set, get) => ({
+        (set) => ({
             taskXpLog: {},
             habitLog: {},
 
@@ -28,6 +61,17 @@ export const useStatsStore = create<StatsStoreState>()(
         }),
         {
             name: 'quest-board-stats',
+            version: 1,
+            merge: (persisted, current) => {
+                const raw = (typeof persisted === 'object' && persisted !== null
+                    ? (persisted as Record<string, unknown>)
+                    : {});
+                return {
+                    ...current,
+                    taskXpLog: sanitizeTaskXpLog(raw.taskXpLog),
+                    habitLog: sanitizeHabitLog(raw.habitLog),
+                };
+            },
         }
     )
 );
