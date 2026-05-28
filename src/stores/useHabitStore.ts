@@ -198,10 +198,10 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             checkAndResetHabits: () => {
-                // 古いレコードのクリーンアップ（30日以上前のものを削除）
-                const cutoffDate = new Date();
-                cutoffDate.setDate(cutoffDate.getDate() - 30);
-                const cutoffStr = cutoffDate.toISOString().split('T')[0];
+                // 古いレコードのクリーンアップ（30日以上前のものを削除）。
+                // dailyRecords / restDays は JST 日付（YYYY-MM-DD）で保存されているので、
+                // cutoff も JST ベースで計算する（UTC ベースだと JST 深夜 0-9 時に 1 日ずれる）。
+                const cutoffStr = shiftDate(getTodayJST(), -30);
 
                 set((state) => ({
                     dailyRecords: state.dailyRecords.filter((r) => r.date >= cutoffStr),
