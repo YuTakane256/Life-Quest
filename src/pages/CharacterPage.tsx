@@ -4,6 +4,7 @@ import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS, RARITY_
 import type { Equipment, Rarity, EquipmentSlot } from '../types';
 import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History } from 'lucide-react';
 import { useState } from 'react';
+import { useModalEscape } from '../components/ui/useModalEscape';
 import { Link, useNavigate } from 'react-router-dom';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
@@ -42,6 +43,7 @@ export function CharacterPage() {
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [editName, setEditName] = useState(character.name);
     const [editAvatar, setEditAvatar] = useState(character.avatar);
+    useModalEscape(isEditingProfile, () => setIsEditingProfile(false));
 
     const effectiveStats = getEffectiveStats();
     const xpProgress = calculateXpProgress(character.totalXp, character.level);
@@ -207,10 +209,10 @@ export function CharacterPage() {
 
             {/* プロフィール編集モーダル */}
             {isEditingProfile && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}>
+                <div role="dialog" aria-modal="true" aria-labelledby="profile-edit-title" className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}>
                     <div className="w-full max-w-sm rounded-2xl p-5 animate-scale-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>プロフィール編集</h3>
+                            <h3 id="profile-edit-title" className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>プロフィール編集</h3>
                             <button onClick={() => setIsEditingProfile(false)} className="p-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>
                                 <X size={20} />
                             </button>
