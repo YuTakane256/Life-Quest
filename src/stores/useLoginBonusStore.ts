@@ -32,6 +32,20 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
                 const xp = calculateBonusXp(newStreak);
                 const isSpecialDay = newStreak % LOGIN_BONUS_CONFIG.SPECIAL_CHEST_INTERVAL === 0;
 
+                const bonus: LoginBonus = {
+                    date: today,
+                    streak: newStreak,
+                    xp,
+                    chestLabel: isSpecialDay ? LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL : null,
+                };
+
+                // ★ 順序重要 ★
+                // 報酬付与より先に lastLoginDate を today にコミットする。こうしておくと、
+                // タブ複数 / visibility 復帰などで本関数が同フレームに再呼び出しされても、
+                // 2 回目以降は上の `lastLoginDate === today` で即 return し、
+                // XP / 特別宝箱が二重付与されることがない。
+                set({ lastLoginDate: today, streak: newStreak, pendingBonus: bonus });
+
                 // 報酬を付与する
                 const gameStore = useGameStore.getState();
                 gameStore.addXp(xp);
@@ -41,15 +55,6 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
                         LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL
                     );
                 }
-
-                const bonus: LoginBonus = {
-                    date: today,
-                    streak: newStreak,
-                    xp,
-                    chestLabel: isSpecialDay ? LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL : null,
-                };
-
-                set({ lastLoginDate: today, streak: newStreak, pendingBonus: bonus });
             },
 
             clearPendingBonus: () => set({ pendingBonus: null }),
