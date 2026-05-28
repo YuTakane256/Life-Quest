@@ -9,6 +9,40 @@ interface TaskStorePersisted {
     tasks: Task[];
 }
 
+// ─── persisted state の per-item バリデーション ─────────────────
+// Zustand persist は localStorage の値を信用する。細工された / 壊れた JSON
+// が store state を破壊しないよう、rehydrate 時に各エントリを型ガードで弾く。
+
+function isValidPriority(v: unknown): v is Priority {
+    return v === 'low' || v === 'medium' || v === 'high';
+}
+function isValidRecurrence(v: unknown): v is Recurrence {
+    return v === 'none' || v === 'daily' || v === 'weekly' || v === 'monthly';
+}
+function isValidSubtask(v: unknown): v is Subtask {
+    if (typeof v !== 'object' || v === null) return false;
+    const r = v as Record<string, unknown>;
+    return typeof r.id === 'string'
+        && typeof r.name === 'string'
+        && typeof r.completed === 'boolean'
+        && (r.completedAt === null || typeof r.completedAt === 'string')
+        && typeof r.createdAt === 'string';
+}
+function isValidTask(v: unknown): v is Task {
+    if (typeof v !== 'object' || v === null) return false;
+    const r = v as Record<string, unknown>;
+    return typeof r.id === 'string'
+        && typeof r.name === 'string'
+        && (r.dueDate === null || typeof r.dueDate === 'string')
+        && isValidPriority(r.priority)
+        && Array.isArray(r.tags) && r.tags.every((t) => typeof t === 'string')
+        && Array.isArray(r.subtasks) && r.subtasks.every(isValidSubtask)
+        && isValidRecurrence(r.recurrence)
+        && typeof r.completed === 'boolean'
+        && (r.completedAt === null || typeof r.completedAt === 'string')
+        && typeof r.createdAt === 'string';
+}
+
 // gameStoreを遅延importして循環参照を避ける
 const getGameStore = () => import('./useGameStore').then(m => m.useGameStore);
 const getStatsStore = () => import('./useStatsStore').then(m => m.useStatsStore);
@@ -320,9 +354,17 @@ export const useTaskStore = create<TaskStoreState>()(
         }),
         {
             name: 'quest-board-tasks',
+            version: 1,
             partialize: (state): TaskStorePersisted => ({
                 tasks: state.tasks,
             }),
+            merge: (persisted, current) => {
+                const raw = (typeof persisted === 'object' && persisted !== null
+                    ? (persisted as Record<string, unknown>)
+                    : {});
+                const tasks = Array.isArray(raw.tasks) ? raw.tasks.filter(isValidTask) : [];
+                return { ...current, tasks };
+            },
         }
     )
 );
