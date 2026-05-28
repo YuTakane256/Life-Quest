@@ -4,7 +4,7 @@ import type { StatsStoreState } from '../types';
 
 export const useStatsStore = create<StatsStoreState>()(
     persist(
-        (set, get) => ({
+        (set) => ({
             taskXpLog: {},
             habitLog: {},
 
