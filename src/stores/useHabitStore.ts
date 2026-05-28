@@ -5,6 +5,35 @@ import { XP_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import { generateId, getTodayJST, shiftDate } from '../utils/dateUtils';
 
+// ─── persisted state の per-item バリデーション ─────────────────
+// localStorage の値を信用しない: 細工された / 壊れた JSON が store state を
+// 破壊するのを防ぐため、rehydrate 時に各エントリを型ガードで弾く。
+
+function isValidDateStr(v: unknown): v is string {
+    return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+function isValidHabit(v: unknown): v is Habit {
+    if (typeof v !== 'object' || v === null) return false;
+    const r = v as Record<string, unknown>;
+    return typeof r.id === 'string'
+        && typeof r.name === 'string'
+        && typeof r.categoryId === 'string'
+        && typeof r.createdAt === 'string';
+}
+function isValidDailyRecord(v: unknown): v is HabitDailyRecord {
+    if (typeof v !== 'object' || v === null) return false;
+    const r = v as Record<string, unknown>;
+    return typeof r.habitId === 'string'
+        && isValidDateStr(r.date)
+        && typeof r.completed === 'boolean'
+        && typeof r.memo === 'string';
+}
+function isValidRestDay(v: unknown): v is RestDay {
+    if (typeof v !== 'object' || v === null) return false;
+    const r = v as Record<string, unknown>;
+    return isValidDateStr(r.date) && typeof r.isRest === 'boolean';
+}
+
 export const useHabitStore = create<HabitStoreState>()(
     persist(
         (set, get) => ({
@@ -211,6 +240,16 @@ export const useHabitStore = create<HabitStoreState>()(
         }),
         {
             name: 'quest-board-habits',
+            version: 1,
+            merge: (persisted, current) => {
+                const raw = (typeof persisted === 'object' && persisted !== null
+                    ? (persisted as Record<string, unknown>)
+                    : {});
+                const habits = Array.isArray(raw.habits) ? raw.habits.filter(isValidHabit) : [];
+                const dailyRecords = Array.isArray(raw.dailyRecords) ? raw.dailyRecords.filter(isValidDailyRecord) : [];
+                const restDays = Array.isArray(raw.restDays) ? raw.restDays.filter(isValidRestDay) : [];
+                return { ...current, habits, dailyRecords, restDays };
+            },
         }
     )
 );
