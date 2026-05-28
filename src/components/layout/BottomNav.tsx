@@ -22,7 +22,15 @@ export function BottomNav() {
                     const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`); const isLocked = item.requiresBattle && !battleUnlocked;
                     const showTaskBadge = item.path === '/tasks' && pendingTaskCount > 0;
                     return (
-                        <button key={item.path} onClick={() => !isLocked && navigate(item.path)} disabled={isLocked} className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-2 rounded-lg transition-all duration-200 relative ${isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`} style={{ color: isActive ? 'var(--color-accent-primary)' : 'var(--color-text-muted)' }}>
+                        <button
+                            key={item.path}
+                            onClick={() => !isLocked && navigate(item.path)}
+                            disabled={isLocked}
+                            aria-label={isLocked ? `${item.label}（未解放）` : item.label}
+                            aria-current={isActive ? 'page' : undefined}
+                            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-2 rounded-lg transition-all duration-200 relative ${isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                            style={{ color: isActive ? 'var(--color-accent-primary)' : 'var(--color-text-muted)' }}
+                        >
                             <div className={`relative transition-transform duration-200 ${isActive ? 'scale-110' : ''}`}>
                                 {item.icon}
                                 {showTaskBadge && (

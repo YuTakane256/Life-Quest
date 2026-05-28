@@ -232,6 +232,7 @@ export function TasksPage() {
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{tasks.filter((t) => !t.completed).length}件の未完了タスク</p>
                 </div>
                 <button onClick={() => { setEditingTask(null); resetForm(); setShowForm(!showForm); }}
+                    aria-label={showForm ? 'タスク追加フォームを閉じる' : '新しいタスクを追加'}
                     className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105"
                     style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                     <Plus size={20} />
@@ -417,7 +418,7 @@ export function TasksPage() {
                                 <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
                                     style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                                     {tag}
-                                    <button type="button" onClick={() => handleRemoveTag(tag)} className="hover:opacity-70">
+                                    <button type="button" onClick={() => handleRemoveTag(tag)} aria-label={`タグ「${tag}」を削除`} className="hover:opacity-70">
                                         <X size={12} />
                                     </button>
                                 </span>
@@ -450,6 +451,7 @@ export function TasksPage() {
                                             {subtask.name}
                                         </span>
                                         <button type="button" onClick={() => handleRemoveFormSubtask(subtask.id)}
+                                            aria-label={`サブタスク「${subtask.name}」を削除`}
                                             className="p-0.5 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
                                             <X size={14} />
                                         </button>
@@ -554,7 +556,7 @@ export function TasksPage() {
                                                 <span className={`flex-1 min-w-0 text-sm ${subtask.completed ? 'line-through' : ''}`} style={{ color: subtask.completed ? 'var(--color-text-muted)' : 'var(--color-text-secondary)' }}>
                                                     {subtask.name}
                                                 </span>
-                                                <button onClick={() => deleteSubtask(task.id, subtask.id)} className="p-1 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
+                                                <button onClick={() => deleteSubtask(task.id, subtask.id)} aria-label={`サブタスク「${subtask.name}」を削除`} className="p-1 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
                                                     <X size={14} />
                                                 </button>
                                             </div>

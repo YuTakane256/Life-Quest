@@ -25,7 +25,7 @@ export function SnackbarProvider({ children }: { children: React.ReactNode }) {
                         <span className="text-sm flex-1" style={{ color: 'var(--color-text-primary)' }}>{s.message}</span>
                         <div className="flex items-center gap-2">
                             <button onClick={() => { s.onUndo?.(); removeSnackbar(s.id); }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors hover:opacity-80" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}><Undo2 size={14} />元に戻す</button>
-                            <button onClick={() => removeSnackbar(s.id)} className="p-1 rounded-full transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }}><X size={16} /></button>
+                            <button onClick={() => removeSnackbar(s.id)} aria-label="閉じる" className="p-1 rounded-full transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }}><X size={16} /></button>
                         </div>
                     </div>
                 ))}
