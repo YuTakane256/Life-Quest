@@ -131,6 +131,43 @@ function pickSynthesisSlot(items: Equipment[]): EquipmentSlot {
     return tiedSlots[Math.floor(Math.random() * tiedSlots.length)];
 }
 
+// ─── persisted state の per-item バリデーション ─────────────────
+// localStorage の値を信用しない。細工された JSON が store 状態を破壊し、
+// 装備合算（getEffectiveStats）や battle ループで NaN 連鎖するのを防ぐ。
+
+function isValidEquipment(v: unknown): v is Equipment {
+    if (typeof v !== 'object' || v === null) return false;
+    const r = v as Record<string, unknown>;
+    return typeof r.id === 'string'
+        && typeof r.templateId === 'string'
+        && typeof r.name === 'string'
+        && (r.slot === 'weapon' || r.slot === 'armor' || r.slot === 'accessory')
+        && typeof r.rarity === 'string'
+        && typeof r.attackBonus === 'number' && Number.isFinite(r.attackBonus)
+        && typeof r.defenseBonus === 'number' && Number.isFinite(r.defenseBonus)
+        && typeof r.hpBonus === 'number' && Number.isFinite(r.hpBonus)
+        && typeof r.equipped === 'boolean';
+}
+
+function isValidChestReward(v: unknown): v is ChestReward {
+    if (typeof v !== 'object' || v === null) return false;
+    const r = v as Record<string, unknown>;
+    return typeof r.id === 'string'
+        && typeof r.chestType === 'string'
+        && typeof r.label === 'string'
+        && typeof r.opened === 'boolean'
+        && (r.equipment === null || isValidEquipment(r.equipment));
+}
+
+function isValidBattleLog(v: unknown): v is BattleLog {
+    if (typeof v !== 'object' || v === null) return false;
+    const r = v as Record<string, unknown>;
+    return typeof r.turn === 'number' && Number.isFinite(r.turn)
+        && typeof r.message === 'string'
+        && typeof r.playerHp === 'number' && Number.isFinite(r.playerHp)
+        && typeof r.enemyHp === 'number' && Number.isFinite(r.enemyHp);
+}
+
 const initialCharacter: CharacterStats = {
     name: CHARACTER_CONFIG.INITIAL_STATS.name,
     avatar: CHARACTER_CONFIG.INITIAL_STATS.avatar,
@@ -142,6 +179,66 @@ const initialCharacter: CharacterStats = {
 };
 
 const initialDebuff: Debuff = { active: false, expiresAt: null, multiplier: 1 };
+
+function sanitizeCharacter(raw: unknown, fallback: CharacterStats): CharacterStats {
+    if (typeof raw !== 'object' || raw === null) return { ...fallback };
+    const r = raw as Record<string, unknown>;
+    const num = (v: unknown, f: number) =>
+        typeof v === 'number' && Number.isFinite(v) ? v : f;
+    return {
+        // name は inputLimits.ts の CHARACTER_NAME 上限 (12 文字) 相当でカット
+        name: typeof r.name === 'string' ? r.name.slice(0, 12) : fallback.name,
+        avatar: r.avatar === 'male' || r.avatar === 'female' ? r.avatar : fallback.avatar,
+        level: Math.max(1, Math.floor(num(r.level, fallback.level))),
+        totalXp: Math.max(0, Math.floor(num(r.totalXp, fallback.totalXp))),
+        baseAttack: num(r.baseAttack, fallback.baseAttack),
+        baseDefense: num(r.baseDefense, fallback.baseDefense),
+        baseMaxHp: num(r.baseMaxHp, fallback.baseMaxHp),
+    };
+}
+
+function sanitizeDebuff(raw: unknown, fallback: Debuff): Debuff {
+    if (typeof raw !== 'object' || raw === null) return { ...fallback };
+    const r = raw as Record<string, unknown>;
+    return {
+        active: typeof r.active === 'boolean' ? r.active : false,
+        expiresAt: typeof r.expiresAt === 'string' ? r.expiresAt : null,
+        multiplier: typeof r.multiplier === 'number' && Number.isFinite(r.multiplier) ? r.multiplier : 1,
+    };
+}
+
+function sanitizeEnemy(raw: unknown): Enemy | null {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const r = raw as Record<string, unknown>;
+    const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : null;
+    const stage = num(r.stage);
+    const hp = num(r.hp);
+    const maxHp = num(r.maxHp);
+    const attack = num(r.attack);
+    const defense = num(r.defense);
+    const xpReward = num(r.xpReward);
+    if (stage === null || hp === null || maxHp === null || attack === null
+        || defense === null || xpReward === null || typeof r.name !== 'string') return null;
+    return { stage, name: r.name, hp, maxHp, attack, defense, xpReward };
+}
+
+function sanitizeBattle(raw: unknown, fallback: BattleState): BattleState {
+    if (typeof raw !== 'object' || raw === null) return { ...fallback };
+    const r = raw as Record<string, unknown>;
+    const validStatus = r.status === 'idle' || r.status === 'fighting'
+        || r.status === 'victory' || r.status === 'defeat';
+    const num = (v: unknown, f: number) =>
+        typeof v === 'number' && Number.isFinite(v) ? v : f;
+    return {
+        status: validStatus ? r.status as BattleState['status'] : fallback.status,
+        currentStage: Math.max(1, Math.floor(num(r.currentStage, fallback.currentStage))),
+        maxClearedStage: Math.max(0, Math.floor(num(r.maxClearedStage, fallback.maxClearedStage))),
+        enemy: sanitizeEnemy(r.enemy),
+        playerHp: Math.max(0, Math.floor(num(r.playerHp, fallback.playerHp))),
+        logs: Array.isArray(r.logs) ? r.logs.filter(isValidBattleLog) : [],
+        battleUnlocked: typeof r.battleUnlocked === 'boolean' ? r.battleUnlocked : fallback.battleUnlocked,
+    };
+}
 
 const initialBattle: BattleState = {
     status: 'idle',
@@ -425,6 +522,25 @@ export const useGameStore = create<GameStoreState>()(
                 set((state) => ({ chestQueue: [...state.chestQueue, newChest] }));
             },
         }),
-        { name: 'quest-board-game' }
+        {
+            name: 'quest-board-game',
+            version: 1,
+            merge: (persisted, current) => {
+                const raw = (typeof persisted === 'object' && persisted !== null
+                    ? (persisted as Record<string, unknown>)
+                    : {});
+                return {
+                    ...current,
+                    character: sanitizeCharacter(raw.character, current.character),
+                    debuff: sanitizeDebuff(raw.debuff, current.debuff),
+                    equipment: Array.isArray(raw.equipment) ? raw.equipment.filter(isValidEquipment) : [],
+                    gachaCount: typeof raw.gachaCount === 'number' && Number.isFinite(raw.gachaCount)
+                        ? Math.max(0, Math.floor(raw.gachaCount))
+                        : 0,
+                    chestQueue: Array.isArray(raw.chestQueue) ? raw.chestQueue.filter(isValidChestReward) : [],
+                    battle: sanitizeBattle(raw.battle, current.battle),
+                };
+            },
+        }
     )
 );
