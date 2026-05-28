@@ -61,10 +61,20 @@ export function DataBackupSettings() {
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        if (fileInputRef.current) fileInputRef.current.value = '';
         if (!file) return;
+        // 拡張子と MIME の二重チェック。<input accept=".json"> は OS ダイアログのヒントに
+        // すぎないため、任意ファイルが流れ込んでも先に弾く。
+        const isJsonExt = file.name.toLowerCase().endsWith('.json');
+        const isAllowedMime = file.type === '' || file.type === 'application/json'
+            || file.type === 'text/plain' || file.type === 'text/json';
+        if (!isJsonExt || !isAllowedMime) {
+            setImportStatus('error');
+            setTimeout(() => setImportStatus('idle'), 3000);
+            return;
+        }
         setPendingFile(file);
         setShowImportConfirm(true);
-        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handleImportConfirm = async () => {
