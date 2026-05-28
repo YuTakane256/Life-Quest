@@ -380,6 +380,10 @@ export const useGameStore = create<GameStoreState>()(
             synthesizeItems: (equipmentIds: string[]) => {
                 const { equipment } = get();
                 if (equipmentIds.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
+                // 重複 ID を弾く: 同じ ID を REQUIRED_COUNT 回渡すと、UI を回避して 1 個の装備で
+                // 上位レアにアップグレードできるチートになる。
+                const uniqueIds = new Set(equipmentIds);
+                if (uniqueIds.size !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
                 const items = equipmentIds.map((id) => equipment.find((e) => e.id === id)).filter(Boolean) as import('../types').Equipment[];
                 if (items.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
                 // 全アイテムが同レアリティ・未装備であることを確認
