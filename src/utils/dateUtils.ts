@@ -6,6 +6,24 @@ import { TIME_CONFIG } from '../config/gameConfig';
 import type { Recurrence } from '../types';
 
 /**
+ * YYYY-MM-DD 形式の文字列を UTC ベースの Date にパースする（内部利用）。
+ */
+function parseYmd(dateStr: string): Date {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
+}
+
+/**
+ * UTC ベースの Date を YYYY-MM-DD 文字列にフォーマットする（内部利用）。
+ */
+function formatYmd(date: Date): string {
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+/**
  * 現在のJSTの日付文字列を返す (YYYY-MM-DD)
  */
 export function getTodayJST(): string {
@@ -47,10 +65,8 @@ export function isOverdue(dueDate: string | null): boolean {
  * 例: 今日 / 明日 / 明後日 / 3日後 / 昨日 / 2日前
  */
 export function formatRelativeDate(dateStr: string): string {
-    const [ty, tm, td] = getTodayJST().split('-').map(Number);
-    const [dy, dm, dd] = dateStr.split('-').map(Number);
-    const todayMs = Date.UTC(ty, tm - 1, td);
-    const dateMs = Date.UTC(dy, dm - 1, dd);
+    const todayMs = parseYmd(getTodayJST()).getTime();
+    const dateMs = parseYmd(dateStr).getTime();
     const diffDays = Math.round((dateMs - todayMs) / (24 * 60 * 60 * 1000));
 
     if (diffDays === 0) return '今日';
@@ -89,13 +105,9 @@ export function formatRelativeTime(iso: string): string {
  * 負の値で過去方向へずらせる
  */
 export function shiftDate(dateStr: string, days: number): string {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const date = new Date(Date.UTC(year, month - 1, day));
+    const date = parseYmd(dateStr);
     date.setUTCDate(date.getUTCDate() + days);
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(date.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return formatYmd(date);
 }
 
 /**
@@ -103,8 +115,7 @@ export function shiftDate(dateStr: string, days: number): string {
  * monthly で日付が翌月に存在しない場合（例: 1/31 → 2月）はJSの繰り上げ仕様に従う
  */
 export function addRecurrenceInterval(dateStr: string, recurrence: Recurrence): string {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const date = new Date(Date.UTC(year, month - 1, day));
+    const date = parseYmd(dateStr);
 
     if (recurrence === 'daily') {
         date.setUTCDate(date.getUTCDate() + 1);
@@ -114,8 +125,5 @@ export function addRecurrenceInterval(dateStr: string, recurrence: Recurrence): 
         date.setUTCMonth(date.getUTCMonth() + 1);
     }
 
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(date.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return formatYmd(date);
 }
