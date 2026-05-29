@@ -3,6 +3,7 @@ import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight,
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { isOverdue, generateId, formatRelativeDate, getTodayJST } from '../utils/dateUtils';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
 
@@ -581,18 +582,14 @@ export function TasksPage() {
             </div>
 
             {/* 完了タスク一括削除の確認モーダル */}
-            {showDeleteCompletedConfirm && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4" onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteCompletedConfirm(false); }}>
-                    <div className="w-full max-w-sm rounded-2xl p-5 animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                        <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>完了タスクを削除しますか？</h3>
-                        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>完了済みのタスク{deletableCompletedCount}件をまとめて削除します。この操作は取り消せません。</p>
-                        <div className="flex gap-2">
-                            <button onClick={handleDeleteCompleted} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-text-danger)', color: 'white' }}>削除する</button>
-                            <button onClick={() => setShowDeleteCompletedConfirm(false)} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmDialog
+                open={showDeleteCompletedConfirm}
+                title="完了タスクを削除しますか？"
+                message={`完了済みのタスク${deletableCompletedCount}件をまとめて削除します。この操作は取り消せません。`}
+                confirmLabel="削除する"
+                onConfirm={handleDeleteCompleted}
+                onClose={() => setShowDeleteCompletedConfirm(false)}
+            />
         </div>
     );
 }
