@@ -9,24 +9,8 @@ import type { Recurrence } from '../types';
  * 現在のJSTの日付文字列を返す (YYYY-MM-DD)
  */
 export function getTodayJST(): string {
-    const now = new Date();
-    const jstOffset = TIME_CONFIG.JST_OFFSET_HOURS * 60;
-    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-    const jstMinutes = utcMinutes + jstOffset;
-
-    const jstDate = new Date(now);
-    if (jstMinutes >= 24 * 60) {
-        jstDate.setUTCDate(jstDate.getUTCDate() + 1);
-    } else if (jstMinutes < 0) {
-        jstDate.setUTCDate(jstDate.getUTCDate() - 1);
-    }
-
-    const year = jstDate.getUTCFullYear();
-    const month = String(jstDate.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(jstDate.getUTCDate()).padStart(2, '0');
-
-    // JSTの日付境界を正確に計算
-    const jstNow = new Date(now.getTime() + jstOffset * 60 * 1000);
+    const jstOffsetMs = TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000;
+    const jstNow = new Date(Date.now() + jstOffsetMs);
     const y = jstNow.getUTCFullYear();
     const m = String(jstNow.getUTCMonth() + 1).padStart(2, '0');
     const d = String(jstNow.getUTCDate()).padStart(2, '0');
