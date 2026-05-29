@@ -186,7 +186,7 @@ export function CharacterPage() {
                                 className="flex items-center gap-3 px-3 py-2.5"
                                 style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--color-border-default)' }}
                             >
-                                <img src={CHEST_IMAGES[chest.chestType] || chestWoodImg} alt={chest.label} className="w-8 h-8 object-contain flex-shrink-0" />
+                                <img src={CHEST_IMAGES[chest.chestType] || CHEST_FALLBACK_IMAGE} alt={chest.label} className="w-8 h-8 object-contain flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
                                     <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{chest.label}</div>
                                     {chest.equipment ? (

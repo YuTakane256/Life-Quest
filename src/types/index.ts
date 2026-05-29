@@ -129,6 +129,21 @@ export interface BattleState {
     battleUnlocked: boolean; // 青宝箱獲得後にtrue
 }
 
+/** 過去のバトル結果スナップショット。useBattleHistoryStore で永続化。 */
+export interface BattleHistoryEntry {
+    id: string;
+    timestamp: string;       // ISO 8601
+    stage: number;
+    enemyName: string;
+    enemyMaxHp: number;      // リプレイ開始時のHPバー初期値
+    enemyAttack: number;
+    enemyDefense: number;
+    outcome: 'victory' | 'defeat';
+    turnCount: number;
+    xpEarned: number;        // 敗北時は 0
+    logs: BattleLog[];       // バトル中の全ログ
+}
+
 // ─── Store State Types ────────────────────────────────────────
 export interface TaskStoreState {
     tasks: Task[];
@@ -245,6 +260,12 @@ export interface StatsStoreState {
     habitLog: Record<string, { count: number; allComplete: boolean }>; // YYYY-MM-DD => 習慣データ
     logTaskXp: (date: string, xp: number) => void;
     logHabitActivity: (date: string, count: number, allComplete: boolean) => void;
+}
+
+export interface BattleHistoryStoreState {
+    history: BattleHistoryEntry[];
+    addBattleResult: (entry: BattleHistoryEntry) => void;
+    clearHistory: () => void;
 }
 
 // ─── ユーティリティ型 ──────────────────────────────────────────

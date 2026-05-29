@@ -26,6 +26,7 @@ import {
     type GachaMilestone,
 } from '../config/gameConfig';
 import { generateId } from '../utils/dateUtils';
+import { useBattleHistoryStore } from './useBattleHistoryStore';
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
 
@@ -334,6 +335,20 @@ export const useGameStore = create<GameStoreState>()(
                     set({ battle: { ...battle, status: 'victory', enemy: { ...battle.enemy, hp: 0 }, logs } });
                     // 勝利時にXPを付与
                     get().addXp(battle.enemy.xpReward);
+                    // バトル履歴に記録
+                    useBattleHistoryStore.getState().addBattleResult({
+                        id: generateId(),
+                        timestamp: new Date().toISOString(),
+                        stage: battle.currentStage,
+                        enemyName: battle.enemy.name,
+                        enemyMaxHp: battle.enemy.maxHp,
+                        enemyAttack: battle.enemy.attack,
+                        enemyDefense: battle.enemy.defense,
+                        outcome: 'victory',
+                        turnCount: logs.length,
+                        xpEarned: battle.enemy.xpReward,
+                        logs: [...logs],
+                    });
                     return;
                 }
                 const enemyDamage = calculateDamage(battle.enemy.attack, effectiveStats.defense);
@@ -341,6 +356,20 @@ export const useGameStore = create<GameStoreState>()(
                 logs.push({ turn, message: `${battle.enemy.name}の攻撃！ あなたに${enemyDamage}ダメージ！`, playerHp: newPlayerHp, enemyHp: newEnemyHp });
                 if (newPlayerHp <= 0) {
                     set({ battle: { ...battle, status: 'defeat', enemy: { ...battle.enemy, hp: newEnemyHp }, playerHp: 0, logs } });
+                    // バトル履歴に記録
+                    useBattleHistoryStore.getState().addBattleResult({
+                        id: generateId(),
+                        timestamp: new Date().toISOString(),
+                        stage: battle.currentStage,
+                        enemyName: battle.enemy.name,
+                        enemyMaxHp: battle.enemy.maxHp,
+                        enemyAttack: battle.enemy.attack,
+                        enemyDefense: battle.enemy.defense,
+                        outcome: 'defeat',
+                        turnCount: logs.length,
+                        xpEarned: 0,
+                        logs: [...logs],
+                    });
                     return;
                 }
                 set({ battle: { ...battle, enemy: { ...battle.enemy, hp: newEnemyHp }, playerHp: newPlayerHp, logs } });

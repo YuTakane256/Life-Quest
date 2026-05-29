@@ -233,6 +233,12 @@ export const BATTLE_CONFIG = {
     /** ダメージ計算式: attack - defense * DEFENSE_FACTOR (最低1ダメージ) */
     DEFENSE_FACTOR: 0.5,
     MIN_DAMAGE: 1,
+
+    /** バトル履歴の最大保持件数（先頭追加・上限カット） */
+    BATTLE_HISTORY_MAX_ENTRIES: 50,
+
+    /** リプレイ時の1ログあたりの進行間隔（ミリ秒） */
+    REPLAY_LOG_INTERVAL_MS: 600,
 } as const;
 
 // ─── マップ設定 ───────────────────────────────────────────────
