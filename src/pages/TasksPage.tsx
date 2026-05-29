@@ -492,13 +492,16 @@ export function TasksPage() {
                         </p>
                     </div>
                 )}
-                {sortedTasks.map((task) => {
-                    const subtasks = task.subtasks || [];
-                    const completedSubtaskCount = subtasks.filter((subtask) => subtask.completed).length;
-                    const isExpanded = isTaskExpanded(task);
-                    const overdue = !task.completed && isOverdue(task.dueDate);
-                    const pending = isPending(task.id);
-                    return (
+                {(() => {
+                    const incompleteTasks = sortedTasks.filter((t) => !t.completed);
+                    const completedTasks = sortedTasks.filter((t) => t.completed);
+                    const renderTaskItem = (task: Task) => {
+                        const subtasks = task.subtasks || [];
+                        const completedSubtaskCount = subtasks.filter((subtask) => subtask.completed).length;
+                        const isExpanded = isTaskExpanded(task);
+                        const overdue = !task.completed && isOverdue(task.dueDate);
+                        const pending = isPending(task.id);
+                        return (
                         <div key={task.id} className={`rounded-xl transition-all duration-200 ${pending ? 'animate-pulse-glow' : ''}`}
                             style={{ backgroundColor: task.completed ? 'var(--color-bg-secondary)' : 'var(--color-bg-card)', border: `1px solid ${overdue ? 'var(--color-text-danger)' : 'var(--color-border-default)'}`, opacity: task.completed && !pending ? 0.6 : 1 }}>
                             <div className="group flex items-center gap-2 px-3 py-3">
@@ -572,8 +575,25 @@ export function TasksPage() {
                                 </div>
                             )}
                         </div>
+                        );
+                    };
+                    return (
+                        <>
+                            {incompleteTasks.map(renderTaskItem)}
+                            {completedTasks.length > 0 && (
+                                <details className="rounded-xl mt-2 group" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
+                                    <summary className="cursor-pointer list-none px-3 py-2.5 flex items-center gap-2 text-xs select-none" style={{ color: 'var(--color-text-muted)' }}>
+                                        <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+                                        <span className="font-medium">完了タスク ({completedTasks.length})</span>
+                                    </summary>
+                                    <div className="flex flex-col gap-2 px-2 pb-2 pt-1">
+                                        {completedTasks.map(renderTaskItem)}
+                                    </div>
+                                </details>
+                            )}
+                        </>
                     );
-                })}
+                })()}
             </div>
 
             {/* 完了タスク一括削除の確認モーダル */}
