@@ -120,6 +120,34 @@ export const useTaskStore = create<TaskStoreState>()(
                 }));
             },
 
+            duplicateTask: (id: string) => {
+                const source = get().tasks.find((t) => t.id === id);
+                if (!source) return null;
+                const now = new Date().toISOString();
+                const newId = generateId();
+                const duplicate: Task = {
+                    id: newId,
+                    name: source.name,
+                    // 元タスクが期限なしならそのまま、設定済みなら今日に
+                    dueDate: source.dueDate === null ? null : getTodayJST(),
+                    priority: source.priority,
+                    tags: [...(source.tags || [])],
+                    subtasks: (source.subtasks || []).map((s) => ({
+                        id: generateId(),
+                        name: s.name,
+                        completed: false,
+                        completedAt: null,
+                        createdAt: now,
+                    })),
+                    recurrence: source.recurrence,
+                    completed: false,
+                    completedAt: null,
+                    createdAt: now,
+                };
+                set((state) => ({ tasks: [...state.tasks, duplicate] }));
+                return newId;
+            },
+
             deleteTask: (id: string) => {
                 // pending completionがあればキャンセル
                 const pending = get().pendingCompletions.find((p) => p.taskId === id);

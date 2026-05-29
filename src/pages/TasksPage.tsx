@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock } from 'lucide-react';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock, Copy } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
@@ -24,7 +24,7 @@ const PRIORITY_FILTER_OPTIONS: { value: PriorityFilter; label: string }[] = [
 ];
 
 export function TasksPage() {
-    const { tasks, addTask, updateTask, deleteTask, deleteCompletedTasks, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
+    const { tasks, addTask, updateTask, deleteTask, duplicateTask, deleteCompletedTasks, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
@@ -111,6 +111,12 @@ export function TasksPage() {
         }
         resetForm();
         setShowForm(false);
+    };
+
+    const handleDuplicate = (task: Task) => {
+        const newId = duplicateTask(task.id);
+        if (!newId) return;
+        showUndo(`「${task.name}」を複製しました`, () => deleteTask(newId));
     };
 
     const handleEdit = (task: Task) => {
@@ -537,8 +543,9 @@ export function TasksPage() {
                                     </div>
                                 </div>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => handleEdit(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }}><Edit3 size={14} /></button>
-                                    <button onClick={() => deleteTask(task.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
+                                    <button onClick={() => handleDuplicate(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="複製"><Copy size={14} /></button>
+                                    <button onClick={() => handleEdit(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="編集"><Edit3 size={14} /></button>
+                                    <button onClick={() => deleteTask(task.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }} aria-label="削除"><Trash2 size={14} /></button>
                                 </div>
                             </div>
                             {isExpanded && (
