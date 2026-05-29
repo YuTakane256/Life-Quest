@@ -272,6 +272,41 @@ export const useGameStore = create<GameStoreState>()(
                 equipment: state.equipment.map((e) => e.id === equipmentId ? { ...e, equipped: false } : e),
             })),
 
+            autoEquipBest: () => {
+                const { equipment } = get();
+                const slots: EquipmentSlot[] = ['weapon', 'armor', 'accessory'];
+                // 各スロットで totalBonus が最大のアイテムを選ぶ
+                const bestIdBySlot = new Map<EquipmentSlot, string>();
+                for (const slot of slots) {
+                    const slotItems = equipment.filter((e) => e.slot === slot);
+                    if (slotItems.length === 0) continue;
+                    const best = slotItems.reduce((acc, e) => {
+                        const score = e.attackBonus + e.defenseBonus + e.hpBonus;
+                        const accScore = acc.attackBonus + acc.defenseBonus + acc.hpBonus;
+                        return score > accScore ? e : acc;
+                    });
+                    bestIdBySlot.set(slot, best.id);
+                }
+
+                // 既に最強が装備済みなら変更なし
+                const alreadyOptimal = slots.every((slot) => {
+                    const bestId = bestIdBySlot.get(slot);
+                    if (bestId === undefined) return true; // そのスロットに何も無い → スキップ扱い
+                    const equipped = equipment.find((e) => e.slot === slot && e.equipped);
+                    return equipped?.id === bestId;
+                });
+                if (alreadyOptimal) return false;
+
+                set((state) => ({
+                    equipment: state.equipment.map((e) => {
+                        const bestId = bestIdBySlot.get(e.slot);
+                        if (bestId === undefined) return e;
+                        return { ...e, equipped: e.id === bestId };
+                    }),
+                }));
+                return true;
+            },
+
             applyDebuff: () => {
                 const expiresAt = new Date(Date.now() + XP_CONFIG.DEBUFF_DURATION_MS).toISOString();
                 set({ debuff: { active: true, expiresAt, multiplier: XP_CONFIG.DEBUFF_XP_MULTIPLIER } });
