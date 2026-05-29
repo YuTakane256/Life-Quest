@@ -6,6 +6,7 @@ import { Swords, Trophy, Skull, RotateCcw, ChevronRight, History, ChevronDown } 
 import { formatRelativeTime } from '../utils/dateUtils';
 import { BattleReplayModal } from '../components/ui/BattleReplayModal';
 import { HpBar } from '../components/ui/HpBar';
+import { BattleLogList } from '../components/ui/BattleLogList';
 import type { BattleHistoryEntry } from '../types';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
@@ -120,7 +121,6 @@ export function MapBattlePage() {
     const [replayEntry, setReplayEntry] = useState<BattleHistoryEntry | null>(null);
     const [showAllHistory, setShowAllHistory] = useState(false);
     const battleIntervalRef = useRef<number | null>(null);
-    const logEndRef = useRef<HTMLDivElement>(null);
     const effectiveStats = getEffectiveStats();
 
     const selectedMap = MAP_CONFIG.find(m => m.id === selectedMapId) || MAP_CONFIG[0];
@@ -149,8 +149,6 @@ export function MapBattlePage() {
     useEffect(() => {
         if (battle.status === 'victory') setShowVictoryDialog(true);
     }, [battle.status]);
-
-    useEffect(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [battle.logs]);
 
     // マップ未解放
     if (!battle.battleUnlocked) {
@@ -218,12 +216,7 @@ export function MapBattlePage() {
 
                 {/* バトルログ */}
                 <div className="rounded-xl p-4 mb-4 h-52 overflow-y-auto" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                    {battle.logs.map((log, i) => (
-                        <div key={i} className="text-sm py-1 animate-fade-in" style={{ color: 'var(--color-text-secondary)' }}>
-                            <span style={{ color: 'var(--color-text-muted)' }}>[{log.turn}] </span>{log.message}
-                        </div>
-                    ))}
-                    <div ref={logEndRef} />
+                    <BattleLogList logs={battle.logs} autoScroll />
                 </div>
 
                 {/* 勝利ダイアログ */}
