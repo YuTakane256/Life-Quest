@@ -14,6 +14,13 @@ import { useHabitStore } from '../stores/useHabitStore';
 const ICON_URL = '/pwa-192x192.png';
 const BADGE_URL = '/favicon.png';
 
+/**
+ * OS 通知トーストに流し込む文字列の最大長。
+ * 既存タスク・バックアップ復元・DevTools 経由で巨大な name が混入した場合の
+ * 防御として、title / body をここでカットする。
+ */
+const NOTIFICATION_TEXT_MAX = 200;
+
 /** このブラウザが通知に対応しているか */
 export function isNotificationSupported(): boolean {
     return typeof window !== 'undefined' && 'Notification' in window;
@@ -37,16 +44,19 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  * 無ければ通常の Notification を使う。
  */
 async function showAppNotification(title: string, body: string, tag: string): Promise<void> {
-    const options: NotificationOptions = { body, tag, icon: ICON_URL, badge: BADGE_URL };
+    // title / body を必ずカットして、上流の漏れによる巨大通知を防ぐ
+    const safeTitle = title.slice(0, NOTIFICATION_TEXT_MAX);
+    const safeBody = body.slice(0, NOTIFICATION_TEXT_MAX);
+    const options: NotificationOptions = { body: safeBody, tag, icon: ICON_URL, badge: BADGE_URL };
     try {
         if ('serviceWorker' in navigator) {
             const registration = await navigator.serviceWorker.getRegistration();
             if (registration) {
-                await registration.showNotification(title, options);
+                await registration.showNotification(safeTitle, options);
                 return;
             }
         }
-        new Notification(title, options);
+        new Notification(safeTitle, options);
     } catch {
         // 通知表示に失敗しても致命的ではないので握りつぶす
     }
