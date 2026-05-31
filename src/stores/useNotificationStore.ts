@@ -3,6 +3,29 @@ import { persist } from 'zustand/middleware';
 import type { NotificationStoreState } from '../types';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 
+/** 永続化された state を信用せず、各フィールドの型/範囲を検証して既定値にフォールバック */
+function sanitizeNotificationState(persisted: unknown): Partial<NotificationStoreState> {
+    if (typeof persisted !== 'object' || persisted === null) return {};
+    const raw = persisted as Record<string, unknown>;
+    const result: Partial<NotificationStoreState> = {};
+
+    if (typeof raw.enabled === 'boolean') result.enabled = raw.enabled;
+
+    if (Array.isArray(raw.notifiedTaskIds)) {
+        result.notifiedTaskIds = raw.notifiedTaskIds.filter((id): id is string => typeof id === 'string');
+    }
+
+    if (typeof raw.lastHabitReminderDate === 'string' || raw.lastHabitReminderDate === null) {
+        result.lastHabitReminderDate = raw.lastHabitReminderDate;
+    }
+
+    if (typeof raw.habitReminderHour === 'number' && Number.isFinite(raw.habitReminderHour)) {
+        result.habitReminderHour = Math.max(0, Math.min(23, Math.floor(raw.habitReminderHour)));
+    }
+
+    return result;
+}
+
 export const useNotificationStore = create<NotificationStoreState>()(
     persist(
         (set) => ({
@@ -35,6 +58,8 @@ export const useNotificationStore = create<NotificationStoreState>()(
         }),
         {
             name: 'quest-board-notifications',
+            version: 1,
+            merge: (persisted, current) => ({ ...current, ...sanitizeNotificationState(persisted) }),
         }
     )
 );
