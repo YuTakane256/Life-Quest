@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown } from 'lucide-react';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortStore';
@@ -6,6 +6,7 @@ import { getTodayJST } from '../utils/dateUtils';
 import { HABIT_CATEGORIES, getCategoryById, DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import type { Habit } from '../types';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { useModalEscape } from '../hooks/useModalEscape';
 
 const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
     { value: 'createdAt', label: '作成順' },
@@ -95,8 +96,10 @@ export function HabitsPage() {
         if (isCompleting) { setMemoTarget(habitId); setMemoText(record?.memo || ''); }
     };
 
-    const handleSaveMemo = () => { if (memoTarget) { setHabitMemo(memoTarget, today, memoText); setMemoTarget(null); setMemoText(''); } };
+    const handleSaveMemo = useCallback(() => { if (memoTarget) { setHabitMemo(memoTarget, today, memoText); setMemoTarget(null); setMemoText(''); } }, [memoTarget, memoText, today, setHabitMemo]);
     const handleRestDay = () => { setRestDay(today); setShowRestConfirm(false); };
+    const closeMemo = useCallback(() => { setMemoTarget(null); setMemoText(''); }, []);
+    useModalEscape(!!memoTarget, closeMemo);
     const completedCount = habits.filter((h) => getRecordForHabit(h.id)?.completed).length;
 
     return (
@@ -308,10 +311,16 @@ export function HabitsPage() {
             {/* メモモーダル */}
             {memoTarget && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4" onClick={(e) => { if (e.target === e.currentTarget) handleSaveMemo(); }}>
-                    <div className="w-full max-w-sm rounded-2xl p-5 animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                        <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>📝 一言メモ（任意）</h3>
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="memo-modal-title"
+                        className="w-full max-w-sm rounded-2xl p-5 animate-fade-in"
+                        style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
+                    >
+                        <h3 id="memo-modal-title" className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>📝 一言メモ（任意）</h3>
                         <input type="text" value={memoText} onChange={(e) => setMemoText(e.target.value)} placeholder="今日の一言..." autoFocus className="w-full px-3 py-2.5 rounded-lg text-sm outline-none mb-4" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} onKeyDown={(e) => { if (e.key === 'Enter') handleSaveMemo(); }} />
-                        <div className="flex gap-2"><button onClick={handleSaveMemo} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>保存</button><button onClick={() => { setMemoTarget(null); setMemoText(''); }} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>スキップ</button></div>
+                        <div className="flex gap-2"><button onClick={handleSaveMemo} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>保存</button><button onClick={closeMemo} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>スキップ</button></div>
                     </div>
                 </div>
             )}

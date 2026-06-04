@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useModalEscape } from '../../hooks/useModalEscape';
 
 interface Props {
     open: boolean;
@@ -6,7 +7,7 @@ interface Props {
     message: ReactNode;
     confirmLabel: string;
     cancelLabel?: string;
-    /** 確認ボタンの背景色。CSS 変数の指定を想定（例: \`var(--color-accent-sky)\`）。デフォルトは danger。 */
+    /** 確認ボタンの背景色。CSS 変数の指定を想定（例: `var(--color-accent-sky)`）。デフォルトは danger。 */
     confirmColor?: string;
     onConfirm: () => void;
     onClose: () => void;
@@ -22,7 +23,11 @@ export function ConfirmDialog({
     onConfirm,
     onClose,
 }: Props) {
+    useModalEscape(open, onClose);
+
     if (!open) return null;
+
+    const titleId = 'confirm-dialog-title';
 
     return (
         <div
@@ -30,10 +35,13 @@ export function ConfirmDialog({
             onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
                 className="w-full max-w-sm rounded-2xl p-5 animate-fade-in"
                 style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
             >
-                <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                <h3 id={titleId} className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
                     {title}
                 </h3>
                 <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
