@@ -11,6 +11,8 @@ function calculateBonusXp(streak: number): number {
     return Math.min(LOGIN_BONUS_CONFIG.MAX_XP, xp);
 }
 
+let isChecking = false;
+
 export const useLoginBonusStore = create<LoginBonusStoreState>()(
     persist(
         (set, get) => ({
@@ -19,37 +21,47 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
             pendingBonus: null,
 
             checkDailyLogin: () => {
-                const today = getTodayJST();
-                const { lastLoginDate, streak } = get();
+                if (isChecking) return;
+                isChecking = true;
+                
+                try {
+                    const today = getTodayJST();
+                    const { lastLoginDate, streak } = get();
 
-                // 今日分のボーナスは受け取り済み
-                if (lastLoginDate === today) return;
+                    // 今日分のボーナスは受け取り済み
+                    if (lastLoginDate === today) return;
 
-                // 前日にログインしていれば連続日数を継続、そうでなければ1日目にリセット
-                const isConsecutive = lastLoginDate === shiftDate(today, -1);
-                const newStreak = isConsecutive ? streak + 1 : 1;
+                    // 即座に更新状態をマーク（重複発火防止の念押し）
+                    set({ lastLoginDate: today });
 
-                const xp = calculateBonusXp(newStreak);
-                const isSpecialDay = newStreak % LOGIN_BONUS_CONFIG.SPECIAL_CHEST_INTERVAL === 0;
+                    // 前日にログインしていれば連続日数を継続、そうでなければ1日目にリセット
+                    const isConsecutive = lastLoginDate === shiftDate(today, -1);
+                    const newStreak = isConsecutive ? streak + 1 : 1;
 
-                // 報酬を付与する
-                const gameStore = useGameStore.getState();
-                gameStore.addXp(xp);
-                if (isSpecialDay) {
-                    gameStore.grantChest(
-                        LOGIN_BONUS_CONFIG.SPECIAL_CHEST_TYPE,
-                        LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL
-                    );
+                    const xp = calculateBonusXp(newStreak);
+                    const isSpecialDay = newStreak % LOGIN_BONUS_CONFIG.SPECIAL_CHEST_INTERVAL === 0;
+
+                    // 報酬を付与する
+                    const gameStore = useGameStore.getState();
+                    gameStore.addXp(xp);
+                    if (isSpecialDay) {
+                        gameStore.grantChest(
+                            LOGIN_BONUS_CONFIG.SPECIAL_CHEST_TYPE,
+                            LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL
+                        );
+                    }
+
+                    const bonus: LoginBonus = {
+                        date: today,
+                        streak: newStreak,
+                        xp,
+                        chestLabel: isSpecialDay ? LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL : null,
+                    };
+
+                    set({ streak: newStreak, pendingBonus: bonus });
+                } finally {
+                    isChecking = false;
                 }
-
-                const bonus: LoginBonus = {
-                    date: today,
-                    streak: newStreak,
-                    xp,
-                    chestLabel: isSpecialDay ? LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL : null,
-                };
-
-                set({ lastLoginDate: today, streak: newStreak, pendingBonus: bonus });
             },
 
             clearPendingBonus: () => set({ pendingBonus: null }),
