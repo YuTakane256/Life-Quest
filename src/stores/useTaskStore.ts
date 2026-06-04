@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { generateId, getTodayJST, addRecurrenceInterval } from '../utils/dateUtils';
+import { clampString } from '../utils/validation';
 
 /** pending completions はLocalStorageに保存しない（タイマーは復元不可能） */
 interface TaskStorePersisted {
@@ -64,13 +65,21 @@ export const useTaskStore = create<TaskStoreState>()(
             pendingCompletions: [],
 
             addTask: (name: string, dueDate: string | null, priority: Priority, recurrence: Recurrence = 'none', tags: string[] = [], subtasks: Subtask[] = []) => {
+                const safeName = clampString(name, UI_CONFIG.MAX_TASK_NAME_LENGTH);
+                const safeTags = tags
+                    .slice(0, UI_CONFIG.MAX_TAGS_PER_TASK)
+                    .map((t) => clampString(t, UI_CONFIG.MAX_TAG_LENGTH));
+                const safeSubtasks = subtasks.map((s) => ({
+                    ...s,
+                    name: clampString(s.name, UI_CONFIG.MAX_SUBTASK_NAME_LENGTH),
+                }));
                 const newTask: Task = {
                     id: generateId(),
-                    name,
+                    name: safeName,
                     dueDate,
                     priority,
-                    tags,
-                    subtasks,
+                    tags: safeTags,
+                    subtasks: safeSubtasks,
                     recurrence,
                     completed: false,
                     completedAt: null,
@@ -232,7 +241,7 @@ export const useTaskStore = create<TaskStoreState>()(
             },
 
             addSubtask: (taskId: string, name: string) => {
-                const trimmedName = name.trim();
+                const trimmedName = clampString(name.trim(), UI_CONFIG.MAX_SUBTASK_NAME_LENGTH);
                 if (!trimmedName) return;
 
                 set((state) => ({
