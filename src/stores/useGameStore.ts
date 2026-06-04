@@ -489,6 +489,19 @@ export const useGameStore = create<GameStoreState>()(
                 set((state) => ({ chestQueue: [...state.chestQueue, newChest] }));
             },
         }),
-        { name: 'quest-board-game' }
+        {
+            name: 'quest-board-game',
+            // UI 用の一時イベント（levelUpEvent / pendingChestReveal）は永続化しない。
+            // これらが localStorage に残ると、リロード時にモーダルが意図せず再表示される。
+            // また、細工された localStorage で起動時に勝手に発火させられる嫌がらせも防ぐ。
+            partialize: (state) => ({
+                character: state.character,
+                debuff: state.debuff,
+                equipment: state.equipment,
+                gachaCount: state.gachaCount,
+                chestQueue: state.chestQueue,
+                battle: state.battle,
+            }),
+        }
     )
 );
