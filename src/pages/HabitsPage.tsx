@@ -108,8 +108,8 @@ export function HabitsPage() {
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>本日: {completedCount}/{habits.length} 達成{isRest && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--color-accent-sky)', color: 'white' }}>🩹 お休み中</span>}</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={() => setShowRestConfirm(true)} disabled={isRest} className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 disabled:opacity-40" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-accent-sky)' }} title="お休み"><HeartPulse size={18} /></button>
-                    <button onClick={() => { setShowForm(!showForm); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); }} className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}><Plus size={20} /></button>
+                    <button onClick={() => setShowRestConfirm(true)} disabled={isRest} aria-label="今日をお休みにする" className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 disabled:opacity-40" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-accent-sky)' }} title="お休み"><HeartPulse size={18} /></button>
+                    <button onClick={() => { setShowForm(!showForm); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); }} aria-label={showForm ? '習慣追加フォームを閉じる' : '新しい習慣を追加'} className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}><Plus size={20} /></button>
                 </div>
             </div>
 
@@ -294,7 +294,7 @@ export function HabitsPage() {
                                                 {record?.memo && <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}><MessageSquare size={10} />{record.memo}</p>}
                                             </div>
                                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => deleteHabit(habit.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
+                                                <button onClick={() => deleteHabit(habit.id)} aria-label={`「${habit.name}」を削除`} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
                                             </div>
                                         </div>
                                     );

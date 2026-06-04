@@ -58,6 +58,7 @@ export function CharacterPage() {
             {/* キャラクターカード */}
             <div className="rounded-2xl p-5 mb-4 relative" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', filter: debuff.active ? 'brightness(0.7)' : undefined }}>
                 <button onClick={() => { setEditName(character.name); setEditAvatar(character.avatar); setIsEditingProfile(true); }}
+                    aria-label="プロフィールを編集"
                     className="absolute top-4 right-4 p-2 rounded-lg transition-colors z-10"
                     style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>
                     <Edit2 size={16} />
@@ -222,7 +223,7 @@ export function CharacterPage() {
                     <div className="w-full max-w-sm rounded-2xl p-5 animate-scale-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>プロフィール編集</h3>
-                            <button onClick={() => setIsEditingProfile(false)} className="p-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>
+                            <button onClick={() => setIsEditingProfile(false)} aria-label="プロフィール編集を閉じる" className="p-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>
                                 <X size={20} />
                             </button>
                         </div>
