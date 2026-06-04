@@ -369,6 +369,22 @@ export const UI_CONFIG = {
 
     /** 最大表示タスク件数（パフォーマンス用） */
     MAX_VISIBLE_TASKS: 100,
+
+    // ─── ユーザー入力フィールドの文字数上限 ───
+    /** タスク名の最大文字数 */
+    MAX_TASK_NAME_LENGTH: 200,
+    /** タグ文字列の最大文字数 */
+    MAX_TAG_LENGTH: 50,
+    /** 1タスクあたりの最大タグ数 */
+    MAX_TAGS_PER_TASK: 20,
+    /** 習慣名の最大文字数 */
+    MAX_HABIT_NAME_LENGTH: 200,
+    /** 習慣メモの最大文字数 */
+    MAX_HABIT_MEMO_LENGTH: 500,
+    /** キャラクター名の最大文字数 */
+    MAX_CHARACTER_NAME_LENGTH: 30,
+    /** サブタスク名の最大文字数 */
+    MAX_SUBTASK_NAME_LENGTH: 200,
 } as const;
 
 // ─── 日付 / タイムゾーン設定 ──────────────────────────────────

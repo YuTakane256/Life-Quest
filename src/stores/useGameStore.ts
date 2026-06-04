@@ -13,6 +13,7 @@ import type {
     LevelUpEvent,
     ChestRevealEvent,
 } from '../types';
+import type { EquipmentTemplate } from '../config/gameConfig';
 import {
     XP_CONFIG,
     GACHA_CONFIG,
@@ -22,13 +23,31 @@ import {
     SELL_XP_BY_RARITY,
     RARITY_ORDER,
     SYNTHESIS_CONFIG,
+    UI_CONFIG,
     type ChestType,
     type GachaMilestone,
 } from '../config/gameConfig';
 import { generateId } from '../utils/dateUtils';
+import { clampString } from '../utils/validation';
+import { pickRandom } from '../utils/random';
 import { useBattleHistoryStore } from './useBattleHistoryStore';
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
+
+/** EquipmentTemplate から Equipment インスタンスを生成する */
+export function createEquipmentInstance(template: EquipmentTemplate): Equipment {
+    return {
+        id: generateId(),
+        templateId: template.id,
+        name: template.name,
+        slot: template.slot,
+        rarity: template.rarity,
+        attackBonus: template.attackBonus,
+        defenseBonus: template.defenseBonus,
+        hpBonus: template.hpBonus,
+        equipped: false,
+    };
+}
 
 export function calculateLevel(totalXp: number): number {
     const table = XP_CONFIG.LEVEL_XP_TABLE;
@@ -84,18 +103,9 @@ function rollEquipment(chestType: ChestType): Equipment | null {
     }
     const candidates = EQUIPMENT_POOL.filter((e) => e.rarity === selectedRarity);
     if (candidates.length === 0) return null;
-    const template = candidates[Math.floor(Math.random() * candidates.length)];
-    return {
-        id: generateId(),
-        templateId: template.id,
-        name: template.name,
-        slot: template.slot,
-        rarity: template.rarity,
-        attackBonus: template.attackBonus,
-        defenseBonus: template.defenseBonus,
-        hpBonus: template.hpBonus,
-        equipped: false,
-    };
+    const template = pickRandom(candidates);
+    if (!template) return null;
+    return createEquipmentInstance(template);
 }
 
 function calculateDamage(attack: number, defense: number): number {
@@ -129,7 +139,7 @@ function pickSynthesisSlot(items: Equipment[]): EquipmentSlot {
     }, { weapon: 0, armor: 0, accessory: 0 });
     const maxCount = Math.max(...Object.values(slotCounts));
     const tiedSlots = (Object.keys(slotCounts) as EquipmentSlot[]).filter((slot) => slotCounts[slot] === maxCount);
-    return tiedSlots[Math.floor(Math.random() * tiedSlots.length)];
+    return pickRandom(tiedSlots) as EquipmentSlot;
 }
 
 const initialCharacter: CharacterStats = {
@@ -170,9 +180,15 @@ export const useGameStore = create<GameStoreState>()(
 
             clearPendingChestReveal: () => set({ pendingChestReveal: null }),
 
-            updateCharacter: (updates) => set((state) => ({
-                character: { ...state.character, ...updates }
-            })),
+            updateCharacter: (updates) => {
+                const safeUpdates = { ...updates };
+                if (safeUpdates.name !== undefined) {
+                    safeUpdates.name = clampString(safeUpdates.name, UI_CONFIG.MAX_CHARACTER_NAME_LENGTH);
+                }
+                set((state) => ({
+                    character: { ...state.character, ...safeUpdates }
+                }));
+            },
 
             addXp: (baseXp: number) => {
                 const { debuff, character } = get();
@@ -457,18 +473,9 @@ export const useGameStore = create<GameStoreState>()(
                 const synthesisSlot = pickSynthesisSlot(items);
                 const candidates = EQUIPMENT_POOL.filter((e) => e.rarity === nextRarity && e.slot === synthesisSlot);
                 if (candidates.length === 0) return null;
-                const template = candidates[Math.floor(Math.random() * candidates.length)];
-                const newItem: import('../types').Equipment = {
-                    id: generateId(),
-                    templateId: template.id,
-                    name: template.name,
-                    slot: template.slot,
-                    rarity: template.rarity,
-                    attackBonus: template.attackBonus,
-                    defenseBonus: template.defenseBonus,
-                    hpBonus: template.hpBonus,
-                    equipped: false,
-                };
+                const template = pickRandom(candidates);
+                if (!template) return null;
+                const newItem = createEquipmentInstance(template);
                 set((state) => ({
                     equipment: [
                         ...state.equipment.filter((e) => !equipmentIds.includes(e.id)),

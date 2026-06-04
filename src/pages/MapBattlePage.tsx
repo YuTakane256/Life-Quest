@@ -5,6 +5,7 @@ import { BATTLE_CONFIG, MAP_CONFIG, ENEMY_IMAGE_KEYS } from '../config/gameConfi
 import { Swords, Trophy, Skull, RotateCcw, ChevronRight, History, ChevronDown } from 'lucide-react';
 import { formatRelativeTime } from '../utils/dateUtils';
 import { BattleReplayModal } from '../components/ui/BattleReplayModal';
+import { HpBar } from '../components/ui/HpBar';
 import type { BattleHistoryEntry } from '../types';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
@@ -196,15 +197,7 @@ export function MapBattlePage() {
                             </div>
                         </div>
                         <div className="text-sm font-bold mb-1 text-center truncate" style={{ color: 'var(--color-text-primary)' }}>{character.name} <span style={{ color: 'var(--color-accent-gold)' }}>Lv.{character.level}</span></div>
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
-                                <div className="h-full rounded-full transition-all duration-300" style={{
-                                    width: `${(battle.playerHp / effectiveStats.maxHp) * 100}%`,
-                                    backgroundColor: battle.playerHp / effectiveStats.maxHp > 0.3 ? 'var(--color-accent-emerald)' : 'var(--color-text-danger)'
-                                }} />
-                            </div>
-                            <span className="text-sm font-bold min-w-[40px] text-right" style={{ color: 'var(--color-text-primary)' }}>{battle.playerHp}</span>
-                        </div>
+                        <HpBar current={battle.playerHp} max={effectiveStats.maxHp} color="player" height="md" />
                     </div>
 
                     {/* 敵 */}
@@ -219,15 +212,7 @@ export function MapBattlePage() {
                             </div>
                         </div>
                         <div className="text-sm font-bold mb-1 text-center" style={{ color: 'var(--color-text-danger)' }}>{battle.enemy?.name}</div>
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
-                                <div className="h-full rounded-full transition-all duration-300" style={{
-                                    width: `${battle.enemy ? (battle.enemy.hp / battle.enemy.maxHp) * 100 : 0}%`,
-                                    backgroundColor: 'var(--color-text-danger)'
-                                }} />
-                            </div>
-                            <span className="text-sm font-bold min-w-[40px] text-right" style={{ color: 'var(--color-text-primary)' }}>{battle.enemy?.hp ?? 0}</span>
-                        </div>
+                        <HpBar current={battle.enemy?.hp ?? 0} max={battle.enemy?.maxHp ?? 1} color="enemy" height="md" />
                     </div>
                 </div>
 
