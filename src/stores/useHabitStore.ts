@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Habit, HabitDailyRecord, RestDay, HabitStoreState } from '../types';
+import type { Habit, HabitDailyRecord, HabitStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import { generateId, getTodayJST, shiftDate } from '../utils/dateUtils';
@@ -136,11 +136,15 @@ export const useHabitStore = create<HabitStoreState>()(
             areAllHabitsComplete: (date: string) => {
                 const { habits, dailyRecords } = get();
                 if (habits.length === 0) return false;
-                return habits.every((habit) =>
-                    dailyRecords.some(
+                return habits.every((habit) => {
+                    // 指定日より後に作成された習慣は達成の必要なしとみなす
+                    const createdDate = habit.createdAt.split('T')[0];
+                    if (date < createdDate) return true;
+
+                    return dailyRecords.some(
                         (r) => r.habitId === habit.id && r.date === date && r.completed
-                    )
-                );
+                    );
+                });
             },
 
             getHabitStreak: (habitId: string) => {
@@ -149,9 +153,15 @@ export const useHabitStore = create<HabitStoreState>()(
                 let streak = 0;
                 let cursor = today;
 
+                const habit = get().habits.find((h) => h.id === habitId);
+                if (!habit) return 0;
+                const createdDate = habit.createdAt.split('T')[0];
+
                 // 今日から過去へ遡って連続達成日数を数える。
                 // dailyRecords は30日でクリーンアップされるため最大31日まで遡れば十分。
                 for (let i = 0; i < 31; i++) {
+                    if (cursor < createdDate) break;
+
                     const isRest = restDays.some((r) => r.date === cursor && r.isRest);
                     if (isRest) {
                         // お休み日はストリークを途切れさせず、カウントもしない
