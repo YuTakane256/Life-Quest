@@ -3,10 +3,11 @@ import { SELL_XP_BY_RARITY, RARITY_ORDER, SYNTHESIS_CONFIG, GACHA_CONFIG } from 
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS, RARITY_LABELS } from '../config/equipmentAssets';
 import type { Equipment, Rarity, EquipmentSlot } from '../types';
 import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
+import { useModalEscape } from '../hooks/useModalEscape';
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = { weapon: '武器', armor: '防具', accessory: 'アクセサリー' };
 const SLOT_ICONS: Record<EquipmentSlot, React.ReactNode> = { weapon: <Sword size={18} />, armor: <Shield size={18} />, accessory: <Gem size={18} /> };
@@ -38,26 +39,39 @@ function getUpcomingMilestones(currentCount: number, limit: number = 3) {
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
 export function CharacterPage() {
-    const { character, debuff, equipment, gachaCount, chestQueue, unequipItem, openChest, getEffectiveStats, updateCharacter } = useGameStore();
+    // 個別 selector で必要なフィールドのみ subscribe → バトル中の不要な再レンダリングを防ぐ
+    const character = useGameStore((s) => s.character);
+    const debuff = useGameStore((s) => s.debuff);
+    const equipment = useGameStore((s) => s.equipment);
+    const gachaCount = useGameStore((s) => s.gachaCount);
+    const chestQueue = useGameStore((s) => s.chestQueue);
+    const unequipItem = useGameStore((s) => s.unequipItem);
+    const openChest = useGameStore((s) => s.openChest);
+    const getEffectiveStats = useGameStore((s) => s.getEffectiveStats);
+    const updateCharacter = useGameStore((s) => s.updateCharacter);
+    const autoEquipBest = useGameStore((s) => s.autoEquipBest);
+
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [editName, setEditName] = useState(character.name);
     const [editAvatar, setEditAvatar] = useState(character.avatar);
 
-    const effectiveStats = getEffectiveStats();
-    const xpProgress = calculateXpProgress(character.totalXp, character.level);
-    const nextLevelXp = calculateNextLevelXp(character.level);
-    const equippedItems = equipment.filter((e) => e.equipped);
-    const unopenedChests = chestQueue.filter((c) => !c.opened);
+    const effectiveStats = useMemo(() => getEffectiveStats(), [getEffectiveStats, equipment, character, debuff]);
+    const xpProgress = useMemo(() => calculateXpProgress(character.totalXp, character.level), [character.totalXp, character.level]);
+    const nextLevelXp = useMemo(() => calculateNextLevelXp(character.level), [character.level]);
+    const equippedItems = useMemo(() => equipment.filter((e) => e.equipped), [equipment]);
+    const unopenedChests = useMemo(() => chestQueue.filter((c) => !c.opened), [chestQueue]);
     // 開封済みの宝箱を新しい順に並べた獲得履歴（chestQueue は古い順に追加されている）
-    const openedChests = [...chestQueue].filter((c) => c.opened).reverse();
-    
-    const upcomingMilestones = getUpcomingMilestones(gachaCount, 3);
+    const openedChests = useMemo(() => [...chestQueue].filter((c) => c.opened).reverse(), [chestQueue]);
+    const upcomingMilestones = useMemo(() => getUpcomingMilestones(gachaCount, 3), [gachaCount]);
+
+    useModalEscape(isEditingProfile, () => setIsEditingProfile(false));
 
     return (
         <div className="max-w-lg mx-auto px-5 pt-6 pb-28">
             {/* キャラクターカード */}
             <div className="rounded-2xl p-5 mb-4 relative" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', filter: debuff.active ? 'brightness(0.7)' : undefined }}>
                 <button onClick={() => { setEditName(character.name); setEditAvatar(character.avatar); setIsEditingProfile(true); }}
+                    aria-label="プロフィールを編集"
                     className="absolute top-4 right-4 p-2 rounded-lg transition-colors z-10"
                     style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>
                     <Edit2 size={16} />
@@ -143,7 +157,18 @@ export function CharacterPage() {
 
             {/* 装備中 */}
             <div className="mb-4">
-                <h2 className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>装備中</h2>
+                <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>装備中</h2>
+                    <button
+                        onClick={autoEquipBest}
+                        disabled={equipment.length === 0}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-40"
+                        style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-accent-gold)', border: '1px solid var(--color-border-default)' }}
+                        aria-label="最強装備を自動装着"
+                    >
+                        <Sparkles size={12} /> 最強装備
+                    </button>
+                </div>
                 <div className="grid grid-cols-3 gap-2.5">
                     {(['weapon', 'armor', 'accessory'] as EquipmentSlot[]).map((slot) => {
                         const item = equippedItems.find((e) => e.slot === slot);
@@ -186,7 +211,7 @@ export function CharacterPage() {
                                 className="flex items-center gap-3 px-3 py-2.5"
                                 style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--color-border-default)' }}
                             >
-                                <img src={CHEST_IMAGES[chest.chestType] || chestWoodImg} alt={chest.label} className="w-8 h-8 object-contain flex-shrink-0" />
+                                <img src={CHEST_IMAGES[chest.chestType] || CHEST_FALLBACK_IMAGE} alt={chest.label} className="w-8 h-8 object-contain flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
                                     <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{chest.label}</div>
                                     {chest.equipment ? (
@@ -208,10 +233,16 @@ export function CharacterPage() {
             {/* プロフィール編集モーダル */}
             {isEditingProfile && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}>
-                    <div className="w-full max-w-sm rounded-2xl p-5 animate-scale-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="profile-edit-title"
+                        className="w-full max-w-sm rounded-2xl p-5 animate-scale-in"
+                        style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
+                    >
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>プロフィール編集</h3>
-                            <button onClick={() => setIsEditingProfile(false)} className="p-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>
+                            <h3 id="profile-edit-title" className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>プロフィール編集</h3>
+                            <button onClick={() => setIsEditingProfile(false)} aria-label="プロフィール編集を閉じる" className="p-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>
                                 <X size={20} />
                             </button>
                         </div>

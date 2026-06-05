@@ -56,11 +56,28 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
         }),
         {
             name: 'quest-board-login-bonus',
+            version: 1,
             // pendingBonus は表示用の一時状態なので永続化しない
             partialize: (state) => ({
                 lastLoginDate: state.lastLoginDate,
                 streak: state.streak,
             }),
+            merge: (persisted, current) => {
+                const raw = (typeof persisted === 'object' && persisted !== null
+                    ? (persisted as Record<string, unknown>)
+                    : {});
+                // lastLoginDate は YYYY-MM-DD 文字列 or null。それ以外は null にフォールバック
+                const lastLoginDate =
+                    typeof raw.lastLoginDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastLoginDate)
+                        ? raw.lastLoginDate
+                        : null;
+                // streak は 0 以上の有限整数。それ以外は 0
+                const streak =
+                    typeof raw.streak === 'number' && Number.isFinite(raw.streak) && raw.streak >= 0
+                        ? Math.floor(raw.streak)
+                        : 0;
+                return { ...current, lastLoginDate, streak };
+            },
         }
     )
 );

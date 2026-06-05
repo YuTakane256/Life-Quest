@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock, Copy } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/SnackbarProvider';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { isOverdue, generateId, formatRelativeDate, getTodayJST } from '../utils/dateUtils';
+import { PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_SORT_ORDER, RECURRENCE_LABELS } from '../config/taskLabels';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
 
 type DueFilter = 'all' | 'dueSoon' | 'overdue';
@@ -21,14 +23,8 @@ const PRIORITY_FILTER_OPTIONS: { value: PriorityFilter; label: string }[] = [
     { value: 'low', label: '低' },
 ];
 
-const PRIORITY_LABELS: Record<Priority, string> = { low: '低', medium: '中', high: '高' };
-const PRIORITY_COLORS: Record<Priority, string> = { low: 'var(--color-priority-low)', medium: 'var(--color-priority-medium)', high: 'var(--color-priority-high)' };
-const RECURRENCE_LABELS: Record<Recurrence, string> = { none: 'なし', daily: '毎日', weekly: '毎週', monthly: '毎月' };
-// 優先度の並び順（高い順）
-const PRIORITY_SORT_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
-
 export function TasksPage() {
-    const { tasks, addTask, updateTask, deleteTask, deleteCompletedTasks, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
+    const { tasks, addTask, updateTask, deleteTask, duplicateTask, deleteCompletedTasks, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
@@ -117,6 +113,12 @@ export function TasksPage() {
         setShowForm(false);
     };
 
+    const handleDuplicate = (task: Task) => {
+        const newId = duplicateTask(task.id);
+        if (!newId) return;
+        showUndo(`「${task.name}」を複製しました`, () => deleteTask(newId));
+    };
+
     const handleEdit = (task: Task) => {
         setEditingTask(task);
         setName(task.name);
@@ -143,10 +145,17 @@ export function TasksPage() {
         }
     };
 
-    const isPending = (taskId: string) => pendingCompletions.some((p) => p.taskId === taskId);
+    const pendingIds = useMemo(
+        () => new Set(pendingCompletions.map((p) => p.taskId)),
+        [pendingCompletions]
+    );
+    const isPending = useCallback((taskId: string) => pendingIds.has(taskId), [pendingIds]);
 
     /** 一括削除の対象となる完了タスク数（保留中は除外） */
-    const deletableCompletedCount = tasks.filter((t) => t.completed && !isPending(t.id)).length;
+    const deletableCompletedCount = useMemo(
+        () => tasks.filter((t) => t.completed && !pendingIds.has(t.id)).length,
+        [tasks, pendingIds]
+    );
 
     const handleDeleteCompleted = () => {
         deleteCompletedTasks();
@@ -232,6 +241,7 @@ export function TasksPage() {
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{tasks.filter((t) => !t.completed).length}件の未完了タスク</p>
                 </div>
                 <button onClick={() => { setEditingTask(null); resetForm(); setShowForm(!showForm); }}
+                    aria-label={showForm ? 'タスク追加フォームを閉じる' : '新しいタスクを追加'}
                     className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105"
                     style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                     <Plus size={20} />
@@ -417,7 +427,7 @@ export function TasksPage() {
                                 <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
                                     style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                                     {tag}
-                                    <button type="button" onClick={() => handleRemoveTag(tag)} className="hover:opacity-70">
+                                    <button type="button" onClick={() => handleRemoveTag(tag)} aria-label={`タグ「${tag}」を削除`} className="hover:opacity-70">
                                         <X size={12} />
                                     </button>
                                 </span>
@@ -450,6 +460,7 @@ export function TasksPage() {
                                             {subtask.name}
                                         </span>
                                         <button type="button" onClick={() => handleRemoveFormSubtask(subtask.id)}
+                                            aria-label={`サブタスク「${subtask.name}」を削除`}
                                             className="p-0.5 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
                                             <X size={14} />
                                         </button>
@@ -496,13 +507,16 @@ export function TasksPage() {
                         </p>
                     </div>
                 )}
-                {sortedTasks.map((task) => {
-                    const subtasks = task.subtasks || [];
-                    const completedSubtaskCount = subtasks.filter((subtask) => subtask.completed).length;
-                    const isExpanded = isTaskExpanded(task);
-                    const overdue = !task.completed && isOverdue(task.dueDate);
-                    const pending = isPending(task.id);
-                    return (
+                {(() => {
+                    const incompleteTasks = sortedTasks.filter((t) => !t.completed);
+                    const completedTasks = sortedTasks.filter((t) => t.completed);
+                    const renderTaskItem = (task: Task) => {
+                        const subtasks = task.subtasks || [];
+                        const completedSubtaskCount = subtasks.filter((subtask) => subtask.completed).length;
+                        const isExpanded = isTaskExpanded(task);
+                        const overdue = !task.completed && isOverdue(task.dueDate);
+                        const pending = isPending(task.id);
+                        return (
                         <div key={task.id} className={`rounded-xl transition-all duration-200 ${pending ? 'animate-pulse-glow' : ''}`}
                             style={{ backgroundColor: task.completed ? 'var(--color-bg-secondary)' : 'var(--color-bg-card)', border: `1px solid ${overdue ? 'var(--color-text-danger)' : 'var(--color-border-default)'}`, opacity: task.completed && !pending ? 0.6 : 1 }}>
                             <div className="group flex items-center gap-2 px-3 py-3">
@@ -538,8 +552,9 @@ export function TasksPage() {
                                     </div>
                                 </div>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => handleEdit(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }}><Edit3 size={14} /></button>
-                                    <button onClick={() => deleteTask(task.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
+                                    <button onClick={() => handleDuplicate(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="複製"><Copy size={14} /></button>
+                                    <button onClick={() => handleEdit(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="編集"><Edit3 size={14} /></button>
+                                    <button onClick={() => deleteTask(task.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }} aria-label="削除"><Trash2 size={14} /></button>
                                 </div>
                             </div>
                             {isExpanded && (
@@ -554,7 +569,7 @@ export function TasksPage() {
                                                 <span className={`flex-1 min-w-0 text-sm ${subtask.completed ? 'line-through' : ''}`} style={{ color: subtask.completed ? 'var(--color-text-muted)' : 'var(--color-text-secondary)' }}>
                                                     {subtask.name}
                                                 </span>
-                                                <button onClick={() => deleteSubtask(task.id, subtask.id)} className="p-1 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
+                                                <button onClick={() => deleteSubtask(task.id, subtask.id)} aria-label={`サブタスク「${subtask.name}」を削除`} className="p-1 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
                                                     <X size={14} />
                                                 </button>
                                             </div>
@@ -576,23 +591,36 @@ export function TasksPage() {
                                 </div>
                             )}
                         </div>
+                        );
+                    };
+                    return (
+                        <>
+                            {incompleteTasks.map(renderTaskItem)}
+                            {completedTasks.length > 0 && (
+                                <details className="rounded-xl mt-2 group" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
+                                    <summary className="cursor-pointer list-none px-3 py-2.5 flex items-center gap-2 text-xs select-none" style={{ color: 'var(--color-text-muted)' }}>
+                                        <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+                                        <span className="font-medium">完了タスク ({completedTasks.length})</span>
+                                    </summary>
+                                    <div className="flex flex-col gap-2 px-2 pb-2 pt-1">
+                                        {completedTasks.map(renderTaskItem)}
+                                    </div>
+                                </details>
+                            )}
+                        </>
                     );
-                })}
+                })()}
             </div>
 
             {/* 完了タスク一括削除の確認モーダル */}
-            {showDeleteCompletedConfirm && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4" onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteCompletedConfirm(false); }}>
-                    <div className="w-full max-w-sm rounded-2xl p-5 animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                        <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>完了タスクを削除しますか？</h3>
-                        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>完了済みのタスク{deletableCompletedCount}件をまとめて削除します。この操作は取り消せません。</p>
-                        <div className="flex gap-2">
-                            <button onClick={handleDeleteCompleted} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-text-danger)', color: 'white' }}>削除する</button>
-                            <button onClick={() => setShowDeleteCompletedConfirm(false)} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmDialog
+                open={showDeleteCompletedConfirm}
+                title="完了タスクを削除しますか？"
+                message={`完了済みのタスク${deletableCompletedCount}件をまとめて削除します。この操作は取り消せません。`}
+                confirmLabel="削除する"
+                onConfirm={handleDeleteCompleted}
+                onClose={() => setShowDeleteCompletedConfirm(false)}
+            />
         </div>
     );
 }
