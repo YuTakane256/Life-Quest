@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
+import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import { BATTLE_CONFIG, MAP_CONFIG, ENEMY_IMAGE_KEYS } from '../config/gameConfig';
-import { Swords, Trophy, Skull, RotateCcw, ChevronRight } from 'lucide-react';
+import { Swords, Trophy, Skull, RotateCcw, ChevronRight, History, ChevronDown } from 'lucide-react';
+import { formatRelativeTime } from '../utils/dateUtils';
+import { BattleReplayModal } from '../components/ui/BattleReplayModal';
+import { HpBar } from '../components/ui/HpBar';
+import { BattleLogList } from '../components/ui/BattleLogList';
+import type { BattleHistoryEntry } from '../types';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
 
@@ -12,38 +18,7 @@ import bgBattleGrassland from '../assets/images/bg_battle_grassland.png';
 import bgBattleCastle from '../assets/images/bg_battle_castle.png';
 import bgHeaven from '../assets/images/bg_heaven.png';
 import bgBattleHeaven from '../assets/images/bg_battle_heaven.png';
-
-// ─── 敵キャラ画像インポート ───
-import enemySlime from '../assets/images/enemy_slime.png';
-import enemyGoblin from '../assets/images/enemy_goblin.png';
-import enemyBat from '../assets/images/enemy_bat.png';
-import enemyRabbit from '../assets/images/enemy_rabbit.png';
-import enemySnake from '../assets/images/enemy_snake.png';
-import enemyOrc from '../assets/images/enemy_orc.png';
-import enemyBoar from '../assets/images/enemy_boar.png';
-import enemyTreant from '../assets/images/enemy_treant.png';
-import enemyWolf from '../assets/images/enemy_wolf.png';
-import enemyMinotaur from '../assets/images/enemy_minotaur.png';
-import enemySkeleton from '../assets/images/enemy_skeleton.png';
-import enemyZombie from '../assets/images/enemy_zombie.png';
-import enemyGhost from '../assets/images/enemy_ghost.png';
-import enemyGargoyle from '../assets/images/enemy_gargoyle.png';
-import enemyLivingArmor from '../assets/images/enemy_living_armor.png';
-import enemyWight from '../assets/images/enemy_wight.png';
-import enemyGolem from '../assets/images/enemy_golem.png';
-import enemyVampire from '../assets/images/enemy_vampire.png';
-import enemyDemon from '../assets/images/enemy_demon.png';
-import enemyDeathKnight from '../assets/images/enemy_death_knight.png';
-import enemyCherub from '../assets/images/enemy_cherub.png';
-import enemyPegasus from '../assets/images/enemy_pegasus.png';
-import enemyLightElemental from '../assets/images/enemy_light_elemental.png';
-import enemyAngel from '../assets/images/enemy_angel.png';
-import enemyValkyrie from '../assets/images/enemy_valkyrie.png';
-import enemyGriffin from '../assets/images/enemy_griffin.png';
-import enemySeraph from '../assets/images/enemy_seraph.png';
-import enemyHolyKnight from '../assets/images/enemy_holy_knight.png';
-import enemyArchangel from '../assets/images/enemy_archangel.png';
-import enemyGodOfLight from '../assets/images/enemy_god_of_light.png';
+import { ENEMY_IMAGES } from '../config/enemyImages';
 
 // ─── 画像マッピング ───
 const MAP_BACKGROUNDS: Record<string, string> = {
@@ -58,38 +33,6 @@ const BATTLE_BACKGROUNDS: Record<string, string> = {
     heaven: bgBattleHeaven,
 };
 
-const ENEMY_IMAGES: Record<string, string> = {
-    slime: enemySlime,
-    goblin: enemyGoblin,
-    bat: enemyBat,
-    rabbit: enemyRabbit,
-    snake: enemySnake,
-    orc: enemyOrc,
-    boar: enemyBoar,
-    treant: enemyTreant,
-    wolf: enemyWolf,
-    minotaur: enemyMinotaur,
-    skeleton: enemySkeleton,
-    zombie: enemyZombie,
-    ghost: enemyGhost,
-    gargoyle: enemyGargoyle,
-    living_armor: enemyLivingArmor,
-    wight: enemyWight,
-    golem: enemyGolem,
-    vampire: enemyVampire,
-    demon: enemyDemon,
-    death_knight: enemyDeathKnight,
-    cherub: enemyCherub,
-    pegasus: enemyPegasus,
-    light_elemental: enemyLightElemental,
-    angel: enemyAngel,
-    valkyrie: enemyValkyrie,
-    griffin: enemyGriffin,
-    seraph: enemySeraph,
-    holy_knight: enemyHolyKnight,
-    archangel: enemyArchangel,
-    god_of_light: enemyGodOfLight,
-};
 
 function getEnemyImage(stage: number) {
     const key = ENEMY_IMAGE_KEYS[stage];
@@ -101,14 +44,19 @@ function getMapForStage(stage: number) {
     return MAP_CONFIG.find(m => stage >= m.stageRange[0] && stage <= m.stageRange[1]) || MAP_CONFIG[0];
 }
 
+const HISTORY_PREVIEW_COUNT = 10;
+
 export function MapBattlePage() {
     const { battle, character, getEffectiveStats, startBattle, processBattleTurn, resetBattle, advanceStage } = useGameStore();
+    const history = useBattleHistoryStore((s) => s.history);
     const [showVictoryDialog, setShowVictoryDialog] = useState(false);
     const [selectedMapId, setSelectedMapId] = useState(() => {
         // 初期選択マップ: 現在のステージに対応するマップ
         const map = getMapForStage(battle.currentStage);
         return map.id;
     });
+    const [replayEntry, setReplayEntry] = useState<BattleHistoryEntry | null>(null);
+    const [showAllHistory, setShowAllHistory] = useState(false);
     const battleIntervalRef = useRef<number | null>(null);
     const logEndRef = useRef<HTMLDivElement>(null);
     const effectiveStats = getEffectiveStats();
@@ -187,15 +135,7 @@ export function MapBattlePage() {
                             </div>
                         </div>
                         <div className="text-sm font-bold mb-1 text-center truncate" style={{ color: 'var(--color-text-primary)' }}>{character.name} <span style={{ color: 'var(--color-accent-gold)' }}>Lv.{character.level}</span></div>
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
-                                <div className="h-full rounded-full transition-all duration-300" style={{
-                                    width: `${(battle.playerHp / effectiveStats.maxHp) * 100}%`,
-                                    backgroundColor: battle.playerHp / effectiveStats.maxHp > 0.3 ? 'var(--color-accent-emerald)' : 'var(--color-text-danger)'
-                                }} />
-                            </div>
-                            <span className="text-sm font-bold min-w-[40px] text-right" style={{ color: 'var(--color-text-primary)' }}>{battle.playerHp}</span>
-                        </div>
+                        <HpBar current={battle.playerHp} max={effectiveStats.maxHp} color="player" height="md" />
                     </div>
 
                     {/* 敵 */}
@@ -210,27 +150,17 @@ export function MapBattlePage() {
                             </div>
                         </div>
                         <div className="text-sm font-bold mb-1 text-center" style={{ color: 'var(--color-text-danger)' }}>{battle.enemy?.name}</div>
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
-                                <div className="h-full rounded-full transition-all duration-300" style={{
-                                    width: `${battle.enemy ? (battle.enemy.hp / battle.enemy.maxHp) * 100 : 0}%`,
-                                    backgroundColor: 'var(--color-text-danger)'
-                                }} />
-                            </div>
-                            <span className="text-sm font-bold min-w-[40px] text-right" style={{ color: 'var(--color-text-primary)' }}>{battle.enemy?.hp ?? 0}</span>
-                        </div>
+                        <HpBar current={battle.enemy?.hp ?? 0} max={battle.enemy?.maxHp ?? 1} color="enemy" height="md" />
                     </div>
                 </div>
 
                 {/* バトルログ */}
-                <div className="rounded-xl p-4 mb-4 h-52 overflow-y-auto" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                    {battle.logs.map((log, i) => (
-                        <div key={i} className="text-sm py-1 animate-fade-in" style={{ color: 'var(--color-text-secondary)' }}>
-                            <span style={{ color: 'var(--color-text-muted)' }}>[{log.turn}] </span>{log.message}
-                        </div>
-                    ))}
-                    <div ref={logEndRef} />
-                </div>
+                <BattleLogList
+                    logs={battle.logs}
+                    autoScroll={true}
+                    className="rounded-xl p-4 mb-4 h-52"
+                    style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
+                />
 
                 {/* 勝利ダイアログ */}
                 {battle.status === 'victory' && showVictoryDialog && (
@@ -316,6 +246,76 @@ export function MapBattlePage() {
                 })}
             </div>
 
+            {/* バトル履歴 */}
+            {history.length > 0 && (
+                <details
+                    className="mb-4 rounded-xl group"
+                    style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
+                >
+                    <summary
+                        className="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none list-none"
+                        style={{ color: 'var(--color-text-primary)' }}
+                    >
+                        <span className="flex items-center gap-1.5 text-sm font-semibold">
+                            <History size={16} style={{ color: 'var(--color-accent-primary)' }} />
+                            バトル履歴 ({history.length})
+                        </span>
+                        <ChevronDown size={16} className="transition-transform group-open:rotate-180" style={{ color: 'var(--color-text-muted)' }} />
+                    </summary>
+                    <div className="flex flex-col gap-1.5 px-3 pb-3">
+                        {(showAllHistory ? history : history.slice(0, HISTORY_PREVIEW_COUNT)).map((entry) => {
+                            const isVictory = entry.outcome === 'victory';
+                            return (
+                                <button
+                                    key={entry.id}
+                                    onClick={() => setReplayEntry(entry)}
+                                    aria-label="バトル履歴を再生"
+                                    className="text-left flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:opacity-80"
+                                    style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}
+                                >
+                                    <div
+                                        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                                        style={{ backgroundColor: isVictory ? 'var(--color-accent-gold)33' : 'var(--color-text-danger)33' }}
+                                    >
+                                        {isVictory
+                                            ? <Trophy size={18} style={{ color: 'var(--color-accent-gold)' }} />
+                                            : <Skull size={18} style={{ color: 'var(--color-text-danger)' }} />
+                                        }
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+                                                ステージ {entry.stage}: {entry.enemyName}
+                                            </div>
+                                            <div className="text-[10px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                                {formatRelativeTime(entry.timestamp)}
+                                            </div>
+                                        </div>
+                                        <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                            {entry.turnCount}ターン
+                                            {isVictory && (
+                                                <span style={{ color: 'var(--color-accent-gold)', marginLeft: 6 }}>
+                                                    · +{entry.xpEarned} XP
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                        {history.length > HISTORY_PREVIEW_COUNT && (
+                            <button
+                                onClick={() => setShowAllHistory((v) => !v)}
+                                className="mt-1 py-1.5 rounded-lg text-xs transition-colors hover:opacity-80"
+                                style={{ color: 'var(--color-accent-primary)', backgroundColor: 'var(--color-bg-secondary)' }}
+                            >
+                                {showAllHistory ? '折りたたむ' : `もっと見る (${history.length - HISTORY_PREVIEW_COUNT}件)`}
+                            </button>
+                        )}
+                    </div>
+                </details>
+            )}
+
             {/* ステージ一覧 */}
             <div className="flex flex-col gap-2">
                 {mapStages.map((stage) => {
@@ -364,6 +364,9 @@ export function MapBattlePage() {
                     );
                 })}
             </div>
+
+            {/* バトルリプレイモーダル */}
+            <BattleReplayModal entry={replayEntry} onClose={() => setReplayEntry(null)} />
         </div>
     );
 }
