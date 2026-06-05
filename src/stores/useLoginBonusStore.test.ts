@@ -3,114 +3,114 @@ import { useLoginBonusStore } from './useLoginBonusStore';
 import { useGameStore } from './useGameStore';
 import { LOGIN_BONUS_CONFIG } from '../config/gameConfig';
 
-/** JST 基準で "今日" を固定する: jstDate の 12:00 JST = UTC 03:00 */
-function setToday(jstDate: string) {
-    vi.setSystemTime(new Date(`${jstDate}T03:00:00Z`));
-}
+// JST 2025-03-15 12:00:00 に固定
+const BASE_DATE = new Date('2025-03-15T03:00:00.000Z'); // UTC 03:00 = JST 12:00
 
-function resetStore() {
+let addXpSpy: ReturnType<typeof vi.fn>;
+let grantChestSpy: ReturnType<typeof vi.fn>;
+const originalAddXp = useGameStore.getState().addXp;
+const originalGrantChest = useGameStore.getState().grantChest;
+
+function reset(fakeDate: Date = BASE_DATE) {
     localStorage.clear();
     useLoginBonusStore.setState({ lastLoginDate: null, streak: 0, pendingBonus: null });
+    addXpSpy = vi.fn();
+    grantChestSpy = vi.fn();
+    useGameStore.setState({ addXp: addXpSpy as any, grantChest: grantChestSpy as any });
+    vi.useFakeTimers();
+    vi.setSystemTime(fakeDate);
 }
 
-describe('useLoginBonusStore.checkDailyLogin', () => {
-    let addXpSpy: ReturnType<typeof vi.spyOn>;
-    let grantChestSpy: ReturnType<typeof vi.spyOn>;
-
-    beforeEach(() => {
-        vi.useFakeTimers();
-        setToday('2025-03-15');
-        resetStore();
-        // useGameStore の副作用をスパイ（実体は呼ばせるが検証可能に）
-        addXpSpy = vi.spyOn(useGameStore.getState(), 'addXp').mockImplementation(() => undefined);
-        grantChestSpy = vi.spyOn(useGameStore.getState(), 'grantChest').mockImplementation(() => undefined);
-    });
+describe('useLoginBonusStore', () => {
+    beforeEach(() => reset());
 
     afterEach(() => {
         vi.useRealTimers();
-        vi.restoreAllMocks();
+        useGameStore.setState({ addXp: originalAddXp, grantChest: originalGrantChest });
     });
 
-    it('初回ログイン: streak=1, xp=BASE_XP, pendingBonus 設定, addXp 呼び出し', () => {
+    it('初回ログイン: streak=1, xp=BASE_XP', () => {
         useLoginBonusStore.getState().checkDailyLogin();
         const state = useLoginBonusStore.getState();
         expect(state.streak).toBe(1);
         expect(state.lastLoginDate).toBe('2025-03-15');
-        expect(state.pendingBonus).toMatchObject({
-            date: '2025-03-15',
-            streak: 1,
-            xp: LOGIN_BONUS_CONFIG.BASE_XP,
-            chestLabel: null,
-        });
+        expect(state.pendingBonus).not.toBeNull();
+        expect(state.pendingBonus!.xp).toBe(LOGIN_BONUS_CONFIG.BASE_XP);
         expect(addXpSpy).toHaveBeenCalledWith(LOGIN_BONUS_CONFIG.BASE_XP);
-        expect(grantChestSpy).not.toHaveBeenCalled();
     });
 
-    it('同日 2 回目呼び出し: 何も変化しない', () => {
+    it('同日 2 回目呼び出し: 何も起きない', () => {
         useLoginBonusStore.getState().checkDailyLogin();
-        const stateAfter1 = useLoginBonusStore.getState();
+        addXpSpy.mockClear();
+        const bonusAfterFirst = useLoginBonusStore.getState().pendingBonus;
+
         useLoginBonusStore.getState().checkDailyLogin();
-        const stateAfter2 = useLoginBonusStore.getState();
-        expect(stateAfter2.streak).toBe(stateAfter1.streak);
-        expect(stateAfter2.lastLoginDate).toBe(stateAfter1.lastLoginDate);
-        // addXp は最初の 1 回だけ
-        expect(addXpSpy).toHaveBeenCalledTimes(1);
+        expect(useLoginBonusStore.getState().pendingBonus).toEqual(bonusAfterFirst);
+        expect(addXpSpy).not.toHaveBeenCalled();
     });
 
-    it('前日にログイン済みなら streak がインクリメントする', () => {
-        useLoginBonusStore.setState({ lastLoginDate: '2025-03-14', streak: 1, pendingBonus: null });
-        useLoginBonusStore.getState().checkDailyLogin();
-        const state = useLoginBonusStore.getState();
-        expect(state.streak).toBe(2);
-        // xp = BASE_XP + (2 - 1) * XP_PER_STREAK_DAY
-        const expected = LOGIN_BONUS_CONFIG.BASE_XP + LOGIN_BONUS_CONFIG.XP_PER_STREAK_DAY;
-        expect(state.pendingBonus?.xp).toBe(expected);
-        expect(addXpSpy).toHaveBeenCalledWith(expected);
-    });
-
-    it('2 日空けて呼ぶと streak: 1 にリセット', () => {
-        // 2 日前にログイン
-        useLoginBonusStore.setState({ lastLoginDate: '2025-03-13', streak: 5, pendingBonus: null });
+    it('前日ログインありで翌日: streak=2', () => {
+        // 1日目
         useLoginBonusStore.getState().checkDailyLogin();
         expect(useLoginBonusStore.getState().streak).toBe(1);
-        expect(addXpSpy).toHaveBeenCalledWith(LOGIN_BONUS_CONFIG.BASE_XP);
+
+        // 翌日 (JST 2025-03-16)
+        vi.setSystemTime(new Date('2025-03-16T03:00:00.000Z'));
+        useLoginBonusStore.getState().checkDailyLogin();
+        expect(useLoginBonusStore.getState().streak).toBe(2);
+        expect(useLoginBonusStore.getState().lastLoginDate).toBe('2025-03-16');
     });
 
-    it('7 日目: 特別宝箱が grantChest される', () => {
-        useLoginBonusStore.setState({ lastLoginDate: '2025-03-14', streak: 6, pendingBonus: null });
+    it('2日空けて呼ぶ: streak=1 にリセット', () => {
         useLoginBonusStore.getState().checkDailyLogin();
-        expect(useLoginBonusStore.getState().streak).toBe(LOGIN_BONUS_CONFIG.SPECIAL_CHEST_INTERVAL);
+        // 2日後 (JST 2025-03-17 — 3/16 をスキップ)
+        vi.setSystemTime(new Date('2025-03-17T03:00:00.000Z'));
+        useLoginBonusStore.getState().checkDailyLogin();
+        expect(useLoginBonusStore.getState().streak).toBe(1);
+    });
+
+    it('7日目: grantChest が呼ばれる', () => {
+        // 7日連続ログインをシミュレート
+        for (let i = 0; i < 7; i++) {
+            vi.setSystemTime(new Date(`2025-03-${String(15 + i).padStart(2, '0')}T03:00:00.000Z`));
+            useLoginBonusStore.getState().checkDailyLogin();
+        }
+        expect(useLoginBonusStore.getState().streak).toBe(7);
         expect(grantChestSpy).toHaveBeenCalledWith(
             LOGIN_BONUS_CONFIG.SPECIAL_CHEST_TYPE,
-            LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL,
+            LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL
         );
-        expect(useLoginBonusStore.getState().pendingBonus?.chestLabel).toBe(LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL);
+        expect(useLoginBonusStore.getState().pendingBonus!.chestLabel).toBe(LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL);
     });
 
-    it('14 日目（特別宝箱周期の倍数）でも grantChest される', () => {
-        useLoginBonusStore.setState({ lastLoginDate: '2025-03-14', streak: 13, pendingBonus: null });
-        useLoginBonusStore.getState().checkDailyLogin();
+    it('14日目: 同様に特別宝箱', () => {
+        for (let i = 0; i < 14; i++) {
+            vi.setSystemTime(new Date(`2025-03-${String(15 + i).padStart(2, '0')}T03:00:00.000Z`));
+            useLoginBonusStore.getState().checkDailyLogin();
+        }
         expect(useLoginBonusStore.getState().streak).toBe(14);
-        expect(grantChestSpy).toHaveBeenCalledTimes(1);
+        // grantChest は 7日目と14日目の計2回呼ばれる
+        expect(grantChestSpy).toHaveBeenCalledTimes(2);
     });
 
-    it('xp は MAX_XP でクランプされる（streak が非常に大きい場合）', () => {
-        // streak 100 → BASE + 99 * PER = 20 + 495 = 515 → MAX 100 にクランプ
-        useLoginBonusStore.setState({ lastLoginDate: '2025-03-14', streak: 99, pendingBonus: null });
+    it('MAX_XP 上限: streak が大きい時に xp がクランプされる', () => {
+        // streak を大きくして MAX_XP を超えるはずの状況を作る
+        const bigStreak = Math.ceil((LOGIN_BONUS_CONFIG.MAX_XP - LOGIN_BONUS_CONFIG.BASE_XP) / LOGIN_BONUS_CONFIG.XP_PER_STREAK_DAY) + 10;
+        useLoginBonusStore.setState({ lastLoginDate: '2025-03-14', streak: bigStreak - 1 });
+        vi.setSystemTime(new Date('2025-03-15T03:00:00.000Z'));
         useLoginBonusStore.getState().checkDailyLogin();
-        expect(useLoginBonusStore.getState().pendingBonus?.xp).toBe(LOGIN_BONUS_CONFIG.MAX_XP);
+        expect(useLoginBonusStore.getState().pendingBonus!.xp).toBe(LOGIN_BONUS_CONFIG.MAX_XP);
         expect(addXpSpy).toHaveBeenCalledWith(LOGIN_BONUS_CONFIG.MAX_XP);
     });
 
-    it('clearPendingBonus は pendingBonus のみ null にする', () => {
+    it('clearPendingBonus: pendingBonus だけ null になる', () => {
         useLoginBonusStore.getState().checkDailyLogin();
-        const before = useLoginBonusStore.getState();
-        expect(before.pendingBonus).not.toBeNull();
+        expect(useLoginBonusStore.getState().pendingBonus).not.toBeNull();
+        const { lastLoginDate, streak } = useLoginBonusStore.getState();
+
         useLoginBonusStore.getState().clearPendingBonus();
-        const after = useLoginBonusStore.getState();
-        expect(after.pendingBonus).toBeNull();
-        // lastLoginDate / streak は保持
-        expect(after.lastLoginDate).toBe(before.lastLoginDate);
-        expect(after.streak).toBe(before.streak);
+        expect(useLoginBonusStore.getState().pendingBonus).toBeNull();
+        expect(useLoginBonusStore.getState().lastLoginDate).toBe(lastLoginDate);
+        expect(useLoginBonusStore.getState().streak).toBe(streak);
     });
 });

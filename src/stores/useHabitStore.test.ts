@@ -46,7 +46,7 @@ describe('useHabitStore', () => {
             const id = useHabitStore.getState().habits[0].id;
             // 別習慣も追加して紛らわせる
             useHabitStore.getState().addHabit('B');
-            useHabitStore.setState((s) => ({
+            useHabitStore.setState((_s) => ({
                 dailyRecords: [
                     { habitId: id, date: '2025-03-15', completed: true, memo: '' },
                     { habitId: 'other', date: '2025-03-15', completed: true, memo: '' },

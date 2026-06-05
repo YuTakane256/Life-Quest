@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { useThemeStore } from '../../stores/useThemeStore';
 
-function resolveSystemTheme() {
+type ResolvedTheme = 'light' | 'dark';
+
+function resolveSystemTheme(): ResolvedTheme {
     return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
@@ -12,9 +14,16 @@ export function ThemeController() {
         const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
 
         const applyTheme = () => {
-            const resolvedTheme = mode === 'system' ? resolveSystemTheme() : mode;
+            // 防御の二重化: store 側で sanitize 済みだが、ここでも mode を厳密に判定して
+            // DOM 属性に invalid 値が漏れないようにする
+            const resolvedTheme: ResolvedTheme =
+                mode === 'light' ? 'light'
+                    : mode === 'dark' ? 'dark'
+                        : resolveSystemTheme();
+            const safeMode: 'light' | 'dark' | 'system' =
+                mode === 'light' || mode === 'dark' || mode === 'system' ? mode : 'system';
             document.documentElement.dataset.theme = resolvedTheme;
-            document.documentElement.dataset.themeMode = mode;
+            document.documentElement.dataset.themeMode = safeMode;
             document.documentElement.style.colorScheme = resolvedTheme;
         };
 

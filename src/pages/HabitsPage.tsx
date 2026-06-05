@@ -1,10 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown } from 'lucide-react';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortStore';
 import { getTodayJST } from '../utils/dateUtils';
 import { HABIT_CATEGORIES, getCategoryById, DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import type { Habit } from '../types';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { useModalEscape } from '../hooks/useModalEscape';
 
 const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
     { value: 'createdAt', label: '作成順' },
@@ -29,8 +31,18 @@ export function HabitsPage() {
     const allComplete = areAllHabitsComplete(today);
     const getRecordForHabit = (habitId: string) => dailyRecords.find((r) => r.habitId === habitId && r.date === today);
 
-    // カテゴリ別に習慣をグルーピング（カテゴリ内は選択した並び順でソート）
-    const groupedHabits = useMemo(() => {
+    // カテゴリ別に習慣をグルーピング（カテゴリ内は選択した並び順でソート）。
+    // streak / rate は習慣ごとに 30 日分の走査が走るので、ソートと描画で再利用できるよう
+    // 1 度だけ計算してマップにキャッシュする。
+    const { groups: groupedHabits, statsMap } = useMemo(() => {
+        const statsMap = new Map<string, { streak: number; rate: number | null }>();
+        habits.forEach((h) => {
+            statsMap.set(h.id, {
+                streak: getHabitStreak(h.id),
+                rate: getHabitCompletionRate(h.id),
+            });
+        });
+
         const groups: { categoryId: string; habits: Habit[] }[] = [];
         const categoryOrder = HABIT_CATEGORIES.map((c) => c.id);
 
@@ -41,11 +53,13 @@ export function HabitsPage() {
 
         const sortHabits = (a: Habit, b: Habit): number => {
             if (sortMode === 'name') return a.name.localeCompare(b.name);
-            if (sortMode === 'streak') return getHabitStreak(b.id) - getHabitStreak(a.id);
+            if (sortMode === 'streak') {
+                return (statsMap.get(b.id)?.streak ?? 0) - (statsMap.get(a.id)?.streak ?? 0);
+            }
             if (sortMode === 'completionRate') {
                 // null（対象日なし）は最後に
-                const rateA = getHabitCompletionRate(a.id) ?? -1;
-                const rateB = getHabitCompletionRate(b.id) ?? -1;
+                const rateA = statsMap.get(a.id)?.rate ?? -1;
+                const rateB = statsMap.get(b.id)?.rate ?? -1;
                 return rateB - rateA;
             }
             // createdAt: 古い順（既定）
@@ -60,7 +74,7 @@ export function HabitsPage() {
                 groups.push({ categoryId: catId, habits: habitsInCategory });
             }
         }
-        return groups;
+        return { groups, statsMap };
         // dailyRecords も並び順（ストリーク/達成率）に影響するため依存に含める
     }, [habits, filterCategoryId, sortMode, dailyRecords, getHabitStreak, getHabitCompletionRate]);
 
@@ -82,8 +96,10 @@ export function HabitsPage() {
         if (isCompleting) { setMemoTarget(habitId); setMemoText(record?.memo || ''); }
     };
 
-    const handleSaveMemo = () => { if (memoTarget) { setHabitMemo(memoTarget, today, memoText); setMemoTarget(null); setMemoText(''); } };
+    const handleSaveMemo = useCallback(() => { if (memoTarget) { setHabitMemo(memoTarget, today, memoText); setMemoTarget(null); setMemoText(''); } }, [memoTarget, memoText, today, setHabitMemo]);
     const handleRestDay = () => { setRestDay(today); setShowRestConfirm(false); };
+    const closeMemo = useCallback(() => { setMemoTarget(null); setMemoText(''); }, []);
+    useModalEscape(!!memoTarget, closeMemo);
     const completedCount = habits.filter((h) => getRecordForHabit(h.id)?.completed).length;
 
     return (
@@ -95,8 +111,8 @@ export function HabitsPage() {
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>本日: {completedCount}/{habits.length} 達成{isRest && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--color-accent-sky)', color: 'white' }}>🩹 お休み中</span>}</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={() => setShowRestConfirm(true)} disabled={isRest} className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 disabled:opacity-40" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-accent-sky)' }} title="お休み"><HeartPulse size={18} /></button>
-                    <button onClick={() => { setShowForm(!showForm); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); }} className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}><Plus size={20} /></button>
+                    <button onClick={() => setShowRestConfirm(true)} disabled={isRest} aria-label="今日をお休みにする" className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 disabled:opacity-40" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-accent-sky)' }} title="お休み"><HeartPulse size={18} /></button>
+                    <button onClick={() => { setShowForm(!showForm); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); }} aria-label={showForm ? '習慣追加フォームを閉じる' : '新しい習慣を追加'} className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}><Plus size={20} /></button>
                 </div>
             </div>
 
@@ -232,8 +248,9 @@ export function HabitsPage() {
                                 {categoryHabits.map((habit) => {
                                     const record = getRecordForHabit(habit.id);
                                     const isCompleted = record?.completed ?? false;
-                                    const streak = getHabitStreak(habit.id);
-                                    const completionRate = getHabitCompletionRate(habit.id);
+                                    const stats = statsMap.get(habit.id);
+                                    const streak = stats?.streak ?? 0;
+                                    const completionRate = stats?.rate ?? null;
 
                                     return (
                                         <div
@@ -280,7 +297,7 @@ export function HabitsPage() {
                                                 {record?.memo && <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}><MessageSquare size={10} />{record.memo}</p>}
                                             </div>
                                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => deleteHabit(habit.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
+                                                <button onClick={() => deleteHabit(habit.id)} aria-label={`「${habit.name}」を削除`} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
                                             </div>
                                         </div>
                                     );
@@ -294,24 +311,30 @@ export function HabitsPage() {
             {/* メモモーダル */}
             {memoTarget && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4" onClick={(e) => { if (e.target === e.currentTarget) handleSaveMemo(); }}>
-                    <div className="w-full max-w-sm rounded-2xl p-5 animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                        <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>📝 一言メモ（任意）</h3>
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="memo-modal-title"
+                        className="w-full max-w-sm rounded-2xl p-5 animate-fade-in"
+                        style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
+                    >
+                        <h3 id="memo-modal-title" className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>📝 一言メモ（任意）</h3>
                         <input type="text" value={memoText} onChange={(e) => setMemoText(e.target.value)} placeholder="今日の一言..." autoFocus className="w-full px-3 py-2.5 rounded-lg text-sm outline-none mb-4" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} onKeyDown={(e) => { if (e.key === 'Enter') handleSaveMemo(); }} />
-                        <div className="flex gap-2"><button onClick={handleSaveMemo} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>保存</button><button onClick={() => { setMemoTarget(null); setMemoText(''); }} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>スキップ</button></div>
+                        <div className="flex gap-2"><button onClick={handleSaveMemo} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>保存</button><button onClick={closeMemo} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>スキップ</button></div>
                     </div>
                 </div>
             )}
 
             {/* お休み確認モーダル */}
-            {showRestConfirm && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4" onClick={(e) => { if (e.target === e.currentTarget) setShowRestConfirm(false); }}>
-                    <div className="w-full max-w-sm rounded-2xl p-5 animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                        <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>🩹 お休みにしますか？</h3>
-                        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>本当に今日はお休みにしますか？<br />未達成デバフは免除されます。</p>
-                        <div className="flex gap-2"><button onClick={handleRestDay} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-accent-sky)', color: 'white' }}>お休みにする</button><button onClick={() => setShowRestConfirm(false)} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button></div>
-                    </div>
-                </div>
-            )}
+            <ConfirmDialog
+                open={showRestConfirm}
+                title="🩹 お休みにしますか？"
+                message={<>本当に今日はお休みにしますか？<br />未達成デバフは免除されます。</>}
+                confirmLabel="お休みにする"
+                confirmColor="var(--color-accent-sky)"
+                onConfirm={handleRestDay}
+                onClose={() => setShowRestConfirm(false)}
+            />
         </div>
     );
 }

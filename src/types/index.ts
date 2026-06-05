@@ -129,6 +129,21 @@ export interface BattleState {
     battleUnlocked: boolean; // 青宝箱獲得後にtrue
 }
 
+/** 過去のバトル結果スナップショット。useBattleHistoryStore で永続化。 */
+export interface BattleHistoryEntry {
+    id: string;
+    timestamp: string;       // ISO 8601
+    stage: number;
+    enemyName: string;
+    enemyMaxHp: number;      // リプレイ開始時のHPバー初期値
+    enemyAttack: number;
+    enemyDefense: number;
+    outcome: 'victory' | 'defeat';
+    turnCount: number;
+    xpEarned: number;        // 敗北時は 0
+    logs: BattleLog[];       // バトル中の全ログ
+}
+
 // ─── Store State Types ────────────────────────────────────────
 export interface TaskStoreState {
     tasks: Task[];
@@ -136,6 +151,7 @@ export interface TaskStoreState {
     addTask: (name: string, dueDate: string | null, priority: Priority, recurrence: Recurrence, tags?: string[], subtasks?: Subtask[]) => void;
     updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks' | 'recurrence'>>) => void;
     deleteTask: (id: string) => void;
+    duplicateTask: (id: string) => string | null; // 既存タスクを複製して新規追加。新タスクIDを返す（元タスクが無ければ null）
     deleteCompletedTasks: () => void; // 完了タスクを一括削除（保留中は除外）
     toggleComplete: (id: string) => void;
     addSubtask: (taskId: string, name: string) => void;
@@ -196,6 +212,7 @@ export interface GameStoreState {
     openChest: (chestId: string) => void;
     equipItem: (equipmentId: string) => void;
     unequipItem: (equipmentId: string) => void;
+    autoEquipBest: () => boolean; // 各スロットで最強の装備を装着。変更があれば true。
     applyDebuff: () => void;
     clearExpiredDebuffs: () => void;
     getEffectiveStats: () => { attack: number; defense: number; maxHp: number };
@@ -245,6 +262,12 @@ export interface StatsStoreState {
     habitLog: Record<string, { count: number; allComplete: boolean }>; // YYYY-MM-DD => 習慣データ
     logTaskXp: (date: string, xp: number) => void;
     logHabitActivity: (date: string, count: number, allComplete: boolean) => void;
+}
+
+export interface BattleHistoryStoreState {
+    history: BattleHistoryEntry[];
+    addBattleResult: (entry: BattleHistoryEntry) => void;
+    clearHistory: () => void;
 }
 
 // ─── ユーティリティ型 ──────────────────────────────────────────

@@ -1,6 +1,5 @@
 /**
- * 配列からランダムに1要素を選ぶ。
- * 空配列の場合は undefined を返す（呼び出し側で長さチェックを省ける）。
+ * 配列からランダムに1要素を返す。空配列なら undefined。
  */
 export function pickRandom<T>(arr: readonly T[]): T | undefined {
     if (arr.length === 0) return undefined;
