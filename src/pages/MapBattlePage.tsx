@@ -6,6 +6,7 @@ import { Swords, Trophy, Skull, RotateCcw, ChevronRight, History, ChevronDown } 
 import { formatRelativeTime } from '../utils/dateUtils';
 import { BattleReplayModal } from '../components/ui/BattleReplayModal';
 import { HpBar } from '../components/ui/HpBar';
+import { BattleLogList } from '../components/ui/BattleLogList';
 import type { BattleHistoryEntry } from '../types';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
@@ -17,38 +18,7 @@ import bgBattleGrassland from '../assets/images/bg_battle_grassland.png';
 import bgBattleCastle from '../assets/images/bg_battle_castle.png';
 import bgHeaven from '../assets/images/bg_heaven.png';
 import bgBattleHeaven from '../assets/images/bg_battle_heaven.png';
-
-// ─── 敵キャラ画像インポート ───
-import enemySlime from '../assets/images/enemy_slime.png';
-import enemyGoblin from '../assets/images/enemy_goblin.png';
-import enemyBat from '../assets/images/enemy_bat.png';
-import enemyRabbit from '../assets/images/enemy_rabbit.png';
-import enemySnake from '../assets/images/enemy_snake.png';
-import enemyOrc from '../assets/images/enemy_orc.png';
-import enemyBoar from '../assets/images/enemy_boar.png';
-import enemyTreant from '../assets/images/enemy_treant.png';
-import enemyWolf from '../assets/images/enemy_wolf.png';
-import enemyMinotaur from '../assets/images/enemy_minotaur.png';
-import enemySkeleton from '../assets/images/enemy_skeleton.png';
-import enemyZombie from '../assets/images/enemy_zombie.png';
-import enemyGhost from '../assets/images/enemy_ghost.png';
-import enemyGargoyle from '../assets/images/enemy_gargoyle.png';
-import enemyLivingArmor from '../assets/images/enemy_living_armor.png';
-import enemyWight from '../assets/images/enemy_wight.png';
-import enemyGolem from '../assets/images/enemy_golem.png';
-import enemyVampire from '../assets/images/enemy_vampire.png';
-import enemyDemon from '../assets/images/enemy_demon.png';
-import enemyDeathKnight from '../assets/images/enemy_death_knight.png';
-import enemyCherub from '../assets/images/enemy_cherub.png';
-import enemyPegasus from '../assets/images/enemy_pegasus.png';
-import enemyLightElemental from '../assets/images/enemy_light_elemental.png';
-import enemyAngel from '../assets/images/enemy_angel.png';
-import enemyValkyrie from '../assets/images/enemy_valkyrie.png';
-import enemyGriffin from '../assets/images/enemy_griffin.png';
-import enemySeraph from '../assets/images/enemy_seraph.png';
-import enemyHolyKnight from '../assets/images/enemy_holy_knight.png';
-import enemyArchangel from '../assets/images/enemy_archangel.png';
-import enemyGodOfLight from '../assets/images/enemy_god_of_light.png';
+import { ENEMY_IMAGES } from '../config/enemyImages';
 
 // ─── 画像マッピング ───
 const MAP_BACKGROUNDS: Record<string, string> = {
@@ -63,38 +33,6 @@ const BATTLE_BACKGROUNDS: Record<string, string> = {
     heaven: bgBattleHeaven,
 };
 
-const ENEMY_IMAGES: Record<string, string> = {
-    slime: enemySlime,
-    goblin: enemyGoblin,
-    bat: enemyBat,
-    rabbit: enemyRabbit,
-    snake: enemySnake,
-    orc: enemyOrc,
-    boar: enemyBoar,
-    treant: enemyTreant,
-    wolf: enemyWolf,
-    minotaur: enemyMinotaur,
-    skeleton: enemySkeleton,
-    zombie: enemyZombie,
-    ghost: enemyGhost,
-    gargoyle: enemyGargoyle,
-    living_armor: enemyLivingArmor,
-    wight: enemyWight,
-    golem: enemyGolem,
-    vampire: enemyVampire,
-    demon: enemyDemon,
-    death_knight: enemyDeathKnight,
-    cherub: enemyCherub,
-    pegasus: enemyPegasus,
-    light_elemental: enemyLightElemental,
-    angel: enemyAngel,
-    valkyrie: enemyValkyrie,
-    griffin: enemyGriffin,
-    seraph: enemySeraph,
-    holy_knight: enemyHolyKnight,
-    archangel: enemyArchangel,
-    god_of_light: enemyGodOfLight,
-};
 
 function getEnemyImage(stage: number) {
     const key = ENEMY_IMAGE_KEYS[stage];
@@ -217,14 +155,12 @@ export function MapBattlePage() {
                 </div>
 
                 {/* バトルログ */}
-                <div className="rounded-xl p-4 mb-4 h-52 overflow-y-auto" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                    {battle.logs.map((log, i) => (
-                        <div key={i} className="text-sm py-1 animate-fade-in" style={{ color: 'var(--color-text-secondary)' }}>
-                            <span style={{ color: 'var(--color-text-muted)' }}>[{log.turn}] </span>{log.message}
-                        </div>
-                    ))}
-                    <div ref={logEndRef} />
-                </div>
+                <BattleLogList
+                    logs={battle.logs}
+                    autoScroll={true}
+                    className="rounded-xl p-4 mb-4 h-52"
+                    style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
+                />
 
                 {/* 勝利ダイアログ */}
                 {battle.status === 'victory' && showVictoryDialog && (
