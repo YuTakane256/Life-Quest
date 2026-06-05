@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Habit, HabitDailyRecord, RestDay, HabitStoreState } from '../types';
+import type { Habit, HabitDailyRecord, HabitStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import { generateId, getTodayJST, shiftDate } from '../utils/dateUtils';
