@@ -3,6 +3,7 @@ import { X, Pause, Play, FastForward, Trophy, Skull } from 'lucide-react';
 import type { BattleHistoryEntry } from '../../types';
 import { BATTLE_CONFIG } from '../../config/gameConfig';
 import { HpBar } from './HpBar';
+import { BattleLogList } from './BattleLogList';
 
 interface Props {
     entry: BattleHistoryEntry | null;
@@ -105,36 +106,30 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                     {/* プレイヤー */}
                     <div className="rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
                         <div className="text-[10px] mb-1" style={{ color: 'var(--color-text-muted)' }}>自分</div>
-                        <HpBar current={playerHp} max={maxPlayerHp} variant="player" height="sm" trackColor="var(--color-bg-primary)" />
+                        <HpBar current={playerHp} max={maxPlayerHp} color="player" height="sm" />
                     </div>
                     {/* 敵 */}
                     <div className="rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
                         <div className="text-[10px] mb-1 truncate" style={{ color: 'var(--color-text-muted)' }}>{enemyName}</div>
-                        <HpBar current={enemyHp} max={enemyMaxHp} variant="enemy" height="sm" trackColor="var(--color-bg-primary)" />
+                        <HpBar current={enemyHp} max={enemyMaxHp} color="enemy" height="sm" />
                     </div>
                 </div>
 
-                {/* ログ表示エリア */}
-                <div
-                    className="mx-5 my-3 rounded-xl p-3 overflow-y-auto"
+                {/* バトルログ */}
+                <BattleLogList
+                    logs={visibleLogs}
+                    autoScroll={true}
+                    emptyMessage="まもなく開始…"
                     style={{
                         backgroundColor: 'var(--color-bg-secondary)',
                         border: '1px solid var(--color-border-default)',
                         minHeight: '180px',
                         maxHeight: '300px',
                         flex: '1 1 auto',
+                        borderRadius: '0.5rem',
+                        padding: '1rem'
                     }}
                 >
-                    {visibleLogs.length === 0 && (
-                        <div className="text-center text-xs py-4" style={{ color: 'var(--color-text-muted)' }}>
-                            まもなく開始…
-                        </div>
-                    )}
-                    {visibleLogs.map((log, i) => (
-                        <div key={i} className="text-sm py-1 animate-fade-in" style={{ color: 'var(--color-text-secondary)' }}>
-                            <span style={{ color: 'var(--color-text-muted)' }}>[{log.turn}] </span>{log.message}
-                        </div>
-                    ))}
                     {isFinished && (
                         <div
                             className="mt-3 px-3 py-2 rounded-lg text-center text-sm font-bold animate-fade-in"
@@ -149,7 +144,7 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                                 : `💀 ${turnCount}ターン目で敗北`}
                         </div>
                     )}
-                </div>
+                </BattleLogList>
 
                 {/* コントロール */}
                 <div

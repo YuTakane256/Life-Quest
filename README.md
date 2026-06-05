@@ -149,3 +149,5 @@ git push origin feat/2-deep-sea-map
 | `style:` | UIやコードスタイルの調整 |
 | `refactor:` | リファクタリング |
 | `chore:` | 設定ファイルや依存関係の更新 |
+| `security:` | セキュリティ修正 |
+

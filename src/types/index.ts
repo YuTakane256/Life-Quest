@@ -151,6 +151,7 @@ export interface TaskStoreState {
     addTask: (name: string, dueDate: string | null, priority: Priority, recurrence: Recurrence, tags?: string[], subtasks?: Subtask[]) => void;
     updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks' | 'recurrence'>>) => void;
     deleteTask: (id: string) => void;
+    duplicateTask: (id: string) => string | null; // 既存タスクを複製して新規追加。新タスクIDを返す（元タスクが無ければ null）
     deleteCompletedTasks: () => void; // 完了タスクを一括削除（保留中は除外）
     toggleComplete: (id: string) => void;
     addSubtask: (taskId: string, name: string) => void;
@@ -211,6 +212,7 @@ export interface GameStoreState {
     openChest: (chestId: string) => void;
     equipItem: (equipmentId: string) => void;
     unequipItem: (equipmentId: string) => void;
+    autoEquipBest: () => boolean; // 各スロットで最強の装備を装着。変更があれば true。
     applyDebuff: () => void;
     clearExpiredDebuffs: () => void;
     getEffectiveStats: () => { attack: number; defense: number; maxHp: number };

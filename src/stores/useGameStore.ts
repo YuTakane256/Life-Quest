@@ -13,6 +13,7 @@ import type {
     LevelUpEvent,
     ChestRevealEvent,
 } from '../types';
+import type { EquipmentTemplate } from '../config/gameConfig';
 import {
     XP_CONFIG,
     GACHA_CONFIG,
@@ -22,15 +23,33 @@ import {
     SELL_XP_BY_RARITY,
     RARITY_ORDER,
     SYNTHESIS_CONFIG,
+    UI_CONFIG,
     type ChestType,
     type GachaMilestone,
 } from '../config/gameConfig';
 import { generateId } from '../utils/dateUtils';
+import { clampString } from '../utils/validation';
+import { pickRandom } from '../utils/random';
 import { useBattleHistoryStore } from './useBattleHistoryStore';
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
 
-function calculateLevel(totalXp: number): number {
+/** EquipmentTemplate から Equipment インスタンスを生成する */
+export function createEquipmentInstance(template: EquipmentTemplate): Equipment {
+    return {
+        id: generateId(),
+        templateId: template.id,
+        name: template.name,
+        slot: template.slot,
+        rarity: template.rarity,
+        attackBonus: template.attackBonus,
+        defenseBonus: template.defenseBonus,
+        hpBonus: template.hpBonus,
+        equipped: false,
+    };
+}
+
+export function calculateLevel(totalXp: number): number {
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
     if (totalXp >= table[maxTableLevel]) {
@@ -84,18 +103,9 @@ function rollEquipment(chestType: ChestType): Equipment | null {
     }
     const candidates = EQUIPMENT_POOL.filter((e) => e.rarity === selectedRarity);
     if (candidates.length === 0) return null;
-    const template = candidates[Math.floor(Math.random() * candidates.length)];
-    return {
-        id: generateId(),
-        templateId: template.id,
-        name: template.name,
-        slot: template.slot,
-        rarity: template.rarity,
-        attackBonus: template.attackBonus,
-        defenseBonus: template.defenseBonus,
-        hpBonus: template.hpBonus,
-        equipped: false,
-    };
+    const template = pickRandom(candidates);
+    if (!template) return null;
+    return createEquipmentInstance(template);
 }
 
 function calculateDamage(attack: number, defense: number): number {
@@ -129,7 +139,7 @@ function pickSynthesisSlot(items: Equipment[]): EquipmentSlot {
     }, { weapon: 0, armor: 0, accessory: 0 });
     const maxCount = Math.max(...Object.values(slotCounts));
     const tiedSlots = (Object.keys(slotCounts) as EquipmentSlot[]).filter((slot) => slotCounts[slot] === maxCount);
-    return tiedSlots[Math.floor(Math.random() * tiedSlots.length)];
+    return pickRandom(tiedSlots) as EquipmentSlot;
 }
 
 const initialCharacter: CharacterStats = {
@@ -170,9 +180,15 @@ export const useGameStore = create<GameStoreState>()(
 
             clearPendingChestReveal: () => set({ pendingChestReveal: null }),
 
-            updateCharacter: (updates) => set((state) => ({
-                character: { ...state.character, ...updates }
-            })),
+            updateCharacter: (updates) => {
+                const safeUpdates = { ...updates };
+                if (safeUpdates.name !== undefined) {
+                    safeUpdates.name = clampString(safeUpdates.name, UI_CONFIG.MAX_CHARACTER_NAME_LENGTH);
+                }
+                set((state) => ({
+                    character: { ...state.character, ...safeUpdates }
+                }));
+            },
 
             addXp: (baseXp: number) => {
                 const { debuff, character } = get();
@@ -271,6 +287,41 @@ export const useGameStore = create<GameStoreState>()(
             unequipItem: (equipmentId: string) => set((state) => ({
                 equipment: state.equipment.map((e) => e.id === equipmentId ? { ...e, equipped: false } : e),
             })),
+
+            autoEquipBest: () => {
+                const { equipment } = get();
+                const slots: EquipmentSlot[] = ['weapon', 'armor', 'accessory'];
+                // 各スロットで totalBonus が最大のアイテムを選ぶ
+                const bestIdBySlot = new Map<EquipmentSlot, string>();
+                for (const slot of slots) {
+                    const slotItems = equipment.filter((e) => e.slot === slot);
+                    if (slotItems.length === 0) continue;
+                    const best = slotItems.reduce((acc, e) => {
+                        const score = e.attackBonus + e.defenseBonus + e.hpBonus;
+                        const accScore = acc.attackBonus + acc.defenseBonus + acc.hpBonus;
+                        return score > accScore ? e : acc;
+                    });
+                    bestIdBySlot.set(slot, best.id);
+                }
+
+                // 既に最強が装備済みなら変更なし
+                const alreadyOptimal = slots.every((slot) => {
+                    const bestId = bestIdBySlot.get(slot);
+                    if (bestId === undefined) return true; // そのスロットに何も無い → スキップ扱い
+                    const equipped = equipment.find((e) => e.slot === slot && e.equipped);
+                    return equipped?.id === bestId;
+                });
+                if (alreadyOptimal) return false;
+
+                set((state) => ({
+                    equipment: state.equipment.map((e) => {
+                        const bestId = bestIdBySlot.get(e.slot);
+                        if (bestId === undefined) return e;
+                        return { ...e, equipped: e.id === bestId };
+                    }),
+                }));
+                return true;
+            },
 
             applyDebuff: () => {
                 const expiresAt = new Date(Date.now() + XP_CONFIG.DEBUFF_DURATION_MS).toISOString();
@@ -422,18 +473,9 @@ export const useGameStore = create<GameStoreState>()(
                 const synthesisSlot = pickSynthesisSlot(items);
                 const candidates = EQUIPMENT_POOL.filter((e) => e.rarity === nextRarity && e.slot === synthesisSlot);
                 if (candidates.length === 0) return null;
-                const template = candidates[Math.floor(Math.random() * candidates.length)];
-                const newItem: import('../types').Equipment = {
-                    id: generateId(),
-                    templateId: template.id,
-                    name: template.name,
-                    slot: template.slot,
-                    rarity: template.rarity,
-                    attackBonus: template.attackBonus,
-                    defenseBonus: template.defenseBonus,
-                    hpBonus: template.hpBonus,
-                    equipped: false,
-                };
+                const template = pickRandom(candidates);
+                if (!template) return null;
+                const newItem = createEquipmentInstance(template);
                 set((state) => ({
                     equipment: [
                         ...state.equipment.filter((e) => !equipmentIds.includes(e.id)),
@@ -454,6 +496,19 @@ export const useGameStore = create<GameStoreState>()(
                 set((state) => ({ chestQueue: [...state.chestQueue, newChest] }));
             },
         }),
-        { name: 'quest-board-game' }
+        {
+            name: 'quest-board-game',
+            // UI 用の一時イベント（levelUpEvent / pendingChestReveal）は永続化しない。
+            // これらが localStorage に残ると、リロード時にモーダルが意図せず再表示される。
+            // また、細工された localStorage で起動時に勝手に発火させられる嫌がらせも防ぐ。
+            partialize: (state) => ({
+                character: state.character,
+                debuff: state.debuff,
+                equipment: state.equipment,
+                gachaCount: state.gachaCount,
+                chestQueue: state.chestQueue,
+                battle: state.battle,
+            }),
+        }
     )
 );

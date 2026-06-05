@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Habit, HabitDailyRecord, RestDay, HabitStoreState } from '../types';
-import { XP_CONFIG } from '../config/gameConfig';
+import type { Habit, HabitDailyRecord, HabitStoreState } from '../types';
+import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
 import { generateId, getTodayJST, shiftDate } from '../utils/dateUtils';
+import { clampString } from '../utils/validation';
 
 export const useHabitStore = create<HabitStoreState>()(
     persist(
@@ -15,7 +16,7 @@ export const useHabitStore = create<HabitStoreState>()(
             addHabit: (name: string, categoryId?: string) => {
                 const newHabit: Habit = {
                     id: generateId(),
-                    name,
+                    name: clampString(name, UI_CONFIG.MAX_HABIT_NAME_LENGTH),
                     categoryId: categoryId || DEFAULT_CATEGORY_ID,
                     createdAt: new Date().toISOString(),
                 };
@@ -81,6 +82,7 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             setHabitMemo: (habitId: string, date: string, memo: string) => {
+                const safeMemo = clampString(memo, UI_CONFIG.MAX_HABIT_MEMO_LENGTH);
                 const existingRecord = get().dailyRecords.find(
                     (r) => r.habitId === habitId && r.date === date
                 );
@@ -89,7 +91,7 @@ export const useHabitStore = create<HabitStoreState>()(
                     set((state) => ({
                         dailyRecords: state.dailyRecords.map((r) =>
                             r.habitId === habitId && r.date === date
-                                ? { ...r, memo }
+                                ? { ...r, memo: safeMemo }
                                 : r
                         ),
                     }));
@@ -99,7 +101,7 @@ export const useHabitStore = create<HabitStoreState>()(
                         habitId,
                         date,
                         completed: false,
-                        memo,
+                        memo: safeMemo,
                     };
                     set((state) => ({
                         dailyRecords: [...state.dailyRecords, newRecord],
@@ -198,10 +200,10 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             checkAndResetHabits: () => {
-                // 古いレコードのクリーンアップ（30日以上前のものを削除）
-                const cutoffDate = new Date();
-                cutoffDate.setDate(cutoffDate.getDate() - 30);
-                const cutoffStr = cutoffDate.toISOString().split('T')[0];
+                // 古いレコードのクリーンアップ（30日以上前のものを削除）。
+                // dailyRecords / restDays は JST 日付（YYYY-MM-DD）で保存されているので、
+                // cutoff も JST ベースで計算する（UTC ベースだと JST 深夜 0-9 時に 1 日ずれる）。
+                const cutoffStr = shiftDate(getTodayJST(), -30);
 
                 set((state) => ({
                     dailyRecords: state.dailyRecords.filter((r) => r.date >= cutoffStr),
