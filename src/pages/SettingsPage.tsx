@@ -1,4 +1,4 @@
-import { ArrowLeft, Settings } from 'lucide-react';
+import { ArrowLeft, ChevronRight, HelpCircle, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { DataBackupSettings } from '../components/ui/DataBackupSettings';
 import { ThemeSettings } from '../components/ui/ThemeSettings';
@@ -29,6 +29,23 @@ export function SettingsPage() {
                 <ThemeSettings />
                 <NotificationSettings />
                 <UsageStatsSettings />
+                <button
+                    type="button"
+                    onClick={() => navigate('/help')}
+                    className="rounded-xl p-4 flex items-center justify-between gap-3 text-left transition-all active:scale-[0.99]"
+                    style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
+                >
+                    <div className="flex items-start gap-2 min-w-0">
+                        <HelpCircle size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                        <div className="min-w-0">
+                            <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>使い方</h2>
+                            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                タスク、習慣、バトル、通知の説明を確認できます
+                            </p>
+                        </div>
+                    </div>
+                    <ChevronRight size={18} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+                </button>
                 <DataBackupSettings />
             </div>
         </div>
