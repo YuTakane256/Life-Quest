@@ -35,15 +35,28 @@ function isValidBackup(data: unknown): data is BackupData {
     return true;
 }
 
+/**
+ * localStorage の値を安全に JSON.parse する。
+ * 値が壊れている／DevTools 経由で書き換えられている場合でも、
+ * エクスポート全体がクラッシュしないよう空オブジェクトでフォールバックする。
+ */
+function safeParse(key: string): unknown {
+    try {
+        return JSON.parse(localStorage.getItem(key) || '{}');
+    } catch {
+        return {};
+    }
+}
+
 function exportAllData(): BackupData {
     return {
         version: BACKUP_VERSION,
         exportedAt: new Date().toISOString(),
-        tasks: JSON.parse(localStorage.getItem('quest-board-tasks') || '{}'),
-        habits: JSON.parse(localStorage.getItem('quest-board-habits') || '{}'),
-        game: JSON.parse(localStorage.getItem('quest-board-game') || '{}'),
-        stats: JSON.parse(localStorage.getItem('quest-board-stats') || '{}'),
-        theme: JSON.parse(localStorage.getItem('quest-board-theme') || '{}'),
+        tasks: safeParse('quest-board-tasks'),
+        habits: safeParse('quest-board-habits'),
+        game: safeParse('quest-board-game'),
+        stats: safeParse('quest-board-stats'),
+        theme: safeParse('quest-board-theme'),
     };
 }
 
