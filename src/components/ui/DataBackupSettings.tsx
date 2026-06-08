@@ -35,15 +35,28 @@ function isValidBackup(data: unknown): data is BackupData {
     return true;
 }
 
+/**
+ * localStorage の値を安全に JSON.parse する。
+ * 値が壊れている／DevTools 経由で書き換えられている場合でも、
+ * エクスポート全体がクラッシュしないよう空オブジェクトでフォールバックする。
+ */
+function safeParse(key: string): unknown {
+    try {
+        return JSON.parse(localStorage.getItem(key) || '{}');
+    } catch {
+        return {};
+    }
+}
+
 function exportAllData(): BackupData {
     return {
         version: BACKUP_VERSION,
         exportedAt: new Date().toISOString(),
-        tasks: JSON.parse(localStorage.getItem('quest-board-tasks') || '{}'),
-        habits: JSON.parse(localStorage.getItem('quest-board-habits') || '{}'),
-        game: JSON.parse(localStorage.getItem('quest-board-game') || '{}'),
-        stats: JSON.parse(localStorage.getItem('quest-board-stats') || '{}'),
-        theme: JSON.parse(localStorage.getItem('quest-board-theme') || '{}'),
+        tasks: safeParse('quest-board-tasks'),
+        habits: safeParse('quest-board-habits'),
+        game: safeParse('quest-board-game'),
+        stats: safeParse('quest-board-stats'),
+        theme: safeParse('quest-board-theme'),
     };
 }
 
@@ -84,6 +97,17 @@ export function DataBackupSettings() {
         if (!file) return;
         // ファイルサイズチェック (5MB 上限)。ここで弾けば巨大ファイルの読み込みを避けられる。
         if (file.size > MAX_IMPORT_FILE_SIZE) {
+            setImportStatus('error');
+            setTimeout(() => setImportStatus('idle'), 3000);
+            return;
+        }
+
+        // 拡張子と MIME の二重チェック。<input accept=".json"> は OS ダイアログのヒントに
+        // すぎないため、任意ファイルが流れ込んでも先に弾く。
+        const isJsonExt = file.name.toLowerCase().endsWith('.json');
+        const isAllowedMime = file.type === '' || file.type === 'application/json'
+            || file.type === 'text/plain' || file.type === 'text/json';
+        if (!isJsonExt || !isAllowedMime) {
             setImportStatus('error');
             setTimeout(() => setImportStatus('idle'), 3000);
             return;

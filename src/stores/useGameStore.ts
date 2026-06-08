@@ -108,7 +108,7 @@ function rollEquipment(chestType: ChestType): Equipment | null {
     return createEquipmentInstance(template);
 }
 
-function calculateDamage(attack: number, defense: number): number {
+export function calculateDamage(attack: number, defense: number): number {
     const damage = Math.floor(attack - defense * BATTLE_CONFIG.DEFENSE_FACTOR);
     return Math.max(damage, BATTLE_CONFIG.MIN_DAMAGE);
 }

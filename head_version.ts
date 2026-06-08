@@ -1,0 +1,262 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useHabitStore } from './useHabitStore';
+import { getTodayJST, shiftDate } from '../utils/dateUtils';
+import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
+
+function resetStore() {
+    localStorage.clear();
+    useHabitStore.setState({
+        habits: [],
+        dailyRecords: [],
+        restDays: [],
+    });
+}
+
+describe('useHabitStore', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2025-05-10T12:00:00Z')); // Arbitrary fixed date
+        resetStore();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    describe('addHabit & deleteHabit', () => {
+        it('should add a habit with correct initial values', () => {
+            const { addHabit } = useHabitStore.getState();
+            addHabit('Read a book', 'cat1');
+
+            const state = useHabitStore.getState();
+            expect(state.habits).toHaveLength(1);
+            expect(state.habits[0].name).toBe('Read a book');
+            expect(state.habits[0].categoryId).toBe('cat1');
+            expect(state.habits[0].createdAt.startsWith(getTodayJST())).toBe(true);
+        });
+
+        it('should add a habit with DEFAULT_CATEGORY_ID if categoryId is omitted', () => {
+            useHabitStore.getState().addHabit('Exercise');
+            expect(useHabitStore.getState().habits[0].categoryId).toBe(DEFAULT_CATEGORY_ID);
+        });
+
+        it('should delete a habit by id', () => {
+            const { addHabit, deleteHabit } = useHabitStore.getState();
+            addHabit('Habit 1');
+            addHabit('Habit 2');
+            
+            const habits = useHabitStore.getState().habits;
+            expect(habits).toHaveLength(2);
+
+            deleteHabit(habits[0].id);
+            expect(useHabitStore.getState().habits).toHaveLength(1);
+            expect(useHabitStore.getState().habits[0].id).toBe(habits[1].id);
+        });
+    });
+
+    describe('toggleHabitCompletion & setHabitMemo', () => {
+        it('should toggle habit completion for a specific date', () => {
+            const { addHabit, toggleHabitCompletion } = useHabitStore.getState();
+            addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            const today = getTodayJST();
+
+            // Toggle on
+            toggleHabitCompletion(habitId, today);
+            let record = useHabitStore.getState().dailyRecords.find(r => r.habitId === habitId && r.date === today);
+            expect(record?.completed).toBe(true);
+
+            // Toggle off
+            toggleHabitCompletion(habitId, today);
+            record = useHabitStore.getState().dailyRecords.find(r => r.habitId === habitId && r.date === today);
+            expect(record?.completed).toBe(false);
+        });
+
+        it('should set habit memo and create a record if it does not exist', () => {
+            const { addHabit, setHabitMemo } = useHabitStore.getState();
+            addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            const today = getTodayJST();
+
+            setHabitMemo(habitId, today, 'My note');
+            const record = useHabitStore.getState().dailyRecords.find(r => r.habitId === habitId && r.date === today);
+            expect(record?.memo).toBe('My note');
+            expect(record?.completed).toBe(false); // Creating record just for memo doesn't mark it completed
+        });
+
+        it('should update existing habit memo', () => {
+            const { addHabit, toggleHabitCompletion, setHabitMemo } = useHabitStore.getState();
+            addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            const today = getTodayJST();
+
+            toggleHabitCompletion(habitId, today);
+            setHabitMemo(habitId, today, 'Good job');
+
+            const record = useHabitStore.getState().dailyRecords.find(r => r.habitId === habitId && r.date === today);
+            expect(record?.completed).toBe(true);
+            expect(record?.memo).toBe('Good job');
+        });
+    });
+
+    describe('isRestDay & setRestDay', () => {
+        it('should mark a day as rest day and check correctly', () => {
+            const { setRestDay, isRestDay } = useHabitStore.getState();
+            const today = getTodayJST();
+            
+            expect(isRestDay(today)).toBe(false);
+            setRestDay(today);
+            expect(isRestDay(today)).toBe(true);
+        });
+    });
+
+    describe('areAllHabitsComplete', () => {
+        it('should return false if there are no habits', () => {
+            expect(useHabitStore.getState().areAllHabitsComplete(getTodayJST())).toBe(false);
+        });
+
+        it('should return true if all habits created before or on the given date are completed', () => {
+            const { addHabit, toggleHabitCompletion, areAllHabitsComplete } = useHabitStore.getState();
+            const today = getTodayJST();
+            
+            addHabit('Habit 1');
+            addHabit('Habit 2');
+            const habits = useHabitStore.getState().habits;
+            
+            expect(areAllHabitsComplete(today)).toBe(false);
+
+            toggleHabitCompletion(habits[0].id, today);
+            expect(areAllHabitsComplete(today)).toBe(false);
+
+            toggleHabitCompletion(habits[1].id, today);
+            expect(areAllHabitsComplete(today)).toBe(true);
+        });
+
+        it('should ignore habits created after the given date', () => {
+            const { addHabit, toggleHabitCompletion, areAllHabitsComplete } = useHabitStore.getState();
+            const today = getTodayJST();
+            const yesterday = shiftDate(today, -1);
+            
+            // Create habit "yesterday" (by tricking the store with mock timers or mutating state)
+            vi.setSystemTime(new Date('2025-05-09T12:00:00Z'));
+            addHabit('Old Habit');
+            
+            vi.setSystemTime(new Date('2025-05-10T12:00:00Z'));
+            addHabit('New Habit');
+
+            const oldHabit = useHabitStore.getState().habits.find(h => h.name === 'Old Habit')!;
+            
+            // Checking yesterday: Only 'Old Habit' matters
+            toggleHabitCompletion(oldHabit.id, yesterday);
+            expect(areAllHabitsComplete(yesterday)).toBe(true);
+        });
+    });
+
+    describe('getHabitStreak', () => {
+        it('should calculate streak ignoring future days and missing records on RestDays', () => {
+            const { addHabit, toggleHabitCompletion, setRestDay, getHabitStreak } = useHabitStore.getState();
+            addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            
+            const today = getTodayJST();
+            const dayMinus1 = shiftDate(today, -1);
+            const dayMinus2 = shiftDate(today, -2);
+            const dayMinus3 = shiftDate(today, -3);
+
+            // Change createdAt so it allows streak history
+            useHabitStore.setState(state => ({
+                habits: [{ ...state.habits[0], createdAt: new Date('2025-05-07T12:00:00Z').toISOString() }]
+            }));
+
+            // Day -3: Completed
+            toggleHabitCompletion(habitId, dayMinus3);
+            // Day -2: Rest day (missed, but forgiven)
+            setRestDay(dayMinus2);
+            // Day -1: Completed
+            toggleHabitCompletion(habitId, dayMinus1);
+            // Today: Completed
+            toggleHabitCompletion(habitId, today);
+
+            // Streak should be 3 (Day -3, Day -1, Today)
+            expect(getHabitStreak(habitId)).toBe(3);
+        });
+
+        it('should break streak on unexcused missed days', () => {
+            const { addHabit, toggleHabitCompletion, getHabitStreak } = useHabitStore.getState();
+            addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            
+            const today = getTodayJST();
+            const dayMinus2 = shiftDate(today, -2);
+
+            useHabitStore.setState(state => ({
+                habits: [{ ...state.habits[0], createdAt: new Date('2025-05-08T12:00:00Z').toISOString() }]
+            }));
+
+            toggleHabitCompletion(habitId, dayMinus2);
+            // Day -1 is missed and not a rest day
+            toggleHabitCompletion(habitId, today);
+
+            // Streak only includes today
+            expect(getHabitStreak(habitId)).toBe(1);
+        });
+
+        it('should allow current day to be missed without breaking past streak yet', () => {
+            const { addHabit, toggleHabitCompletion, getHabitStreak } = useHabitStore.getState();
+            addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            
+            const today = getTodayJST();
+            const dayMinus1 = shiftDate(today, -1);
+
+            useHabitStore.setState(state => ({
+                habits: [{ ...state.habits[0], createdAt: new Date('2025-05-09T12:00:00Z').toISOString() }]
+            }));
+
+            toggleHabitCompletion(habitId, dayMinus1);
+            // Today missed
+
+            // Streak is 1 from yesterday
+            expect(getHabitStreak(habitId)).toBe(1);
+        });
+    });
+
+    describe('getHabitCompletionRate', () => {
+        it('should return null if no target days (habit just created today and today is rest day)', () => {
+            const { addHabit, setRestDay, getHabitCompletionRate } = useHabitStore.getState();
+            addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            const today = getTodayJST();
+            setRestDay(today);
+
+            expect(getHabitCompletionRate(habitId)).toBeNull();
+        });
+
+        it('should calculate rate excluding rest days', () => {
+            const { addHabit, toggleHabitCompletion, setRestDay, getHabitCompletionRate } = useHabitStore.getState();
+            addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            
+            const today = getTodayJST();
+            const dayMinus1 = shiftDate(today, -1);
+            const dayMinus3 = shiftDate(today, -3);
+
+            useHabitStore.setState(state => ({
+                habits: [{ ...state.habits[0], createdAt: new Date('2025-05-07T12:00:00Z').toISOString() }]
+            }));
+
+            // Day -3: Completed
+            toggleHabitCompletion(habitId, dayMinus3);
+            // Day -2: Missed
+            // Day -1: Rest day (excluded from denominator)
+            setRestDay(dayMinus1);
+            // Today: Completed
+            toggleHabitCompletion(habitId, today);
+
+            // Target days: Day -3, Day -2, Today (3 days)
+            // Completed: Day -3, Today (2 days)
+            // Rate: 2 / 3
+            expect(getHabitCompletionRate(habitId)).toBe(Math.round((2 / 3) * 100));
+        });
+    });
+});
