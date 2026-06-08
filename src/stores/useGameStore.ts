@@ -459,6 +459,9 @@ export const useGameStore = create<GameStoreState>()(
 
             synthesizeItems: (equipmentIds: string[]) => {
                 const { equipment } = get();
+                // 渡されたIDの重複チェック（不正操作防止）
+                const uniqueIds = new Set(equipmentIds);
+                if (uniqueIds.size !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
                 if (equipmentIds.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
                 const items = equipmentIds.map((id) => equipment.find((e) => e.id === id)).filter(Boolean) as import('../types').Equipment[];
                 if (items.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
