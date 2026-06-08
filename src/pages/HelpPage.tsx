@@ -1,5 +1,5 @@
 import { ArrowLeft, HelpCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 interface HelpSection {
     icon: string;
@@ -91,12 +91,20 @@ const SECTIONS: HelpSection[] = [
 
 export function HelpPage() {
     const navigate = useNavigate();
+    const location = useLocation();
+    const handleBack = () => {
+        if (location.key === 'default') {
+            navigate('/tasks', { replace: true });
+            return;
+        }
+        navigate(-1);
+    };
 
     return (
         <div className="max-w-lg mx-auto px-5 pt-6 pb-28">
             <div className="flex items-center gap-3 mb-5">
                 <button
-                    onClick={() => navigate(-1)}
+                    onClick={handleBack}
                     className="w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95"
                     style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-default)' }}
                     aria-label="戻る"
