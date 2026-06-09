@@ -25,7 +25,7 @@ const originalAddXp = useGameStore.getState().addXp;
 function reset() {
     localStorage.clear();
     addXpMock = vi.fn();
-    useGameStore.setState({ equipment: [], addXp: addXpMock as any });
+    useGameStore.setState({ equipment: [], addXp: addXpMock as unknown as typeof originalAddXp });
 }
 
 describe('useGameStore.sellItem', () => {

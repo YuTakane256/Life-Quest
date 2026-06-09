@@ -55,6 +55,7 @@ export function CharacterPage() {
     const [editName, setEditName] = useState(character.name);
     const [editAvatar, setEditAvatar] = useState(character.avatar);
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     const effectiveStats = useMemo(() => getEffectiveStats(), [getEffectiveStats, equipment, character, debuff]);
     const xpProgress = useMemo(() => calculateXpProgress(character.totalXp, character.level), [character.totalXp, character.level]);
     const nextLevelXp = useMemo(() => calculateNextLevelXp(character.level), [character.level]);
@@ -315,6 +316,7 @@ export function InventoryPage() {
             <div className="flex items-center gap-3 mb-4">
                 <button
                     onClick={() => navigate('/character')}
+                    aria-label="キャラクター画面に戻る"
                     className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors"
                     style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-text-secondary)' }}
                 >

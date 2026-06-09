@@ -6,6 +6,7 @@ import { generateId } from '../../utils/dateUtils';
 interface SnackbarItem { id: string; message: string; onUndo?: () => void; expiresAt: number; }
 interface SnackbarContextType { showUndo: (message: string, onUndo: () => void) => void; }
 const SnackbarContext = createContext<SnackbarContextType | null>(null);
+// eslint-disable-next-line react-refresh/only-export-components
 export const useSnackbar = () => { const ctx = useContext(SnackbarContext); if (!ctx) throw new Error('error'); return ctx; };
 
 export function SnackbarProvider({ children }: { children: React.ReactNode }) {

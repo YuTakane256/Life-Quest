@@ -16,7 +16,7 @@ function reset(fakeDate: Date = BASE_DATE) {
     useLoginBonusStore.setState({ lastLoginDate: null, streak: 0, pendingBonus: null });
     addXpSpy = vi.fn();
     grantChestSpy = vi.fn();
-    useGameStore.setState({ addXp: addXpSpy as any, grantChest: grantChestSpy as any });
+    useGameStore.setState({ addXp: addXpSpy as unknown as typeof originalAddXp, grantChest: grantChestSpy as unknown as typeof originalGrantChest });
     vi.useFakeTimers();
     vi.setSystemTime(fakeDate);
 }

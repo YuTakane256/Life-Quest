@@ -76,6 +76,7 @@ export function HabitsPage() {
         }
         return { groups, statsMap };
         // dailyRecords も並び順（ストリーク/達成率）に影響するため依存に含める
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [habits, filterCategoryId, sortMode, dailyRecords, getHabitStreak, getHabitCompletionRate]);
 
     // 使用中のカテゴリID一覧（フィルタータブ用）
