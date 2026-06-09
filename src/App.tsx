@@ -19,11 +19,11 @@ import { runNotificationChecks } from './utils/notifications';
 import { NOTIFICATION_CONFIG } from './config/gameConfig';
 import './App.css';
 
-/** 各画面の右下に表示する使い方ボタン。ヘルプページ自身では非表示。 */
+/** 各画面の右下に表示する使い方ボタン。ヘルプ導線がある画面では非表示。 */
 function HelpFloatingButton() {
     const navigate = useNavigate();
     const location = useLocation();
-    if (location.pathname === '/help') return null;
+    if (location.pathname === '/help' || location.pathname === '/settings') return null;
     return (
         <button
             onClick={() => navigate('/help')}
