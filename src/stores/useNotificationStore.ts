@@ -4,7 +4,7 @@ import type { NotificationStoreState } from '../types';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 
 /** 永続化された state を信用せず、各フィールドの型/範囲を検証して既定値にフォールバック */
-function sanitizeNotificationState(persisted: unknown): Partial<NotificationStoreState> {
+export function sanitizeNotificationState(persisted: unknown): Partial<NotificationStoreState> {
     if (typeof persisted !== 'object' || persisted === null) return {};
     const raw = persisted as Record<string, unknown>;
     const result: Partial<NotificationStoreState> = {};
