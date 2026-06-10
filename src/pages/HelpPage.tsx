@@ -1,5 +1,5 @@
 import { ArrowLeft, HelpCircle } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useBackWithFallback } from '../hooks/useBackWithFallback';
 
 interface HelpSection {
     icon: string;
@@ -90,15 +90,7 @@ const SECTIONS: HelpSection[] = [
 ];
 
 export function HelpPage() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    const handleBack = () => {
-        if (location.key === 'default') {
-            navigate('/tasks', { replace: true });
-            return;
-        }
-        navigate(-1);
-    };
+    const handleBack = useBackWithFallback();
 
     return (
         <div className="max-w-lg mx-auto px-5 pt-6 pb-28">

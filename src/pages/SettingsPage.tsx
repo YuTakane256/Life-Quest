@@ -1,20 +1,14 @@
 import { ArrowLeft, ChevronRight, HelpCircle, Settings } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { DataBackupSettings } from '../components/ui/DataBackupSettings';
 import { ThemeSettings } from '../components/ui/ThemeSettings';
 import { NotificationSettings } from '../components/ui/NotificationSettings';
 import { UsageStatsSettings } from '../components/ui/UsageStatsSettings';
+import { useBackWithFallback } from '../hooks/useBackWithFallback';
 
 export function SettingsPage() {
     const navigate = useNavigate();
-    const location = useLocation();
-    const handleBack = () => {
-        if (location.key === 'default') {
-            navigate('/tasks', { replace: true });
-            return;
-        }
-        navigate(-1);
-    };
+    const handleBack = useBackWithFallback();
 
     return (
         <div className="max-w-lg mx-auto px-5 pt-6 pb-28">
