@@ -6,6 +6,7 @@ import {
     requestNotificationPermission,
     runNotificationChecks,
 } from '../../utils/notifications';
+import { formatReminderHourLabel } from '../../utils/timeLabels';
 
 export function NotificationSettings() {
     const enabled = useNotificationStore((s) => s.enabled);
@@ -99,12 +100,12 @@ export function NotificationSettings() {
                             style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
                         >
                             {Array.from({ length: 24 }, (_, h) => (
-                                <option key={h} value={h}>{h}時</option>
+                                <option key={h} value={h}>{formatReminderHourLabel(h)}</option>
                             ))}
                         </select>
                     </div>
                     <p className="text-[10px] mt-2" style={{ color: 'var(--color-text-muted)' }}>
-                        ※ アプリを開いている間に通知します
+                        ※ アプリを開いている間に、{formatReminderHourLabel(reminderHour)}の未完了習慣を通知します
                     </p>
                 </>
             )}
