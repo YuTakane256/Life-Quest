@@ -1,10 +1,84 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Habit, HabitDailyRecord, HabitStoreState } from '../types';
+import type { Habit, HabitDailyRecord, HabitStoreState, RestDay } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
-import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
+import { DEFAULT_CATEGORY_ID, HABIT_CATEGORIES } from '../config/habitCategories';
 import { generateId, getTodayJST, shiftDate } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
+
+interface HabitStorePersisted {
+    habits: Habit[];
+    dailyRecords: HabitDailyRecord[];
+    restDays: RestDay[];
+}
+
+const VALID_CATEGORY_IDS = new Set(HABIT_CATEGORIES.map((category) => category.id));
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function sanitizeHabit(raw: unknown): Habit | null {
+    if (!isPlainObject(raw)) return null;
+    if (typeof raw.id !== 'string' || typeof raw.name !== 'string' || typeof raw.createdAt !== 'string') return null;
+
+    const categoryId = typeof raw.categoryId === 'string' && VALID_CATEGORY_IDS.has(raw.categoryId)
+        ? raw.categoryId
+        : DEFAULT_CATEGORY_ID;
+
+    return {
+        id: raw.id,
+        name: clampString(raw.name, UI_CONFIG.MAX_HABIT_NAME_LENGTH),
+        categoryId,
+        createdAt: raw.createdAt,
+    };
+}
+
+function sanitizeDailyRecord(raw: unknown, validHabitIds: Set<string>): HabitDailyRecord | null {
+    if (!isPlainObject(raw)) return null;
+    if (typeof raw.habitId !== 'string' || !validHabitIds.has(raw.habitId)) return null;
+    if (typeof raw.date !== 'string') return null;
+
+    return {
+        habitId: raw.habitId,
+        date: raw.date,
+        completed: typeof raw.completed === 'boolean' ? raw.completed : false,
+        memo: typeof raw.memo === 'string' ? clampString(raw.memo, UI_CONFIG.MAX_HABIT_MEMO_LENGTH) : '',
+    };
+}
+
+function sanitizeRestDay(raw: unknown): RestDay | null {
+    if (!isPlainObject(raw)) return null;
+    if (typeof raw.date !== 'string') return null;
+
+    return {
+        date: raw.date,
+        isRest: typeof raw.isRest === 'boolean' ? raw.isRest : false,
+    };
+}
+
+export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted {
+    if (!isPlainObject(persisted)) {
+        return { habits: [], dailyRecords: [], restDays: [] };
+    }
+
+    const habits = Array.isArray(persisted.habits)
+        ? persisted.habits.map(sanitizeHabit).filter((habit): habit is Habit => habit !== null)
+        : [];
+    const validHabitIds = new Set(habits.map((habit) => habit.id));
+
+    return {
+        habits,
+        dailyRecords: Array.isArray(persisted.dailyRecords)
+            ? persisted.dailyRecords
+                .map((record) => sanitizeDailyRecord(record, validHabitIds))
+                .filter((record): record is HabitDailyRecord => record !== null)
+            : [],
+        restDays: Array.isArray(persisted.restDays)
+            ? persisted.restDays.map(sanitizeRestDay).filter((restDay): restDay is RestDay => restDay !== null)
+            : [],
+    };
+}
 
 export const useHabitStore = create<HabitStoreState>()(
     persist(
@@ -223,6 +297,10 @@ export const useHabitStore = create<HabitStoreState>()(
         }),
         {
             name: 'quest-board-habits',
+            merge: (persisted, current) => ({
+                ...current,
+                ...sanitizeHabitStoreState(persisted),
+            }),
         }
     )
 );
