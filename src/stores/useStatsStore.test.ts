@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useStatsStore } from './useStatsStore';
+import { sanitizeStatsStoreState, useStatsStore } from './useStatsStore';
 
 function reset() {
     localStorage.clear();
@@ -8,6 +8,50 @@ function reset() {
 
 describe('useStatsStore', () => {
     beforeEach(() => reset());
+
+    describe('sanitizeStatsStoreState', () => {
+        it('非オブジェクトの永続化データは空ログにする', () => {
+            expect(sanitizeStatsStoreState(null)).toEqual({
+                taskXpLog: {},
+                habitLog: {},
+            });
+        });
+
+        it('taskXpLog は有効な日付キーと0以上の有限数だけを残す', () => {
+            expect(
+                sanitizeStatsStoreState({
+                    taskXpLog: {
+                        '2026-06-13': 12.8,
+                        '2026-06-14': 0,
+                        '2026-6-15': 20,
+                        '2026-06-16': -1,
+                        '2026-06-17': Number.NaN,
+                        other: 99,
+                    },
+                }).taskXpLog
+            ).toEqual({
+                '2026-06-13': 12,
+                '2026-06-14': 0,
+            });
+        });
+
+        it('habitLog は count と allComplete が正しいエントリだけを残す', () => {
+            expect(
+                sanitizeStatsStoreState({
+                    habitLog: {
+                        '2026-06-13': { count: 2.9, allComplete: true },
+                        '2026-06-14': { count: 0, allComplete: false },
+                        '2026-06-15': { count: -1, allComplete: true },
+                        '2026-06-16': { count: 2, allComplete: 'yes' },
+                        bad: { count: 3, allComplete: true },
+                    },
+                }).habitLog
+            ).toEqual({
+                '2026-06-13': { count: 2, allComplete: true },
+                '2026-06-14': { count: 0, allComplete: false },
+            });
+        });
+    });
 
     // ── logTaskXp ──
     describe('logTaskXp', () => {

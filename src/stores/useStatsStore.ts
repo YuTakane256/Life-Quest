@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { StatsStoreState } from '../types';
 
+type StatsStorePersisted = Pick<StatsStoreState, 'taskXpLog' | 'habitLog'>;
+
 // ─── persisted state の per-entry バリデーション ─────────────────
 // localStorage の細工された値が NaN 連鎖や型不整合を引き起こさないよう、
 // rehydrate 時にマップの各エントリを型ガードで弾く。
@@ -35,6 +37,17 @@ function sanitizeHabitLog(raw: unknown): Record<string, { count: number; allComp
     return out;
 }
 
+export function sanitizeStatsStoreState(persisted: unknown): StatsStorePersisted {
+    const raw = (typeof persisted === 'object' && persisted !== null
+        ? (persisted as Record<string, unknown>)
+        : {});
+
+    return {
+        taskXpLog: sanitizeTaskXpLog(raw.taskXpLog),
+        habitLog: sanitizeHabitLog(raw.habitLog),
+    };
+}
+
 export const useStatsStore = create<StatsStoreState>()(
     persist(
         (set) => ({
@@ -62,16 +75,10 @@ export const useStatsStore = create<StatsStoreState>()(
         {
             name: 'quest-board-stats',
             version: 1,
-            merge: (persisted, current) => {
-                const raw = (typeof persisted === 'object' && persisted !== null
-                    ? (persisted as Record<string, unknown>)
-                    : {});
-                return {
-                    ...current,
-                    taskXpLog: sanitizeTaskXpLog(raw.taskXpLog),
-                    habitLog: sanitizeHabitLog(raw.habitLog),
-                };
-            },
+            merge: (persisted, current) => ({
+                ...current,
+                ...sanitizeStatsStoreState(persisted),
+            }),
         }
     )
 );
