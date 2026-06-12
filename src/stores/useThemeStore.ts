@@ -6,7 +6,7 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 const VALID_THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system'];
 
 /** 未知の値（細工された localStorage や型 ignored な代入）を 'system' にフォールバック */
-function sanitizeThemeMode(value: unknown): ThemeMode {
+export function sanitizeThemeMode(value: unknown): ThemeMode {
     return VALID_THEME_MODES.includes(value as ThemeMode) ? (value as ThemeMode) : 'system';
 }
 

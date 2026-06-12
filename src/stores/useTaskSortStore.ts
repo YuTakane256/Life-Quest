@@ -6,7 +6,7 @@ export type TaskSortMode = 'dueDate' | 'priority' | 'createdAt';
 
 const VALID_TASK_SORT_MODES: readonly TaskSortMode[] = ['dueDate', 'priority', 'createdAt'];
 
-function sanitizeTaskSortMode(value: unknown): TaskSortMode {
+export function sanitizeTaskSortMode(value: unknown): TaskSortMode {
     return VALID_TASK_SORT_MODES.includes(value as TaskSortMode) ? (value as TaskSortMode) : 'dueDate';
 }
 
