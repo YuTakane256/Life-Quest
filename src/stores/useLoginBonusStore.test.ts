@@ -49,6 +49,23 @@ describe('useLoginBonusStore', () => {
         expect(addXpSpy).not.toHaveBeenCalled();
     });
 
+    it('報酬付与中に再入しても二重支払いしない', () => {
+        addXpSpy.mockImplementation(() => {
+            useLoginBonusStore.getState().checkDailyLogin();
+        });
+
+        useLoginBonusStore.getState().checkDailyLogin();
+
+        expect(useLoginBonusStore.getState().streak).toBe(1);
+        expect(useLoginBonusStore.getState().lastLoginDate).toBe('2025-03-15');
+        expect(addXpSpy).toHaveBeenCalledTimes(1);
+        expect(useLoginBonusStore.getState().pendingBonus).toMatchObject({
+            date: '2025-03-15',
+            streak: 1,
+            xp: LOGIN_BONUS_CONFIG.BASE_XP,
+        });
+    });
+
     it('前日ログインありで翌日: streak=2', () => {
         // 1日目
         useLoginBonusStore.getState().checkDailyLogin();
