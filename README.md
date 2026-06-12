@@ -23,24 +23,31 @@
 ### 🗒️ タスク管理
 - タスクの追加 / 編集 / 削除
 - 優先度設定（高 / 中 / 低）と期限管理
-- タグによるフィルタリング
+- タグ・検索・並び替えによる絞り込み
+- 繰り返しタスクとサブタスク管理
 - 完了時のアンドゥ機能（誤操作防止）
 
 ### 🔁 ハビット（習慣）管理
-- 毎日・毎週単位のルーティン管理
+- カテゴリ付きのルーティン管理
 - 連続達成ストリーク記録
-- 週次サマリー表示
+- メモ・お休み日・達成率の記録
 
 ### ⚔️ キャラクター & バトルシステム
 - タスク完了でXP獲得 → レベルアップ（上限なし、Lv.999まで成長）
 - 武器・防具・アクセサリーの装備システム
 - ガチャシステム（タスク消化数に応じて宝箱を獲得）
 - アイテム売却・合成機能
-- **3エリア × 30ステージ**（草原 / 古城 / 天界）のマップバトル
+- **4エリア × 40ステージ**（草原 / 古城 / 天界 / 深海）のマップバトル
 
 ### 📊 統計
 - XP推移グラフ
 - タスク完了率の可視化
+- 習慣の達成状況・ベスト記録の確認
+
+### ⚙️ 設定・補助機能
+- ダーク / ライト / システム連動テーマ
+- 通知設定・利用統計・データバックアップ
+- ヘルプ画面とPWA対応
 
 ---
 
@@ -55,6 +62,8 @@
 | 状態管理 | Zustand 5 |
 | ルーティング | React Router DOM 7 |
 | アイコン | Lucide React |
+| PWA | Vite Plugin PWA |
+| テスト | Vitest / jsdom |
 
 ---
 
@@ -65,18 +74,22 @@ src/
 ├── assets/         # 画像アセット（キャラクター・敵・背景・装備品）
 ├── components/     # 再利用可能なUIコンポーネント
 │   ├── layout/    # BottomNav など
-│   └── ui/        # SnackbarProvider など
+│   └── ui/        # 設定カード・ダイアログ・オーバーレイなど
 ├── config/         # ゲームの各種パラメータ設定（XP・ステージ・ガチャなど）
+├── hooks/          # 共通フック
 ├── pages/          # 各画面
 │   ├── TasksPage.tsx
 │   ├── HabitsPage.tsx
 │   ├── CharacterPage.tsx
 │   ├── MapBattlePage.tsx
-│   └── StatsPage.tsx
+│   ├── StatsPage.tsx
+│   ├── SettingsPage.tsx
+│   └── HelpPage.tsx
 ├── stores/         # Zustand によるグローバル状態管理
 │   ├── useGameStore.ts   # キャラクター・バトル・インベントリ
 │   ├── useTaskStore.ts   # タスク管理
-│   └── useHabitStore.ts  # ハビット管理
+│   ├── useHabitStore.ts  # ハビット管理
+│   └── useThemeStore.ts  # テーマ設定
 ├── types/          # TypeScript 型定義
 └── utils/          # 日付処理などのユーティリティ
 ```
@@ -98,6 +111,15 @@ npm run dev
 ```
 
 ブラウザで `http://localhost:5173` を開いてください。
+
+### よく使う確認コマンド
+
+```bash
+npm run typecheck
+npm run test
+npm run lint
+npm run build
+```
 ---
 
 ## Github周り
@@ -150,4 +172,3 @@ git push origin feat/2-deep-sea-map
 | `refactor:` | リファクタリング |
 | `chore:` | 設定ファイルや依存関係の更新 |
 | `security:` | セキュリティ修正 |
-
