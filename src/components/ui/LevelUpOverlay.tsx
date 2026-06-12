@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Sparkles, X } from 'lucide-react';
 import { useGameStore } from '../../stores/useGameStore';
+import { useModalEscape } from '../../hooks/useModalEscape';
 
 const SPARKLE_COUNT = 28;
 const SPARKLE_EMOJIS = ['✨', '⭐', '🌟', '💫', '⚡'];
@@ -35,24 +36,24 @@ export function LevelUpOverlay() {
     const [visible, setVisible] = useState(false);
 
     const sparkles = useMemo(() => (levelUpEvent ? generateSparkles() : []), [levelUpEvent]);
+    const handleDismiss = useCallback(() => {
+        setVisible(false);
+        window.setTimeout(clearLevelUpEvent, 300);
+    }, [clearLevelUpEvent]);
+
+    useModalEscape(Boolean(levelUpEvent && visible), handleDismiss);
 
     useEffect(() => {
         if (levelUpEvent) {
             setVisible(true);
-            const t = window.setTimeout(() => {
-                setVisible(false);
-                window.setTimeout(clearLevelUpEvent, 300);
-            }, 4500);
+            const t = window.setTimeout(handleDismiss, 4500);
             return () => window.clearTimeout(t);
         }
-    }, [levelUpEvent, clearLevelUpEvent]);
+    }, [levelUpEvent, handleDismiss]);
 
     if (!levelUpEvent || !visible) return null;
 
-    const handleDismiss = () => {
-        setVisible(false);
-        window.setTimeout(clearLevelUpEvent, 300);
-    };
+    const titleId = 'level-up-overlay-title';
 
     return (
         <div
@@ -83,6 +84,9 @@ export function LevelUpOverlay() {
 
             {/* メインコンテンツ */}
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
                 className="relative px-8 py-10 rounded-3xl mx-4 max-w-sm w-full text-center"
                 style={{
                     backgroundColor: 'var(--color-bg-card)',
@@ -105,6 +109,7 @@ export function LevelUpOverlay() {
                 </div>
 
                 <h2
+                    id={titleId}
                     className="animate-levelup-title text-5xl font-black mb-2"
                     style={{ color: 'var(--color-accent-gold)', letterSpacing: '0.04em' }}
                 >

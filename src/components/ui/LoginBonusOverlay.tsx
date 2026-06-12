@@ -1,11 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Gift, Flame, X } from 'lucide-react';
 import { useLoginBonusStore } from '../../stores/useLoginBonusStore';
+import { useModalEscape } from '../../hooks/useModalEscape';
 
 export function LoginBonusOverlay() {
     const pendingBonus = useLoginBonusStore((s) => s.pendingBonus);
     const clearPendingBonus = useLoginBonusStore((s) => s.clearPendingBonus);
     const [visible, setVisible] = useState(false);
+
+    const handleDismiss = useCallback(() => {
+        setVisible(false);
+        window.setTimeout(clearPendingBonus, 300);
+    }, [clearPendingBonus]);
+
+    useModalEscape(Boolean(pendingBonus && visible), handleDismiss);
 
     useEffect(() => {
         if (pendingBonus) setVisible(true);
@@ -13,10 +21,7 @@ export function LoginBonusOverlay() {
 
     if (!pendingBonus || !visible) return null;
 
-    const handleDismiss = () => {
-        setVisible(false);
-        window.setTimeout(clearPendingBonus, 300);
-    };
+    const titleId = 'login-bonus-overlay-title';
 
     return (
         <div
@@ -25,6 +30,9 @@ export function LoginBonusOverlay() {
             onClick={handleDismiss}
         >
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
                 className="relative px-8 py-10 rounded-3xl mx-4 max-w-sm w-full text-center"
                 style={{
                     backgroundColor: 'var(--color-bg-card)',
@@ -47,6 +55,7 @@ export function LoginBonusOverlay() {
                 </div>
 
                 <h2
+                    id={titleId}
                     className="text-3xl font-black mb-2"
                     style={{ color: 'var(--color-accent-gold)', letterSpacing: '0.04em' }}
                 >

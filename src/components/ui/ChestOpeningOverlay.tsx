@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, Swords } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/useGameStore';
@@ -6,6 +6,7 @@ import { CHEST_IMAGES, CHEST_FALLBACK_IMAGE, ITEM_IMAGES, RARITY_COLORS, RARITY_
 import type { Rarity, EquipmentSlot } from '../../types';
 import heroImg from '../../assets/images/hero.png';
 import heroMaleImg from '../../assets/images/hero_male.png';
+import { useModalEscape } from '../../hooks/useModalEscape';
 
 type Phase = 'idle' | 'revealing' | 'revealed';
 
@@ -106,28 +107,31 @@ export function ChestOpeningOverlay() {
         return () => window.clearTimeout(t);
     }, [phase]);
 
-    if (!pendingChestReveal || !visible) return null;
+    const handleDismiss = useCallback(() => {
+        setVisible(false);
+        window.setTimeout(clearPendingChestReveal, 300);
+    }, [clearPendingChestReveal]);
 
-    const { equipment, label, chestType, isStarterCharacter } = pendingChestReveal;
-
-    const handleAdvance = () => {
+    const handleAdvance = useCallback(() => {
         if (phase === 'idle') {
             setPhase('revealing');
         } else if (phase === 'revealed' && canDismiss) {
             handleDismiss();
         }
-    };
+    }, [canDismiss, handleDismiss, phase]);
 
-    const handleDismiss = () => {
-        setVisible(false);
-        window.setTimeout(clearPendingChestReveal, 300);
-    };
-
-    const handleGoToBattle = () => {
+    const handleGoToBattle = useCallback(() => {
         handleDismiss();
         // 閉じる演出と被らないよう少し遅延させる
         window.setTimeout(() => navigate('/map'), 100);
-    };
+    }, [handleDismiss, navigate]);
+
+    useModalEscape(Boolean(pendingChestReveal && visible && phase === 'revealed' && canDismiss), handleDismiss);
+
+    if (!pendingChestReveal || !visible) return null;
+
+    const { equipment, label, chestType, isStarterCharacter } = pendingChestReveal;
+    const titleId = 'chest-opening-overlay-title';
 
     const chestImage = CHEST_IMAGES[chestType] || CHEST_FALLBACK_IMAGE;
     const heroAvatar = characterAvatar === 'male' ? heroMaleImg : heroImg;
@@ -234,6 +238,9 @@ export function ChestOpeningOverlay() {
             {/* Phase 3: revealed — アイテム / キャラ表示 */}
             {phase === 'revealed' && (
                 <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby={titleId}
                     className="relative px-7 py-8 rounded-3xl mx-4 max-w-sm w-full text-center animate-item-reveal"
                     style={{
                         backgroundColor: 'var(--color-bg-card)',
@@ -254,6 +261,7 @@ export function ChestOpeningOverlay() {
                                 </div>
                             </div>
                             <h2
+                                id={titleId}
                                 className="text-2xl font-black mb-1"
                                 style={{ color: accentColor, textShadow: `0 0 12px ${accentColor}` }}
                             >
@@ -308,6 +316,7 @@ export function ChestOpeningOverlay() {
                                 {RARITY_LABELS[equipment.rarity]} · {SLOT_LABELS[equipment.slot]}
                             </div>
                             <h2
+                                id={titleId}
                                 className="text-2xl font-black mb-4"
                                 style={{ color: accentColor, textShadow: `0 0 12px ${accentColor}` }}
                             >
@@ -332,7 +341,7 @@ export function ChestOpeningOverlay() {
                     {/* 防御: 装備なし & スターターでもない（現状は発生しないが念のため） */}
                     {!equipment && !isStarterCharacter && (
                         <>
-                            <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                            <h2 id={titleId} className="text-xl font-bold mb-2" style={{ color: 'var(--color-text-muted)' }}>
                                 ハズレ…
                             </h2>
                             <button
