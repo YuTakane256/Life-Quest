@@ -17,6 +17,11 @@ const validBackup: BackupData = {
     game: {},
     stats: {},
     theme: {},
+    notifications: {},
+    loginBonus: {},
+    battleHistory: {},
+    taskSort: {},
+    habitSort: {},
 };
 
 describe('dataBackup utilities', () => {
@@ -49,12 +54,19 @@ describe('dataBackup utilities', () => {
             expect(isValidBackup({ ...validBackup, tasks: undefined })).toBe(false);
             expect(isValidBackup({ ...validBackup, habits: [] })).toBe(false);
             expect(isValidBackup({ ...validBackup, theme: [] })).toBe(false);
+            expect(isValidBackup({ ...validBackup, notifications: [] })).toBe(false);
+            expect(isValidBackup({ ...validBackup, battleHistory: [] })).toBe(false);
         });
 
-        it('allows theme to be omitted', () => {
-            const { theme, ...withoutTheme } = validBackup;
+        it('allows optional settings stores to be omitted', () => {
+            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, ...withoutOptionalStores } = validBackup;
             expect(theme).toEqual({});
-            expect(isValidBackup(withoutTheme)).toBe(true);
+            expect(notifications).toEqual({});
+            expect(loginBonus).toEqual({});
+            expect(battleHistory).toEqual({});
+            expect(taskSort).toEqual({});
+            expect(habitSort).toEqual({});
+            expect(isValidBackup(withoutOptionalStores)).toBe(true);
         });
     });
 
@@ -80,6 +92,11 @@ describe('dataBackup utilities', () => {
             localStorage.setItem('quest-board-game', '{"state":{"character":{"level":2}}}');
             localStorage.setItem('quest-board-stats', '{"state":{"taskXpLog":{}}}');
             localStorage.setItem('quest-board-theme', '{"state":{"mode":"dark"}}');
+            localStorage.setItem('quest-board-notifications', '{"state":{"enabled":true}}');
+            localStorage.setItem('quest-board-login-bonus', '{"state":{"streak":3}}');
+            localStorage.setItem('quest-board-battle-history', '{"state":{"history":[]}}');
+            localStorage.setItem('quest-board-task-sort', '{"state":{"sortMode":"priority"}}');
+            localStorage.setItem('quest-board-habit-sort', '{"state":{"sortMode":"streak"}}');
 
             expect(exportAllData()).toEqual({
                 version: BACKUP_VERSION,
@@ -89,6 +106,11 @@ describe('dataBackup utilities', () => {
                 game: { state: { character: { level: 2 } } },
                 stats: { state: { taskXpLog: {} } },
                 theme: { state: { mode: 'dark' } },
+                notifications: { state: { enabled: true } },
+                loginBonus: { state: { streak: 3 } },
+                battleHistory: { state: { history: [] } },
+                taskSort: { state: { sortMode: 'priority' } },
+                habitSort: { state: { sortMode: 'streak' } },
             });
         });
 
@@ -99,6 +121,24 @@ describe('dataBackup utilities', () => {
             expect(JSON.parse(localStorage.getItem('quest-board-game') || '{}')).toEqual({});
             expect(JSON.parse(localStorage.getItem('quest-board-stats') || '{}')).toEqual({});
             expect(JSON.parse(localStorage.getItem('quest-board-theme') || '{}')).toEqual({});
+            expect(JSON.parse(localStorage.getItem('quest-board-notifications') || '{}')).toEqual({});
+            expect(JSON.parse(localStorage.getItem('quest-board-login-bonus') || '{}')).toEqual({});
+            expect(JSON.parse(localStorage.getItem('quest-board-battle-history') || '{}')).toEqual({});
+            expect(JSON.parse(localStorage.getItem('quest-board-task-sort') || '{}')).toEqual({});
+            expect(JSON.parse(localStorage.getItem('quest-board-habit-sort') || '{}')).toEqual({});
+        });
+
+        it('imports older backups that omit optional stores', () => {
+            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, ...legacyBackup } = validBackup;
+            expect(theme).toEqual({});
+            expect(notifications).toEqual({});
+            expect(loginBonus).toEqual({});
+            expect(battleHistory).toEqual({});
+            expect(taskSort).toEqual({});
+            expect(habitSort).toEqual({});
+
+            expect(importAllData(legacyBackup)).toBe(true);
+            expect(localStorage.getItem('quest-board-notifications')).toBeNull();
         });
     });
 });
