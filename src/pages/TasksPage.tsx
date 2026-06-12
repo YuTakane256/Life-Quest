@@ -94,6 +94,16 @@ export function TasksPage() {
         });
     }, [filteredTasks, sortMode]);
 
+    const incompleteTaskCount = useMemo(
+        () => tasks.filter((t) => !t.completed).length,
+        [tasks]
+    );
+
+    const taskGroups = useMemo(() => ({
+        incomplete: sortedTasks.filter((t) => !t.completed),
+        completed: sortedTasks.filter((t) => t.completed),
+    }), [sortedTasks]);
+
     const resetForm = () => {
         setName(''); setDueDate(''); setPriority('medium'); setRecurrence('none');
         setTags([]); setTagInput('');
@@ -163,13 +173,15 @@ export function TasksPage() {
     };
 
     /** サブタスクの有無を踏まえた既定の展開状態 */
-    const isTaskExpanded = (task: Task) =>
-        expandOverrides[task.id] ?? ((task.subtasks || []).length > 0);
+    const isTaskExpanded = useCallback(
+        (task: Task) => expandOverrides[task.id] ?? ((task.subtasks || []).length > 0),
+        [expandOverrides]
+    );
 
-    const toggleExpanded = (task: Task) => {
+    const toggleExpanded = useCallback((task: Task) => {
         const current = isTaskExpanded(task);
         setExpandOverrides((prev) => ({ ...prev, [task.id]: !current }));
-    };
+    }, [isTaskExpanded]);
 
     const handleAddSubtask = (taskId: string, e: React.FormEvent) => {
         e.preventDefault();
@@ -238,7 +250,7 @@ export function TasksPage() {
             <div className="flex items-center justify-between mb-4">
                 <div>
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>タスク</h1>
-                    <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{tasks.filter((t) => !t.completed).length}件の未完了タスク</p>
+                    <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{incompleteTaskCount}件の未完了タスク</p>
                 </div>
                 <button onClick={() => { setEditingTask(null); resetForm(); setShowForm(!showForm); }}
                     aria-label={showForm ? 'タスク追加フォームを閉じる' : '新しいタスクを追加'}
@@ -508,8 +520,6 @@ export function TasksPage() {
                     </div>
                 )}
                 {(() => {
-                    const incompleteTasks = sortedTasks.filter((t) => !t.completed);
-                    const completedTasks = sortedTasks.filter((t) => t.completed);
                     const renderTaskItem = (task: Task) => {
                         const subtasks = task.subtasks || [];
                         const completedSubtaskCount = subtasks.filter((subtask) => subtask.completed).length;
@@ -611,15 +621,15 @@ export function TasksPage() {
                     };
                     return (
                         <>
-                            {incompleteTasks.map(renderTaskItem)}
-                            {completedTasks.length > 0 && (
+                            {taskGroups.incomplete.map(renderTaskItem)}
+                            {taskGroups.completed.length > 0 && (
                                 <details className="rounded-xl mt-2 group" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
                                     <summary className="cursor-pointer list-none px-3 py-2.5 flex items-center gap-2 text-xs select-none" style={{ color: 'var(--color-text-muted)' }}>
                                         <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
-                                        <span className="font-medium">完了タスク ({completedTasks.length})</span>
+                                        <span className="font-medium">完了タスク ({taskGroups.completed.length})</span>
                                     </summary>
                                     <div className="flex flex-col gap-2 px-2 pb-2 pt-1">
-                                        {completedTasks.map(renderTaskItem)}
+                                        {taskGroups.completed.map(renderTaskItem)}
                                     </div>
                                 </details>
                             )}
