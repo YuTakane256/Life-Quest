@@ -520,10 +520,18 @@ export function TasksPage() {
                         <div key={task.id} className={`rounded-xl transition-all duration-200 ${pending ? 'animate-pulse-glow' : ''}`}
                             style={{ backgroundColor: task.completed ? 'var(--color-bg-secondary)' : 'var(--color-bg-card)', border: `1px solid ${overdue ? 'var(--color-text-danger)' : 'var(--color-border-default)'}`, opacity: task.completed && !pending ? 0.6 : 1 }}>
                             <div className="group flex items-center gap-2 px-3 py-3">
-                                <button onClick={() => toggleExpanded(task)} className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors" style={{ color: 'var(--color-text-muted)' }}>
+                                <button
+                                    onClick={() => toggleExpanded(task)}
+                                    aria-label={isExpanded ? `タスク「${task.name}」を折りたたむ` : `タスク「${task.name}」を展開`}
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
+                                    style={{ color: 'var(--color-text-muted)' }}
+                                >
                                     {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                                 </button>
-                                <button onClick={() => handleToggleComplete(task)} className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
+                                <button
+                                    onClick={() => handleToggleComplete(task)}
+                                    aria-label={task.completed ? `タスク「${task.name}」を未完了にする` : `タスク「${task.name}」を完了にする`}
+                                    className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
                                     style={{ borderColor: task.completed ? 'var(--color-accent-emerald)' : PRIORITY_COLORS[task.priority], backgroundColor: task.completed ? 'var(--color-accent-emerald)' : 'transparent' }}>
                                     {task.completed && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
                                 </button>
@@ -562,7 +570,10 @@ export function TasksPage() {
                                     <div className="flex flex-col gap-2 mb-3">
                                         {subtasks.map((subtask) => (
                                             <div key={subtask.id} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
-                                                <button onClick={() => toggleSubtaskComplete(task.id, subtask.id)} className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
+                                                <button
+                                                    onClick={() => toggleSubtaskComplete(task.id, subtask.id)}
+                                                    aria-label={subtask.completed ? `サブタスク「${subtask.name}」を未完了にする` : `サブタスク「${subtask.name}」を完了にする`}
+                                                    className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
                                                     style={{ borderColor: subtask.completed ? 'var(--color-accent-emerald)' : 'var(--color-text-muted)', backgroundColor: subtask.completed ? 'var(--color-accent-emerald)' : 'transparent' }}>
                                                     {subtask.completed && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
                                                 </button>
@@ -584,7 +595,12 @@ export function TasksPage() {
                                             className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
                                             style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
                                         />
-                                        <button type="submit" className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors hover:opacity-90" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
+                                        <button
+                                            type="submit"
+                                            aria-label={`タスク「${task.name}」にサブタスクを追加`}
+                                            className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors hover:opacity-90"
+                                            style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}
+                                        >
                                             <ListPlus size={16} />
                                         </button>
                                     </form>
