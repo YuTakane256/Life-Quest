@@ -3,7 +3,7 @@ import { SELL_XP_BY_RARITY, RARITY_ORDER, SYNTHESIS_CONFIG, GACHA_CONFIG } from 
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS, RARITY_LABELS } from '../config/equipmentAssets';
 import type { Equipment, Rarity, EquipmentSlot } from '../types';
 import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
@@ -36,6 +36,15 @@ function getUpcomingMilestones(currentCount: number, limit: number = 3) {
     return upcoming;
 }
 
+function calculateEffectiveStats(character: { baseAttack: number; baseDefense: number; baseMaxHp: number }, equipment: Equipment[]) {
+    const equippedItems = equipment.filter((e) => e.equipped);
+    return {
+        attack: character.baseAttack + equippedItems.reduce((sum, e) => sum + e.attackBonus, 0),
+        defense: character.baseDefense + equippedItems.reduce((sum, e) => sum + e.defenseBonus, 0),
+        maxHp: character.baseMaxHp + equippedItems.reduce((sum, e) => sum + e.hpBonus, 0),
+    };
+}
+
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
 export function CharacterPage() {
@@ -47,7 +56,6 @@ export function CharacterPage() {
     const chestQueue = useGameStore((s) => s.chestQueue);
     const unequipItem = useGameStore((s) => s.unequipItem);
     const openChest = useGameStore((s) => s.openChest);
-    const getEffectiveStats = useGameStore((s) => s.getEffectiveStats);
     const updateCharacter = useGameStore((s) => s.updateCharacter);
     const autoEquipBest = useGameStore((s) => s.autoEquipBest);
 
@@ -55,8 +63,7 @@ export function CharacterPage() {
     const [editName, setEditName] = useState(character.name);
     const [editAvatar, setEditAvatar] = useState(character.avatar);
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    const effectiveStats = useMemo(() => getEffectiveStats(), [getEffectiveStats, equipment, character, debuff]);
+    const effectiveStats = useMemo(() => calculateEffectiveStats(character, equipment), [character, equipment]);
     const xpProgress = useMemo(() => calculateXpProgress(character.totalXp, character.level), [character.totalXp, character.level]);
     const nextLevelXp = useMemo(() => calculateNextLevelXp(character.level), [character.level]);
     const equippedItems = useMemo(() => equipment.filter((e) => e.equipped), [equipment]);
@@ -339,31 +346,40 @@ function StatBadge({ label, value, icon }: { label: string; value: number; icon:
 }
 
 function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?: number; showViewAll?: boolean }) {
-    const { equipment, equipItem, sellItem, synthesizeItems } = useGameStore();
+    const equipment = useGameStore((s) => s.equipment);
+    const equipItem = useGameStore((s) => s.equipItem);
+    const sellItem = useGameStore((s) => s.sellItem);
+    const synthesizeItems = useGameStore((s) => s.synthesizeItems);
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
     const [selectedForSynth, setSelectedForSynth] = useState<string[]>([]);
     const [sellFeedback, setSellFeedback] = useState<{ id: string; xp: number } | null>(null);
     const [synthResult, setSynthResult] = useState<Equipment | null>(null);
 
-    const unequippedItems = equipment.filter((e) => !e.equipped);
+    const unequippedItems = useMemo(() => equipment.filter((e) => !e.equipped), [equipment]);
     const hasOverflow = showViewAll && visibleLimit !== undefined && unequippedItems.length >= visibleLimit + 1;
-    const visibleItems = hasOverflow ? unequippedItems.slice(0, visibleLimit) : unequippedItems;
+    const visibleItems = useMemo(
+        () => hasOverflow ? unequippedItems.slice(0, visibleLimit) : unequippedItems,
+        [hasOverflow, unequippedItems, visibleLimit]
+    );
 
     // 合成: 選択中アイテムのレアリティ(最初の選択に合わせる)
-    const synthTargetRarity = selectedForSynth.length > 0
-        ? unequippedItems.find(e => e.id === selectedForSynth[0])?.rarity ?? null
-        : null;
+    const synthTargetRarity = useMemo(
+        () => selectedForSynth.length > 0
+            ? unequippedItems.find(e => e.id === selectedForSynth[0])?.rarity ?? null
+            : null,
+        [selectedForSynth, unequippedItems]
+    );
 
-    const handleSell = (itemId: string) => {
+    const handleSell = useCallback((itemId: string) => {
         const xp = sellItem(itemId);
         if (xp > 0) {
             setSellFeedback({ id: itemId, xp });
             setSelectedForSynth((prev) => prev.filter((id) => id !== itemId));
             setTimeout(() => setSellFeedback(null), 1500);
         }
-    };
+    }, [sellItem]);
 
-    const toggleSynthSelect = (itemId: string) => {
+    const toggleSynthSelect = useCallback((itemId: string) => {
         setSelectedForSynth(prev => {
             if (prev.includes(itemId)) return prev.filter(id => id !== itemId);
             if (prev.length >= SYNTHESIS_CONFIG.REQUIRED_COUNT) return prev;
@@ -373,21 +389,21 @@ function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?
             if (RARITY_ORDER.indexOf(item.rarity) >= RARITY_ORDER.length - 1) return prev;
             return [...prev, itemId];
         });
-    };
+    }, [synthTargetRarity, unequippedItems]);
 
-    const handleSynthesize = () => {
+    const handleSynthesize = useCallback(() => {
         const result = synthesizeItems(selectedForSynth);
         if (result) {
             setSynthResult(result);
             setSelectedForSynth([]);
             setTimeout(() => setSynthResult(null), 3000);
         }
-    };
+    }, [selectedForSynth, synthesizeItems]);
 
-    const resetMode = () => {
+    const resetMode = useCallback(() => {
         setInventoryMode('normal');
         setSelectedForSynth([]);
-    };
+    }, []);
 
     return (
         <div>
