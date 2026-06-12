@@ -2,6 +2,8 @@ import { BarChart3 } from 'lucide-react';
 import { useTaskStore } from '../../stores/useTaskStore';
 import { useGameStore } from '../../stores/useGameStore';
 import { useLoginBonusStore } from '../../stores/useLoginBonusStore';
+import { useHabitStore } from '../../stores/useHabitStore';
+import { getTodayJST } from '../../utils/dateUtils';
 
 interface StatItem {
     icon: string;
@@ -16,14 +18,28 @@ export function UsageStatsSettings() {
     const chestQueue = useGameStore((s) => s.chestQueue);
     const gachaCount = useGameStore((s) => s.gachaCount);
     const loginStreak = useLoginBonusStore((s) => s.streak);
+    const habits = useHabitStore((s) => s.habits);
+    const dailyRecords = useHabitStore((s) => s.dailyRecords);
 
+    const today = getTodayJST();
     const totalTasks = tasks.length;
     const completedTasks = tasks.filter((t) => t.completed).length;
+    const totalHabits = habits.length;
+    const activeHabitIds = new Set(
+        habits
+            .filter((habit) => habit.createdAt.split('T')[0] <= today)
+            .map((habit) => habit.id)
+    );
+    const completedHabitsToday = dailyRecords.filter(
+        (record) => record.date === today && record.completed && activeHabitIds.has(record.habitId)
+    ).length;
     const openedChests = chestQueue.filter((c) => c.opened).length;
 
     const items: StatItem[] = [
         { icon: '📋', label: '累計タスク', value: totalTasks.toLocaleString() },
         { icon: '✅', label: '完了タスク', value: completedTasks.toLocaleString() },
+        { icon: '🔁', label: '登録習慣', value: totalHabits.toLocaleString() },
+        { icon: '☑️', label: '今日の習慣', value: `${completedHabitsToday}/${activeHabitIds.size}` },
         { icon: '⚡', label: '累計XP', value: totalXp.toLocaleString() },
         { icon: '⭐', label: 'レベル', value: `Lv.${level}` },
         { icon: '📦', label: '開封宝箱', value: openedChests.toLocaleString() },
