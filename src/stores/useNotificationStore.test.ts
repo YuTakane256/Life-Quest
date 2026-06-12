@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useNotificationStore } from './useNotificationStore';
+import { sanitizeNotificationState, useNotificationStore } from './useNotificationStore';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 
 function reset() {
@@ -14,6 +14,48 @@ function reset() {
 
 describe('useNotificationStore', () => {
     beforeEach(() => reset());
+
+    describe('sanitizeNotificationState', () => {
+        it('非オブジェクトの永続化データは無視する', () => {
+            expect(sanitizeNotificationState(null)).toEqual({});
+            expect(sanitizeNotificationState('broken')).toEqual({});
+            expect(sanitizeNotificationState(1)).toEqual({});
+        });
+
+        it('有効なフィールドだけを復元し、通知時刻を範囲内に丸める', () => {
+            expect(
+                sanitizeNotificationState({
+                    enabled: true,
+                    notifiedTaskIds: ['task-1', 123, 'task-2', null],
+                    lastHabitReminderDate: '2026-06-11',
+                    habitReminderHour: 26.8,
+                    extraField: 'ignored',
+                })
+            ).toEqual({
+                enabled: true,
+                notifiedTaskIds: ['task-1', 'task-2'],
+                lastHabitReminderDate: '2026-06-11',
+                habitReminderHour: 23,
+            });
+        });
+
+        it('不正な型のフィールドは復元対象に含めない', () => {
+            expect(
+                sanitizeNotificationState({
+                    enabled: 'yes',
+                    notifiedTaskIds: 'task-1',
+                    lastHabitReminderDate: 20260611,
+                    habitReminderHour: Number.NaN,
+                })
+            ).toEqual({});
+        });
+
+        it('null の最終習慣リマインド日は有効な未通知状態として扱う', () => {
+            expect(sanitizeNotificationState({ lastHabitReminderDate: null })).toEqual({
+                lastHabitReminderDate: null,
+            });
+        });
+    });
 
     // ── setEnabled ──
     describe('setEnabled', () => {
