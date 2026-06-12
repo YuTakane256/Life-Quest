@@ -20,6 +20,7 @@ const BADGE_URL = '/favicon.png';
  * 防御として、title / body をここでカットする。
  */
 const NOTIFICATION_TEXT_MAX = 200;
+let isRunningNotificationChecks = false;
 
 /** このブラウザが通知に対応しているか */
 export function isNotificationSupported(): boolean {
@@ -75,57 +76,64 @@ function countIncompleteHabits(date: string): number {
  * アプリ起動時および一定間隔で呼び出す。
  */
 export async function runNotificationChecks(): Promise<void> {
-    const notificationStore = useNotificationStore.getState();
-    if (!notificationStore.enabled) return;
-    if (getNotificationPermission() !== 'granted') return;
+    if (isRunningNotificationChecks) return;
+    isRunningNotificationChecks = true;
 
-    const tasks = useTaskStore.getState().tasks;
-    // 削除済みタスクのIDを通知履歴から掃除
-    notificationStore.pruneNotifiedTasks(tasks.map((t) => t.id));
+    try {
+        const notificationStore = useNotificationStore.getState();
+        if (!notificationStore.enabled) return;
+        if (getNotificationPermission() !== 'granted') return;
 
-    const now = Date.now();
-    const windowMs = NOTIFICATION_CONFIG.TASK_DEADLINE_NOTICE_HOURS * 60 * 60 * 1000;
+        const tasks = useTaskStore.getState().tasks;
+        // 削除済みタスクのIDを通知履歴から掃除
+        notificationStore.pruneNotifiedTasks(tasks.map((t) => t.id));
 
-    // ── タスク期限の通知（期限の24時間前以降、未完了、未通知のもの）──
-    for (const task of tasks) {
-        if (task.completed || !task.dueDate) continue;
-        if (useNotificationStore.getState().notifiedTaskIds.includes(task.id)) continue;
+        const now = Date.now();
+        const windowMs = NOTIFICATION_CONFIG.TASK_DEADLINE_NOTICE_HOURS * 60 * 60 * 1000;
 
-        // dueDate はJSTの日付。その日の終わり(23:59:59 JST)を期限とみなす
-        const deadline = new Date(`${task.dueDate}T23:59:59+09:00`).getTime();
-        if (Number.isNaN(deadline)) continue;
+        // ── タスク期限の通知（期限の24時間前以降、未完了、未通知のもの）──
+        for (const task of tasks) {
+            if (task.completed || !task.dueDate) continue;
+            if (useNotificationStore.getState().notifiedTaskIds.includes(task.id)) continue;
 
-        if (deadline - now <= windowMs) {
-            await showAppNotification(
-                'タスクの期限が近づいています',
-                `「${task.name}」の期限が近づいています`,
-                `task-deadline-${task.id}`
-            );
-            useNotificationStore.getState().markTaskNotified(task.id);
+            // dueDate はJSTの日付。その日の終わり(23:59:59 JST)を期限とみなす
+            const deadline = new Date(`${task.dueDate}T23:59:59+09:00`).getTime();
+            if (Number.isNaN(deadline)) continue;
+
+            if (deadline - now <= windowMs) {
+                await showAppNotification(
+                    'タスクの期限が近づいています',
+                    `「${task.name}」の期限が近づいています`,
+                    `task-deadline-${task.id}`
+                );
+                useNotificationStore.getState().markTaskNotified(task.id);
+            }
         }
-    }
 
-    // ── 習慣リマインダー（指定時刻以降、未完了の習慣がある、本日未通知）──
-    const today = getTodayJST();
-    // 旧データ（habitReminderHour 未設定）は既定の20時として扱う
-    const reminderHour = useNotificationStore.getState().habitReminderHour ?? NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST;
-    if (
-        useNotificationStore.getState().lastHabitReminderDate !== today &&
-        getJSTHour() >= reminderHour
-    ) {
-        const habitStore = useHabitStore.getState();
+        // ── 習慣リマインダー（指定時刻以降、未完了の習慣がある、本日未通知）──
+        const today = getTodayJST();
+        // 旧データ（habitReminderHour 未設定）は既定の20時として扱う
+        const reminderHour = useNotificationStore.getState().habitReminderHour ?? NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST;
         if (
-            habitStore.habits.length > 0 &&
-            !habitStore.isRestDay(today) &&
-            !habitStore.areAllHabitsComplete(today)
+            useNotificationStore.getState().lastHabitReminderDate !== today &&
+            getJSTHour() >= reminderHour
         ) {
-            const incompleteCount = countIncompleteHabits(today);
-            await showAppNotification(
-                '今日の習慣がまだ残っています',
-                `未完了の習慣が${incompleteCount}件あります。寝る前に済ませましょう！`,
-                `habit-reminder-${today}`
-            );
-            useNotificationStore.getState().markHabitReminded(today);
+            const habitStore = useHabitStore.getState();
+            if (
+                habitStore.habits.length > 0 &&
+                !habitStore.isRestDay(today) &&
+                !habitStore.areAllHabitsComplete(today)
+            ) {
+                const incompleteCount = countIncompleteHabits(today);
+                await showAppNotification(
+                    '今日の習慣がまだ残っています',
+                    `未完了の習慣が${incompleteCount}件あります。寝る前に済ませましょう！`,
+                    `habit-reminder-${today}`
+                );
+                useNotificationStore.getState().markHabitReminded(today);
+            }
         }
+    } finally {
+        isRunningNotificationChecks = false;
     }
 }
