@@ -1,13 +1,10 @@
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { X, Undo2 } from 'lucide-react';
 import { UI_CONFIG } from '../../config/gameConfig';
 import { generateId } from '../../utils/dateUtils';
+import { SnackbarContext } from './snackbarContext';
 
 interface SnackbarItem { id: string; message: string; onUndo?: () => void; expiresAt: number; }
-interface SnackbarContextType { showUndo: (message: string, onUndo: () => void) => void; }
-const SnackbarContext = createContext<SnackbarContextType | null>(null);
-// eslint-disable-next-line react-refresh/only-export-components
-export const useSnackbar = () => { const ctx = useContext(SnackbarContext); if (!ctx) throw new Error('error'); return ctx; };
 
 export function SnackbarProvider({ children }: { children: React.ReactNode }) {
     const [snackbars, setSnackbars] = useState<SnackbarItem[]>([]); const timersRef = useRef<Map<string, number>>(new Map());
