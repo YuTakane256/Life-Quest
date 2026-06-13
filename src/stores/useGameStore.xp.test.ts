@@ -74,6 +74,26 @@ describe('useGameStore.addXp', () => {
         expect(useGameStore.getState().character.totalXp).toBe(Math.floor(50 * XP_CONFIG.DEBUFF_XP_MULTIPLIER));
     });
 
+    it('デバフ中のレベルアップ: 減衰後XPで levelDiff とイベントを計算する', () => {
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        useGameStore.setState({
+            debuff: { active: true, expiresAt, multiplier: XP_CONFIG.DEBUFF_XP_MULTIPLIER },
+        });
+
+        useGameStore.getState().addXp(100);
+
+        const state = useGameStore.getState();
+        expect(state.character.totalXp).toBe(80);
+        expect(state.character.level).toBe(3);
+        expect(state.levelUpEvent).toMatchObject({
+            fromLevel: 1,
+            toLevel: 3,
+            attackGain: 2 * CHARACTER_CONFIG.STAT_PER_LEVEL.attack,
+            defenseGain: 2 * CHARACTER_CONFIG.STAT_PER_LEVEL.defense,
+            hpGain: 2 * CHARACTER_CONFIG.STAT_PER_LEVEL.maxHp,
+        });
+    });
+
     it('デバフ期限切れ: 解除されつつ通常レートで加算', () => {
         // 過去の expiresAt
         const expiresAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -87,9 +107,32 @@ describe('useGameStore.addXp', () => {
         expect(state.debuff.active).toBe(false);
     });
 
+    it('期限切れデバフ解除後の次回 addXp も通常レートで加算される', () => {
+        const expiresAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        useGameStore.setState({
+            debuff: { active: true, expiresAt, multiplier: XP_CONFIG.DEBUFF_XP_MULTIPLIER },
+        });
+
+        useGameStore.getState().addXp(10);
+        useGameStore.getState().addXp(10);
+
+        expect(useGameStore.getState().character.totalXp).toBe(20);
+        expect(useGameStore.getState().debuff).toEqual({ active: false, expiresAt: null, multiplier: 1 });
+    });
+
     it('0 XP 加算でクラッシュしない', () => {
         expect(() => useGameStore.getState().addXp(0)).not.toThrow();
         expect(useGameStore.getState().character.totalXp).toBe(0);
+    });
+
+    it('clearLevelUpEvent: 発火済みレベルアップイベントだけを消す', () => {
+        useGameStore.getState().addXp(30);
+        expect(useGameStore.getState().levelUpEvent).not.toBeNull();
+
+        useGameStore.getState().clearLevelUpEvent();
+
+        expect(useGameStore.getState().levelUpEvent).toBeNull();
+        expect(useGameStore.getState().character.level).toBe(2);
     });
 });
 
