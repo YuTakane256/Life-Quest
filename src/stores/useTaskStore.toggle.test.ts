@@ -71,6 +71,23 @@ describe('useTaskStore.toggleComplete', () => {
         expect(addXpSpy).not.toHaveBeenCalled();
     });
 
+    it('繰り返しタスクをUndoした場合、5秒後も次回分を生成しない', async () => {
+        const id = seedTask('Daily undo', 'medium', 'daily', '2025-03-15');
+
+        useTaskStore.getState().toggleComplete(id);
+        useTaskStore.getState().cancelPendingCompletion(id);
+        await vi.advanceTimersByTimeAsync(UI_CONFIG.UNDO_DURATION_MS);
+
+        const tasks = useTaskStore.getState().tasks;
+        expect(tasks).toHaveLength(1);
+        expect(tasks[0]).toMatchObject({
+            id,
+            completed: false,
+            completedAt: null,
+        });
+        expect(addXpSpy).not.toHaveBeenCalled();
+    });
+
     it('完了済みタスクで toggleComplete: 即座に未完了に戻る（5秒待機なし）', () => {
         const id = seedTask();
         // 直接完了状態に
@@ -103,6 +120,47 @@ describe('useTaskStore.toggleComplete', () => {
         expect(next?.name).toBe('毎日タスク');
         expect(next?.dueDate).toBe('2025-03-16');
         expect(next?.recurrence).toBe('daily');
+    });
+
+    it('繰り返しタスク(monthly) は月末日をまたいでも次回分を生成する', async () => {
+        const id = seedTask('月末タスク', 'medium', 'monthly', '2025-01-31');
+
+        useTaskStore.getState().toggleComplete(id);
+        await vi.advanceTimersByTimeAsync(UI_CONFIG.UNDO_DURATION_MS);
+
+        const next = useTaskStore.getState().tasks.find((t) => !t.completed);
+        expect(next).toMatchObject({
+            name: '月末タスク',
+            recurrence: 'monthly',
+            dueDate: '2025-02-28',
+            completed: false,
+            completedAt: null,
+        });
+    });
+
+    it('繰り返しタスクの次回分ではサブタスクが未完了状態に戻る', async () => {
+        useTaskStore.getState().addTask('Subtask recurring', '2025-03-15', 'medium', 'weekly', [], [
+            {
+                id: 'sub-1',
+                name: '子',
+                completed: true,
+                completedAt: '2025-03-15T00:00:00.000Z',
+                createdAt: '2025-03-15T00:00:00.000Z',
+            },
+        ]);
+        const id = useTaskStore.getState().tasks[0].id;
+
+        useTaskStore.getState().toggleComplete(id);
+        await vi.advanceTimersByTimeAsync(UI_CONFIG.UNDO_DURATION_MS);
+
+        const next = useTaskStore.getState().tasks.find((t) => !t.completed);
+        expect(next?.subtasks).toHaveLength(1);
+        expect(next?.subtasks[0]).toMatchObject({
+            name: '子',
+            completed: false,
+            completedAt: null,
+        });
+        expect(next?.subtasks[0].id).not.toBe('sub-1');
     });
 
     it('同名 + 同 dueDate の繰り返し次回分が既に存在すれば二重生成しない', async () => {

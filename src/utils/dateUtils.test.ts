@@ -176,13 +176,14 @@ describe('addRecurrenceInterval', () => {
     it('monthly で 1 ヶ月進む', () => {
         expect(addRecurrenceInterval('2025-03-15', 'monthly')).toBe('2025-04-15');
     });
-    it('monthly で 1/31 → JS の setUTCMonth 仕様で 3/3 に繰り上がる（既存挙動）', () => {
-        // 1/31 + 1 month = 2/31 → 存在しないので JS が 3/3 に繰り上げる
-        expect(addRecurrenceInterval('2025-01-31', 'monthly')).toBe('2025-03-03');
+    it('monthly で 1/31 → 2/28 に丸める', () => {
+        expect(addRecurrenceInterval('2025-01-31', 'monthly')).toBe('2025-02-28');
     });
-    it('うるう年の 1/31 + monthly → 3/2 (2/29 が存在するため)', () => {
-        // 2024 はうるう年なので 1/31 + 1 month = 2/31 → 3/2
-        expect(addRecurrenceInterval('2024-01-31', 'monthly')).toBe('2024-03-02');
+    it('うるう年の 1/31 + monthly → 2/29 に丸める', () => {
+        expect(addRecurrenceInterval('2024-01-31', 'monthly')).toBe('2024-02-29');
+    });
+    it('monthly で年またぎ', () => {
+        expect(addRecurrenceInterval('2025-12-31', 'monthly')).toBe('2026-01-31');
     });
     it('weekly で年またぎ', () => {
         expect(addRecurrenceInterval('2025-12-30', 'weekly')).toBe('2026-01-06');
