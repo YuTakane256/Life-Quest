@@ -29,6 +29,14 @@ import enemySeraph from '../assets/images/enemy_seraph.png';
 import enemyHolyKnight from '../assets/images/enemy_holy_knight.png';
 import enemyArchangel from '../assets/images/enemy_archangel.png';
 import enemyGodOfLight from '../assets/images/enemy_god_of_light.png';
+import enemyMerman from '../assets/images/enemy_merman.png';
+import enemySiren from '../assets/images/enemy_siren.png';
+import enemyWaterElemental from '../assets/images/enemy_water_elemental.png';
+import enemyKillerShark from '../assets/images/enemy_killer_shark.png';
+import enemySeaSerpent from '../assets/images/enemy_sea_serpent.png';
+import enemyKraken from '../assets/images/enemy_kraken.png';
+import enemyWaterDragon from '../assets/images/enemy_water_dragon.png';
+import enemyLeviathan from '../assets/images/enemy_leviathan.png';
 
 /** ステージキー → 敵キャラ画像 URL のマッピング */
 export const ENEMY_IMAGES: Record<string, string> = {
@@ -62,4 +70,14 @@ export const ENEMY_IMAGES: Record<string, string> = {
     holy_knight: enemyHolyKnight,
     archangel: enemyArchangel,
     god_of_light: enemyGodOfLight,
+    giant_crab: enemyKillerShark,
+    sahagin: enemyMerman,
+    merman: enemyMerman,
+    siren: enemySiren,
+    water_elemental: enemyWaterElemental,
+    killer_shark: enemyKillerShark,
+    sea_serpent: enemySeaSerpent,
+    kraken: enemyKraken,
+    water_dragon: enemyWaterDragon,
+    leviathan: enemyLeviathan,
 };
