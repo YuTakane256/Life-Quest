@@ -4,6 +4,7 @@ import type { BattleHistoryEntry } from '../../types';
 import { BATTLE_CONFIG } from '../../config/gameConfig';
 import { HpBar } from './HpBar';
 import { BattleLogList } from './BattleLogList';
+import { useModalEscape } from '../../hooks/useModalEscape';
 
 interface Props {
     entry: BattleHistoryEntry | null;
@@ -14,6 +15,8 @@ export function BattleReplayModal({ entry, onClose }: Props) {
     // -1 = 開始前（フルHP表示）
     const [currentLogIndex, setCurrentLogIndex] = useState<number>(-1);
     const [isPaused, setIsPaused] = useState<boolean>(false);
+    const titleId = 'battle-replay-modal-title';
+    const summaryId = 'battle-replay-modal-summary';
 
     // entry が変わったら状態をリセット
     useEffect(() => {
@@ -30,6 +33,8 @@ export function BattleReplayModal({ entry, onClose }: Props) {
         }, BATTLE_CONFIG.REPLAY_LOG_INTERVAL_MS);
         return () => window.clearTimeout(timer);
     }, [currentLogIndex, isPaused, entry]);
+
+    useModalEscape(Boolean(entry), onClose);
 
     if (!entry) return null;
 
@@ -67,7 +72,14 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                 className="w-full max-w-lg max-h-[90dvh] rounded-2xl flex flex-col"
                 style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
                 onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                aria-describedby={summaryId}
             >
+                <p id={summaryId} className="sr-only">
+                    ステージ {stage} のバトルリプレイです。Escapeキーで閉じられます。
+                </p>
                 {/* ヘッダー */}
                 <div
                     className="flex items-center justify-between px-5 py-3 rounded-t-2xl"
@@ -78,7 +90,7 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                             ? <Trophy size={18} style={{ color: 'var(--color-accent-gold)', flexShrink: 0 }} />
                             : <Skull size={18} style={{ color: 'var(--color-text-danger)', flexShrink: 0 }} />
                         }
-                        <h3 className="text-sm font-bold truncate" style={{ color: 'var(--color-text-primary)' }}>
+                        <h3 id={titleId} className="text-sm font-bold truncate" style={{ color: 'var(--color-text-primary)' }}>
                             ステージ {stage}: {enemyName}
                         </h3>
                         <span
@@ -92,6 +104,7 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                         </span>
                     </div>
                     <button
+                        type="button"
                         onClick={onClose}
                         className="p-1.5 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0"
                         style={{ color: 'var(--color-text-muted)' }}
@@ -152,10 +165,12 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                     style={{ borderTop: '1px solid var(--color-border-default)' }}
                 >
                     <button
+                        type="button"
                         onClick={() => setIsPaused((p) => !p)}
                         disabled={isFinished}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
                         style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                        aria-label={isPaused ? 'バトルリプレイを再生' : 'バトルリプレイを一時停止'}
                     >
                         {isPaused
                             ? <><Play size={14} /> 再生</>
@@ -163,10 +178,12 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                         }
                     </button>
                     <button
+                        type="button"
                         onClick={handleJumpToEnd}
                         disabled={isFinished}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
                         style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                        aria-label="バトルリプレイを最後まで進める"
                     >
                         <FastForward size={14} /> 最後まで
                     </button>
