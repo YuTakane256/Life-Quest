@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useHabitStore } from './useHabitStore';
+import { sanitizeHabitStoreState, useHabitStore } from './useHabitStore';
 import { getTodayJST, shiftDate } from '../utils/dateUtils';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
+import { UI_CONFIG } from '../config/gameConfig';
 
 function resetStore() {
     localStorage.clear();
@@ -21,6 +22,96 @@ describe('useHabitStore', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    describe('sanitizeHabitStoreState', () => {
+        it('非オブジェクトの永続化データは空配列にする', () => {
+            expect(sanitizeHabitStoreState(null)).toEqual({
+                habits: [],
+                dailyRecords: [],
+                restDays: [],
+            });
+        });
+
+        it('習慣を検証し、カテゴリと名前長を安全な値に丸める', () => {
+            const longName = 'a'.repeat(UI_CONFIG.MAX_HABIT_NAME_LENGTH + 10);
+
+            expect(
+                sanitizeHabitStoreState({
+                    habits: [
+                        'broken',
+                        { id: 1, name: 'bad', createdAt: '2026-06-13T00:00:00.000Z' },
+                        {
+                            id: 'habit-1',
+                            name: longName,
+                            categoryId: 'unknown',
+                            createdAt: '2026-06-13T00:00:00.000Z',
+                        },
+                    ],
+                }).habits
+            ).toEqual([
+                {
+                    id: 'habit-1',
+                    name: 'a'.repeat(UI_CONFIG.MAX_HABIT_NAME_LENGTH),
+                    categoryId: DEFAULT_CATEGORY_ID,
+                    createdAt: '2026-06-13T00:00:00.000Z',
+                },
+            ]);
+        });
+
+        it('日別記録は存在する習慣IDのみ残し、memo と completed を補正する', () => {
+            const longMemo = 'm'.repeat(UI_CONFIG.MAX_HABIT_MEMO_LENGTH + 10);
+
+            const sanitized = sanitizeHabitStoreState({
+                habits: [
+                    {
+                        id: 'habit-1',
+                        name: '読書',
+                        categoryId: 'study',
+                        createdAt: '2026-06-13T00:00:00.000Z',
+                    },
+                ],
+                dailyRecords: [
+                    {
+                        habitId: 'habit-1',
+                        date: '2026-06-13',
+                        completed: 'yes',
+                        memo: longMemo,
+                    },
+                    {
+                        habitId: 'missing-habit',
+                        date: '2026-06-13',
+                        completed: true,
+                        memo: 'orphan',
+                    },
+                    { habitId: 'habit-1', date: 20260613 },
+                ],
+            });
+
+            expect(sanitized.dailyRecords).toEqual([
+                {
+                    habitId: 'habit-1',
+                    date: '2026-06-13',
+                    completed: false,
+                    memo: 'm'.repeat(UI_CONFIG.MAX_HABIT_MEMO_LENGTH),
+                },
+            ]);
+        });
+
+        it('お休み日レコードを検証し、不正な isRest は false にする', () => {
+            expect(
+                sanitizeHabitStoreState({
+                    restDays: [
+                        { date: '2026-06-13', isRest: true },
+                        { date: '2026-06-14', isRest: 'yes' },
+                        { date: 20260615, isRest: true },
+                    ],
+                }).restDays
+            ).toEqual([
+                { date: '2026-06-13', isRest: true },
+                { date: '2026-06-14', isRest: false },
+            ]);
+        });
     });
 
     describe('addHabit & deleteHabit', () => {
