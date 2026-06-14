@@ -14,6 +14,9 @@ interface TaskStorePersisted {
 const getGameStore = () => import('./useGameStore').then(m => m.useGameStore);
 const getStatsStore = () => import('./useStatsStore').then(m => m.useStatsStore);
 
+const PRIORITIES: Priority[] = ['low', 'medium', 'high'];
+const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'monthly'];
+
 async function awardTaskXp(priority: Priority, completedAt: string, xpReward: number = XP_CONFIG.REWARD_BY_PRIORITY[priority]) {
     const gameStore = await getGameStore();
     const store = gameStore.getState();
@@ -28,6 +31,70 @@ async function awardTaskXp(priority: Priority, completedAt: string, xpReward: nu
 
 function getSubtaskXp(priority: Priority) {
     return Math.max(1, Math.floor(XP_CONFIG.REWARD_BY_PRIORITY[priority] * XP_CONFIG.SUBTASK_REWARD_RATIO));
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPriority(value: unknown): value is Priority {
+    return typeof value === 'string' && PRIORITIES.includes(value as Priority);
+}
+
+function isRecurrence(value: unknown): value is Recurrence {
+    return typeof value === 'string' && RECURRENCES.includes(value as Recurrence);
+}
+
+function sanitizeNullableString(value: unknown): string | null {
+    return typeof value === 'string' ? value : null;
+}
+
+function sanitizeSubtask(raw: unknown): Subtask | null {
+    if (!isPlainObject(raw)) return null;
+    if (typeof raw.id !== 'string' || typeof raw.name !== 'string') return null;
+
+    return {
+        id: raw.id,
+        name: clampString(raw.name, UI_CONFIG.MAX_SUBTASK_NAME_LENGTH),
+        completed: typeof raw.completed === 'boolean' ? raw.completed : false,
+        completedAt: sanitizeNullableString(raw.completedAt),
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+    };
+}
+
+function sanitizeTask(raw: unknown): Task | null {
+    if (!isPlainObject(raw)) return null;
+    if (typeof raw.id !== 'string' || typeof raw.name !== 'string' || typeof raw.createdAt !== 'string') return null;
+
+    return {
+        id: raw.id,
+        name: clampString(raw.name, UI_CONFIG.MAX_TASK_NAME_LENGTH),
+        dueDate: sanitizeNullableString(raw.dueDate),
+        priority: isPriority(raw.priority) ? raw.priority : 'medium',
+        tags: Array.isArray(raw.tags)
+            ? raw.tags
+                .filter((tag): tag is string => typeof tag === 'string')
+                .slice(0, UI_CONFIG.MAX_TAGS_PER_TASK)
+                .map((tag) => clampString(tag, UI_CONFIG.MAX_TAG_LENGTH))
+            : [],
+        subtasks: Array.isArray(raw.subtasks)
+            ? raw.subtasks.map(sanitizeSubtask).filter((subtask): subtask is Subtask => subtask !== null)
+            : [],
+        recurrence: isRecurrence(raw.recurrence) ? raw.recurrence : 'none',
+        completed: typeof raw.completed === 'boolean' ? raw.completed : false,
+        completedAt: sanitizeNullableString(raw.completedAt),
+        createdAt: raw.createdAt,
+    };
+}
+
+export function sanitizeTaskStoreState(persisted: unknown): TaskStorePersisted {
+    if (!isPlainObject(persisted) || !Array.isArray(persisted.tasks)) {
+        return { tasks: [] };
+    }
+
+    return {
+        tasks: persisted.tasks.map(sanitizeTask).filter((task): task is Task => task !== null),
+    };
 }
 
 /**
@@ -359,6 +426,11 @@ export const useTaskStore = create<TaskStoreState>()(
             name: 'quest-board-tasks',
             partialize: (state): TaskStorePersisted => ({
                 tasks: state.tasks,
+            }),
+            merge: (persisted, current) => ({
+                ...current,
+                ...sanitizeTaskStoreState(persisted),
+                pendingCompletions: [],
             }),
         }
     )
