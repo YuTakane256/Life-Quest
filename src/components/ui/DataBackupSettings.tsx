@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, Download, Upload } from 'lucide-react';
+import { Download, Upload } from 'lucide-react';
 import { exportAllData, importAllData, isValidBackup, MAX_IMPORT_FILE_SIZE } from '../../utils/dataBackup';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export function DataBackupSettings() {
     const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -65,11 +66,20 @@ export function DataBackupSettings() {
                 setTimeout(() => window.location.reload(), 1500);
             } else {
                 setImportStatus('error');
+                setShowImportConfirm(false);
+                setPendingFile(null);
             }
         } catch {
             setImportStatus('error');
+            setShowImportConfirm(false);
+            setPendingFile(null);
         }
         setTimeout(() => setImportStatus('idle'), 3000);
+    };
+
+    const handleImportCancel = () => {
+        setShowImportConfirm(false);
+        setPendingFile(null);
     };
 
     return (
@@ -108,35 +118,15 @@ export function DataBackupSettings() {
                 />
             </div>
 
-            {showImportConfirm && (
-                <div className="mt-3 px-4 py-3 rounded-xl animate-fade-in" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                    <div className="flex items-start gap-2 mb-3">
-                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-text-danger)' }} />
-                        <div>
-                            <div className="text-sm font-medium" style={{ color: 'var(--color-text-danger)' }}>データを上書きしますか？</div>
-                            <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                                現在のセーブデータはバックアップファイルの内容に置き換わります。この操作は取り消せません。
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex gap-2">
-                        <button
-                            onClick={handleImportConfirm}
-                            className="flex-1 py-2 rounded-lg text-sm font-medium"
-                            style={{ backgroundColor: 'var(--color-text-danger)', color: 'white' }}
-                        >
-                            上書きする
-                        </button>
-                        <button
-                            onClick={() => { setShowImportConfirm(false); setPendingFile(null); }}
-                            className="flex-1 py-2 rounded-lg text-sm"
-                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}
-                        >
-                            キャンセル
-                        </button>
-                    </div>
-                </div>
-            )}
+            <ConfirmDialog
+                open={showImportConfirm}
+                title="データを上書きしますか？"
+                message="現在のセーブデータはバックアップファイルの内容に置き換わります。この操作は取り消せません。"
+                confirmLabel="上書きする"
+                confirmColor="var(--color-text-danger)"
+                onConfirm={handleImportConfirm}
+                onClose={handleImportCancel}
+            />
 
             {importStatus === 'success' && (
                 <div
