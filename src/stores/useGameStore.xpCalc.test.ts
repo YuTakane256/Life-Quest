@@ -17,6 +17,14 @@ describe('useGameStore XP pure calculations', () => {
             expect(calculateLevel(table[3])).toBe(3);
         });
 
+        it('maps every table threshold and just-before threshold to the expected level', () => {
+            const table = XP_CONFIG.LEVEL_XP_TABLE;
+            for (let level = 2; level < table.length; level++) {
+                expect(calculateLevel(table[level])).toBe(level);
+                expect(calculateLevel(table[level] - 1)).toBe(level - 1);
+            }
+        });
+
         it('returns correct level for overflow XP (beyond table)', () => {
             const table = XP_CONFIG.LEVEL_XP_TABLE;
             const maxTableLevel = table.length - 1;
@@ -38,6 +46,13 @@ describe('useGameStore XP pure calculations', () => {
             const table = XP_CONFIG.LEVEL_XP_TABLE;
             expect(calculateNextLevelXp(1)).toBe(table[2]);
             expect(calculateNextLevelXp(2)).toBe(table[3]);
+        });
+
+        it('returns the next table threshold for every non-overflow table level', () => {
+            const table = XP_CONFIG.LEVEL_XP_TABLE;
+            for (let level = 1; level < table.length - 1; level++) {
+                expect(calculateNextLevelXp(level)).toBe(table[level + 1]);
+            }
         });
 
         it('returns next level XP threshold for overflow levels', () => {
@@ -75,6 +90,24 @@ describe('useGameStore XP pure calculations', () => {
             
             const totalXp2 = maxTableXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL * 1.5;
             expect(calculateXpProgress(totalXp2, maxTableLevel + 1)).toBe(0.5);
+        });
+
+        it('stays just below 1 immediately before the next table threshold', () => {
+            const table = XP_CONFIG.LEVEL_XP_TABLE;
+            const level = 5;
+            const progress = calculateXpProgress(table[level + 1] - 1, level);
+            expect(progress).toBeGreaterThan(0.99);
+            expect(progress).toBeLessThan(1);
+        });
+
+        it('resets progress to 0 at each overflow level threshold', () => {
+            const table = XP_CONFIG.LEVEL_XP_TABLE;
+            const maxTableLevel = table.length - 1;
+            const maxTableXp = table[maxTableLevel];
+
+            expect(calculateXpProgress(maxTableXp, maxTableLevel)).toBe(0);
+            expect(calculateXpProgress(maxTableXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL, maxTableLevel + 1)).toBe(0);
+            expect(calculateXpProgress(maxTableXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL * 2, maxTableLevel + 2)).toBe(0);
         });
     });
 });
