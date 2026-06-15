@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useStatsStore } from '../stores/useStatsStore';
+import { useGameStore } from '../stores/useGameStore';
 import { shiftDate } from '../utils/dateUtils';
+import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
 
 /** 日付セットから最長連続日数とその開始/終了日を返す */
 function computeLongestConsecutive(dateSet: Set<string>): { count: number; start: string; end: string } {
@@ -117,6 +119,9 @@ type TabMode = 'tasks' | 'habits';
 export function StatsPage() {
     const [mode, setMode] = useState<TabMode>('tasks');
     const { taskXpLog, habitLog } = useStatsStore();
+    const totalXp = useGameStore((s) => s.character.totalXp);
+    const maxStage = useGameStore((s) => s.battle.maxClearedStage);
+    const equipmentCount = useGameStore((s) => s.equipment.length);
 
     const TOTAL_DAYS = 119;
     const dates = useMemo(() => generateDateRange(TOTAL_DAYS), []);
@@ -161,6 +166,20 @@ export function StatsPage() {
 
         return { bestXp, bestXpDate, longestActive, longestPerfect };
     }, [taskXpLog, habitLog]);
+
+    const achievementProgress = useMemo(() => {
+        const activeDays = Object.values(taskXpLog).filter((xp) => xp > 0).length;
+        const perfectDays = Object.values(habitLog).filter((log) => log.allComplete).length;
+        return getAchievementProgress({
+            totalXp,
+            activeDays,
+            perfectDays,
+            maxStage,
+            equipmentCount,
+        });
+    }, [taskXpLog, habitLog, totalXp, maxStage, equipmentCount]);
+
+    const unlockedTitles = useMemo(() => getUnlockedTitles(achievementProgress), [achievementProgress]);
 
     // 集計値
     const stats = useMemo(() => {
@@ -279,6 +298,28 @@ export function StatsPage() {
                         detail={formatStreakRange(bestRecords.longestPerfect)}
                     />
                 </div>
+            </div>
+
+            {/* 実績 */}
+            <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                    <h2 className="text-sm font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
+                        <span>🏅</span>実績
+                    </h2>
+                    <span className="text-xs font-bold" style={{ color: 'var(--color-accent-gold)' }}>
+                        {achievementProgress.filter((achievement) => achievement.unlocked).length}/{achievementProgress.length}
+                    </span>
+                </div>
+                <div className="flex flex-col gap-2">
+                    {achievementProgress.map((achievement) => (
+                        <AchievementRow key={achievement.id} achievement={achievement} />
+                    ))}
+                </div>
+                {unlockedTitles.length > 0 && (
+                    <div className="mt-3 text-[11px] leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
+                        獲得称号: <span style={{ color: 'var(--color-accent-gold)' }}>{unlockedTitles.join(' / ')}</span>
+                    </div>
+                )}
             </div>
 
             {/* セグメントコントロール */}
@@ -428,6 +469,42 @@ function SummaryCard({ label, value, icon }: { label: string; value: number; ico
         <div className="rounded-xl px-4 py-3" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
             <div className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>{icon} {label}</div>
             <div className="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{value.toLocaleString()}</div>
+        </div>
+    );
+}
+
+function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
+    const percent = Math.round(achievement.progress * 100);
+    return (
+        <div className="rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', opacity: achievement.unlocked ? 1 : 0.78 }}>
+            <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-start gap-2 min-w-0">
+                    <span className="text-base flex-shrink-0" aria-hidden="true">{achievement.icon}</span>
+                    <div className="min-w-0">
+                        <div className="text-xs font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>{achievement.title}</div>
+                        <div className="text-[10px] truncate" style={{ color: 'var(--color-text-muted)' }}>{achievement.description}</div>
+                    </div>
+                </div>
+                <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0"
+                    style={{
+                        backgroundColor: achievement.unlocked ? 'rgba(245, 158, 11, 0.18)' : 'var(--color-bg-card)',
+                        color: achievement.unlocked ? 'var(--color-accent-gold)' : 'var(--color-text-muted)',
+                        border: '1px solid var(--color-border-default)',
+                    }}
+                >
+                    {achievement.unlocked ? achievement.rewardTitle : `${achievement.current.toLocaleString()}/${achievement.target.toLocaleString()}`}
+                </span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-card)' }}>
+                <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                        width: `${percent}%`,
+                        backgroundColor: achievement.unlocked ? 'var(--color-accent-gold)' : 'var(--color-accent-primary)',
+                    }}
+                />
+            </div>
         </div>
     );
 }
