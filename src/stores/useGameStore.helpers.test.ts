@@ -36,6 +36,46 @@ describe('useGameStore helpers', () => {
             expect(instance.equipped).toBe(false);
         });
 
+        it('should preserve slot, rarity, and all stat bonuses for armor/accessory templates', () => {
+            const armorTemplate: EquipmentTemplate = {
+                id: 'dragon_armor',
+                name: 'ドラゴンアーマー',
+                slot: 'armor',
+                rarity: 'epic',
+                attackBonus: 3,
+                defenseBonus: 18,
+                hpBonus: 35,
+            };
+            const accessoryTemplate: EquipmentTemplate = {
+                id: 'ring_of_god',
+                name: '神の指輪',
+                slot: 'accessory',
+                rarity: 'legendary',
+                attackBonus: 15,
+                defenseBonus: 15,
+                hpBonus: 40,
+            };
+
+            expect(createEquipmentInstance(armorTemplate)).toMatchObject({
+                templateId: armorTemplate.id,
+                slot: 'armor',
+                rarity: 'epic',
+                attackBonus: 3,
+                defenseBonus: 18,
+                hpBonus: 35,
+                equipped: false,
+            });
+            expect(createEquipmentInstance(accessoryTemplate)).toMatchObject({
+                templateId: accessoryTemplate.id,
+                slot: 'accessory',
+                rarity: 'legendary',
+                attackBonus: 15,
+                defenseBonus: 15,
+                hpBonus: 40,
+                equipped: false,
+            });
+        });
+
         it('should generate unique IDs for multiple instances of the same template', () => {
             const instance1 = createEquipmentInstance(template);
             const instance2 = createEquipmentInstance(template);
@@ -50,6 +90,18 @@ describe('useGameStore helpers', () => {
             const expectedDamage = Math.floor(attack - defense * BATTLE_CONFIG.DEFENSE_FACTOR);
             // Assuming BATTLE_CONFIG.DEFENSE_FACTOR is 0.5 => 100 - 10 = 90
             expect(calculateDamage(attack, defense)).toBe(expectedDamage);
+        });
+
+        it('should floor fractional damage before applying the minimum', () => {
+            expect(calculateDamage(11, 5)).toBe(Math.floor(11 - 5 * BATTLE_CONFIG.DEFENSE_FACTOR));
+        });
+
+        it('should return raw attack damage when defense is zero and attack exceeds the minimum', () => {
+            expect(calculateDamage(12, 0)).toBe(12);
+        });
+
+        it('should preserve exact MIN_DAMAGE when the formula lands on the minimum', () => {
+            expect(calculateDamage(BATTLE_CONFIG.MIN_DAMAGE + BATTLE_CONFIG.DEFENSE_FACTOR * 2, 2)).toBe(BATTLE_CONFIG.MIN_DAMAGE);
         });
 
         it('should enforce MIN_DAMAGE when defense is very high', () => {
