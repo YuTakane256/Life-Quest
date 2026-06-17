@@ -14,6 +14,7 @@ import { LevelUpOverlay } from './components/ui/LevelUpOverlay';
 import { LoginBonusOverlay } from './components/ui/LoginBonusOverlay';
 import { ChestOpeningOverlay } from './components/ui/ChestOpeningOverlay';
 import { ThemeController } from './components/ui/ThemeController';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { useLoginBonusStore } from './stores/useLoginBonusStore';
 import { runNotificationChecks } from './utils/notifications';
 import { NOTIFICATION_CONFIG } from './config/gameConfig';
@@ -59,31 +60,33 @@ function App() {
     }, []);
 
     return (
-        <BrowserRouter>
-            <SnackbarProvider>
-                <ThemeController />
-                <div className="flex flex-col relative" style={{ minHeight: '100dvh' }}>
-                    <main className="flex-1 pb-20">
-                        <Routes>
-                            <Route path="/" element={<Navigate to="/tasks" replace />} />
-                            <Route path="/tasks" element={<TasksPage />} />
-                            <Route path="/habits" element={<HabitsPage />} />
-                            <Route path="/character" element={<CharacterPage />} />
-                            <Route path="/character/inventory" element={<InventoryPage />} />
-                            <Route path="/map" element={<MapBattlePage />} />
-                            <Route path="/stats" element={<StatsPage />} />
-                            <Route path="/settings" element={<SettingsPage />} />
-                            <Route path="/help" element={<HelpPage />} />
-                        </Routes>
-                    </main>
-                    <HelpFloatingButton />
-                    <BottomNav />
-                    <LevelUpOverlay />
-                    <LoginBonusOverlay />
-                    <ChestOpeningOverlay />
-                </div>
-            </SnackbarProvider>
-        </BrowserRouter>
+        <ErrorBoundary>
+            <BrowserRouter>
+                <SnackbarProvider>
+                    <ThemeController />
+                    <div className="flex flex-col relative" style={{ minHeight: '100dvh' }}>
+                        <main className="flex-1 pb-20">
+                            <Routes>
+                                <Route path="/" element={<Navigate to="/tasks" replace />} />
+                                <Route path="/tasks" element={<TasksPage />} />
+                                <Route path="/habits" element={<HabitsPage />} />
+                                <Route path="/character" element={<CharacterPage />} />
+                                <Route path="/character/inventory" element={<InventoryPage />} />
+                                <Route path="/map" element={<MapBattlePage />} />
+                                <Route path="/stats" element={<StatsPage />} />
+                                <Route path="/settings" element={<SettingsPage />} />
+                                <Route path="/help" element={<HelpPage />} />
+                            </Routes>
+                        </main>
+                        <HelpFloatingButton />
+                        <BottomNav />
+                        <LevelUpOverlay />
+                        <LoginBonusOverlay />
+                        <ChestOpeningOverlay />
+                    </div>
+                </SnackbarProvider>
+            </BrowserRouter>
+        </ErrorBoundary>
     );
 }
 
