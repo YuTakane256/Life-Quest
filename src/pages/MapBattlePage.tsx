@@ -8,30 +8,10 @@ import { BattleReplayModal } from '../components/ui/BattleReplayModal';
 import { HpBar } from '../components/ui/HpBar';
 import { BattleLogList } from '../components/ui/BattleLogList';
 import type { BattleHistoryEntry } from '../types';
+import { getBattleBackground, getMapBackground } from '../config/mapAssets';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
-
-// ─── 背景画像インポート ───
-import bgGrassland from '../assets/images/bg_grassland.png';
-import bgCastle from '../assets/images/bg_castle.png';
-import bgBattleGrassland from '../assets/images/bg_battle_grassland.png';
-import bgBattleCastle from '../assets/images/bg_battle_castle.png';
-import bgHeaven from '../assets/images/bg_heaven.png';
-import bgBattleHeaven from '../assets/images/bg_battle_heaven.png';
 import { ENEMY_IMAGES } from '../config/enemyImages';
-
-// ─── 画像マッピング ───
-const MAP_BACKGROUNDS: Record<string, string> = {
-    grassland: bgGrassland,
-    castle: bgCastle,
-    heaven: bgHeaven,
-};
-
-const BATTLE_BACKGROUNDS: Record<string, string> = {
-    grassland: bgBattleGrassland,
-    castle: bgBattleCastle,
-    heaven: bgBattleHeaven,
-};
 
 
 function getEnemyImage(stage: number) {
@@ -117,7 +97,7 @@ export function MapBattlePage() {
                 {/* 背景画像オーバーレイ */}
                 <div className="fixed inset-0 -z-10 bg-cover bg-center"
                     style={{
-                        backgroundImage: `url(${BATTLE_BACKGROUNDS[currentMap.theme]})`,
+                        backgroundImage: `url(${getBattleBackground(currentMap.theme)})`,
                         opacity: 0.5
                     }} />
 
@@ -217,7 +197,7 @@ export function MapBattlePage() {
         <div className="max-w-lg mx-auto px-5 pt-6 pb-4 relative overflow-hidden z-0">
             {/* 背景画像 */}
             <div className="fixed inset-0 -z-10 bg-cover bg-center"
-                style={{ backgroundImage: `url(${MAP_BACKGROUNDS[selectedMap.theme]})`, opacity: 0.35 }} />
+                style={{ backgroundImage: `url(${getMapBackground(selectedMap.theme)})`, opacity: 0.35 }} />
 
             <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--color-text-primary)' }}>マップ</h1>
             <p className="text-base mb-4" style={{ color: 'var(--color-text-muted)' }}>最高到達: ステージ {battle.maxClearedStage || '-'}</p>
