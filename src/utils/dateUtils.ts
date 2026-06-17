@@ -23,6 +23,10 @@ function formatYmd(date: Date): string {
     return `${y}-${m}-${d}`;
 }
 
+function daysInUtcMonth(year: number, monthIndex: number): number {
+    return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
 /**
  * 現在のJSTの日付文字列を返す (YYYY-MM-DD)
  */
@@ -112,7 +116,7 @@ export function shiftDate(dateStr: string, days: number): string {
 
 /**
  * 繰り返し周期に応じて日付を1周期分進める (YYYY-MM-DD)
- * monthly で日付が翌月に存在しない場合（例: 1/31 → 2月）はJSの繰り上げ仕様に従う
+ * monthly で日付が翌月に存在しない場合（例: 1/31 → 2月）は対象月の末日に丸める
  */
 export function addRecurrenceInterval(dateStr: string, recurrence: Recurrence): string {
     const date = parseYmd(dateStr);
@@ -122,7 +126,11 @@ export function addRecurrenceInterval(dateStr: string, recurrence: Recurrence): 
     } else if (recurrence === 'weekly') {
         date.setUTCDate(date.getUTCDate() + 7);
     } else if (recurrence === 'monthly') {
-        date.setUTCMonth(date.getUTCMonth() + 1);
+        const targetFirst = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+        const targetYear = targetFirst.getUTCFullYear();
+        const targetMonth = targetFirst.getUTCMonth();
+        const targetDay = Math.min(date.getUTCDate(), daysInUtcMonth(targetYear, targetMonth));
+        return formatYmd(new Date(Date.UTC(targetYear, targetMonth, targetDay)));
     }
 
     return formatYmd(date);
