@@ -23,7 +23,7 @@ import './App.css';
 function HelpFloatingButton() {
     const navigate = useNavigate();
     const location = useLocation();
-    if (location.pathname === '/help' || location.pathname === '/settings') return null;
+    if (location.pathname === '/help' || location.pathname === '/settings' || location.pathname === '/tasks') return null;
     return (
         <button
             onClick={() => navigate('/help')}

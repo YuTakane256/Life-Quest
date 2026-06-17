@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock, Copy } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock, Copy, HelpCircle } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/snackbarContext';
@@ -24,6 +25,7 @@ const PRIORITY_FILTER_OPTIONS: { value: PriorityFilter; label: string }[] = [
 ];
 
 export function TasksPage() {
+    const navigate = useNavigate();
     const { tasks, addTask, updateTask, deleteTask, duplicateTask, deleteCompletedTasks, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
@@ -108,6 +110,12 @@ export function TasksPage() {
         setName(''); setDueDate(''); setPriority('medium'); setRecurrence('none');
         setTags([]); setTagInput('');
         setFormSubtasks([]); setFormSubtaskInput('');
+    };
+
+    const toggleTaskForm = () => {
+        setEditingTask(null);
+        resetForm();
+        setShowForm((current) => !current);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -252,11 +260,19 @@ export function TasksPage() {
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>タスク</h1>
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{incompleteTaskCount}件の未完了タスク</p>
                 </div>
-                <button onClick={() => { setEditingTask(null); resetForm(); setShowForm(!showForm); }}
-                    aria-label={showForm ? 'タスク追加フォームを閉じる' : '新しいタスクを追加'}
+                <button
+                    type="button"
+                    onClick={() => navigate('/help')}
+                    aria-label="使い方"
+                    title="使い方"
                     className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105"
-                    style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
-                    <Plus size={20} />
+                    style={{
+                        backgroundColor: 'var(--color-bg-card)',
+                        color: 'var(--color-accent-primary)',
+                        border: '1px solid var(--color-border-default)',
+                    }}
+                >
+                    <HelpCircle size={20} />
                 </button>
             </div>
 
@@ -647,6 +663,21 @@ export function TasksPage() {
                 onConfirm={handleDeleteCompleted}
                 onClose={() => setShowDeleteCompletedConfirm(false)}
             />
+            <button
+                type="button"
+                onClick={toggleTaskForm}
+                aria-label={showForm ? 'タスク追加フォームを閉じる' : '新しいタスクを追加'}
+                title={showForm ? 'タスク追加フォームを閉じる' : '新しいタスクを追加'}
+                className="fixed right-4 z-40 w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                style={{
+                    bottom: 'calc(64px + env(safe-area-inset-bottom, 0px) + 12px)',
+                    backgroundColor: 'var(--color-accent-primary)',
+                    color: 'white',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                }}
+            >
+                <Plus size={22} />
+            </button>
         </div>
     );
 }
