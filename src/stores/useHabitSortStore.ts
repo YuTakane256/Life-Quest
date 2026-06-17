@@ -6,7 +6,7 @@ export type HabitSortMode = 'createdAt' | 'name' | 'streak' | 'completionRate';
 
 const VALID_HABIT_SORT_MODES: readonly HabitSortMode[] = ['createdAt', 'name', 'streak', 'completionRate'];
 
-function sanitizeHabitSortMode(value: unknown): HabitSortMode {
+export function sanitizeHabitSortMode(value: unknown): HabitSortMode {
     return VALID_HABIT_SORT_MODES.includes(value as HabitSortMode) ? (value as HabitSortMode) : 'createdAt';
 }
 
