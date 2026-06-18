@@ -18,16 +18,21 @@ describe('pickRandom', () => {
         }
     });
 
-    it('N要素配列の結果は元の配列に含まれる要素', () => {
+    it('N要素配列では Math.random に応じた index の要素を返す', () => {
         const arr = [1, 2, 3, 4, 5];
-        const seen = new Set<number>();
-        for (let i = 0; i < 200; i++) {
-            const result = pickRandom(arr);
-            expect(arr).toContain(result);
-            if (result !== undefined) seen.add(result);
-        }
-        // 200回引けば全要素が出現する可能性が極めて高い
-        expect(seen.size).toBe(arr.length);
+        const randomSpy = vi.spyOn(Math, 'random');
+
+        randomSpy.mockReturnValue(0);
+        expect(pickRandom(arr)).toBe(1);
+
+        randomSpy.mockReturnValue(0.2);
+        expect(pickRandom(arr)).toBe(2);
+
+        randomSpy.mockReturnValue(0.6);
+        expect(pickRandom(arr)).toBe(4);
+
+        randomSpy.mockReturnValue(0.999999);
+        expect(pickRandom(arr)).toBe(5);
     });
 
     it('Math.random をモックすると決定的に動く', () => {
