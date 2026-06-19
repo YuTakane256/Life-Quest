@@ -1,7 +1,9 @@
-import { ArrowLeft, HelpCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, HelpCircle, Search, X } from 'lucide-react';
 import { useBackWithFallback } from '../hooks/useBackWithFallback';
 
 interface HelpSection {
+    id: string;
     icon: string;
     title: string;
     items: string[];
@@ -9,6 +11,7 @@ interface HelpSection {
 
 const SECTIONS: HelpSection[] = [
     {
+        id: 'tasks',
         icon: '📋',
         title: 'タスク',
         items: [
@@ -23,6 +26,7 @@ const SECTIONS: HelpSection[] = [
         ],
     },
     {
+        id: 'habits',
         icon: '🔁',
         title: '習慣',
         items: [
@@ -34,6 +38,7 @@ const SECTIONS: HelpSection[] = [
         ],
     },
     {
+        id: 'character',
         icon: '⭐',
         title: 'キャラクター・レベル・装備',
         items: [
@@ -46,6 +51,7 @@ const SECTIONS: HelpSection[] = [
         ],
     },
     {
+        id: 'battle',
         icon: '⚔️',
         title: 'バトル・マップ',
         items: [
@@ -55,6 +61,7 @@ const SECTIONS: HelpSection[] = [
         ],
     },
     {
+        id: 'notifications',
         icon: '🔔',
         title: '通知',
         items: [
@@ -64,6 +71,7 @@ const SECTIONS: HelpSection[] = [
         ],
     },
     {
+        id: 'login-bonus',
         icon: '🎁',
         title: 'ログインボーナス',
         items: [
@@ -72,6 +80,7 @@ const SECTIONS: HelpSection[] = [
         ],
     },
     {
+        id: 'stats',
         icon: '📊',
         title: '統計',
         items: [
@@ -80,6 +89,7 @@ const SECTIONS: HelpSection[] = [
         ],
     },
     {
+        id: 'debuff',
         icon: '🩹',
         title: 'デバフ',
         items: [
@@ -91,6 +101,24 @@ const SECTIONS: HelpSection[] = [
 
 export function HelpPage() {
     const handleBack = useBackWithFallback();
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const filteredSections = useMemo(() => {
+        if (normalizedQuery.length === 0) return SECTIONS;
+
+        return SECTIONS.map((section) => {
+            const matchesTitle = section.title.toLowerCase().includes(normalizedQuery);
+            const items = matchesTitle
+                ? section.items
+                : section.items.filter((item) => item.toLowerCase().includes(normalizedQuery));
+            return { ...section, items };
+        }).filter((section) => section.items.length > 0);
+    }, [normalizedQuery]);
+
+    const handleSectionJump = (sectionId: string) => {
+        document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     return (
         <div className="max-w-lg mx-auto px-5 pt-6 pb-28">
@@ -109,11 +137,69 @@ export function HelpPage() {
                 </div>
             </div>
 
+            <div className="mb-4">
+                <div className="relative">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--color-text-muted)' }} />
+                    <input
+                        type="search"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="キーワードで検索"
+                        className="w-full h-11 rounded-xl pl-9 pr-10 text-sm outline-none transition-all"
+                        style={{
+                            backgroundColor: 'var(--color-bg-card)',
+                            color: 'var(--color-text-primary)',
+                            border: '1px solid var(--color-border-default)',
+                        }}
+                    />
+                    {searchQuery.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center transition-all active:scale-95"
+                            style={{ color: 'var(--color-text-muted)' }}
+                            aria-label="検索をクリア"
+                        >
+                            <X size={15} />
+                        </button>
+                    )}
+                </div>
+
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="ヘルプセクション">
+                    {SECTIONS.map((section) => (
+                        <button
+                            key={section.id}
+                            type="button"
+                            onClick={() => handleSectionJump(section.id)}
+                            className="h-9 px-3 rounded-lg flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap transition-all active:scale-95"
+                            style={{
+                                backgroundColor: 'var(--color-bg-card)',
+                                color: 'var(--color-text-secondary)',
+                                border: '1px solid var(--color-border-default)',
+                            }}
+                        >
+                            <span>{section.icon}</span>
+                            <span>{section.title}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             <div className="flex flex-col gap-4">
-                {SECTIONS.map((section) => (
+                {filteredSections.length === 0 && (
+                    <div
+                        className="rounded-xl p-4 text-sm"
+                        style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-text-muted)' }}
+                    >
+                        一致する項目がありません
+                    </div>
+                )}
+
+                {filteredSections.map((section) => (
                     <section
-                        key={section.title}
-                        className="rounded-xl p-4"
+                        key={section.id}
+                        id={section.id}
+                        className="rounded-xl p-4 scroll-mt-5"
                         style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
                     >
                         <h2 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
@@ -121,8 +207,8 @@ export function HelpPage() {
                             {section.title}
                         </h2>
                         <ul className="flex flex-col gap-1.5">
-                            {section.items.map((item, i) => (
-                                <li key={i} className="text-xs leading-relaxed flex gap-2" style={{ color: 'var(--color-text-secondary)' }}>
+                            {section.items.map((item) => (
+                                <li key={item} className="text-xs leading-relaxed flex gap-2" style={{ color: 'var(--color-text-secondary)' }}>
                                     <span className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>・</span>
                                     <span>{item}</span>
                                 </li>
