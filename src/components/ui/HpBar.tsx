@@ -1,3 +1,5 @@
+import { getHpDisplayState } from '../../utils/hp';
+
 interface HpBarProps {
     /** 現在のHP */
     current: number;
@@ -15,14 +17,13 @@ const HEIGHT_CLASS: Record<string, string> = {
 };
 
 export function HpBar({ current, max, color = 'player', height = 'md' }: HpBarProps) {
-    const ratio = max > 0 ? current / max : 0;
-    const widthPercent = `${ratio * 100}%`;
+    const hp = getHpDisplayState(current, max);
 
     let barColor: string;
     if (color === 'enemy') {
         barColor = 'var(--color-text-danger)';
     } else {
-        barColor = ratio > 0.3 ? 'var(--color-accent-emerald)' : 'var(--color-text-danger)';
+        barColor = hp.ratio > 0.3 ? 'var(--color-accent-emerald)' : 'var(--color-text-danger)';
     }
 
     return (
@@ -33,14 +34,14 @@ export function HpBar({ current, max, color = 'player', height = 'md' }: HpBarPr
             >
                 <div
                     className="h-full rounded-full transition-all duration-300"
-                    style={{ width: widthPercent, backgroundColor: barColor }}
+                    style={{ width: hp.widthPercent, backgroundColor: barColor }}
                 />
             </div>
             <span
                 className={`${height === 'sm' ? 'text-xs min-w-[36px]' : 'text-sm min-w-[40px]'} font-bold text-right`}
                 style={{ color: 'var(--color-text-primary)' }}
             >
-                {current}
+                {hp.current}
             </span>
         </div>
     );
