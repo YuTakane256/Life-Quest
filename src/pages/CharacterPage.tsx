@@ -2,7 +2,7 @@ import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stor
 import { SELL_XP_BY_RARITY, RARITY_ORDER, SYNTHESIS_CONFIG, GACHA_CONFIG } from '../config/gameConfig';
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS, RARITY_LABELS } from '../config/equipmentAssets';
 import type { Equipment, Rarity, EquipmentSlot } from '../types';
-import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History } from 'lucide-react';
+import { Shield, Sword, Gem, Package, Star, Edit2, X, Check, Coins, Merge, Sparkles, Milestone, ChevronRight, ArrowLeft, History, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import heroImg from '../assets/images/hero.png';
@@ -46,6 +46,13 @@ function calculateEffectiveStats(character: { baseAttack: number; baseDefense: n
 }
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
+type InventorySlotFilter = 'all' | EquipmentSlot;
+type InventoryRarityFilter = 'all' | Rarity;
+type InventorySortMode = 'rarity' | 'slot' | 'name';
+
+const RARITY_RANK: Record<Rarity, number> = Object.fromEntries(
+    RARITY_ORDER.map((rarity, index) => [rarity, index])
+) as Record<Rarity, number>;
 
 export function CharacterPage() {
     // 個別 selector で必要なフィールドのみ subscribe → バトル中の不要な再レンダリングを防ぐ
@@ -354,13 +361,31 @@ function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?
     const [selectedForSynth, setSelectedForSynth] = useState<string[]>([]);
     const [sellFeedback, setSellFeedback] = useState<{ id: string; xp: number } | null>(null);
     const [synthResult, setSynthResult] = useState<Equipment | null>(null);
+    const [slotFilter, setSlotFilter] = useState<InventorySlotFilter>('all');
+    const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
+    const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
 
     const unequippedItems = useMemo(() => equipment.filter((e) => !e.equipped), [equipment]);
-    const hasOverflow = showViewAll && visibleLimit !== undefined && unequippedItems.length >= visibleLimit + 1;
+    const filteredItems = useMemo(() => {
+        return unequippedItems
+            .filter((item) => slotFilter === 'all' || item.slot === slotFilter)
+            .filter((item) => rarityFilter === 'all' || item.rarity === rarityFilter)
+            .sort((a, b) => {
+                if (sortMode === 'rarity') {
+                    return RARITY_RANK[b.rarity] - RARITY_RANK[a.rarity] || a.name.localeCompare(b.name, 'ja');
+                }
+                if (sortMode === 'slot') {
+                    return SLOT_LABELS[a.slot].localeCompare(SLOT_LABELS[b.slot], 'ja') || a.name.localeCompare(b.name, 'ja');
+                }
+                return a.name.localeCompare(b.name, 'ja');
+            });
+    }, [rarityFilter, slotFilter, sortMode, unequippedItems]);
+    const hasOverflow = showViewAll && visibleLimit !== undefined && filteredItems.length >= visibleLimit + 1;
     const visibleItems = useMemo(
-        () => hasOverflow ? unequippedItems.slice(0, visibleLimit) : unequippedItems,
-        [hasOverflow, unequippedItems, visibleLimit]
+        () => hasOverflow ? filteredItems.slice(0, visibleLimit) : filteredItems,
+        [filteredItems, hasOverflow, visibleLimit]
     );
+    const hiddenCount = filteredItems.length - visibleItems.length;
 
     // 合成: 選択中アイテムのレアリティ(最初の選択に合わせる)
     const synthTargetRarity = useMemo(
@@ -408,7 +433,7 @@ function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?
     return (
         <div>
             <div className="flex items-center justify-between mb-2">
-                <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>インベントリ ({unequippedItems.length})</h2>
+                <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>インベントリ ({filteredItems.length}/{unequippedItems.length})</h2>
                 {unequippedItems.length > 0 && (
                     <div className="flex gap-1.5">
                         <button onClick={() => inventoryMode === 'sell' ? resetMode() : (setInventoryMode('sell'), setSelectedForSynth([]))}
@@ -424,6 +449,47 @@ function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?
                     </div>
                 )}
             </div>
+
+            {unequippedItems.length > 0 && (
+                <div className="mb-3 rounded-xl p-3" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                    <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                        <SlidersHorizontal size={14} />
+                        <span>表示</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <InventorySelect
+                            label="種類"
+                            value={slotFilter}
+                            onChange={(value) => setSlotFilter(value as InventorySlotFilter)}
+                            options={[
+                                ['all', 'すべて'],
+                                ['weapon', '武器'],
+                                ['armor', '防具'],
+                                ['accessory', 'アクセサリ'],
+                            ]}
+                        />
+                        <InventorySelect
+                            label="レア"
+                            value={rarityFilter}
+                            onChange={(value) => setRarityFilter(value as InventoryRarityFilter)}
+                            options={[
+                                ['all', 'すべて'],
+                                ...RARITY_ORDER.map((rarity) => [rarity, RARITY_LABELS[rarity]] as [string, string]),
+                            ]}
+                        />
+                        <InventorySelect
+                            label="並び"
+                            value={sortMode}
+                            onChange={(value) => setSortMode(value as InventorySortMode)}
+                            options={[
+                                ['rarity', 'レア順'],
+                                ['slot', '種類順'],
+                                ['name', '名前順'],
+                            ]}
+                        />
+                    </div>
+                </div>
+            )}
 
             {inventoryMode === 'synthesize' && (
                 <div className="mb-3 px-3 py-2 rounded-xl text-xs flex items-center gap-2" style={{ backgroundColor: 'var(--color-accent-primary)22', color: 'var(--color-accent-secondary)', border: '1px solid var(--color-accent-primary)44' }}>
@@ -459,6 +525,11 @@ function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?
                     <Star size={28} style={{ margin: '0 auto', color: 'var(--color-text-muted)' }} />
                     <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>装備がありません</p>
                 </div>
+            ) : filteredItems.length === 0 ? (
+                <div className="text-center py-8 opacity-60">
+                    <Package size={28} style={{ margin: '0 auto', color: 'var(--color-text-muted)' }} />
+                    <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>条件に合う装備がありません</p>
+                </div>
             ) : (
                 <div className="flex flex-col gap-2">
                     {visibleItems.map((item) => (
@@ -484,7 +555,7 @@ function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?
                 >
                     <span className="text-sm font-semibold">もっと見る</span>
                     <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        残り{unequippedItems.length - visibleItems.length}件 <ChevronRight size={16} />
+                        残り{hiddenCount}件 <ChevronRight size={16} />
                     </span>
                 </Link>
             )}
@@ -497,6 +568,35 @@ function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?
                 </button>
             )}
         </div>
+    );
+}
+
+function InventorySelect({ label, value, options, onChange }: {
+    label: string;
+    value: string;
+    options: [string, string][];
+    onChange: (value: string) => void;
+}) {
+    return (
+        <label className="min-w-0">
+            <span className="block text-[10px] mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</span>
+            <select
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                className="w-full h-9 rounded-lg px-2 text-xs outline-none"
+                style={{
+                    backgroundColor: 'var(--color-bg-secondary)',
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-border-default)',
+                }}
+            >
+                {options.map(([optionValue, optionLabel]) => (
+                    <option key={optionValue} value={optionValue}>
+                        {optionLabel}
+                    </option>
+                ))}
+            </select>
+        </label>
     );
 }
 
