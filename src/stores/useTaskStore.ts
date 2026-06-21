@@ -33,6 +33,12 @@ function getSubtaskXp(priority: Priority) {
     return Math.max(1, Math.floor(XP_CONFIG.REWARD_BY_PRIORITY[priority] * XP_CONFIG.SUBTASK_REWARD_RATIO));
 }
 
+function clearPendingCompletionTimer(pending: PendingCompletion | undefined) {
+    if (pending) {
+        window.clearTimeout(pending.timeoutId);
+    }
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -172,12 +178,8 @@ export const useTaskStore = create<TaskStoreState>()(
                 const allComplete = nextSubtasks.length > 0 && nextSubtasks.every((s) => s.completed);
 
                 // 5秒Undoタイマーとの競合を防ぐため、保留中の完了をキャンセル
-                if (nextSubtasks.length > 0) {
-                    const pending = get().pendingCompletions.find((p) => p.taskId === id);
-                    if (pending) {
-                        window.clearTimeout(pending.timeoutId);
-                    }
-                }
+                const pending = get().pendingCompletions.find((p) => p.taskId === id);
+                clearPendingCompletionTimer(pending);
 
                 set((state) => ({
                     tasks: state.tasks.map((t) => {
@@ -187,12 +189,13 @@ export const useTaskStore = create<TaskStoreState>()(
                         if (nextSubtasks.length > 0) {
                             completed = allComplete;
                             completedAt = allComplete ? (t.completedAt || now) : null;
+                        } else if (pending) {
+                            completed = false;
+                            completedAt = null;
                         }
                         return { ...t, ...updates, completed, completedAt };
                     }),
-                    pendingCompletions: nextSubtasks.length > 0
-                        ? state.pendingCompletions.filter((p) => p.taskId !== id)
-                        : state.pendingCompletions,
+                    pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== id),
                 }));
             },
 
@@ -227,9 +230,7 @@ export const useTaskStore = create<TaskStoreState>()(
             deleteTask: (id: string) => {
                 // pending completionがあればキャンセル
                 const pending = get().pendingCompletions.find((p) => p.taskId === id);
-                if (pending) {
-                    window.clearTimeout(pending.timeoutId);
-                }
+                clearPendingCompletionTimer(pending);
                 set((state) => ({
                     tasks: state.tasks.filter((t) => t.id !== id),
                     pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== id),
@@ -311,6 +312,9 @@ export const useTaskStore = create<TaskStoreState>()(
                 const trimmedName = clampString(name.trim(), UI_CONFIG.MAX_SUBTASK_NAME_LENGTH);
                 if (!trimmedName) return;
 
+                const pending = get().pendingCompletions.find((p) => p.taskId === taskId);
+                clearPendingCompletionTimer(pending);
+
                 set((state) => ({
                     tasks: state.tasks.map((task) =>
                         task.id === taskId
@@ -331,6 +335,7 @@ export const useTaskStore = create<TaskStoreState>()(
                             }
                             : task
                     ),
+                    pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== taskId),
                 }));
             },
 
@@ -339,6 +344,11 @@ export const useTaskStore = create<TaskStoreState>()(
                 if (!task) return;
 
                 const nextSubtasks = (task.subtasks || []).filter((subtask) => subtask.id !== subtaskId);
+                if (nextSubtasks.length === (task.subtasks || []).length) return;
+
+                const pending = get().pendingCompletions.find((p) => p.taskId === taskId);
+                clearPendingCompletionTimer(pending);
+
                 const completedAt = new Date().toISOString();
                 const shouldAutoComplete = nextSubtasks.length > 0 && nextSubtasks.every((subtask) => subtask.completed);
 
@@ -348,11 +358,12 @@ export const useTaskStore = create<TaskStoreState>()(
                             ? {
                                 ...t,
                                 subtasks: nextSubtasks,
-                                completed: shouldAutoComplete ? true : t.completed && nextSubtasks.length === 0,
-                                completedAt: shouldAutoComplete ? (t.completedAt || completedAt) : t.completedAt,
+                                completed: shouldAutoComplete ? true : !pending && t.completed && nextSubtasks.length === 0,
+                                completedAt: shouldAutoComplete ? (t.completedAt || completedAt) : pending ? null : t.completedAt,
                             }
                             : t
                     ),
+                    pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== taskId),
                 }));
             },
 
@@ -372,9 +383,7 @@ export const useTaskStore = create<TaskStoreState>()(
                 );
                 const allSubtasksComplete = nextSubtasks.length > 0 && nextSubtasks.every((s) => s.completed);
                 const pending = get().pendingCompletions.find((p) => p.taskId === taskId);
-                if (pending) {
-                    window.clearTimeout(pending.timeoutId);
-                }
+                clearPendingCompletionTimer(pending);
 
                 set((state) => ({
                     tasks: state.tasks.map((t) =>
@@ -412,7 +421,7 @@ export const useTaskStore = create<TaskStoreState>()(
                 const pending = get().pendingCompletions.find((p) => p.taskId === taskId);
                 if (!pending) return;
 
-                window.clearTimeout(pending.timeoutId);
+                clearPendingCompletionTimer(pending);
 
                 set((state) => ({
                     tasks: state.tasks.map((t) =>

@@ -157,6 +157,24 @@ describe('useTaskStore mutation edges', () => {
         expect(task.subtasks[0].name).toBe('追加作業');
     });
 
+    it('addSubtask は保留中の親タスク完了をキャンセルする', () => {
+        const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+        useTaskStore.setState({
+            tasks: [makeTask({ id: 'pending-task', completed: true, completedAt: '2025-03-15T00:00:00.000Z' })],
+            pendingCompletions: [
+                { taskId: 'pending-task', timeoutId: 789, completedAt: '2025-03-15T00:00:00.000Z' },
+            ],
+        });
+
+        useTaskStore.getState().addSubtask('pending-task', '追加作業');
+        const task = useTaskStore.getState().tasks[0];
+
+        expect(clearTimeoutSpy).toHaveBeenCalledWith(789);
+        expect(useTaskStore.getState().pendingCompletions).toHaveLength(0);
+        expect(task.completed).toBe(false);
+        expect(task.completedAt).toBeNull();
+    });
+
     it('deleteSubtask は残ったサブタスクがすべて完了済みなら親タスクを自動完了する', () => {
         useTaskStore.setState({
             tasks: [
@@ -176,6 +194,32 @@ describe('useTaskStore mutation edges', () => {
         expect(task.subtasks.map((subtask) => subtask.id)).toEqual(['done']);
         expect(task.completed).toBe(true);
         expect(task.completedAt).not.toBeNull();
+    });
+
+    it('deleteSubtask は保留中の親タスク完了をキャンセルする', () => {
+        const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+        useTaskStore.setState({
+            tasks: [
+                makeTask({
+                    id: 'pending-task',
+                    completed: true,
+                    completedAt: '2025-03-15T00:00:00.000Z',
+                    subtasks: [makeSubtask({ id: 'remove-me' })],
+                }),
+            ],
+            pendingCompletions: [
+                { taskId: 'pending-task', timeoutId: 987, completedAt: '2025-03-15T00:00:00.000Z' },
+            ],
+        });
+
+        useTaskStore.getState().deleteSubtask('pending-task', 'remove-me');
+        const task = useTaskStore.getState().tasks[0];
+
+        expect(clearTimeoutSpy).toHaveBeenCalledWith(987);
+        expect(useTaskStore.getState().pendingCompletions).toHaveLength(0);
+        expect(task.subtasks).toEqual([]);
+        expect(task.completed).toBe(false);
+        expect(task.completedAt).toBeNull();
     });
 
     it('deleteSubtask は存在しないIDでは状態を変えない', () => {
