@@ -16,6 +16,21 @@ export interface BackupData {
     habitSort?: unknown;
 }
 
+type BackupDataKey = keyof Omit<BackupData, 'version' | 'exportedAt'>;
+
+const BACKUP_STORAGE_SLOTS: Array<{ dataKey: BackupDataKey; storageKey: string }> = [
+    { dataKey: 'tasks', storageKey: 'quest-board-tasks' },
+    { dataKey: 'habits', storageKey: 'quest-board-habits' },
+    { dataKey: 'game', storageKey: 'quest-board-game' },
+    { dataKey: 'stats', storageKey: 'quest-board-stats' },
+    { dataKey: 'theme', storageKey: 'quest-board-theme' },
+    { dataKey: 'notifications', storageKey: 'quest-board-notifications' },
+    { dataKey: 'loginBonus', storageKey: 'quest-board-login-bonus' },
+    { dataKey: 'battleHistory', storageKey: 'quest-board-battle-history' },
+    { dataKey: 'taskSort', storageKey: 'quest-board-task-sort' },
+    { dataKey: 'habitSort', storageKey: 'quest-board-habit-sort' },
+];
+
 /** Plain object（配列・null は除く）かどうか */
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
     return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -70,20 +85,37 @@ export function exportAllData(): BackupData {
     };
 }
 
+function restoreStorageSnapshot(snapshot: Map<string, string | null>) {
+    for (const [key, value] of snapshot) {
+        if (value === null) {
+            localStorage.removeItem(key);
+        } else {
+            localStorage.setItem(key, value);
+        }
+    }
+}
+
 export function importAllData(data: BackupData): boolean {
+    const snapshot = new Map(
+        BACKUP_STORAGE_SLOTS.map(({ storageKey }) => [storageKey, localStorage.getItem(storageKey)] as const)
+    );
+
     try {
-        localStorage.setItem('quest-board-tasks', JSON.stringify(data.tasks));
-        localStorage.setItem('quest-board-habits', JSON.stringify(data.habits));
-        localStorage.setItem('quest-board-game', JSON.stringify(data.game));
-        localStorage.setItem('quest-board-stats', JSON.stringify(data.stats));
-        if (data.theme) localStorage.setItem('quest-board-theme', JSON.stringify(data.theme));
-        if (data.notifications) localStorage.setItem('quest-board-notifications', JSON.stringify(data.notifications));
-        if (data.loginBonus) localStorage.setItem('quest-board-login-bonus', JSON.stringify(data.loginBonus));
-        if (data.battleHistory) localStorage.setItem('quest-board-battle-history', JSON.stringify(data.battleHistory));
-        if (data.taskSort) localStorage.setItem('quest-board-task-sort', JSON.stringify(data.taskSort));
-        if (data.habitSort) localStorage.setItem('quest-board-habit-sort', JSON.stringify(data.habitSort));
+        for (const { dataKey, storageKey } of BACKUP_STORAGE_SLOTS) {
+            const value = data[dataKey];
+            if (value === undefined) {
+                localStorage.removeItem(storageKey);
+            } else {
+                localStorage.setItem(storageKey, JSON.stringify(value));
+            }
+        }
         return true;
     } catch {
+        try {
+            restoreStorageSnapshot(snapshot);
+        } catch {
+            // Best-effort rollback: the import still reports failure if storage remains unavailable.
+        }
         return false;
     }
 }

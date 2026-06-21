@@ -137,8 +137,62 @@ describe('dataBackup utilities', () => {
             expect(taskSort).toEqual({});
             expect(habitSort).toEqual({});
 
+            localStorage.setItem('quest-board-theme', '{"state":{"mode":"dark"}}');
+            localStorage.setItem('quest-board-notifications', '{"state":{"enabled":true}}');
+            localStorage.setItem('quest-board-login-bonus', '{"state":{"streak":3}}');
+            localStorage.setItem('quest-board-battle-history', '{"state":{"history":[{"id":"old"}]}}');
+            localStorage.setItem('quest-board-task-sort', '{"state":{"sortMode":"priority"}}');
+            localStorage.setItem('quest-board-habit-sort', '{"state":{"sortMode":"streak"}}');
+
             expect(importAllData(legacyBackup)).toBe(true);
+            expect(localStorage.getItem('quest-board-theme')).toBeNull();
             expect(localStorage.getItem('quest-board-notifications')).toBeNull();
+            expect(localStorage.getItem('quest-board-login-bonus')).toBeNull();
+            expect(localStorage.getItem('quest-board-battle-history')).toBeNull();
+            expect(localStorage.getItem('quest-board-task-sort')).toBeNull();
+            expect(localStorage.getItem('quest-board-habit-sort')).toBeNull();
+        });
+
+        it('rolls back all touched keys if an import write fails', () => {
+            localStorage.setItem('quest-board-tasks', '{"state":{"tasks":["old"]}}');
+            localStorage.setItem('quest-board-habits', '{"state":{"habits":["old"]}}');
+            localStorage.setItem('quest-board-game', '{"state":{"character":{"level":1}}}');
+            localStorage.setItem('quest-board-stats', '{"state":{"taskXpLog":{"2026-01-01":10}}}');
+            localStorage.setItem('quest-board-theme', '{"state":{"mode":"dark"}}');
+
+            const before = new Map(
+                [
+                    'quest-board-tasks',
+                    'quest-board-habits',
+                    'quest-board-game',
+                    'quest-board-stats',
+                    'quest-board-theme',
+                    'quest-board-notifications',
+                ].map((key) => [key, localStorage.getItem(key)] as const)
+            );
+
+            const originalSetItem = Storage.prototype.setItem;
+            let thrown = false;
+            vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function setItemWithOneFailure(this: Storage, key, value) {
+                if (key === 'quest-board-stats' && !thrown) {
+                    thrown = true;
+                    throw new Error('quota exceeded');
+                }
+                return originalSetItem.call(this, key, value);
+            });
+
+            expect(importAllData({
+                ...validBackup,
+                tasks: { state: { tasks: ['new'] } },
+                habits: { state: { habits: ['new'] } },
+                game: { state: { character: { level: 99 } } },
+                stats: { state: { taskXpLog: {} } },
+                notifications: { state: { enabled: true } },
+            })).toBe(false);
+
+            for (const [key, value] of before) {
+                expect(localStorage.getItem(key)).toBe(value);
+            }
         });
     });
 });
