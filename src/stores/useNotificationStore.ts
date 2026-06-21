@@ -3,6 +3,22 @@ import { persist } from 'zustand/middleware';
 import type { NotificationStoreState } from '../types';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidDateKey(value: unknown): value is string {
+    return typeof value === 'string' && DATE_KEY_PATTERN.test(value);
+}
+
+function sanitizeTaskIds(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return Array.from(new Set(
+        value
+            .filter((id): id is string => typeof id === 'string')
+            .map((id) => id.trim())
+            .filter(Boolean)
+    ));
+}
+
 /** 永続化された state を信用せず、各フィールドの型/範囲を検証して既定値にフォールバック */
 export function sanitizeNotificationState(persisted: unknown): Partial<NotificationStoreState> {
     if (typeof persisted !== 'object' || persisted === null) return {};
@@ -12,10 +28,10 @@ export function sanitizeNotificationState(persisted: unknown): Partial<Notificat
     if (typeof raw.enabled === 'boolean') result.enabled = raw.enabled;
 
     if (Array.isArray(raw.notifiedTaskIds)) {
-        result.notifiedTaskIds = raw.notifiedTaskIds.filter((id): id is string => typeof id === 'string');
+        result.notifiedTaskIds = sanitizeTaskIds(raw.notifiedTaskIds);
     }
 
-    if (typeof raw.lastHabitReminderDate === 'string' || raw.lastHabitReminderDate === null) {
+    if (raw.lastHabitReminderDate === null || isValidDateKey(raw.lastHabitReminderDate)) {
         result.lastHabitReminderDate = raw.lastHabitReminderDate;
     }
 
@@ -52,9 +68,12 @@ export const useNotificationStore = create<NotificationStoreState>()(
             markHabitReminded: (date: string) => set({ lastHabitReminderDate: date }),
 
             pruneNotifiedTasks: (validTaskIds: string[]) =>
-                set((state) => ({
-                    notifiedTaskIds: state.notifiedTaskIds.filter((id) => validTaskIds.includes(id)),
-                })),
+                set((state) => {
+                    const validIds = new Set(sanitizeTaskIds(validTaskIds));
+                    return {
+                        notifiedTaskIds: state.notifiedTaskIds.filter((id) => validIds.has(id)),
+                    };
+                }),
         }),
         {
             name: 'quest-board-notifications',
