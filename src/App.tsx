@@ -9,6 +9,7 @@ import { MapBattlePage } from './pages/MapBattlePage';
 import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { SnackbarProvider } from './components/ui/SnackbarProvider';
 import { LevelUpOverlay } from './components/ui/LevelUpOverlay';
 import { LoginBonusOverlay } from './components/ui/LoginBonusOverlay';
@@ -76,6 +77,7 @@ function App() {
                                 <Route path="/stats" element={<StatsPage />} />
                                 <Route path="/settings" element={<SettingsPage />} />
                                 <Route path="/help" element={<HelpPage />} />
+                                <Route path="*" element={<NotFoundPage />} />
                             </Routes>
                         </main>
                         <HelpFloatingButton />
