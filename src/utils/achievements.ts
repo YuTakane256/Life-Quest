@@ -15,14 +15,22 @@ export interface AchievementProgress extends AchievementDefinition {
 }
 
 function getMetricValue(snapshot: AchievementSnapshot, metric: AchievementMetric): number {
-    return snapshot[metric];
+    return typeof metric === 'string' && metric in snapshot
+        ? snapshot[metric as keyof AchievementSnapshot]
+        : 0;
 }
 
 export function getAchievementProgress(
     snapshot: AchievementSnapshot,
     definitions: readonly AchievementDefinition[] = ACHIEVEMENTS
 ): AchievementProgress[] {
-    return definitions.map((definition) => {
+    const seenIds = new Set<string>();
+
+    return definitions.filter((definition) => {
+        if (seenIds.has(definition.id)) return false;
+        seenIds.add(definition.id);
+        return true;
+    }).map((definition) => {
         const current = Math.max(0, getMetricValue(snapshot, definition.metric));
         const target = Math.max(1, definition.target);
         const progress = Math.min(1, current / target);

@@ -64,4 +64,34 @@ describe('achievement helpers', () => {
 
         expect(getUnlockedTitles(progress)).toEqual(['XP Master', 'Stage Master']);
     });
+
+    it('deduplicates achievement definitions by id', () => {
+        const progress = getAchievementProgress({ ...baseSnapshot, totalXp: 100, maxStage: 10 }, [
+            definitions[0],
+            { ...definitions[0], title: 'Duplicate XP', target: 1, rewardTitle: 'Duplicate' },
+            definitions[1],
+        ]);
+
+        expect(progress.map((achievement) => achievement.id)).toEqual(['xp', 'stage']);
+        expect(getUnlockedTitles(progress)).toEqual(['XP Master', 'Stage Master']);
+    });
+
+    it('treats unknown metrics and non-positive targets as safe values', () => {
+        const malformedDefinition = {
+            ...definitions[0],
+            id: 'broken',
+            metric: 'missingMetric' as never,
+            target: 0,
+            rewardTitle: 'Broken',
+        };
+
+        const [progress] = getAchievementProgress({ ...baseSnapshot, totalXp: 100 }, [malformedDefinition]);
+
+        expect(progress).toMatchObject({
+            id: 'broken',
+            current: 0,
+            progress: 0,
+            unlocked: false,
+        });
+    });
 });
