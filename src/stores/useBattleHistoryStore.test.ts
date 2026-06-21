@@ -95,6 +95,35 @@ describe('useBattleHistoryStore', () => {
                 BATTLE_CONFIG.BATTLE_HISTORY_MAX_ENTRIES
             );
         });
+
+        it('履歴は新しい順に並べ、同じIDは最新の1件だけ残す', () => {
+            const stage = BATTLE_CONFIG.STAGES[0];
+            const makeEntry = (id: string, timestamp: string, outcome: 'victory' | 'defeat' = 'victory') => ({
+                id,
+                timestamp,
+                stage: stage.stage,
+                enemyName: stage.name,
+                enemyMaxHp: stage.hp,
+                enemyAttack: stage.attack,
+                enemyDefense: stage.defense,
+                outcome,
+                turnCount: 1,
+                xpEarned: outcome === 'victory' ? stage.xpReward : 0,
+                logs: [],
+            });
+
+            const sanitized = sanitizeBattleHistoryStoreState({
+                history: [
+                    makeEntry('old', '2026-06-11T00:00:00.000Z'),
+                    makeEntry('duplicate', '2026-06-10T00:00:00.000Z', 'defeat'),
+                    makeEntry('new', '2026-06-13T00:00:00.000Z'),
+                    makeEntry('duplicate', '2026-06-12T00:00:00.000Z', 'victory'),
+                ],
+            });
+
+            expect(sanitized.history.map((entry) => entry.id)).toEqual(['new', 'duplicate', 'old']);
+            expect(sanitized.history.find((entry) => entry.id === 'duplicate')?.outcome).toBe('victory');
+        });
     });
 
     it('addBattleResult は新しい履歴を先頭に追加し上限を守る', () => {
@@ -116,5 +145,33 @@ describe('useBattleHistoryStore', () => {
         useBattleHistoryStore.getState().addBattleResult(entry);
 
         expect(useBattleHistoryStore.getState().history).toEqual([entry]);
+    });
+
+    it('addBattleResult は同じIDの古い履歴を置き換える', () => {
+        const stage = BATTLE_CONFIG.STAGES[0];
+        const olderEntry = {
+            id: 'history-1',
+            timestamp: '2026-06-13T00:00:00.000Z',
+            stage: stage.stage,
+            enemyName: stage.name,
+            enemyMaxHp: stage.hp,
+            enemyAttack: stage.attack,
+            enemyDefense: stage.defense,
+            outcome: 'defeat' as const,
+            turnCount: 2,
+            xpEarned: 0,
+            logs: [],
+        };
+        const replacementEntry = {
+            ...olderEntry,
+            timestamp: '2026-06-14T00:00:00.000Z',
+            outcome: 'victory' as const,
+            xpEarned: stage.xpReward,
+        };
+
+        useBattleHistoryStore.getState().addBattleResult(olderEntry);
+        useBattleHistoryStore.getState().addBattleResult(replacementEntry);
+
+        expect(useBattleHistoryStore.getState().history).toEqual([replacementEntry]);
     });
 });
