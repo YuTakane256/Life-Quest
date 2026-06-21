@@ -10,6 +10,7 @@ function resetStore() {
         habits: [],
         dailyRecords: [],
         restDays: [],
+        allCompleteRewardDates: [],
     });
 }
 
@@ -133,12 +134,14 @@ describe('useHabitStore edge coverage', () => {
                 makeRestDay({ date: cutoff }),
                 makeRestDay({ date: today }),
             ],
+            allCompleteRewardDates: [tooOld, cutoff, today],
         });
 
         useHabitStore.getState().checkAndResetHabits();
 
         expect(useHabitStore.getState().dailyRecords.map((record) => record.date)).toEqual([cutoff, today]);
         expect(useHabitStore.getState().restDays.map((restDay) => restDay.date)).toEqual([cutoff, today]);
+        expect(useHabitStore.getState().allCompleteRewardDates).toEqual([cutoff, today]);
     });
 
     it('getHabitStreak は保持期間の31日分までを連続日数として数える', () => {

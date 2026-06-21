@@ -164,6 +164,7 @@ export interface HabitStoreState {
     habits: Habit[];
     dailyRecords: HabitDailyRecord[];
     restDays: RestDay[];
+    allCompleteRewardDates: string[];
     addHabit: (name: string, categoryId?: string) => void;
     deleteHabit: (id: string) => void;
     toggleHabitCompletion: (habitId: string, date: string) => void;
