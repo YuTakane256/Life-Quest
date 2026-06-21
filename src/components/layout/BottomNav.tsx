@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { CheckSquare, Repeat, User, Map, BarChart3, Settings } from 'lucide-react';
 import { useGameStore } from '../../stores/useGameStore';
@@ -12,13 +13,37 @@ const NAV_ITEMS = [
     { path: '/settings', label: '設定', icon: <Settings size={22} /> },
 ];
 
+function isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.isContentEditable) return true;
+    return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+}
+
 export function BottomNav() {
     const location = useLocation(); const navigate = useNavigate(); const battleUnlocked = useGameStore((s) => s.battle.battleUnlocked);
     const pendingTaskCount = useTaskStore((s) => s.tasks.filter((t) => !t.completed).length);
+
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey || isEditableTarget(event.target)) return;
+
+            const navIndex = Number(event.key) - 1;
+            const item = NAV_ITEMS[navIndex];
+            if (!item) return;
+            if (item.requiresBattle && !battleUnlocked) return;
+
+            event.preventDefault();
+            navigate(item.path);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [battleUnlocked, navigate]);
+
     return (
         <nav className="fixed bottom-0 left-0 right-0 z-50 border-t" style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-default)' }}>
             <div className="flex justify-around items-center h-16 max-w-lg mx-auto px-2">
-                {NAV_ITEMS.map((item) => {
+                {NAV_ITEMS.map((item, index) => {
                     const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`); const isLocked = item.requiresBattle && !battleUnlocked;
                     const showTaskBadge = item.path === '/tasks' && pendingTaskCount > 0;
                     return (
@@ -28,6 +53,7 @@ export function BottomNav() {
                             disabled={isLocked}
                             aria-label={isLocked ? `${item.label}（未解放）` : item.label}
                             aria-current={isActive ? 'page' : undefined}
+                            title={`${item.label} Alt+${index + 1}`}
                             className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-2 rounded-lg transition-all duration-200 relative ${isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
                             style={{ color: isActive ? 'var(--color-accent-primary)' : 'var(--color-text-muted)' }}
                         >
