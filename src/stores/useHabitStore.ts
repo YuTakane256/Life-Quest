@@ -10,9 +10,11 @@ interface HabitStorePersisted {
     habits: Habit[];
     dailyRecords: HabitDailyRecord[];
     restDays: RestDay[];
+    allCompleteRewardDates: string[];
 }
 
 const VALID_CATEGORY_IDS = new Set(HABIT_CATEGORIES.map((category) => category.id));
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -57,9 +59,13 @@ function sanitizeRestDay(raw: unknown): RestDay | null {
     };
 }
 
+function sanitizeRewardDate(raw: unknown): string | null {
+    return typeof raw === 'string' && DATE_KEY_PATTERN.test(raw) ? raw : null;
+}
+
 export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted {
     if (!isPlainObject(persisted)) {
-        return { habits: [], dailyRecords: [], restDays: [] };
+        return { habits: [], dailyRecords: [], restDays: [], allCompleteRewardDates: [] };
     }
 
     const habits = Array.isArray(persisted.habits)
@@ -77,6 +83,13 @@ export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted
         restDays: Array.isArray(persisted.restDays)
             ? persisted.restDays.map(sanitizeRestDay).filter((restDay): restDay is RestDay => restDay !== null)
             : [],
+        allCompleteRewardDates: Array.isArray(persisted.allCompleteRewardDates)
+            ? Array.from(new Set(
+                persisted.allCompleteRewardDates
+                    .map(sanitizeRewardDate)
+                    .filter((date): date is string => date !== null)
+            ))
+            : [],
     };
 }
 
@@ -86,6 +99,7 @@ export const useHabitStore = create<HabitStoreState>()(
             habits: [],
             dailyRecords: [],
             restDays: [],
+            allCompleteRewardDates: [],
 
             addHabit: (name: string, categoryId?: string) => {
                 const newHabit: Habit = {
@@ -145,6 +159,17 @@ export const useHabitStore = create<HabitStoreState>()(
                     statsStore.getState().logHabitActivity(date, completedCount, allComplete);
 
                     if (allComplete) {
+                        let shouldAwardReward = false;
+                        set((latest) => ({
+                            allCompleteRewardDates: latest.allCompleteRewardDates.includes(date)
+                                ? latest.allCompleteRewardDates
+                                : (() => {
+                                    shouldAwardReward = true;
+                                    return [...latest.allCompleteRewardDates, date];
+                                })(),
+                        }));
+                        if (!shouldAwardReward) return;
+
                         // 全達成報酬を付与
                         const gameStore = await import('./useGameStore').then(m => m.useGameStore);
                         const store = gameStore.getState();
@@ -292,6 +317,7 @@ export const useHabitStore = create<HabitStoreState>()(
                 set((state) => ({
                     dailyRecords: state.dailyRecords.filter((r) => r.date >= cutoffStr),
                     restDays: state.restDays.filter((r) => r.date >= cutoffStr),
+                    allCompleteRewardDates: state.allCompleteRewardDates.filter((date) => date >= cutoffStr),
                 }));
             },
         }),

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sanitizeHabitStoreState, useHabitStore } from './useHabitStore';
+import { useGameStore } from './useGameStore';
 import { getTodayJST, shiftDate } from '../utils/dateUtils';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
-import { UI_CONFIG } from '../config/gameConfig';
+import { CHARACTER_CONFIG, UI_CONFIG, XP_CONFIG } from '../config/gameConfig';
 
 function resetStore() {
     localStorage.clear();
@@ -10,6 +11,24 @@ function resetStore() {
         habits: [],
         dailyRecords: [],
         restDays: [],
+        allCompleteRewardDates: [],
+    });
+    useGameStore.setState({
+        character: {
+            name: CHARACTER_CONFIG.INITIAL_STATS.name,
+            avatar: CHARACTER_CONFIG.INITIAL_STATS.avatar,
+            level: CHARACTER_CONFIG.INITIAL_STATS.level,
+            totalXp: CHARACTER_CONFIG.INITIAL_STATS.totalXp,
+            baseAttack: CHARACTER_CONFIG.INITIAL_STATS.attack,
+            baseDefense: CHARACTER_CONFIG.INITIAL_STATS.defense,
+            baseMaxHp: CHARACTER_CONFIG.INITIAL_STATS.maxHp,
+        },
+        debuff: { active: false, expiresAt: null, multiplier: 1 },
+        equipment: [],
+        gachaCount: 0,
+        chestQueue: [],
+        levelUpEvent: null,
+        pendingChestReveal: null,
     });
 }
 
@@ -30,6 +49,7 @@ describe('useHabitStore', () => {
                 habits: [],
                 dailyRecords: [],
                 restDays: [],
+                allCompleteRewardDates: [],
             });
         });
 
@@ -112,6 +132,14 @@ describe('useHabitStore', () => {
                 { date: '2026-06-14', isRest: false },
             ]);
         });
+
+        it('全習慣達成報酬の日付は日付形式だけを重複なしで残す', () => {
+            expect(
+                sanitizeHabitStoreState({
+                    allCompleteRewardDates: ['2026-06-13', 'bad-date', '2026-06-13', 20260614],
+                }).allCompleteRewardDates
+            ).toEqual(['2026-06-13']);
+        });
     });
 
     describe('addHabit & deleteHabit', () => {
@@ -187,6 +215,32 @@ describe('useHabitStore', () => {
             const record = useHabitStore.getState().dailyRecords.find(r => r.habitId === habitId && r.date === today);
             expect(record?.completed).toBe(true);
             expect(record?.memo).toBe('Good job');
+        });
+
+        it('同じ日の全習慣達成報酬は再達成しても一度だけ付与する', async () => {
+            vi.useRealTimers();
+            const { addHabit, toggleHabitCompletion } = useHabitStore.getState();
+            const today = getTodayJST();
+
+            addHabit('Habit 1');
+            addHabit('Habit 2');
+            const [habit1, habit2] = useHabitStore.getState().habits;
+
+            toggleHabitCompletion(habit1.id, today);
+            toggleHabitCompletion(habit2.id, today);
+            await vi.waitFor(() => {
+                expect(useGameStore.getState().character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
+            });
+
+            expect(useHabitStore.getState().allCompleteRewardDates).toEqual([today]);
+
+            toggleHabitCompletion(habit1.id, today);
+            toggleHabitCompletion(habit1.id, today);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            expect(useGameStore.getState().character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
+            expect(useGameStore.getState().gachaCount).toBe(1);
+            expect(useHabitStore.getState().allCompleteRewardDates).toEqual([today]);
         });
     });
 
