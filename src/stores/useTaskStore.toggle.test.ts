@@ -88,6 +88,23 @@ describe('useTaskStore.toggleComplete', () => {
         expect(addXpSpy).not.toHaveBeenCalled();
     });
 
+    it('Undo待ちのタスクにサブタスクを追加すると、完了タイマーをキャンセルして報酬を付与しない', async () => {
+        const id = seedTask();
+
+        useTaskStore.getState().toggleComplete(id);
+        useTaskStore.getState().addSubtask(id, '追加の確認');
+        await vi.advanceTimersByTimeAsync(UI_CONFIG.UNDO_DURATION_MS);
+
+        const task = useTaskStore.getState().tasks.find((t) => t.id === id);
+        expect(task).toMatchObject({
+            completed: false,
+            completedAt: null,
+        });
+        expect(task?.subtasks.map((subtask) => subtask.name)).toEqual(['追加の確認']);
+        expect(useTaskStore.getState().pendingCompletions).toHaveLength(0);
+        expect(addXpSpy).not.toHaveBeenCalled();
+    });
+
     it('完了済みタスクで toggleComplete: 即座に未完了に戻る（5秒待機なし）', () => {
         const id = seedTask();
         // 直接完了状態に
