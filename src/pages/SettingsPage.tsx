@@ -1,6 +1,7 @@
 import { ArrowLeft, ChevronRight, HelpCircle, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { DataBackupSettings } from '../components/ui/DataBackupSettings';
+import { MotionSettings } from '../components/ui/MotionSettings';
 import { ThemeSettings } from '../components/ui/ThemeSettings';
 import { NotificationSettings } from '../components/ui/NotificationSettings';
 import { UsageStatsSettings } from '../components/ui/UsageStatsSettings';
@@ -29,6 +30,7 @@ export function SettingsPage() {
 
             <div className="flex flex-col gap-4">
                 <ThemeSettings />
+                <MotionSettings />
                 <NotificationSettings />
                 <UsageStatsSettings />
                 <button
