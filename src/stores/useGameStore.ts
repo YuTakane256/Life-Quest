@@ -142,6 +142,12 @@ function pickSynthesisSlot(items: Equipment[]): EquipmentSlot {
     return pickRandom(tiedSlots) as EquipmentSlot;
 }
 
+function canStartBattleStage(battle: BattleState, stage: number): boolean {
+    if (!battle.battleUnlocked) return false;
+    if (!Number.isInteger(stage) || stage < 1 || stage > MAX_STAGE) return false;
+    return stage <= battle.maxClearedStage + 1;
+}
+
 const initialCharacter: CharacterStats = {
     name: CHARACTER_CONFIG.INITIAL_STATS.name,
     avatar: CHARACTER_CONFIG.INITIAL_STATS.avatar,
@@ -552,6 +558,9 @@ export const useGameStore = create<GameStoreState>()(
             },
 
             startBattle: (stage: number) => {
+                const currentBattle = get().battle;
+                if (!canStartBattleStage(currentBattle, stage)) return;
+
                 const stageData = BATTLE_CONFIG.STAGES.find((s) => s.stage === stage);
                 if (!stageData) return;
                 const effectiveStats = get().getEffectiveStats();
@@ -640,7 +649,7 @@ export const useGameStore = create<GameStoreState>()(
                     battle: {
                         ...state.battle,
                         status: 'idle',
-                        currentStage: Math.min(nextStage, BATTLE_CONFIG.STAGES.length),
+                        currentStage: Math.min(nextStage, MAX_STAGE),
                         maxClearedStage: newMaxCleared,
                         enemy: null,
                         logs: [],
