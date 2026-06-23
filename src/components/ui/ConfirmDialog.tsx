@@ -44,9 +44,9 @@ export function ConfirmDialog({
                 <h3 id={titleId} className="text-base font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
                     {title}
                 </h3>
-                <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+                <div className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
                     {message}
-                </p>
+                </div>
                 <div className="flex gap-2">
                     <button
                         onClick={onConfirm}
