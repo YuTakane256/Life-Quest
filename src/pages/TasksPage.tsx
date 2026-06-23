@@ -1,11 +1,12 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock, Copy, HelpCircle } from 'lucide-react';
+import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock, Copy, HelpCircle, Download } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/snackbarContext';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { isOverdue, generateId, formatRelativeDate, getTodayJST } from '../utils/dateUtils';
+import { tasksToCsv } from '../utils/taskCsv';
 import { PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_SORT_ORDER, RECURRENCE_LABELS } from '../config/taskLabels';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
 
@@ -180,6 +181,17 @@ export function TasksPage() {
         setShowDeleteCompletedConfirm(false);
     };
 
+    const handleExportCsv = () => {
+        const csv = tasksToCsv(tasks);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `life-quest-tasks-${getTodayJST()}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
     /** サブタスクの有無を踏まえた既定の展開状態 */
     const isTaskExpanded = useCallback(
         (task: Task) => expandOverrides[task.id] ?? ((task.subtasks || []).length > 0),
@@ -260,20 +272,37 @@ export function TasksPage() {
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>タスク</h1>
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{incompleteTaskCount}件の未完了タスク</p>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => navigate('/help')}
-                    aria-label="使い方"
-                    title="使い方"
-                    className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105"
-                    style={{
-                        backgroundColor: 'var(--color-bg-card)',
-                        color: 'var(--color-accent-primary)',
-                        border: '1px solid var(--color-border-default)',
-                    }}
-                >
-                    <HelpCircle size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={handleExportCsv}
+                        disabled={tasks.length === 0}
+                        aria-label="タスクをCSVで保存"
+                        title="タスクをCSVで保存"
+                        className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 disabled:opacity-40"
+                        style={{
+                            backgroundColor: 'var(--color-bg-card)',
+                            color: 'var(--color-accent-emerald)',
+                            border: '1px solid var(--color-border-default)',
+                        }}
+                    >
+                        <Download size={19} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => navigate('/help')}
+                        aria-label="使い方"
+                        title="使い方"
+                        className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105"
+                        style={{
+                            backgroundColor: 'var(--color-bg-card)',
+                            color: 'var(--color-accent-primary)',
+                            border: '1px solid var(--color-border-default)',
+                        }}
+                    >
+                        <HelpCircle size={20} />
+                    </button>
+                </div>
             </div>
 
             {/* 検索 */}
