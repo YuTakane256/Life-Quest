@@ -59,11 +59,20 @@ export function sanitizeBattleHistoryStoreState(persisted: unknown): BattleHisto
         return { history: [] };
     }
 
+    const seenIds = new Set<string>();
+    const history = persisted.history
+        .map(sanitizeBattleHistoryEntry)
+        .filter((entry): entry is BattleHistoryEntry => entry !== null)
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .filter((entry) => {
+            if (seenIds.has(entry.id)) return false;
+            seenIds.add(entry.id);
+            return true;
+        })
+        .slice(0, BATTLE_CONFIG.BATTLE_HISTORY_MAX_ENTRIES);
+
     return {
-        history: persisted.history
-            .map(sanitizeBattleHistoryEntry)
-            .filter((entry): entry is BattleHistoryEntry => entry !== null)
-            .slice(0, BATTLE_CONFIG.BATTLE_HISTORY_MAX_ENTRIES),
+        history,
     };
 }
 
@@ -74,7 +83,10 @@ export const useBattleHistoryStore = create<BattleHistoryStoreState>()(
 
             addBattleResult: (entry: BattleHistoryEntry) => {
                 set((state) => ({
-                    history: [entry, ...state.history].slice(0, BATTLE_CONFIG.BATTLE_HISTORY_MAX_ENTRIES),
+                    history: [
+                        entry,
+                        ...state.history.filter((historyEntry) => historyEntry.id !== entry.id),
+                    ].slice(0, BATTLE_CONFIG.BATTLE_HISTORY_MAX_ENTRIES),
                 }));
             },
 
