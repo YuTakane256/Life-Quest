@@ -28,6 +28,20 @@ describe('persisted UI preference sanitizers', () => {
             useThemeStore.getState().setMode('sepia' as never);
             expect(useThemeStore.getState().mode).toBe('system');
         });
+
+        it('persisted mode を rehydrate 時にも検証する', async () => {
+            useThemeStore.setState({ mode: 'dark' });
+            localStorage.setItem('quest-board-theme', JSON.stringify({ state: { mode: 'light' }, version: 1 }));
+
+            await useThemeStore.persist.rehydrate();
+
+            expect(useThemeStore.getState().mode).toBe('light');
+
+            localStorage.setItem('quest-board-theme', JSON.stringify({ state: { mode: 'sepia' }, version: 1 }));
+            await useThemeStore.persist.rehydrate();
+
+            expect(useThemeStore.getState().mode).toBe('system');
+        });
     });
 
     describe('sanitizeTaskSortMode', () => {
@@ -43,6 +57,20 @@ describe('persisted UI preference sanitizers', () => {
             useTaskSortStore.getState().setSortMode('priority');
             expect(useTaskSortStore.getState().sortMode).toBe('priority');
             useTaskSortStore.getState().setSortMode('name' as never);
+            expect(useTaskSortStore.getState().sortMode).toBe('dueDate');
+        });
+
+        it('persisted sortMode を rehydrate 時にも検証する', async () => {
+            useTaskSortStore.setState({ sortMode: 'createdAt' });
+            localStorage.setItem('quest-board-task-sort', JSON.stringify({ state: { sortMode: 'priority' }, version: 1 }));
+
+            await useTaskSortStore.persist.rehydrate();
+
+            expect(useTaskSortStore.getState().sortMode).toBe('priority');
+
+            localStorage.setItem('quest-board-task-sort', JSON.stringify({ state: { sortMode: 'name' }, version: 1 }));
+            await useTaskSortStore.persist.rehydrate();
+
             expect(useTaskSortStore.getState().sortMode).toBe('dueDate');
         });
     });
@@ -61,6 +89,20 @@ describe('persisted UI preference sanitizers', () => {
             useHabitSortStore.getState().setSortMode('streak');
             expect(useHabitSortStore.getState().sortMode).toBe('streak');
             useHabitSortStore.getState().setSortMode('priority' as never);
+            expect(useHabitSortStore.getState().sortMode).toBe('createdAt');
+        });
+
+        it('persisted sortMode を rehydrate 時にも検証する', async () => {
+            useHabitSortStore.setState({ sortMode: 'name' });
+            localStorage.setItem('quest-board-habit-sort', JSON.stringify({ state: { sortMode: 'completionRate' }, version: 1 }));
+
+            await useHabitSortStore.persist.rehydrate();
+
+            expect(useHabitSortStore.getState().sortMode).toBe('completionRate');
+
+            localStorage.setItem('quest-board-habit-sort', JSON.stringify({ state: { sortMode: 'priority' }, version: 1 }));
+            await useHabitSortStore.persist.rehydrate();
+
             expect(useHabitSortStore.getState().sortMode).toBe('createdAt');
         });
     });
