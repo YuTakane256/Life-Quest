@@ -24,4 +24,13 @@ describe('useMotionStore', () => {
         useMotionStore.getState().setMode('off' as never);
         expect(useMotionStore.getState().mode).toBe('system');
     });
+
+    it('persisted state が壊れていても action を維持する', async () => {
+        localStorage.setItem('quest-board-motion', JSON.stringify({ state: null, version: 1 }));
+
+        await useMotionStore.persist.rehydrate();
+
+        expect(useMotionStore.getState().mode).toBe('system');
+        expect(typeof useMotionStore.getState().setMode).toBe('function');
+    });
 });

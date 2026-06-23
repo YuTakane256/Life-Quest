@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafePersistMerge } from '../utils/persistMerge';
 
 /** タスク一覧の並び順 */
 export type TaskSortMode = 'dueDate' | 'priority' | 'createdAt';
@@ -24,10 +25,9 @@ export const useTaskSortStore = create<TaskSortStoreState>()(
         {
             name: 'quest-board-task-sort',
             version: 1,
-            merge: (persisted, current) => {
-                const incoming = (persisted as Partial<TaskSortStoreState> | undefined)?.sortMode;
-                return { ...current, sortMode: sanitizeTaskSortMode(incoming) };
-            },
+            merge: createSafePersistMerge<TaskSortStoreState>((persisted) => ({
+                sortMode: sanitizeTaskSortMode(persisted.sortMode),
+            })),
         }
     )
 );

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafePersistMerge } from '../utils/persistMerge';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -26,10 +27,9 @@ export const useThemeStore = create<ThemeStoreState>()(
             name: 'quest-board-theme',
             version: 1,
             // localStorage から読み込んだ persisted state を信用せず、mode を必ず検証する
-            merge: (persisted, current) => {
-                const incoming = (persisted as Partial<ThemeStoreState> | undefined)?.mode;
-                return { ...current, mode: sanitizeThemeMode(incoming) };
-            },
+            merge: createSafePersistMerge<ThemeStoreState>((persisted) => ({
+                mode: sanitizeThemeMode(persisted.mode),
+            })),
         }
     )
 );
