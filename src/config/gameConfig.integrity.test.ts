@@ -8,8 +8,10 @@ import {
     SELL_XP_BY_RARITY,
     SYNTHESIS_CONFIG,
     XP_CONFIG,
+    type ChestType,
     type EquipmentSlot,
 } from './gameConfig';
+import { CHEST_FALLBACK_IMAGE, CHEST_IMAGES, ITEM_IMAGES } from './equipmentAssets';
 
 const EQUIPMENT_SLOTS: EquipmentSlot[] = ['weapon', 'armor', 'accessory'];
 
@@ -64,6 +66,39 @@ describe('gameConfig integrity', () => {
                 expect(hasResult, `${nextRarity}/${slot} synthesis result exists`).toBe(true);
             }
         }
+    });
+
+    it('keeps equipment templates and image assets in sync', () => {
+        const templateIds = EQUIPMENT_POOL.map((item) => item.id);
+        const imageIds = Object.keys(ITEM_IMAGES);
+
+        expect(new Set(templateIds).size).toBe(templateIds.length);
+        expect([...imageIds].sort()).toEqual([...templateIds].sort());
+
+        for (const item of EQUIPMENT_POOL) {
+            expect(EQUIPMENT_SLOTS).toContain(item.slot);
+            expect(RARITY_ORDER).toContain(item.rarity);
+            expect(ITEM_IMAGES[item.id], `${item.id} image`).toEqual(expect.any(String));
+            expect(ITEM_IMAGES[item.id].length, `${item.id} image path`).toBeGreaterThan(0);
+
+            const bonuses = [item.attackBonus, item.defenseBonus, item.hpBonus];
+            for (const bonus of bonuses) {
+                expect(Number.isInteger(bonus), `${item.id} integer stat`).toBe(true);
+                expect(bonus, `${item.id} non-negative stat`).toBeGreaterThanOrEqual(0);
+            }
+            expect(bonuses.some((bonus) => bonus > 0), `${item.id} has at least one bonus`).toBe(true);
+        }
+    });
+
+    it('keeps chest reward types backed by image assets', () => {
+        const chestTypes = Object.keys(GACHA_CONFIG.DROP_RATES) as ChestType[];
+
+        for (const chestType of chestTypes) {
+            expect(CHEST_IMAGES[chestType], `${chestType} image`).toEqual(expect.any(String));
+            expect(CHEST_IMAGES[chestType].length, `${chestType} image path`).toBeGreaterThan(0);
+        }
+
+        expect(CHEST_FALLBACK_IMAGE).toBe(CHEST_IMAGES.wood);
     });
 
     it('keeps battle stages contiguous and mapped by map ranges', () => {
