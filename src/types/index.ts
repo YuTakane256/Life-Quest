@@ -127,6 +127,9 @@ export interface BattleState {
     playerHp: number;
     logs: BattleLog[];
     battleUnlocked: boolean; // 青宝箱獲得後にtrue
+    skillCooldowns: Record<string, number>;
+    guardTurnsRemaining: number;
+    guardDamageReduction: number;
 }
 
 /** 過去のバトル結果スナップショット。useBattleHistoryStore で永続化。 */
@@ -219,6 +222,7 @@ export interface GameStoreState {
     getEffectiveStats: () => { attack: number; defense: number; maxHp: number };
     startBattle: (stage: number) => void;
     processBattleTurn: () => void;
+    activateBattleSkill: (skillId: string) => boolean;
     resetBattle: () => void;
     advanceStage: () => void;
     updateCharacter: (updates: Partial<Pick<CharacterStats, 'name' | 'avatar'>>) => void;

@@ -8,6 +8,8 @@ import { BattleReplayModal } from '../components/ui/BattleReplayModal';
 import { HpBar } from '../components/ui/HpBar';
 import { BattleLogList } from '../components/ui/BattleLogList';
 import type { BattleHistoryEntry } from '../types';
+import type { BattleSkillDefinition } from '../config/battleSkills';
+import { getUnlockedBattleSkills } from '../utils/battleSkills';
 import { getBattleBackground, getMapBackground } from '../config/mapAssets';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
@@ -26,8 +28,14 @@ function getMapForStage(stage: number) {
 
 const HISTORY_PREVIEW_COUNT = 10;
 
+function getSkillTone(skill: BattleSkillDefinition): { icon: string; color: string } {
+    if (skill.type === 'damage') return { icon: '⚔️', color: 'var(--color-accent-rose)' };
+    if (skill.type === 'heal') return { icon: '💚', color: 'var(--color-accent-emerald)' };
+    return { icon: '🛡️', color: 'var(--color-accent-sky)' };
+}
+
 export function MapBattlePage() {
-    const { battle, character, getEffectiveStats, startBattle, processBattleTurn, resetBattle, advanceStage } = useGameStore();
+    const { battle, character, getEffectiveStats, startBattle, processBattleTurn, resetBattle, advanceStage, activateBattleSkill } = useGameStore();
     const history = useBattleHistoryStore((s) => s.history);
     const [showVictoryDialog, setShowVictoryDialog] = useState(false);
     const [selectedMapId, setSelectedMapId] = useState(() => {
@@ -91,6 +99,7 @@ export function MapBattlePage() {
     if (battle.status === 'fighting' || battle.status === 'victory' || battle.status === 'defeat') {
         const currentMap = getMapForStage(battle.currentStage);
         const enemyVisual = getEnemyImage(battle.currentStage);
+        const unlockedSkills = getUnlockedBattleSkills(character.level);
 
         return (
             <div className="max-w-lg mx-auto px-5 pt-6 pb-4 relative z-0">
@@ -133,6 +142,46 @@ export function MapBattlePage() {
                         <HpBar current={battle.enemy?.hp ?? 0} max={battle.enemy?.maxHp ?? 1} color="enemy" height="md" />
                     </div>
                 </div>
+
+                {battle.status === 'fighting' && unlockedSkills.length > 0 && (
+                    <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <h3 className="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>スキル</h3>
+                            {battle.guardTurnsRemaining > 0 && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--color-accent-sky)', color: 'white' }}>
+                                    防御 {battle.guardTurnsRemaining}T
+                                </span>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            {unlockedSkills.map((skill) => {
+                                const cooldown = battle.skillCooldowns[skill.id] ?? 0;
+                                const tone = getSkillTone(skill);
+                                return (
+                                    <button
+                                        key={skill.id}
+                                        type="button"
+                                        onClick={() => activateBattleSkill(skill.id)}
+                                        disabled={cooldown > 0}
+                                        title={skill.description}
+                                        className="min-h-[64px] rounded-lg px-2 py-2 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 disabled:opacity-45 disabled:cursor-not-allowed"
+                                        style={{
+                                            backgroundColor: 'var(--color-bg-secondary)',
+                                            color: cooldown > 0 ? 'var(--color-text-muted)' : tone.color,
+                                            border: `1px solid ${cooldown > 0 ? 'var(--color-border-default)' : tone.color}`,
+                                        }}
+                                    >
+                                        <span className="text-base" aria-hidden="true">{tone.icon}</span>
+                                        <span className="text-[11px] font-bold leading-tight">{skill.name}</span>
+                                        <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                            {cooldown > 0 ? `あと${cooldown}T` : '使用可'}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 {/* バトルログ */}
                 <BattleLogList
