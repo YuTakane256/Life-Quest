@@ -66,6 +66,38 @@ describe('useLoginBonusStore', () => {
         });
     });
 
+    it('XP付与に失敗した場合は今日分を受け取り済みにしない', () => {
+        addXpSpy.mockImplementation(() => {
+            throw new Error('xp failed');
+        });
+
+        expect(() => useLoginBonusStore.getState().checkDailyLogin()).toThrow('xp failed');
+
+        expect(useLoginBonusStore.getState()).toMatchObject({
+            lastLoginDate: null,
+            streak: 0,
+            pendingBonus: null,
+        });
+    });
+
+    it('特別宝箱付与に失敗した場合もログイン状態を確定しない', () => {
+        useLoginBonusStore.setState({ lastLoginDate: '2025-03-14', streak: 6 });
+        grantChestSpy.mockImplementation(() => {
+            throw new Error('chest failed');
+        });
+
+        expect(() => useLoginBonusStore.getState().checkDailyLogin()).toThrow('chest failed');
+
+        expect(useLoginBonusStore.getState()).toMatchObject({
+            lastLoginDate: '2025-03-14',
+            streak: 6,
+            pendingBonus: null,
+        });
+        expect(addXpSpy).toHaveBeenCalledWith(
+            LOGIN_BONUS_CONFIG.BASE_XP + 6 * LOGIN_BONUS_CONFIG.XP_PER_STREAK_DAY
+        );
+    });
+
     it('前日ログインありで翌日: streak=2', () => {
         // 1日目
         useLoginBonusStore.getState().checkDailyLogin();

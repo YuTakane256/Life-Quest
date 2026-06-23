@@ -31,9 +31,6 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
                     // 今日分のボーナスは受け取り済み
                     if (lastLoginDate === today) return;
 
-                    // 即座に更新状態をマーク（重複発火防止の念押し）
-                    set({ lastLoginDate: today });
-
                     // 前日にログインしていれば連続日数を継続、そうでなければ1日目にリセット
                     const isConsecutive = lastLoginDate === shiftDate(today, -1);
                     const newStreak = isConsecutive ? streak + 1 : 1;
@@ -58,7 +55,7 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
                         chestLabel: isSpecialDay ? LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL : null,
                     };
 
-                    set({ streak: newStreak, pendingBonus: bonus });
+                    set({ lastLoginDate: today, streak: newStreak, pendingBonus: bonus });
                 } finally {
                     isChecking = false;
                 }
