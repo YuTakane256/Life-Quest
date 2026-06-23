@@ -26,7 +26,7 @@ describe('useNotificationStore', () => {
             expect(
                 sanitizeNotificationState({
                     enabled: true,
-                    notifiedTaskIds: ['task-1', 123, 'task-2', null],
+                    notifiedTaskIds: ['task-1', 123, ' task-2 ', null, 'task-1', ''],
                     lastHabitReminderDate: '2026-06-11',
                     habitReminderHour: 26.8,
                     extraField: 'ignored',
@@ -48,6 +48,11 @@ describe('useNotificationStore', () => {
                     habitReminderHour: Number.NaN,
                 })
             ).toEqual({});
+        });
+
+        it('壊れた最終習慣リマインド日は復元しない', () => {
+            expect(sanitizeNotificationState({ lastHabitReminderDate: '2026-6-1' })).toEqual({});
+            expect(sanitizeNotificationState({ lastHabitReminderDate: 'tomorrow' })).toEqual({});
         });
 
         it('null の最終習慣リマインド日は有効な未通知状態として扱う', () => {
@@ -126,6 +131,12 @@ describe('useNotificationStore', () => {
         it('validTaskIds に含まれない ID を削除', () => {
             useNotificationStore.setState({ notifiedTaskIds: ['a', 'b', 'c'] });
             useNotificationStore.getState().pruneNotifiedTasks(['b']);
+            expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['b']);
+        });
+
+        it('validTaskIds の重複・空白・空文字を安全に扱う', () => {
+            useNotificationStore.setState({ notifiedTaskIds: ['a', 'b', 'c'] });
+            useNotificationStore.getState().pruneNotifiedTasks([' b ', 'b', '', 'missing']);
             expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['b']);
         });
 
