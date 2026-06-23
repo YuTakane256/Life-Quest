@@ -5,9 +5,25 @@ import {
     generateId,
     isOverdue,
     formatRelativeDate,
+    isValidYmd,
     shiftDate,
     addRecurrenceInterval,
 } from './dateUtils';
+
+describe('isValidYmd', () => {
+    it('YYYY-MM-DD 形式の実在日を true にする', () => {
+        expect(isValidYmd('2025-03-15')).toBe(true);
+        expect(isValidYmd('2024-02-29')).toBe(true);
+    });
+
+    it('形式違いと実在しない日付を false にする', () => {
+        expect(isValidYmd('2025-3-15')).toBe(false);
+        expect(isValidYmd('2025-02-29')).toBe(false);
+        expect(isValidYmd('2025-13-01')).toBe(false);
+        expect(isValidYmd('2025-00-10')).toBe(false);
+        expect(isValidYmd('2025-04-31')).toBe(false);
+    });
+});
 
 describe('getTodayJST', () => {
     afterEach(() => {
@@ -104,6 +120,11 @@ describe('isOverdue', () => {
     it('未来日付は overdue ではない', () => {
         expect(isOverdue('2025-03-16')).toBe(false);
     });
+
+    it('不正な日付は overdue 扱いしない', () => {
+        expect(isOverdue('2025-02-29')).toBe(false);
+        expect(isOverdue('not-a-date')).toBe(false);
+    });
 });
 
 describe('formatRelativeDate', () => {
@@ -137,6 +158,10 @@ describe('formatRelativeDate', () => {
     it('月またぎでも正しい日数差', () => {
         expect(formatRelativeDate('2025-04-15')).toBe('31日後');
     });
+    it('不正な日付は空文字を返す', () => {
+        expect(formatRelativeDate('2025-02-29')).toBe('');
+        expect(formatRelativeDate('not-a-date')).toBe('');
+    });
 });
 
 describe('shiftDate', () => {
@@ -164,6 +189,10 @@ describe('shiftDate', () => {
     it('大きい正の値（30日）', () => {
         expect(shiftDate('2025-03-15', 30)).toBe('2025-04-14');
     });
+    it('不正な日付は例外にする', () => {
+        expect(() => shiftDate('2025-02-29', 1)).toThrow(RangeError);
+        expect(() => shiftDate('not-a-date', 1)).toThrow(RangeError);
+    });
 });
 
 describe('addRecurrenceInterval', () => {
@@ -187,5 +216,9 @@ describe('addRecurrenceInterval', () => {
     });
     it('weekly で年またぎ', () => {
         expect(addRecurrenceInterval('2025-12-30', 'weekly')).toBe('2026-01-06');
+    });
+    it('不正な日付は例外にする', () => {
+        expect(() => addRecurrenceInterval('2025-02-29', 'daily')).toThrow(RangeError);
+        expect(() => addRecurrenceInterval('not-a-date', 'monthly')).toThrow(RangeError);
     });
 });

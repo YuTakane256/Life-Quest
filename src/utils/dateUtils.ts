@@ -9,6 +9,9 @@ import type { Recurrence } from '../types';
  * YYYY-MM-DD 形式の文字列を UTC ベースの Date にパースする（内部利用）。
  */
 function parseYmd(dateStr: string): Date {
+    if (!isValidYmd(dateStr)) {
+        throw new RangeError(`Invalid YYYY-MM-DD date: ${dateStr}`);
+    }
     const [year, month, day] = dateStr.split('-').map(Number);
     return new Date(Date.UTC(year, month - 1, day));
 }
@@ -25,6 +28,21 @@ function formatYmd(date: Date): string {
 
 function daysInUtcMonth(year: number, monthIndex: number): number {
     return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+/**
+ * YYYY-MM-DD 形式かつ実在する日付かどうかを判定する。
+ */
+export function isValidYmd(dateStr: string): boolean {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+    if (!match) return false;
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+
+    if (month < 1 || month > 12) return false;
+    return day >= 1 && day <= daysInUtcMonth(year, month - 1);
 }
 
 /**
@@ -60,6 +78,7 @@ export function generateId(): string {
  */
 export function isOverdue(dueDate: string | null): boolean {
     if (!dueDate) return false;
+    if (!isValidYmd(dueDate)) return false;
     const today = getTodayJST();
     return dueDate < today;
 }
@@ -69,6 +88,7 @@ export function isOverdue(dueDate: string | null): boolean {
  * 例: 今日 / 明日 / 明後日 / 3日後 / 昨日 / 2日前
  */
 export function formatRelativeDate(dateStr: string): string {
+    if (!isValidYmd(dateStr)) return '';
     const todayMs = parseYmd(getTodayJST()).getTime();
     const dateMs = parseYmd(dateStr).getTime();
     const diffDays = Math.round((dateMs - todayMs) / (24 * 60 * 60 * 1000));
