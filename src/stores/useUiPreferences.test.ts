@@ -42,6 +42,15 @@ describe('persisted UI preference sanitizers', () => {
 
             expect(useThemeStore.getState().mode).toBe('system');
         });
+
+        it('persisted state が壊れていても action を維持する', async () => {
+            localStorage.setItem('quest-board-theme', JSON.stringify({ state: ['light'], version: 1 }));
+
+            await useThemeStore.persist.rehydrate();
+
+            expect(useThemeStore.getState().mode).toBe('system');
+            expect(typeof useThemeStore.getState().setMode).toBe('function');
+        });
     });
 
     describe('sanitizeTaskSortMode', () => {
@@ -72,6 +81,15 @@ describe('persisted UI preference sanitizers', () => {
             await useTaskSortStore.persist.rehydrate();
 
             expect(useTaskSortStore.getState().sortMode).toBe('dueDate');
+        });
+
+        it('persisted state が壊れていても action を維持する', async () => {
+            localStorage.setItem('quest-board-task-sort', JSON.stringify({ state: 'priority', version: 1 }));
+
+            await useTaskSortStore.persist.rehydrate();
+
+            expect(useTaskSortStore.getState().sortMode).toBe('dueDate');
+            expect(typeof useTaskSortStore.getState().setSortMode).toBe('function');
         });
     });
 

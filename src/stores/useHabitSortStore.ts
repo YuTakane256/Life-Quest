@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafePersistMerge } from '../utils/persistMerge';
 
 /** 習慣一覧の並び順 */
 export type HabitSortMode = 'createdAt' | 'name' | 'streak' | 'completionRate';
@@ -24,10 +25,9 @@ export const useHabitSortStore = create<HabitSortStoreState>()(
         {
             name: 'quest-board-habit-sort',
             version: 1,
-            merge: (persisted, current) => {
-                const incoming = (persisted as Partial<HabitSortStoreState> | undefined)?.sortMode;
-                return { ...current, sortMode: sanitizeHabitSortMode(incoming) };
-            },
+            merge: createSafePersistMerge<HabitSortStoreState>((persisted) => ({
+                sortMode: sanitizeHabitSortMode(persisted.sortMode),
+            })),
         }
     )
 );
