@@ -56,25 +56,25 @@ describe('useHabitStore', () => {
         it('習慣を検証し、カテゴリと名前長を安全な値に丸める', () => {
             const longName = 'a'.repeat(UI_CONFIG.MAX_HABIT_NAME_LENGTH + 10);
 
-            expect(
-                sanitizeHabitStoreState({
-                    habits: [
-                        'broken',
-                        { id: 1, name: 'bad', createdAt: '2026-06-13T00:00:00.000Z' },
-                        {
-                            id: 'habit-1',
-                            name: longName,
-                            categoryId: 'unknown',
-                            createdAt: '2026-06-13T00:00:00.000Z',
-                        },
-                    ],
-                }).habits
-            ).toEqual([
+            const sanitized = sanitizeHabitStoreState({
+                habits: [
+                    'broken',
+                    { id: 1, name: 'bad', createdAt: '2026-06-13T00:00:00.000Z' },
+                    {
+                        id: 'habit-1',
+                        name: longName,
+                        categoryId: 'unknown',
+                        createdAt: 'not-a-date',
+                    },
+                ],
+            });
+
+            expect(sanitized.habits).toEqual([
                 {
                     id: 'habit-1',
                     name: 'a'.repeat(UI_CONFIG.MAX_HABIT_NAME_LENGTH),
                     categoryId: DEFAULT_CATEGORY_ID,
-                    createdAt: '2026-06-13T00:00:00.000Z',
+                    createdAt: '2025-05-10T12:00:00.000Z',
                 },
             ]);
         });
@@ -97,6 +97,12 @@ describe('useHabitStore', () => {
                         date: '2026-06-13',
                         completed: 'yes',
                         memo: longMemo,
+                    },
+                    {
+                        habitId: 'habit-1',
+                        date: '2026-02-30',
+                        completed: true,
+                        memo: 'invalid date',
                     },
                     {
                         habitId: 'missing-habit',
@@ -124,6 +130,7 @@ describe('useHabitStore', () => {
                     restDays: [
                         { date: '2026-06-13', isRest: true },
                         { date: '2026-06-14', isRest: 'yes' },
+                        { date: '2026-02-30', isRest: true },
                         { date: 20260615, isRest: true },
                     ],
                 }).restDays
@@ -136,7 +143,7 @@ describe('useHabitStore', () => {
         it('全習慣達成報酬の日付は日付形式だけを重複なしで残す', () => {
             expect(
                 sanitizeHabitStoreState({
-                    allCompleteRewardDates: ['2026-06-13', 'bad-date', '2026-06-13', 20260614],
+                    allCompleteRewardDates: ['2026-06-13', '2026-02-30', 'bad-date', '2026-06-13', 20260614],
                 }).allCompleteRewardDates
             ).toEqual(['2026-06-13']);
         });

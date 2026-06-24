@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { Habit, HabitDailyRecord, HabitStoreState, RestDay } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID, HABIT_CATEGORIES } from '../config/habitCategories';
-import { generateId, getTodayJST, shiftDate } from '../utils/dateUtils';
+import { generateId, getTodayJST, isValidYmd, shiftDate } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
 
 interface HabitStorePersisted {
@@ -14,15 +14,22 @@ interface HabitStorePersisted {
 }
 
 const VALID_CATEGORY_IDS = new Set(HABIT_CATEGORIES.map((category) => category.id));
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isValidTimestamp(value: string): boolean {
+    return !Number.isNaN(new Date(value).getTime());
+}
+
+function sanitizeTimestamp(value: unknown, fallback = new Date().toISOString()): string {
+    return typeof value === 'string' && isValidTimestamp(value) ? value : fallback;
+}
+
 function sanitizeHabit(raw: unknown): Habit | null {
     if (!isPlainObject(raw)) return null;
-    if (typeof raw.id !== 'string' || typeof raw.name !== 'string' || typeof raw.createdAt !== 'string') return null;
+    if (typeof raw.id !== 'string' || typeof raw.name !== 'string') return null;
 
     const categoryId = typeof raw.categoryId === 'string' && VALID_CATEGORY_IDS.has(raw.categoryId)
         ? raw.categoryId
@@ -32,14 +39,14 @@ function sanitizeHabit(raw: unknown): Habit | null {
         id: raw.id,
         name: clampString(raw.name, UI_CONFIG.MAX_HABIT_NAME_LENGTH),
         categoryId,
-        createdAt: raw.createdAt,
+        createdAt: sanitizeTimestamp(raw.createdAt),
     };
 }
 
 function sanitizeDailyRecord(raw: unknown, validHabitIds: Set<string>): HabitDailyRecord | null {
     if (!isPlainObject(raw)) return null;
     if (typeof raw.habitId !== 'string' || !validHabitIds.has(raw.habitId)) return null;
-    if (typeof raw.date !== 'string') return null;
+    if (typeof raw.date !== 'string' || !isValidYmd(raw.date)) return null;
 
     return {
         habitId: raw.habitId,
@@ -51,7 +58,7 @@ function sanitizeDailyRecord(raw: unknown, validHabitIds: Set<string>): HabitDai
 
 function sanitizeRestDay(raw: unknown): RestDay | null {
     if (!isPlainObject(raw)) return null;
-    if (typeof raw.date !== 'string') return null;
+    if (typeof raw.date !== 'string' || !isValidYmd(raw.date)) return null;
 
     return {
         date: raw.date,
@@ -60,7 +67,7 @@ function sanitizeRestDay(raw: unknown): RestDay | null {
 }
 
 function sanitizeRewardDate(raw: unknown): string | null {
-    return typeof raw === 'string' && DATE_KEY_PATTERN.test(raw) ? raw : null;
+    return typeof raw === 'string' && isValidYmd(raw) ? raw : null;
 }
 
 export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted {
