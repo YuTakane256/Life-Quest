@@ -5,6 +5,10 @@ import {
     PRIORITY_LABELS,
     PRIORITY_SORT_ORDER,
     RECURRENCE_LABELS,
+    getPriorityColor,
+    getPriorityLabel,
+    getPrioritySortOrder,
+    getRecurrenceLabel,
 } from './taskLabels';
 
 const PRIORITIES: readonly Priority[] = ['low', 'medium', 'high'];
@@ -44,5 +48,21 @@ describe('task display label config', () => {
         for (const recurrence of RECURRENCES) {
             expect(RECURRENCE_LABELS[recurrence]).not.toHaveLength(0);
         }
+    });
+
+    it('安全な優先度ヘルパーは不正値を中優先度へ戻す', () => {
+        expect(getPriorityLabel('high')).toBe(PRIORITY_LABELS.high);
+        expect(getPriorityColor('high')).toBe(PRIORITY_COLORS.high);
+        expect(getPrioritySortOrder('high')).toBe(PRIORITY_SORT_ORDER.high);
+
+        expect(getPriorityLabel('urgent')).toBe(PRIORITY_LABELS.medium);
+        expect(getPriorityColor(null)).toBe(PRIORITY_COLORS.medium);
+        expect(getPrioritySortOrder(undefined)).toBe(PRIORITY_SORT_ORDER.medium);
+    });
+
+    it('安全な繰り返しヘルパーは不正値をなしへ戻す', () => {
+        expect(getRecurrenceLabel('weekly')).toBe(RECURRENCE_LABELS.weekly);
+        expect(getRecurrenceLabel('yearly')).toBe(RECURRENCE_LABELS.none);
+        expect(getRecurrenceLabel(null)).toBe(RECURRENCE_LABELS.none);
     });
 });
