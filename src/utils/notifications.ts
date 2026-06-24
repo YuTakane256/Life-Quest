@@ -6,7 +6,7 @@
  */
 
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
-import { getTodayJST, getJSTHour } from './dateUtils';
+import { getTodayJST, getJSTHour, isValidYmd } from './dateUtils';
 import { useNotificationStore } from '../stores/useNotificationStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useHabitStore } from '../stores/useHabitStore';
@@ -94,6 +94,7 @@ export async function runNotificationChecks(): Promise<void> {
         // ── タスク期限の通知（期限の24時間前以降、未完了、未通知のもの）──
         for (const task of tasks) {
             if (task.completed || !task.dueDate) continue;
+            if (!isValidYmd(task.dueDate)) continue;
             if (useNotificationStore.getState().notifiedTaskIds.includes(task.id)) continue;
 
             // dueDate はJSTの日付。その日の終わり(23:59:59 JST)を期限とみなす

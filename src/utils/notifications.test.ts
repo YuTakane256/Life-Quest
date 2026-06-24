@@ -79,4 +79,37 @@ describe('runNotificationChecks', () => {
         expect(showNotification).toHaveBeenCalledTimes(1);
         expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['task-1']);
     });
+
+    it('不正な dueDate のタスクは期限通知せず通知済みにもしない', async () => {
+        const showNotification = vi.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, 'serviceWorker', {
+            configurable: true,
+            value: {
+                getRegistration: vi.fn().mockResolvedValue({ showNotification }),
+            },
+        });
+
+        useTaskStore.setState({
+            tasks: [
+                {
+                    id: 'task-invalid-date',
+                    name: '壊れた締切タスク',
+                    dueDate: '2026-02-30',
+                    priority: 'medium',
+                    tags: [],
+                    subtasks: [],
+                    recurrence: 'none',
+                    completed: false,
+                    completedAt: null,
+                    createdAt: '2026-06-13T00:00:00.000Z',
+                },
+            ],
+            pendingCompletions: [],
+        });
+
+        await runNotificationChecks();
+
+        expect(showNotification).not.toHaveBeenCalled();
+        expect(useNotificationStore.getState().notifiedTaskIds).toEqual([]);
+    });
 });
