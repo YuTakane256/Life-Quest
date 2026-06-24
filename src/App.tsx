@@ -7,6 +7,7 @@ import { HabitsPage } from './pages/HabitsPage';
 import { CharacterPage, InventoryPage } from './pages/CharacterPage';
 import { MapBattlePage } from './pages/MapBattlePage';
 import { StatsPage } from './pages/StatsPage';
+import { FriendsPage } from './pages/FriendsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -75,6 +76,7 @@ function App() {
                                 <Route path="/character/inventory" element={<InventoryPage />} />
                                 <Route path="/map" element={<MapBattlePage />} />
                                 <Route path="/stats" element={<StatsPage />} />
+                                <Route path="/friends" element={<FriendsPage />} />
                                 <Route path="/settings" element={<SettingsPage />} />
                                 <Route path="/help" element={<HelpPage />} />
                                 <Route path="*" element={<NotFoundPage />} />
