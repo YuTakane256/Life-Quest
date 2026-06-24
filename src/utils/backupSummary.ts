@@ -1,4 +1,5 @@
 import type { BackupData } from './dataBackup';
+import { isValidYmd } from './dateUtils';
 
 export interface BackupImportSummary {
     exportedAt: string;
@@ -26,14 +27,16 @@ function getPersistedState(value: unknown): Record<string, unknown> {
     return state ?? record;
 }
 
-function getArrayLength(record: Record<string, unknown>, key: string): number {
+function getRecordArrayEntryCount(record: Record<string, unknown>, key: string): number {
     const value = record[key];
-    return Array.isArray(value) ? value.length : 0;
+    if (!Array.isArray(value)) return 0;
+    return value.filter((entry) => asRecord(entry)).length;
 }
 
-function getRecordLength(record: Record<string, unknown>, key: string): number {
+function getDateRecordEntryCount(record: Record<string, unknown>, key: string): number {
     const value = asRecord(record[key]);
-    return value ? Object.keys(value).length : 0;
+    if (!value) return 0;
+    return Object.keys(value).filter(isValidYmd).length;
 }
 
 export function createBackupImportSummary(data: BackupData): BackupImportSummary {
@@ -45,14 +48,14 @@ export function createBackupImportSummary(data: BackupData): BackupImportSummary
 
     return {
         exportedAt: data.exportedAt,
-        taskCount: getArrayLength(tasks, 'tasks'),
-        habitCount: getArrayLength(habits, 'habits'),
-        habitRecordCount: getArrayLength(habits, 'dailyRecords'),
-        equipmentCount: getArrayLength(game, 'equipment'),
+        taskCount: getRecordArrayEntryCount(tasks, 'tasks'),
+        habitCount: getRecordArrayEntryCount(habits, 'habits'),
+        habitRecordCount: getRecordArrayEntryCount(habits, 'dailyRecords'),
+        equipmentCount: getRecordArrayEntryCount(game, 'equipment'),
         unopenedChestCount: chestQueue.filter((chest) => asRecord(chest)?.opened === false).length,
         openedChestCount: chestQueue.filter((chest) => asRecord(chest)?.opened === true).length,
-        taskXpDayCount: getRecordLength(stats, 'taskXpLog'),
-        habitLogDayCount: getRecordLength(stats, 'habitLog'),
+        taskXpDayCount: getDateRecordEntryCount(stats, 'taskXpLog'),
+        habitLogDayCount: getDateRecordEntryCount(stats, 'habitLog'),
     };
 }
 
