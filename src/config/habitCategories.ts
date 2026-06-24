@@ -28,3 +28,12 @@ export function getCategoryById(id: string): HabitCategory | undefined {
 
 /** デフォルトカテゴリ（その他） */
 export const DEFAULT_CATEGORY_ID = 'other';
+
+export function getDefaultCategory(): HabitCategory {
+    return getCategoryById(DEFAULT_CATEGORY_ID) ?? HABIT_CATEGORIES[0];
+}
+
+export function getCategoryByIdOrDefault(id: unknown): HabitCategory {
+    if (typeof id !== 'string') return getDefaultCategory();
+    return getCategoryById(id) ?? getDefaultCategory();
+}
