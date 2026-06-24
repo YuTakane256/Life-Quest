@@ -36,4 +36,14 @@ describe('persistMerge', () => {
 
         expect(merged).toEqual({ mode: 'system', setMode });
     });
+
+    it('sanitizer が例外を投げても current state を維持する', () => {
+        const setMode = () => undefined;
+        const current = { mode: 'dark', setMode };
+        const merge = createSafePersistMerge<typeof current>(() => {
+            throw new Error('broken sanitizer');
+        });
+
+        expect(merge({ mode: 'light' }, current)).toBe(current);
+    });
 });

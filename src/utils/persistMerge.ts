@@ -11,8 +11,14 @@ export function readPersistedStateRecord(value: unknown): PersistedStateRecord {
 export function createSafePersistMerge<TState extends object>(
     sanitize: (persisted: PersistedStateRecord, current: TState) => Partial<TState>
 ) {
-    return (persisted: unknown, current: TState): TState => ({
-        ...current,
-        ...sanitize(readPersistedStateRecord(persisted), current),
-    });
+    return (persisted: unknown, current: TState): TState => {
+        try {
+            return {
+                ...current,
+                ...sanitize(readPersistedStateRecord(persisted), current),
+            };
+        } catch {
+            return current;
+        }
+    };
 }
