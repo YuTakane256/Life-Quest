@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BATTLE_CONFIG } from '../config/gameConfig';
 import { sanitizeBattleHistoryStoreState, useBattleHistoryStore } from './useBattleHistoryStore';
 
@@ -9,6 +9,10 @@ function reset() {
 
 describe('useBattleHistoryStore', () => {
     beforeEach(() => reset());
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
 
     describe('sanitizeBattleHistoryStoreState', () => {
         it('非オブジェクトや history 配列以外は空履歴にする', () => {
@@ -123,6 +127,32 @@ describe('useBattleHistoryStore', () => {
 
             expect(sanitized.history.map((entry) => entry.id)).toEqual(['new', 'duplicate', 'old']);
             expect(sanitized.history.find((entry) => entry.id === 'duplicate')?.outcome).toBe('victory');
+        });
+
+        it('未来の timestamp は現在時刻に丸める', () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2026-06-13T12:00:00.000Z'));
+            const stage = BATTLE_CONFIG.STAGES[0];
+
+            const sanitized = sanitizeBattleHistoryStoreState({
+                history: [
+                    {
+                        id: 'future',
+                        timestamp: '2999-01-01T00:00:00.000Z',
+                        stage: stage.stage,
+                        enemyName: stage.name,
+                        enemyMaxHp: stage.hp,
+                        enemyAttack: stage.attack,
+                        enemyDefense: stage.defense,
+                        outcome: 'victory',
+                        turnCount: 1,
+                        xpEarned: stage.xpReward,
+                        logs: [],
+                    },
+                ],
+            });
+
+            expect(sanitized.history[0].timestamp).toBe('2026-06-13T12:00:00.000Z');
         });
     });
 

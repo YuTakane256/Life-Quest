@@ -17,6 +17,13 @@ function nonNegativeInteger(value: unknown, fallback = 0): number {
         : fallback;
 }
 
+function sanitizeTimestamp(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) return null;
+    return new Date(Math.min(time, Date.now())).toISOString();
+}
+
 function sanitizeBattleLog(raw: unknown): BattleHistoryEntry['logs'][number] | null {
     if (!isPlainObject(raw) || typeof raw.message !== 'string') return null;
     return {
@@ -29,8 +36,9 @@ function sanitizeBattleLog(raw: unknown): BattleHistoryEntry['logs'][number] | n
 
 function sanitizeBattleHistoryEntry(raw: unknown): BattleHistoryEntry | null {
     if (!isPlainObject(raw)) return null;
-    if (typeof raw.id !== 'string' || typeof raw.timestamp !== 'string') return null;
-    if (Number.isNaN(new Date(raw.timestamp).getTime())) return null;
+    if (typeof raw.id !== 'string') return null;
+    const timestamp = sanitizeTimestamp(raw.timestamp);
+    if (!timestamp) return null;
     if (raw.outcome !== 'victory' && raw.outcome !== 'defeat') return null;
 
     const stage = nonNegativeInteger(raw.stage, -1);
@@ -39,7 +47,7 @@ function sanitizeBattleHistoryEntry(raw: unknown): BattleHistoryEntry | null {
 
     return {
         id: raw.id,
-        timestamp: raw.timestamp,
+        timestamp,
         stage,
         enemyName: typeof raw.enemyName === 'string' ? raw.enemyName.slice(0, 80) : stageData.name,
         enemyMaxHp: nonNegativeInteger(raw.enemyMaxHp, stageData.hp),
