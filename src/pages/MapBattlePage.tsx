@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import { BATTLE_CONFIG, MAP_CONFIG, ENEMY_IMAGE_KEYS } from '../config/gameConfig';
-import { Swords, Trophy, Skull, RotateCcw, ChevronRight, History, ChevronDown } from 'lucide-react';
-import { formatRelativeTime } from '../utils/dateUtils';
+import { Swords, Trophy, Skull, RotateCcw, ChevronRight } from 'lucide-react';
 import { BattleReplayModal } from '../components/ui/BattleReplayModal';
 import { HpBar } from '../components/ui/HpBar';
 import { BattleLogList } from '../components/ui/BattleLogList';
+import { BattleHistoryPanel } from '../components/ui/BattleHistoryPanel';
 import type { BattleHistoryEntry } from '../types';
 import type { BattleSkillDefinition } from '../config/battleSkills';
 import { getUnlockedBattleSkills } from '../utils/battleSkills';
@@ -25,8 +25,6 @@ function getEnemyImage(stage: number) {
 function getMapForStage(stage: number) {
     return MAP_CONFIG.find(m => stage >= m.stageRange[0] && stage <= m.stageRange[1]) || MAP_CONFIG[0];
 }
-
-const HISTORY_PREVIEW_COUNT = 10;
 
 function getSkillTone(skill: BattleSkillDefinition): { icon: string; color: string } {
     if (skill.type === 'damage') return { icon: '⚔️', color: 'var(--color-accent-rose)' };
@@ -275,75 +273,12 @@ export function MapBattlePage() {
                 })}
             </div>
 
-            {/* バトル履歴 */}
-            {history.length > 0 && (
-                <details
-                    className="mb-4 rounded-xl group"
-                    style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
-                >
-                    <summary
-                        className="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none list-none"
-                        style={{ color: 'var(--color-text-primary)' }}
-                    >
-                        <span className="flex items-center gap-1.5 text-sm font-semibold">
-                            <History size={16} style={{ color: 'var(--color-accent-primary)' }} />
-                            バトル履歴 ({history.length})
-                        </span>
-                        <ChevronDown size={16} className="transition-transform group-open:rotate-180" style={{ color: 'var(--color-text-muted)' }} />
-                    </summary>
-                    <div className="flex flex-col gap-1.5 px-3 pb-3">
-                        {(showAllHistory ? history : history.slice(0, HISTORY_PREVIEW_COUNT)).map((entry) => {
-                            const isVictory = entry.outcome === 'victory';
-                            return (
-                                <button
-                                    key={entry.id}
-                                    onClick={() => setReplayEntry(entry)}
-                                    aria-label="バトル履歴を再生"
-                                    className="text-left flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:opacity-80"
-                                    style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}
-                                >
-                                    <div
-                                        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                                        style={{ backgroundColor: isVictory ? 'var(--color-accent-gold)33' : 'var(--color-text-danger)33' }}
-                                    >
-                                        {isVictory
-                                            ? <Trophy size={18} style={{ color: 'var(--color-accent-gold)' }} />
-                                            : <Skull size={18} style={{ color: 'var(--color-text-danger)' }} />
-                                        }
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
-                                                ステージ {entry.stage}: {entry.enemyName}
-                                            </div>
-                                            <div className="text-[10px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                                                {formatRelativeTime(entry.timestamp)}
-                                            </div>
-                                        </div>
-                                        <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                            {entry.turnCount}ターン
-                                            {isVictory && (
-                                                <span style={{ color: 'var(--color-accent-gold)', marginLeft: 6 }}>
-                                                    · +{entry.xpEarned} XP
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </button>
-                            );
-                        })}
-                        {history.length > HISTORY_PREVIEW_COUNT && (
-                            <button
-                                onClick={() => setShowAllHistory((v) => !v)}
-                                className="mt-1 py-1.5 rounded-lg text-xs transition-colors hover:opacity-80"
-                                style={{ color: 'var(--color-accent-primary)', backgroundColor: 'var(--color-bg-secondary)' }}
-                            >
-                                {showAllHistory ? '折りたたむ' : `もっと見る (${history.length - HISTORY_PREVIEW_COUNT}件)`}
-                            </button>
-                        )}
-                    </div>
-                </details>
-            )}
+            <BattleHistoryPanel
+                history={history}
+                showAll={showAllHistory}
+                onToggleShowAll={() => setShowAllHistory((v) => !v)}
+                onSelectEntry={setReplayEntry}
+            />
 
             {/* ステージ一覧 */}
             <div className="flex flex-col gap-2">
