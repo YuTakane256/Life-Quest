@@ -39,6 +39,12 @@ describe('useGameStore XP pure calculations', () => {
         it('handles negative XP gracefully by returning 1', () => {
             expect(calculateLevel(-100)).toBe(1);
         });
+
+        it('handles non-finite and fractional XP safely', () => {
+            expect(calculateLevel(Number.NaN)).toBe(1);
+            expect(calculateLevel(Number.POSITIVE_INFINITY)).toBe(1);
+            expect(calculateLevel(30.9)).toBe(2);
+        });
     });
 
     describe('calculateNextLevelXp', () => {
@@ -62,6 +68,14 @@ describe('useGameStore XP pure calculations', () => {
             
             expect(calculateNextLevelXp(maxTableLevel)).toBe(maxTableXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL);
             expect(calculateNextLevelXp(maxTableLevel + 1)).toBe(maxTableXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL * 2);
+        });
+
+        it('normalizes invalid and fractional levels', () => {
+            const table = XP_CONFIG.LEVEL_XP_TABLE;
+
+            expect(calculateNextLevelXp(Number.NaN)).toBe(table[2]);
+            expect(calculateNextLevelXp(Number.POSITIVE_INFINITY)).toBe(table[2]);
+            expect(calculateNextLevelXp(2.9)).toBe(table[3]);
         });
     });
 
@@ -108,6 +122,13 @@ describe('useGameStore XP pure calculations', () => {
             expect(calculateXpProgress(maxTableXp, maxTableLevel)).toBe(0);
             expect(calculateXpProgress(maxTableXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL, maxTableLevel + 1)).toBe(0);
             expect(calculateXpProgress(maxTableXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL * 2, maxTableLevel + 2)).toBe(0);
+        });
+
+        it('keeps malformed progress inputs finite and bounded', () => {
+            expect(calculateXpProgress(Number.NaN, 1)).toBe(0);
+            expect(calculateXpProgress(Number.POSITIVE_INFINITY, 1)).toBe(0);
+            expect(calculateXpProgress(0, Number.NaN)).toBe(0);
+            expect(calculateXpProgress(999999, 1)).toBe(1);
         });
     });
 });
