@@ -17,6 +17,10 @@ export interface BackupData {
     title?: unknown;
 }
 
+export type BackupImportParseResult =
+    | { ok: true; data: BackupData }
+    | { ok: false; reason: 'malformed-json' | 'invalid-backup' };
+
 type BackupDataKey = keyof Omit<BackupData, 'version' | 'exportedAt'>;
 
 const BACKUP_STORAGE_SLOTS: Array<{ dataKey: BackupDataKey; storageKey: string }> = [
@@ -69,6 +73,21 @@ export function safeParseStorage(key: string): unknown {
     } catch {
         return {};
     }
+}
+
+export function parseBackupImportJson(text: string): BackupImportParseResult {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        return { ok: false, reason: 'malformed-json' };
+    }
+
+    if (!isValidBackup(parsed)) {
+        return { ok: false, reason: 'invalid-backup' };
+    }
+
+    return { ok: true, data: parsed };
 }
 
 export function exportAllData(): BackupData {
