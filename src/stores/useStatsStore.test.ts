@@ -78,6 +78,18 @@ describe('useStatsStore', () => {
             expect(useStatsStore.getState().taskXpLog['2025-03-15']).toBe(10);
             expect(useStatsStore.getState().taskXpLog['2025-03-16']).toBe(20);
         });
+
+        it('不正な日付やXPは記録しない', () => {
+            useStatsStore.getState().logTaskXp('2025-02-29', 10);
+            useStatsStore.getState().logTaskXp('2025-03-15', -1);
+            useStatsStore.getState().logTaskXp('2025-03-16', Number.NaN);
+            expect(useStatsStore.getState().taskXpLog).toEqual({});
+        });
+
+        it('小数XPは整数に丸めて記録する', () => {
+            useStatsStore.getState().logTaskXp('2025-03-15', 10.9);
+            expect(useStatsStore.getState().taskXpLog['2025-03-15']).toBe(10);
+        });
     });
 
     // ── logHabitActivity ──
@@ -104,6 +116,18 @@ describe('useStatsStore', () => {
             useStatsStore.getState().logHabitActivity('2025-03-16', 3, true);
             expect(useStatsStore.getState().habitLog['2025-03-15']).toEqual({ count: 1, allComplete: false });
             expect(useStatsStore.getState().habitLog['2025-03-16']).toEqual({ count: 3, allComplete: true });
+        });
+
+        it('不正な日付やcountは記録しない', () => {
+            useStatsStore.getState().logHabitActivity('2025-02-29', 1, true);
+            useStatsStore.getState().logHabitActivity('2025-03-15', -1, true);
+            useStatsStore.getState().logHabitActivity('2025-03-16', Number.POSITIVE_INFINITY, true);
+            expect(useStatsStore.getState().habitLog).toEqual({});
+        });
+
+        it('小数countは整数に丸めて記録する', () => {
+            useStatsStore.getState().logHabitActivity('2025-03-15', 3.9, true);
+            expect(useStatsStore.getState().habitLog['2025-03-15']).toEqual({ count: 3, allComplete: true });
         });
     });
 
