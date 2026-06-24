@@ -406,4 +406,7 @@ export const NOTIFICATION_CONFIG = {
 
     /** 通知条件チェックの実行間隔（ミリ秒） */
     CHECK_INTERVAL_MS: 30 * 60 * 1000, // 30分
+
+    /** 重複通知防止用に保持するタスクID数の上限 */
+    MAX_NOTIFIED_TASK_IDS: 200,
 } as const;
