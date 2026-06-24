@@ -25,6 +25,14 @@ describe('escapeCsvValue', () => {
         expect(escapeCsvValue('a"b')).toBe('"a""b"');
         expect(escapeCsvValue('a\nb')).toBe('"a\nb"');
     });
+
+    it('neutralizes spreadsheet formula-like values', () => {
+        expect(escapeCsvValue('=SUM(A1:A2)')).toBe("'=SUM(A1:A2)");
+        expect(escapeCsvValue('+cmd')).toBe("'+cmd");
+        expect(escapeCsvValue('-10')).toBe("'-10");
+        expect(escapeCsvValue('@user')).toBe("'@user");
+        expect(escapeCsvValue('  =SUM(A1:A2)')).toBe("'  =SUM(A1:A2)");
+    });
 });
 
 describe('tasksToCsv', () => {
@@ -44,5 +52,21 @@ describe('tasksToCsv', () => {
         expect(csv).toContain(',2,1,');
         expect(csv).toContain('[x] Draft');
         expect(csv).toContain('[ ] Review');
+    });
+
+    it('exports formula-like task content as spreadsheet text', () => {
+        const csv = tasksToCsv([
+            makeTask({
+                name: '=IMPORTXML("https://example.com")',
+                tags: ['+urgent'],
+                subtasks: [
+                    { id: 'sub-1', name: '@mention', completed: false, completedAt: null, createdAt: '2026-06-23T00:00:00.000Z' },
+                ],
+            }),
+        ]);
+
+        expect(csv).toContain('"\'=IMPORTXML(""https://example.com"")"');
+        expect(csv).toContain("'+urgent");
+        expect(csv).toContain("[ ] '@mention");
     });
 });
