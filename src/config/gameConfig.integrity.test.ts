@@ -3,17 +3,22 @@ import {
     BATTLE_CONFIG,
     EQUIPMENT_POOL,
     GACHA_CONFIG,
+    NOTIFICATION_CONFIG,
     MAP_CONFIG,
     RARITY_ORDER,
     SELL_XP_BY_RARITY,
     SYNTHESIS_CONFIG,
+    TIME_CONFIG,
+    UI_CONFIG,
     XP_CONFIG,
     type ChestType,
     type EquipmentSlot,
 } from './gameConfig';
+import { BATTLE_SKILL_CONFIG, BATTLE_SKILLS, type BattleSkillType } from './battleSkills';
 import { CHEST_FALLBACK_IMAGE, CHEST_IMAGES, ITEM_IMAGES } from './equipmentAssets';
 
 const EQUIPMENT_SLOTS: EquipmentSlot[] = ['weapon', 'armor', 'accessory'];
+const BATTLE_SKILL_TYPES: BattleSkillType[] = ['damage', 'heal', 'guard'];
 
 describe('gameConfig integrity', () => {
     it('keeps XP progression and rewards positive and monotonic', () => {
@@ -124,5 +129,65 @@ describe('gameConfig integrity', () => {
             expect(sortedMaps[i].stageRange[0]).toBe(sortedMaps[i - 1].stageRange[1] + 1);
         }
         expect(sortedMaps[sortedMaps.length - 1].stageRange[1]).toBe(BATTLE_CONFIG.STAGES[BATTLE_CONFIG.STAGES.length - 1].stage);
+    });
+
+    it('keeps battle skill definitions unique and numerically sane', () => {
+        const ids = BATTLE_SKILLS.map((skill) => skill.id);
+        expect(new Set(ids).size).toBe(ids.length);
+        expect(BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION).toBeGreaterThan(0);
+        expect(BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION).toBeLessThanOrEqual(1);
+
+        for (const skill of BATTLE_SKILLS) {
+            expect(skill.id.trim(), `${skill.id} id`).toBe(skill.id);
+            expect(skill.id.length, `${skill.id} id length`).toBeGreaterThan(0);
+            expect(skill.name.length, `${skill.id} name`).toBeGreaterThan(0);
+            expect(skill.description.length, `${skill.id} description`).toBeGreaterThan(0);
+            expect(BATTLE_SKILL_TYPES).toContain(skill.type);
+            expect(Number.isInteger(skill.unlockLevel), `${skill.id} unlock level`).toBe(true);
+            expect(skill.unlockLevel, `${skill.id} unlock level`).toBeGreaterThanOrEqual(1);
+            expect(skill.unlockLevel, `${skill.id} unlock level`).toBeLessThan(XP_CONFIG.LEVEL_XP_TABLE.length);
+            expect(Number.isInteger(skill.cooldownTurns), `${skill.id} cooldown`).toBe(true);
+            expect(skill.cooldownTurns, `${skill.id} cooldown`).toBeGreaterThanOrEqual(0);
+
+            if (skill.type === 'damage') {
+                expect(skill.power, `${skill.id} damage multiplier`).toBeGreaterThan(1);
+                expect(skill.durationTurns, `${skill.id} duration`).toBeUndefined();
+            } else if (skill.type === 'heal') {
+                expect(skill.power, `${skill.id} heal ratio`).toBeGreaterThan(0);
+                expect(skill.power, `${skill.id} heal ratio`).toBeLessThanOrEqual(1);
+                expect(skill.durationTurns, `${skill.id} duration`).toBeUndefined();
+            } else {
+                expect(skill.power, `${skill.id} guard ratio`).toBeGreaterThan(0);
+                expect(skill.power, `${skill.id} guard ratio`).toBeLessThanOrEqual(BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION);
+                expect(Number.isInteger(skill.durationTurns), `${skill.id} duration`).toBe(true);
+                expect(skill.durationTurns, `${skill.id} duration`).toBeGreaterThan(0);
+            }
+        }
+    });
+
+    it('keeps time and notification intervals in valid ranges', () => {
+        expect(TIME_CONFIG.JST_OFFSET_HOURS).toBe(9);
+        expect(TIME_CONFIG.HABIT_RESET_HOUR_JST).toBeGreaterThanOrEqual(0);
+        expect(TIME_CONFIG.HABIT_RESET_HOUR_JST).toBeLessThanOrEqual(23);
+
+        expect(NOTIFICATION_CONFIG.TASK_DEADLINE_NOTICE_HOURS).toBeGreaterThan(0);
+        expect(NOTIFICATION_CONFIG.TASK_DEADLINE_NOTICE_HOURS).toBeLessThanOrEqual(24 * 7);
+        expect(NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST).toBeGreaterThanOrEqual(0);
+        expect(NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST).toBeLessThanOrEqual(23);
+        expect(NOTIFICATION_CONFIG.CHECK_INTERVAL_MS).toBeGreaterThan(0);
+        expect(NOTIFICATION_CONFIG.CHECK_INTERVAL_MS).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+    });
+
+    it('keeps UI limits positive and coherent', () => {
+        expect(UI_CONFIG.UNDO_DURATION_MS).toBeGreaterThan(UI_CONFIG.SNACKBAR_FADE_MS);
+        expect(UI_CONFIG.SNACKBAR_FADE_MS).toBeGreaterThan(0);
+        expect(UI_CONFIG.MAX_VISIBLE_TASKS).toBeGreaterThan(0);
+        expect(UI_CONFIG.MAX_TASK_NAME_LENGTH).toBeGreaterThanOrEqual(UI_CONFIG.MAX_SUBTASK_NAME_LENGTH);
+        expect(UI_CONFIG.MAX_HABIT_NAME_LENGTH).toBeGreaterThan(0);
+        expect(UI_CONFIG.MAX_HABIT_MEMO_LENGTH).toBeGreaterThan(UI_CONFIG.MAX_HABIT_NAME_LENGTH);
+        expect(UI_CONFIG.MAX_CHARACTER_NAME_LENGTH).toBeGreaterThan(0);
+        expect(UI_CONFIG.MAX_CHARACTER_NAME_LENGTH).toBeLessThanOrEqual(UI_CONFIG.MAX_TASK_NAME_LENGTH);
+        expect(UI_CONFIG.MAX_TAG_LENGTH).toBeGreaterThan(0);
+        expect(UI_CONFIG.MAX_TAGS_PER_TASK).toBeGreaterThan(0);
     });
 });
