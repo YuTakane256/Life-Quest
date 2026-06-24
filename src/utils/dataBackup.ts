@@ -14,6 +14,7 @@ export interface BackupData {
     battleHistory?: unknown;
     taskSort?: unknown;
     habitSort?: unknown;
+    title?: unknown;
 }
 
 type BackupDataKey = keyof Omit<BackupData, 'version' | 'exportedAt'>;
@@ -29,6 +30,7 @@ const BACKUP_STORAGE_SLOTS: Array<{ dataKey: BackupDataKey; storageKey: string }
     { dataKey: 'battleHistory', storageKey: 'quest-board-battle-history' },
     { dataKey: 'taskSort', storageKey: 'quest-board-task-sort' },
     { dataKey: 'habitSort', storageKey: 'quest-board-habit-sort' },
+    { dataKey: 'title', storageKey: 'quest-board-title' },
 ];
 
 /** Plain object（配列・null は除く）かどうか */
@@ -52,6 +54,7 @@ export function isValidBackup(data: unknown): data is BackupData {
     if (data.battleHistory !== undefined && !isPlainObject(data.battleHistory)) return false;
     if (data.taskSort !== undefined && !isPlainObject(data.taskSort)) return false;
     if (data.habitSort !== undefined && !isPlainObject(data.habitSort)) return false;
+    if (data.title !== undefined && !isPlainObject(data.title)) return false;
     return true;
 }
 
@@ -82,6 +85,7 @@ export function exportAllData(): BackupData {
         battleHistory: safeParseStorage('quest-board-battle-history'),
         taskSort: safeParseStorage('quest-board-task-sort'),
         habitSort: safeParseStorage('quest-board-habit-sort'),
+        title: safeParseStorage('quest-board-title'),
     };
 }
 

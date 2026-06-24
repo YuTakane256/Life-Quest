@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useGameStore } from '../stores/useGameStore';
+import { useTitleStore } from '../stores/useTitleStore';
 import { shiftDate } from '../utils/dateUtils';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
 
@@ -122,6 +123,8 @@ export function StatsPage() {
     const totalXp = useGameStore((s) => s.character.totalXp);
     const maxStage = useGameStore((s) => s.battle.maxClearedStage);
     const equipmentCount = useGameStore((s) => s.equipment.length);
+    const activeTitle = useTitleStore((s) => s.activeTitle);
+    const setActiveTitle = useTitleStore((s) => s.setActiveTitle);
 
     const TOTAL_DAYS = 119;
     const dates = useMemo(() => generateDateRange(TOTAL_DAYS), []);
@@ -180,6 +183,7 @@ export function StatsPage() {
     }, [taskXpLog, habitLog, totalXp, maxStage, equipmentCount]);
 
     const unlockedTitles = useMemo(() => getUnlockedTitles(achievementProgress), [achievementProgress]);
+    const selectedTitle = activeTitle && unlockedTitles.includes(activeTitle) ? activeTitle : null;
 
     // 集計値
     const stats = useMemo(() => {
@@ -316,8 +320,39 @@ export function StatsPage() {
                     ))}
                 </div>
                 {unlockedTitles.length > 0 && (
-                    <div className="mt-3 text-[11px] leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
-                        獲得称号: <span style={{ color: 'var(--color-accent-gold)' }}>{unlockedTitles.join(' / ')}</span>
+                    <div className="mt-3">
+                        <div className="text-[11px] leading-relaxed mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                            獲得称号: <span style={{ color: 'var(--color-accent-gold)' }}>{unlockedTitles.join(' / ')}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => setActiveTitle(null)}
+                                className="px-2 py-1 rounded-full text-[10px] font-semibold transition-all active:scale-95"
+                                style={{
+                                    backgroundColor: selectedTitle === null ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
+                                    color: selectedTitle === null ? 'white' : 'var(--color-text-muted)',
+                                    border: '1px solid var(--color-border-default)',
+                                }}
+                            >
+                                称号なし
+                            </button>
+                            {unlockedTitles.map((title) => (
+                                <button
+                                    key={title}
+                                    type="button"
+                                    onClick={() => setActiveTitle(title)}
+                                    className="px-2 py-1 rounded-full text-[10px] font-semibold transition-all active:scale-95"
+                                    style={{
+                                        backgroundColor: selectedTitle === title ? 'var(--color-accent-gold)' : 'var(--color-bg-secondary)',
+                                        color: selectedTitle === title ? 'white' : 'var(--color-text-secondary)',
+                                        border: '1px solid var(--color-border-default)',
+                                    }}
+                                >
+                                    {title}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>

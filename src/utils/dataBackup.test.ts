@@ -22,6 +22,7 @@ const validBackup: BackupData = {
     battleHistory: {},
     taskSort: {},
     habitSort: {},
+    title: {},
 };
 
 describe('dataBackup utilities', () => {
@@ -59,13 +60,14 @@ describe('dataBackup utilities', () => {
         });
 
         it('allows optional settings stores to be omitted', () => {
-            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, ...withoutOptionalStores } = validBackup;
+            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, title, ...withoutOptionalStores } = validBackup;
             expect(theme).toEqual({});
             expect(notifications).toEqual({});
             expect(loginBonus).toEqual({});
             expect(battleHistory).toEqual({});
             expect(taskSort).toEqual({});
             expect(habitSort).toEqual({});
+            expect(title).toEqual({});
             expect(isValidBackup(withoutOptionalStores)).toBe(true);
         });
     });
@@ -97,6 +99,7 @@ describe('dataBackup utilities', () => {
             localStorage.setItem('quest-board-battle-history', '{"state":{"history":[]}}');
             localStorage.setItem('quest-board-task-sort', '{"state":{"sortMode":"priority"}}');
             localStorage.setItem('quest-board-habit-sort', '{"state":{"sortMode":"streak"}}');
+            localStorage.setItem('quest-board-title', '{"state":{"activeTitle":"収集家"}}');
 
             expect(exportAllData()).toEqual({
                 version: BACKUP_VERSION,
@@ -111,6 +114,7 @@ describe('dataBackup utilities', () => {
                 battleHistory: { state: { history: [] } },
                 taskSort: { state: { sortMode: 'priority' } },
                 habitSort: { state: { sortMode: 'streak' } },
+                title: { state: { activeTitle: '収集家' } },
             });
         });
 
@@ -126,16 +130,18 @@ describe('dataBackup utilities', () => {
             expect(JSON.parse(localStorage.getItem('quest-board-battle-history') || '{}')).toEqual({});
             expect(JSON.parse(localStorage.getItem('quest-board-task-sort') || '{}')).toEqual({});
             expect(JSON.parse(localStorage.getItem('quest-board-habit-sort') || '{}')).toEqual({});
+            expect(JSON.parse(localStorage.getItem('quest-board-title') || '{}')).toEqual({});
         });
 
         it('imports older backups that omit optional stores', () => {
-            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, ...legacyBackup } = validBackup;
+            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, title, ...legacyBackup } = validBackup;
             expect(theme).toEqual({});
             expect(notifications).toEqual({});
             expect(loginBonus).toEqual({});
             expect(battleHistory).toEqual({});
             expect(taskSort).toEqual({});
             expect(habitSort).toEqual({});
+            expect(title).toEqual({});
 
             localStorage.setItem('quest-board-theme', '{"state":{"mode":"dark"}}');
             localStorage.setItem('quest-board-notifications', '{"state":{"enabled":true}}');
@@ -143,6 +149,7 @@ describe('dataBackup utilities', () => {
             localStorage.setItem('quest-board-battle-history', '{"state":{"history":[{"id":"old"}]}}');
             localStorage.setItem('quest-board-task-sort', '{"state":{"sortMode":"priority"}}');
             localStorage.setItem('quest-board-habit-sort', '{"state":{"sortMode":"streak"}}');
+            localStorage.setItem('quest-board-title', '{"state":{"activeTitle":"old"}}');
 
             expect(importAllData(legacyBackup)).toBe(true);
             expect(localStorage.getItem('quest-board-theme')).toBeNull();
@@ -151,6 +158,7 @@ describe('dataBackup utilities', () => {
             expect(localStorage.getItem('quest-board-battle-history')).toBeNull();
             expect(localStorage.getItem('quest-board-task-sort')).toBeNull();
             expect(localStorage.getItem('quest-board-habit-sort')).toBeNull();
+            expect(localStorage.getItem('quest-board-title')).toBeNull();
         });
 
         it('rolls back all touched keys if an import write fails', () => {

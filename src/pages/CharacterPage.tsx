@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
 import { useModalEscape } from '../hooks/useModalEscape';
+import { useTitleStore } from '../stores/useTitleStore';
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = { weapon: '武器', armor: '防具', accessory: 'アクセサリー' };
 const SLOT_ICONS: Record<EquipmentSlot, React.ReactNode> = { weapon: <Sword size={18} />, armor: <Shield size={18} />, accessory: <Gem size={18} /> };
@@ -65,6 +66,7 @@ export function CharacterPage() {
     const openChest = useGameStore((s) => s.openChest);
     const updateCharacter = useGameStore((s) => s.updateCharacter);
     const autoEquipBest = useGameStore((s) => s.autoEquipBest);
+    const activeTitle = useTitleStore((s) => s.activeTitle);
 
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [editName, setEditName] = useState(character.name);
@@ -102,6 +104,11 @@ export function CharacterPage() {
                             <span className="text-sm font-bold" style={{ color: 'var(--color-accent-gold)' }}>Lv.{character.level}</span>
                             {debuff.active && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--color-text-danger)', color: 'white' }}>デバフ中</span>}
                         </div>
+                        {activeTitle && (
+                            <div className="text-[11px] font-semibold mb-1 truncate" style={{ color: 'var(--color-accent-gold)' }}>
+                                {activeTitle}
+                            </div>
+                        )}
                         <div className="mb-2">
                             <div className="flex justify-between text-xs mb-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                 <span>XP</span><span>{character.totalXp} / {nextLevelXp}</span>
