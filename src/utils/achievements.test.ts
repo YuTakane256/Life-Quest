@@ -94,4 +94,30 @@ describe('achievement helpers', () => {
             unlocked: false,
         });
     });
+
+    it('keeps progress finite for non-finite and fractional values', () => {
+        const malformedDefinitions: AchievementDefinition[] = [
+            { ...definitions[0], id: 'nan-target', target: Number.NaN },
+            { ...definitions[1], id: 'fractional-target', target: 10.9 },
+        ];
+
+        const progress = getAchievementProgress({
+            ...baseSnapshot,
+            totalXp: Number.POSITIVE_INFINITY,
+            maxStage: 10.9,
+        }, malformedDefinitions);
+
+        expect(progress[0]).toMatchObject({
+            id: 'nan-target',
+            current: 0,
+            progress: 0,
+            unlocked: false,
+        });
+        expect(progress[1]).toMatchObject({
+            id: 'fractional-target',
+            current: 10,
+            progress: 1,
+            unlocked: true,
+        });
+    });
 });

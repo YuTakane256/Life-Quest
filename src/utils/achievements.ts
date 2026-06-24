@@ -20,6 +20,14 @@ function getMetricValue(snapshot: AchievementSnapshot, metric: AchievementMetric
         : 0;
 }
 
+function nonNegativeInteger(value: number): number {
+    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+function positiveInteger(value: number): number {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
+}
+
 export function getAchievementProgress(
     snapshot: AchievementSnapshot,
     definitions: readonly AchievementDefinition[] = ACHIEVEMENTS
@@ -31,8 +39,8 @@ export function getAchievementProgress(
         seenIds.add(definition.id);
         return true;
     }).map((definition) => {
-        const current = Math.max(0, getMetricValue(snapshot, definition.metric));
-        const target = Math.max(1, definition.target);
+        const current = nonNegativeInteger(getMetricValue(snapshot, definition.metric));
+        const target = positiveInteger(definition.target);
         const progress = Math.min(1, current / target);
         return {
             ...definition,
