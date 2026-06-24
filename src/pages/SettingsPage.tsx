@@ -4,6 +4,7 @@ import { DataBackupSettings } from '../components/ui/DataBackupSettings';
 import { MotionSettings } from '../components/ui/MotionSettings';
 import { ThemeSettings } from '../components/ui/ThemeSettings';
 import { NotificationSettings } from '../components/ui/NotificationSettings';
+import { SaveDataHealthSettings } from '../components/ui/SaveDataHealthSettings';
 import { UsageStatsSettings } from '../components/ui/UsageStatsSettings';
 import { useBackWithFallback } from '../hooks/useBackWithFallback';
 
@@ -50,6 +51,7 @@ export function SettingsPage() {
                     </div>
                     <ChevronRight size={18} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
                 </button>
+                <SaveDataHealthSettings />
                 <DataBackupSettings />
             </div>
         </div>
