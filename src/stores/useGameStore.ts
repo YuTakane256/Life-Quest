@@ -30,6 +30,8 @@ import {
 import { generateId } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
 import { pickRandom } from '../utils/random';
+import { BATTLE_SKILL_CONFIG } from '../config/battleSkills';
+import { getUnlockedBattleSkills, resolveBattleSkill } from '../utils/battleSkills';
 import { useBattleHistoryStore } from './useBattleHistoryStore';
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
@@ -148,6 +150,29 @@ function canStartBattleStage(battle: BattleState, stage: number): boolean {
     return stage <= battle.maxClearedStage + 1;
 }
 
+function sanitizeSkillCooldowns(raw: unknown): Record<string, number> {
+    if (!isPlainObject(raw)) return {};
+    return Object.fromEntries(
+        Object.entries(raw)
+            .filter(([skillId, turns]) => typeof skillId === 'string' && isFiniteNumber(turns) && turns > 0)
+            .map(([skillId, turns]) => [skillId, Math.floor(turns as number)])
+    );
+}
+
+function tickSkillCooldowns(cooldowns: Record<string, number>): Record<string, number> {
+    return Object.fromEntries(
+        Object.entries(cooldowns)
+            .map(([skillId, turns]) => [skillId, Math.max(0, turns - 1)] as const)
+            .filter(([, turns]) => turns > 0)
+    );
+}
+
+function getGuardReduction(battle: BattleState): number {
+    return battle.guardTurnsRemaining > 0
+        ? Math.max(0, Math.min(BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION, battle.guardDamageReduction))
+        : 0;
+}
+
 const initialCharacter: CharacterStats = {
     name: CHARACTER_CONFIG.INITIAL_STATS.name,
     avatar: CHARACTER_CONFIG.INITIAL_STATS.avatar,
@@ -168,6 +193,9 @@ const initialBattle: BattleState = {
     playerHp: CHARACTER_CONFIG.INITIAL_STATS.maxHp,
     logs: [],
     battleUnlocked: false,
+    skillCooldowns: {},
+    guardTurnsRemaining: 0,
+    guardDamageReduction: 0,
 };
 
 interface GameStorePersisted {
@@ -344,6 +372,12 @@ function sanitizeBattle(raw: unknown, character: CharacterStats): BattleState {
             ? raw.logs.map(sanitizeBattleLog).filter((log): log is BattleLog => log !== null).slice(-100)
             : [],
         battleUnlocked: typeof raw.battleUnlocked === 'boolean' ? raw.battleUnlocked : false,
+        skillCooldowns: sanitizeSkillCooldowns(raw.skillCooldowns),
+        guardTurnsRemaining: nonNegativeInteger(raw.guardTurnsRemaining, 0),
+        guardDamageReduction: Math.max(0, Math.min(
+            BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION,
+            isFiniteNumber(raw.guardDamageReduction) ? raw.guardDamageReduction : 0,
+        )),
     };
 }
 
@@ -581,6 +615,9 @@ export const useGameStore = create<GameStoreState>()(
                         enemy,
                         playerHp: effectiveStats.maxHp,
                         logs: [],
+                        skillCooldowns: {},
+                        guardTurnsRemaining: 0,
+                        guardDamageReduction: 0,
                     },
                 });
             },
@@ -614,11 +651,34 @@ export const useGameStore = create<GameStoreState>()(
                     });
                     return;
                 }
-                const enemyDamage = calculateDamage(battle.enemy.attack, effectiveStats.defense);
+                const guardReduction = getGuardReduction(battle);
+                const baseEnemyDamage = calculateDamage(battle.enemy.attack, effectiveStats.defense);
+                const enemyDamage = Math.max(
+                    BATTLE_CONFIG.MIN_DAMAGE,
+                    Math.floor(baseEnemyDamage * (1 - guardReduction))
+                );
+                const nextGuardTurnsRemaining = guardReduction > 0 ? Math.max(0, battle.guardTurnsRemaining - 1) : 0;
+                const nextSkillCooldowns = tickSkillCooldowns(battle.skillCooldowns);
                 const newPlayerHp = Math.max(0, battle.playerHp - enemyDamage);
-                logs.push({ turn, message: `${battle.enemy.name}の攻撃！ あなたに${enemyDamage}ダメージ！`, playerHp: newPlayerHp, enemyHp: newEnemyHp });
+                logs.push({
+                    turn,
+                    message: `${battle.enemy.name}の攻撃！ あなたに${enemyDamage}ダメージ！${guardReduction > 0 ? ' 防御効果で軽減！' : ''}`,
+                    playerHp: newPlayerHp,
+                    enemyHp: newEnemyHp,
+                });
                 if (newPlayerHp <= 0) {
-                    set({ battle: { ...battle, status: 'defeat', enemy: { ...battle.enemy, hp: newEnemyHp }, playerHp: 0, logs } });
+                    set({
+                        battle: {
+                            ...battle,
+                            status: 'defeat',
+                            enemy: { ...battle.enemy, hp: newEnemyHp },
+                            playerHp: 0,
+                            logs,
+                            skillCooldowns: nextSkillCooldowns,
+                            guardTurnsRemaining: nextGuardTurnsRemaining,
+                            guardDamageReduction: nextGuardTurnsRemaining > 0 ? battle.guardDamageReduction : 0,
+                        }
+                    });
                     // バトル履歴に記録
                     useBattleHistoryStore.getState().addBattleResult({
                         id: generateId(),
@@ -635,11 +695,171 @@ export const useGameStore = create<GameStoreState>()(
                     });
                     return;
                 }
-                set({ battle: { ...battle, enemy: { ...battle.enemy, hp: newEnemyHp }, playerHp: newPlayerHp, logs } });
+                set({
+                    battle: {
+                        ...battle,
+                        enemy: { ...battle.enemy, hp: newEnemyHp },
+                        playerHp: newPlayerHp,
+                        logs,
+                        skillCooldowns: nextSkillCooldowns,
+                        guardTurnsRemaining: nextGuardTurnsRemaining,
+                        guardDamageReduction: nextGuardTurnsRemaining > 0 ? battle.guardDamageReduction : 0,
+                    }
+                });
+            },
+
+            activateBattleSkill: (skillId: string) => {
+                const { battle, character } = get();
+                if (battle.status !== 'fighting' || !battle.enemy) return false;
+                if ((battle.skillCooldowns[skillId] ?? 0) > 0) return false;
+
+                const skill = getUnlockedBattleSkills(character.level).find((candidate) => candidate.id === skillId);
+                if (!skill) return false;
+
+                const effectiveStats = get().getEffectiveStats();
+                const resolution = resolveBattleSkill(skill.id, {
+                    attack: effectiveStats.attack,
+                    currentHp: battle.playerHp,
+                    maxHp: effectiveStats.maxHp,
+                });
+                if (!resolution) return false;
+
+                const turn = battle.logs.length + 1;
+                const logs: BattleLog[] = [...battle.logs];
+                let enemy = battle.enemy;
+                let playerHp = battle.playerHp;
+                let guardTurnsRemaining = battle.guardTurnsRemaining;
+                let guardDamageReduction = battle.guardDamageReduction;
+
+                if (resolution.type === 'damage') {
+                    const newEnemyHp = Math.max(0, enemy.hp - resolution.damage);
+                    logs.push({
+                        turn,
+                        message: `${resolution.skill.name}！ ${enemy.name}に${resolution.damage}ダメージ！`,
+                        playerHp,
+                        enemyHp: newEnemyHp,
+                    });
+                    enemy = { ...enemy, hp: newEnemyHp };
+
+                    if (newEnemyHp <= 0) {
+                        set({
+                            battle: {
+                                ...battle,
+                                status: 'victory',
+                                enemy: { ...enemy, hp: 0 },
+                                logs,
+                                skillCooldowns: { ...battle.skillCooldowns, [skill.id]: skill.cooldownTurns },
+                            }
+                        });
+                        get().addXp(battle.enemy.xpReward);
+                        useBattleHistoryStore.getState().addBattleResult({
+                            id: generateId(),
+                            timestamp: new Date().toISOString(),
+                            stage: battle.currentStage,
+                            enemyName: battle.enemy.name,
+                            enemyMaxHp: battle.enemy.maxHp,
+                            enemyAttack: battle.enemy.attack,
+                            enemyDefense: battle.enemy.defense,
+                            outcome: 'victory',
+                            turnCount: logs.length,
+                            xpEarned: battle.enemy.xpReward,
+                            logs: [...logs],
+                        });
+                        return true;
+                    }
+                } else if (resolution.type === 'heal') {
+                    if (resolution.heal <= 0) return false;
+                    playerHp = Math.min(effectiveStats.maxHp, playerHp + resolution.heal);
+                    logs.push({
+                        turn,
+                        message: `${resolution.skill.name}！ HPを${resolution.heal}回復！`,
+                        playerHp,
+                        enemyHp: enemy.hp,
+                    });
+                } else {
+                    guardTurnsRemaining = resolution.durationTurns;
+                    guardDamageReduction = resolution.damageReduction;
+                    logs.push({
+                        turn,
+                        message: `${resolution.skill.name}！ ${resolution.durationTurns}ターンの間、被ダメージを軽減！`,
+                        playerHp,
+                        enemyHp: enemy.hp,
+                    });
+                }
+
+                const guardReduction = getGuardReduction({ ...battle, guardTurnsRemaining, guardDamageReduction });
+                const baseEnemyDamage = calculateDamage(enemy.attack, effectiveStats.defense);
+                const enemyDamage = Math.max(
+                    BATTLE_CONFIG.MIN_DAMAGE,
+                    Math.floor(baseEnemyDamage * (1 - guardReduction))
+                );
+                playerHp = Math.max(0, playerHp - enemyDamage);
+                const nextGuardTurnsRemaining = guardReduction > 0 ? Math.max(0, guardTurnsRemaining - 1) : 0;
+                const nextSkillCooldowns = tickSkillCooldowns({
+                    ...battle.skillCooldowns,
+                    [skill.id]: skill.cooldownTurns + 1,
+                });
+                logs.push({
+                    turn,
+                    message: `${enemy.name}の攻撃！ あなたに${enemyDamage}ダメージ！${guardReduction > 0 ? ' 防御効果で軽減！' : ''}`,
+                    playerHp,
+                    enemyHp: enemy.hp,
+                });
+
+                if (playerHp <= 0) {
+                    set({
+                        battle: {
+                            ...battle,
+                            status: 'defeat',
+                            enemy,
+                            playerHp: 0,
+                            logs,
+                            skillCooldowns: nextSkillCooldowns,
+                            guardTurnsRemaining: nextGuardTurnsRemaining,
+                            guardDamageReduction: nextGuardTurnsRemaining > 0 ? guardDamageReduction : 0,
+                        }
+                    });
+                    useBattleHistoryStore.getState().addBattleResult({
+                        id: generateId(),
+                        timestamp: new Date().toISOString(),
+                        stage: battle.currentStage,
+                        enemyName: battle.enemy.name,
+                        enemyMaxHp: battle.enemy.maxHp,
+                        enemyAttack: battle.enemy.attack,
+                        enemyDefense: battle.enemy.defense,
+                        outcome: 'defeat',
+                        turnCount: logs.length,
+                        xpEarned: 0,
+                        logs: [...logs],
+                    });
+                    return true;
+                }
+
+                set({
+                    battle: {
+                        ...battle,
+                        enemy,
+                        playerHp,
+                        logs,
+                        skillCooldowns: nextSkillCooldowns,
+                        guardTurnsRemaining: nextGuardTurnsRemaining,
+                        guardDamageReduction: nextGuardTurnsRemaining > 0 ? guardDamageReduction : 0,
+                    }
+                });
+                return true;
             },
 
             resetBattle: () => set((state) => ({
-                battle: { ...state.battle, status: 'idle', enemy: null, playerHp: get().getEffectiveStats().maxHp, logs: [] },
+                battle: {
+                    ...state.battle,
+                    status: 'idle',
+                    enemy: null,
+                    playerHp: get().getEffectiveStats().maxHp,
+                    logs: [],
+                    skillCooldowns: {},
+                    guardTurnsRemaining: 0,
+                    guardDamageReduction: 0,
+                },
             })),
 
             advanceStage: () => set((state) => {
@@ -653,6 +873,9 @@ export const useGameStore = create<GameStoreState>()(
                         maxClearedStage: newMaxCleared,
                         enemy: null,
                         logs: [],
+                        skillCooldowns: {},
+                        guardTurnsRemaining: 0,
+                        guardDamageReduction: 0,
                     },
                 };
             }),

@@ -29,6 +29,9 @@ function reset() {
             playerHp: 50,
             logs: [],
             battleUnlocked: false,
+            skillCooldowns: {},
+            guardTurnsRemaining: 0,
+            guardDamageReduction: 0,
         },
     });
 }

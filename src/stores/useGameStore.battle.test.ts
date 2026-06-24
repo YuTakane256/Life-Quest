@@ -30,6 +30,9 @@ function resetStore() {
             playerHp: INITIAL.maxHp,
             logs: [],
             battleUnlocked: false,
+            skillCooldowns: {},
+            guardTurnsRemaining: 0,
+            guardDamageReduction: 0,
         },
         levelUpEvent: null,
         pendingChestReveal: null,
@@ -114,5 +117,70 @@ describe('useGameStore battle start guards', () => {
             enemy: null,
             currentStage: 1,
         });
+    });
+});
+
+describe('useGameStore battle skills', () => {
+    beforeEach(() => {
+        resetStore();
+        useGameStore.setState((state) => ({
+            battle: { ...state.battle, battleUnlocked: true },
+        }));
+    });
+
+    it('uses an unlocked damage skill and starts its cooldown', () => {
+        useGameStore.getState().startBattle(firstStage.stage);
+
+        const used = useGameStore.getState().activateBattleSkill('power_strike');
+        const battle = useGameStore.getState().battle;
+
+        expect(used).toBe(true);
+        expect(battle.enemy?.hp).toBeLessThan(firstStage.hp);
+        expect(battle.logs[0]?.message).toContain('強撃');
+        expect(battle.skillCooldowns.power_strike).toBeGreaterThan(0);
+    });
+
+    it('rejects locked skills', () => {
+        useGameStore.getState().startBattle(firstStage.stage);
+
+        expect(useGameStore.getState().activateBattleSkill('first_aid')).toBe(false);
+        expect(useGameStore.getState().battle.logs).toHaveLength(0);
+    });
+
+    it('uses heal skills when HP is missing', () => {
+        useGameStore.setState((state) => ({
+            character: { ...state.character, level: 3, baseMaxHp: 70 },
+        }));
+        useGameStore.getState().startBattle(firstStage.stage);
+        useGameStore.setState((state) => ({
+            battle: { ...state.battle, playerHp: 10 },
+        }));
+
+        const used = useGameStore.getState().activateBattleSkill('first_aid');
+
+        expect(used).toBe(true);
+        expect(useGameStore.getState().battle.playerHp).toBeGreaterThan(10);
+        expect(useGameStore.getState().battle.logs[0]?.message).toContain('応急手当');
+    });
+
+    it('uses guard skills to reduce the next enemy attack', () => {
+        useGameStore.setState((state) => ({
+            character: { ...state.character, level: 5 },
+        }));
+        useGameStore.getState().startBattle(firstStage.stage);
+        useGameStore.setState((state) => ({
+            battle: {
+                ...state.battle,
+                enemy: state.battle.enemy ? { ...state.battle.enemy, attack: 20 } : null,
+            },
+        }));
+
+        const used = useGameStore.getState().activateBattleSkill('guard_stance');
+        const battle = useGameStore.getState().battle;
+
+        expect(used).toBe(true);
+        expect(battle.playerHp).toBeGreaterThan(INITIAL.maxHp - 18);
+        expect(battle.logs.some((log) => log.message.includes('防御効果で軽減'))).toBe(true);
+        expect(battle.guardTurnsRemaining).toBe(1);
     });
 });
