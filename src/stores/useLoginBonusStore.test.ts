@@ -162,4 +162,48 @@ describe('useLoginBonusStore', () => {
         expect(useLoginBonusStore.getState().lastLoginDate).toBe(lastLoginDate);
         expect(useLoginBonusStore.getState().streak).toBe(streak);
     });
+
+    it('rehydrate 時に不正な lastLoginDate と streak を安全化し pendingBonus は復元しない', async () => {
+        useLoginBonusStore.setState({ lastLoginDate: '2025-03-14', streak: 5, pendingBonus: null });
+
+        localStorage.setItem('quest-board-login-bonus', JSON.stringify({
+            state: {
+                lastLoginDate: '2025-02-29',
+                streak: Number.POSITIVE_INFINITY,
+                pendingBonus: {
+                    date: '2025-03-15',
+                    streak: 99,
+                    xp: 999,
+                    chestLabel: 'unexpected',
+                },
+            },
+            version: 1,
+        }));
+
+        await useLoginBonusStore.persist.rehydrate();
+
+        expect(useLoginBonusStore.getState()).toMatchObject({
+            lastLoginDate: null,
+            streak: 0,
+            pendingBonus: null,
+        });
+    });
+
+    it('rehydrate 時に巨大な streak を10年分までに丸める', async () => {
+        localStorage.setItem('quest-board-login-bonus', JSON.stringify({
+            state: {
+                lastLoginDate: '2025-03-14',
+                streak: 999999,
+            },
+            version: 1,
+        }));
+
+        await useLoginBonusStore.persist.rehydrate();
+
+        expect(useLoginBonusStore.getState()).toMatchObject({
+            lastLoginDate: '2025-03-14',
+            streak: 3650,
+            pendingBonus: null,
+        });
+    });
 });
