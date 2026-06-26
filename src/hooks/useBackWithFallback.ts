@@ -20,7 +20,7 @@ export function normalizeFallbackPath(path: unknown): string {
     return trimmed;
 }
 
-export function useBackWithFallback(fallbackPath = '/tasks') {
+export function useBackWithFallback(fallbackPath: string = DEFAULT_FALLBACK_PATH) {
     const navigate = useNavigate();
     const location = useLocation();
 
