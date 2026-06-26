@@ -51,6 +51,39 @@ describe('createBackupImportSummary', () => {
         expect(summary.taskXpDayCount).toBe(0);
         expect(summary.habitLogDayCount).toBe(0);
     });
+
+    it('ignores malformed entries inside otherwise valid collections', () => {
+        const summary = createBackupImportSummary(makeBackup({
+            tasks: { state: { tasks: [{ id: 'task-1' }, null, 'broken', 1] } },
+            habits: {
+                state: {
+                    habits: [{ id: 'habit-1' }, false],
+                    dailyRecords: ['broken', { id: 'record-1' }, undefined],
+                },
+            },
+            game: {
+                state: {
+                    equipment: [{ id: 'item-1' }, 'broken', null, { id: 'item-2' }],
+                    chestQueue: [{ opened: false }, { opened: 'yes' }, { opened: true }, null],
+                },
+            },
+            stats: {
+                state: {
+                    taskXpLog: { '2026-06-21': 10, '2026-99-99': 5, today: 3 },
+                    habitLog: { '2026-06-21': { count: 1 }, '2026-02-29': { count: 1 } },
+                },
+            },
+        }));
+
+        expect(summary.taskCount).toBe(1);
+        expect(summary.habitCount).toBe(1);
+        expect(summary.habitRecordCount).toBe(1);
+        expect(summary.equipmentCount).toBe(2);
+        expect(summary.unopenedChestCount).toBe(1);
+        expect(summary.openedChestCount).toBe(1);
+        expect(summary.taskXpDayCount).toBe(1);
+        expect(summary.habitLogDayCount).toBe(1);
+    });
 });
 
 describe('formatBackupExportedAt', () => {
