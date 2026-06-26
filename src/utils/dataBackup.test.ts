@@ -133,6 +133,21 @@ describe('dataBackup utilities', () => {
             expect(JSON.parse(localStorage.getItem('quest-board-title') || '{}')).toEqual({});
         });
 
+        it('rejects malformed runtime payloads before touching storage', () => {
+            localStorage.setItem('quest-board-tasks', '{"state":{"tasks":["old"]}}');
+            localStorage.setItem('quest-board-theme', '{"state":{"mode":"dark"}}');
+
+            const malformedPayload = {
+                ...validBackup,
+                tasks: [],
+                theme: { state: { mode: 'light' } },
+            } as unknown as BackupData;
+
+            expect(importAllData(malformedPayload)).toBe(false);
+            expect(localStorage.getItem('quest-board-tasks')).toBe('{"state":{"tasks":["old"]}}');
+            expect(localStorage.getItem('quest-board-theme')).toBe('{"state":{"mode":"dark"}}');
+        });
+
         it('imports older backups that omit optional stores', () => {
             const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, title, ...legacyBackup } = validBackup;
             expect(theme).toEqual({});
