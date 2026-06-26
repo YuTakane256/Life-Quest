@@ -177,6 +177,28 @@ function getGuardReduction(battle: BattleState): number {
         : 0;
 }
 
+/** バトル終了時に履歴ストアへ結果スナップショットを記録する。 */
+function recordBattleResult(
+    stage: number,
+    enemy: Enemy,
+    outcome: 'victory' | 'defeat',
+    logs: BattleLog[],
+): void {
+    useBattleHistoryStore.getState().addBattleResult({
+        id: generateId(),
+        timestamp: new Date().toISOString(),
+        stage,
+        enemyName: enemy.name,
+        enemyMaxHp: enemy.maxHp,
+        enemyAttack: enemy.attack,
+        enemyDefense: enemy.defense,
+        outcome,
+        turnCount: logs.length,
+        xpEarned: outcome === 'victory' ? enemy.xpReward : 0,
+        logs: [...logs],
+    });
+}
+
 const initialCharacter: CharacterStats = {
     name: CHARACTER_CONFIG.INITIAL_STATS.name,
     avatar: CHARACTER_CONFIG.INITIAL_STATS.avatar,
@@ -645,19 +667,7 @@ export const useGameStore = create<GameStoreState>()(
                     // 勝利時にXPを付与
                     get().addXp(battle.enemy.xpReward);
                     // バトル履歴に記録
-                    useBattleHistoryStore.getState().addBattleResult({
-                        id: generateId(),
-                        timestamp: new Date().toISOString(),
-                        stage: battle.currentStage,
-                        enemyName: battle.enemy.name,
-                        enemyMaxHp: battle.enemy.maxHp,
-                        enemyAttack: battle.enemy.attack,
-                        enemyDefense: battle.enemy.defense,
-                        outcome: 'victory',
-                        turnCount: logs.length,
-                        xpEarned: battle.enemy.xpReward,
-                        logs: [...logs],
-                    });
+                    recordBattleResult(battle.currentStage, battle.enemy, 'victory', logs);
                     return;
                 }
                 const guardReduction = getGuardReduction(battle);
@@ -689,19 +699,7 @@ export const useGameStore = create<GameStoreState>()(
                         }
                     });
                     // バトル履歴に記録
-                    useBattleHistoryStore.getState().addBattleResult({
-                        id: generateId(),
-                        timestamp: new Date().toISOString(),
-                        stage: battle.currentStage,
-                        enemyName: battle.enemy.name,
-                        enemyMaxHp: battle.enemy.maxHp,
-                        enemyAttack: battle.enemy.attack,
-                        enemyDefense: battle.enemy.defense,
-                        outcome: 'defeat',
-                        turnCount: logs.length,
-                        xpEarned: 0,
-                        logs: [...logs],
-                    });
+                    recordBattleResult(battle.currentStage, battle.enemy, 'defeat', logs);
                     return;
                 }
                 set({
@@ -761,19 +759,7 @@ export const useGameStore = create<GameStoreState>()(
                             }
                         });
                         get().addXp(battle.enemy.xpReward);
-                        useBattleHistoryStore.getState().addBattleResult({
-                            id: generateId(),
-                            timestamp: new Date().toISOString(),
-                            stage: battle.currentStage,
-                            enemyName: battle.enemy.name,
-                            enemyMaxHp: battle.enemy.maxHp,
-                            enemyAttack: battle.enemy.attack,
-                            enemyDefense: battle.enemy.defense,
-                            outcome: 'victory',
-                            turnCount: logs.length,
-                            xpEarned: battle.enemy.xpReward,
-                            logs: [...logs],
-                        });
+                        recordBattleResult(battle.currentStage, battle.enemy, 'victory', logs);
                         return true;
                     }
                 } else if (resolution.type === 'heal') {
@@ -828,19 +814,7 @@ export const useGameStore = create<GameStoreState>()(
                             guardDamageReduction: nextGuardTurnsRemaining > 0 ? guardDamageReduction : 0,
                         }
                     });
-                    useBattleHistoryStore.getState().addBattleResult({
-                        id: generateId(),
-                        timestamp: new Date().toISOString(),
-                        stage: battle.currentStage,
-                        enemyName: battle.enemy.name,
-                        enemyMaxHp: battle.enemy.maxHp,
-                        enemyAttack: battle.enemy.attack,
-                        enemyDefense: battle.enemy.defense,
-                        outcome: 'defeat',
-                        turnCount: logs.length,
-                        xpEarned: 0,
-                        logs: [...logs],
-                    });
+                    recordBattleResult(battle.currentStage, battle.enemy, 'defeat', logs);
                     return true;
                 }
 
