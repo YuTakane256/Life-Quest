@@ -1,4 +1,5 @@
 import { ACHIEVEMENTS, type AchievementDefinition, type AchievementMetric } from '../config/achievements';
+import { nonNegativeInteger, positiveInteger } from './numeric';
 
 export interface AchievementSnapshot {
     totalXp: number;
@@ -18,14 +19,6 @@ function getMetricValue(snapshot: AchievementSnapshot, metric: AchievementMetric
     return typeof metric === 'string' && metric in snapshot
         ? snapshot[metric as keyof AchievementSnapshot]
         : 0;
-}
-
-function nonNegativeInteger(value: number): number {
-    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
-}
-
-function positiveInteger(value: number): number {
-    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
 }
 
 export function getAchievementProgress(

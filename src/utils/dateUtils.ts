@@ -46,24 +46,25 @@ export function isValidYmd(dateStr: string): boolean {
 }
 
 /**
+ * 現在時刻に JST オフセットを加えた Date を返す（内部利用）。
+ * 返り値の UTC フィールド（getUTC*）を読むと JST のローカル日時に対応する。
+ */
+function getJstNow(): Date {
+    return new Date(Date.now() + TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000);
+}
+
+/**
  * 現在のJSTの日付文字列を返す (YYYY-MM-DD)
  */
 export function getTodayJST(): string {
-    const jstOffsetMs = TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000;
-    const jstNow = new Date(Date.now() + jstOffsetMs);
-    const y = jstNow.getUTCFullYear();
-    const m = String(jstNow.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(jstNow.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return formatYmd(getJstNow());
 }
 
 /**
  * 現在のJSTの時（0〜23）を返す
  */
 export function getJSTHour(): number {
-    const now = new Date();
-    const jstMs = now.getTime() + TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000;
-    return new Date(jstMs).getUTCHours();
+    return getJstNow().getUTCHours();
 }
 
 /**
