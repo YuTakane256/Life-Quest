@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runNotificationChecks } from './notifications';
+import { resolveHabitReminderHour, runNotificationChecks } from './notifications';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useNotificationStore } from '../stores/useNotificationStore';
@@ -78,5 +78,25 @@ describe('runNotificationChecks', () => {
 
         expect(showNotification).toHaveBeenCalledTimes(1);
         expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['task-1']);
+    });
+});
+
+describe('resolveHabitReminderHour', () => {
+    it('keeps valid reminder hours in range', () => {
+        expect(resolveHabitReminderHour(0)).toBe(0);
+        expect(resolveHabitReminderHour(8)).toBe(8);
+        expect(resolveHabitReminderHour(23)).toBe(23);
+    });
+
+    it('floors fractional hours and clamps out-of-range hours', () => {
+        expect(resolveHabitReminderHour(7.9)).toBe(7);
+        expect(resolveHabitReminderHour(-5)).toBe(0);
+        expect(resolveHabitReminderHour(30)).toBe(23);
+    });
+
+    it('falls back to the configured default for non-finite values', () => {
+        expect(resolveHabitReminderHour(Number.NaN)).toBe(NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST);
+        expect(resolveHabitReminderHour(Number.POSITIVE_INFINITY)).toBe(NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST);
+        expect(resolveHabitReminderHour(undefined)).toBe(NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST);
     });
 });
