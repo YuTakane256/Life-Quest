@@ -33,6 +33,7 @@ import { pickRandom } from '../utils/random';
 import { BATTLE_SKILL_CONFIG } from '../config/battleSkills';
 import { getUnlockedBattleSkills, resolveBattleSkill } from '../utils/battleSkills';
 import { useBattleHistoryStore } from './useBattleHistoryStore';
+import { isPlainObject, isFiniteNumber, toNonNegativeInteger, toBoundedInteger } from '../utils/persistSanitize';
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ export function createEquipmentInstance(template: EquipmentTemplate): Equipment 
 }
 
 export function calculateLevel(totalXp: number): number {
-    const safeTotalXp = nonNegativeInteger(totalXp, 0);
+    const safeTotalXp = toNonNegativeInteger(totalXp, 0);
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
     if (safeTotalXp >= table[maxTableLevel]) {
@@ -76,7 +77,7 @@ export function calculateNextLevelXp(level: number): number {
 }
 
 export function calculateXpProgress(totalXp: number, level: number): number {
-    const safeTotalXp = nonNegativeInteger(totalXp, 0);
+    const safeTotalXp = toNonNegativeInteger(totalXp, 0);
     const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
@@ -239,27 +240,10 @@ const BATTLE_STATUSES: BattleState['status'][] = ['idle', 'fighting', 'victory',
 const EQUIPMENT_TEMPLATE_BY_ID = new Map(EQUIPMENT_POOL.map((template) => [template.id, template]));
 const MAX_STAGE = BATTLE_CONFIG.STAGES[BATTLE_CONFIG.STAGES.length - 1]?.stage ?? 1;
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
-function nonNegativeInteger(value: unknown, fallback: number): number {
-    return isFiniteNumber(value) ? Math.max(0, Math.floor(value)) : fallback;
-}
-
-function rangedInteger(value: unknown, fallback: number, min: number, max: number): number {
-    if (!isFiniteNumber(value)) return fallback;
-    return Math.max(min, Math.min(max, Math.floor(value)));
-}
-
 function sanitizeCharacter(raw: unknown): CharacterStats {
     if (!isPlainObject(raw)) return { ...initialCharacter };
 
-    const totalXp = nonNegativeInteger(raw.totalXp, initialCharacter.totalXp);
+    const totalXp = toNonNegativeInteger(raw.totalXp, initialCharacter.totalXp);
     const level = calculateLevel(totalXp);
 
     return {
@@ -352,14 +336,14 @@ function sanitizeChest(raw: unknown): ChestReward | null {
 
 function sanitizeEnemy(raw: unknown): Enemy | null {
     if (!isPlainObject(raw)) return null;
-    const stage = rangedInteger(raw.stage, 0, 1, MAX_STAGE);
+    const stage = toBoundedInteger(raw.stage, 0, 1, MAX_STAGE);
     const stageData = BATTLE_CONFIG.STAGES.find((candidate) => candidate.stage === stage);
     if (!stageData) return null;
 
     return {
         stage: stageData.stage,
         name: stageData.name,
-        hp: rangedInteger(raw.hp, stageData.hp, 0, stageData.hp),
+        hp: toBoundedInteger(raw.hp, stageData.hp, 0, stageData.hp),
         maxHp: stageData.hp,
         attack: stageData.attack,
         defense: stageData.defense,
@@ -372,10 +356,10 @@ function sanitizeBattleLog(raw: unknown): BattleLog | null {
     if (typeof raw.message !== 'string') return null;
 
     return {
-        turn: nonNegativeInteger(raw.turn, 0),
+        turn: toNonNegativeInteger(raw.turn, 0),
         message: clampString(raw.message, 200),
-        playerHp: nonNegativeInteger(raw.playerHp, 0),
-        enemyHp: nonNegativeInteger(raw.enemyHp, 0),
+        playerHp: toNonNegativeInteger(raw.playerHp, 0),
+        enemyHp: toNonNegativeInteger(raw.enemyHp, 0),
     };
 }
 
@@ -390,16 +374,16 @@ function sanitizeBattle(raw: unknown, character: CharacterStats): BattleState {
 
     return {
         status: safeStatus,
-        currentStage: rangedInteger(raw.currentStage, initialBattle.currentStage, 1, MAX_STAGE),
-        maxClearedStage: rangedInteger(raw.maxClearedStage, initialBattle.maxClearedStage, 0, MAX_STAGE),
+        currentStage: toBoundedInteger(raw.currentStage, initialBattle.currentStage, 1, MAX_STAGE),
+        maxClearedStage: toBoundedInteger(raw.maxClearedStage, initialBattle.maxClearedStage, 0, MAX_STAGE),
         enemy: safeStatus === 'idle' ? null : enemy,
-        playerHp: rangedInteger(raw.playerHp, character.baseMaxHp, 0, character.baseMaxHp),
+        playerHp: toBoundedInteger(raw.playerHp, character.baseMaxHp, 0, character.baseMaxHp),
         logs: Array.isArray(raw.logs)
             ? raw.logs.map(sanitizeBattleLog).filter((log): log is BattleLog => log !== null).slice(-100)
             : [],
         battleUnlocked: typeof raw.battleUnlocked === 'boolean' ? raw.battleUnlocked : false,
         skillCooldowns: sanitizeSkillCooldowns(raw.skillCooldowns),
-        guardTurnsRemaining: nonNegativeInteger(raw.guardTurnsRemaining, 0),
+        guardTurnsRemaining: toNonNegativeInteger(raw.guardTurnsRemaining, 0),
         guardDamageReduction: Math.max(0, Math.min(
             BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION,
             isFiniteNumber(raw.guardDamageReduction) ? raw.guardDamageReduction : 0,
@@ -425,7 +409,7 @@ export function sanitizeGameStoreState(persisted: unknown): GameStorePersisted {
         character,
         debuff: sanitizeDebuff(persisted.debuff),
         equipment: sanitizeEquipmentList(persisted.equipment),
-        gachaCount: nonNegativeInteger(persisted.gachaCount, 0),
+        gachaCount: toNonNegativeInteger(persisted.gachaCount, 0),
         chestQueue: Array.isArray(persisted.chestQueue)
             ? persisted.chestQueue.map(sanitizeChest).filter((chest): chest is ChestReward => chest !== null)
             : [],
@@ -460,7 +444,7 @@ export const useGameStore = create<GameStoreState>()(
             },
 
             addXp: (baseXp: number) => {
-                const safeBaseXp = nonNegativeInteger(baseXp, 0);
+                const safeBaseXp = toNonNegativeInteger(baseXp, 0);
                 if (safeBaseXp === 0) return;
 
                 const { debuff, character } = get();
