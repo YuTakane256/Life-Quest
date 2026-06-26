@@ -11,7 +11,10 @@ export interface StorageUsage {
     level: StorageUsageLevel;
 }
 
-function estimateUtf16Bytes(value: string): number {
+function estimateStorageBytes(value: string): number {
+    if (typeof TextEncoder !== 'undefined') {
+        return new TextEncoder().encode(value).length;
+    }
     return value.length * 2;
 }
 
@@ -27,7 +30,7 @@ export function getAppStorageUsage(storage: Storage | null | undefined = globalT
             if (!key || !key.startsWith(APP_STORAGE_PREFIX)) continue;
 
             const value = storage.getItem(key) ?? '';
-            bytes += estimateUtf16Bytes(key) + estimateUtf16Bytes(value);
+            bytes += estimateStorageBytes(key) + estimateStorageBytes(value);
             itemCount++;
         }
 
