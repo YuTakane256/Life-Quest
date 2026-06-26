@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { StatsStoreState } from '../types';
+import { isValidYmd } from '../utils/dateUtils';
 
 type StatsStorePersisted = Pick<StatsStoreState, 'taskXpLog' | 'habitLog'>;
 
@@ -9,7 +10,12 @@ type StatsStorePersisted = Pick<StatsStoreState, 'taskXpLog' | 'habitLog'>;
 // rehydrate 時にマップの各エントリを型ガードで弾く。
 
 function isValidDateKey(key: string): boolean {
-    return /^\d{4}-\d{2}-\d{2}$/.test(key);
+    return isValidYmd(key);
+}
+
+function nonNegativeInteger(value: number): number | null {
+    if (!Number.isFinite(value) || value < 0) return null;
+    return Math.floor(value);
 }
 
 function sanitizeTaskXpLog(raw: unknown): Record<string, number> {
@@ -55,19 +61,25 @@ export const useStatsStore = create<StatsStoreState>()(
             habitLog: {},
 
             logTaskXp: (date: string, xp: number) => {
+                if (!isValidDateKey(date)) return;
+                const safeXp = nonNegativeInteger(xp);
+                if (safeXp === null) return;
                 set((state) => ({
                     taskXpLog: {
                         ...state.taskXpLog,
-                        [date]: (state.taskXpLog[date] || 0) + xp,
+                        [date]: (state.taskXpLog[date] || 0) + safeXp,
                     },
                 }));
             },
 
             logHabitActivity: (date: string, count: number, allComplete: boolean) => {
+                if (!isValidDateKey(date)) return;
+                const safeCount = nonNegativeInteger(count);
+                if (safeCount === null) return;
                 set((state) => ({
                     habitLog: {
                         ...state.habitLog,
-                        [date]: { count, allComplete },
+                        [date]: { count: safeCount, allComplete },
                     },
                 }));
             },
