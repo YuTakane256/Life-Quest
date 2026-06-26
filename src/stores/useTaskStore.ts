@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
+import { PRIORITIES, RECURRENCES } from '../config/taskLabels';
 import { generateId, getTodayJST, addRecurrenceInterval, toIsoDatePart } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
@@ -14,9 +15,6 @@ interface TaskStorePersisted {
 // gameStoreを遅延importして循環参照を避ける
 const getGameStore = () => import('./useGameStore').then(m => m.useGameStore);
 const getStatsStore = () => import('./useStatsStore').then(m => m.useStatsStore);
-
-const PRIORITIES: Priority[] = ['low', 'medium', 'high'];
-const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'monthly'];
 
 async function awardTaskXp(priority: Priority, completedAt: string, xpReward: number = XP_CONFIG.REWARD_BY_PRIORITY[priority]) {
     const gameStore = await getGameStore();
