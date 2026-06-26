@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Download, Upload } from 'lucide-react';
 import { createBackupImportSummary, formatBackupExportedAt, type BackupImportSummary } from '../../utils/backupSummary';
-import { exportAllData, importAllData, isValidBackup, MAX_IMPORT_FILE_SIZE, type BackupData } from '../../utils/dataBackup';
+import { exportAllData, importAllData, MAX_IMPORT_FILE_SIZE, parseBackupImportJson, type BackupData } from '../../utils/dataBackup';
 import { ConfirmDialog } from './ConfirmDialog';
 
 export function DataBackupSettings() {
@@ -53,14 +53,14 @@ export function DataBackupSettings() {
 
         try {
             const text = await file.text();
-            const parsed: unknown = JSON.parse(text);
-            if (!isValidBackup(parsed)) {
+            const parsed = parseBackupImportJson(text);
+            if (!parsed.ok) {
                 showImportError();
                 return;
             }
 
-            setPendingBackup(parsed);
-            setBackupSummary(createBackupImportSummary(parsed));
+            setPendingBackup(parsed.data);
+            setBackupSummary(createBackupImportSummary(parsed.data));
             setShowImportConfirm(true);
         } catch {
             showImportError();

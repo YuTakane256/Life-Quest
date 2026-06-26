@@ -5,6 +5,7 @@ import {
     importAllData,
     isPlainObject,
     isValidBackup,
+    parseBackupImportJson,
     safeParseStorage,
     type BackupData,
 } from './dataBackup';
@@ -82,6 +83,29 @@ describe('dataBackup utilities', () => {
             expect(safeParseStorage('missing')).toEqual({});
             localStorage.setItem('broken', '{');
             expect(safeParseStorage('broken')).toEqual({});
+        });
+    });
+
+    describe('parseBackupImportJson', () => {
+        it('valid backup JSON を BackupData として返す', () => {
+            expect(parseBackupImportJson(JSON.stringify(validBackup))).toEqual({
+                ok: true,
+                data: validBackup,
+            });
+        });
+
+        it('壊れた JSON は malformed-json として返す', () => {
+            expect(parseBackupImportJson('{')).toEqual({
+                ok: false,
+                reason: 'malformed-json',
+            });
+        });
+
+        it('JSONとしては読めてもバックアップ形式でなければ invalid-backup として返す', () => {
+            expect(parseBackupImportJson(JSON.stringify({ ...validBackup, version: BACKUP_VERSION + 1 }))).toEqual({
+                ok: false,
+                reason: 'invalid-backup',
+            });
         });
     });
 
