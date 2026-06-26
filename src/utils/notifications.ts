@@ -22,6 +22,13 @@ const BADGE_URL = '/favicon.png';
 const NOTIFICATION_TEXT_MAX = 200;
 let isRunningNotificationChecks = false;
 
+export function resolveHabitReminderHour(hour: unknown): number {
+    if (typeof hour !== 'number' || !Number.isFinite(hour)) {
+        return NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST;
+    }
+    return Math.max(0, Math.min(23, Math.floor(hour)));
+}
+
 /** このブラウザが通知に対応しているか */
 export function isNotificationSupported(): boolean {
     return typeof window !== 'undefined' && 'Notification' in window;
@@ -114,7 +121,7 @@ export async function runNotificationChecks(): Promise<void> {
         // ── 習慣リマインダー（指定時刻以降、未完了の習慣がある、本日未通知）──
         const today = getTodayJST();
         // 旧データ（habitReminderHour 未設定）は既定の20時として扱う
-        const reminderHour = useNotificationStore.getState().habitReminderHour ?? NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST;
+        const reminderHour = resolveHabitReminderHour(useNotificationStore.getState().habitReminderHour);
         if (
             useNotificationStore.getState().lastHabitReminderDate !== today &&
             getJSTHour() >= reminderHour
