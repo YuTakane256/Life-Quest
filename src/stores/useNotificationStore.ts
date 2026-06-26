@@ -16,7 +16,7 @@ function sanitizeTaskIds(value: unknown): string[] {
             .filter((id): id is string => typeof id === 'string')
             .map((id) => id.trim())
             .filter(Boolean)
-    ));
+    )).slice(-NOTIFICATION_CONFIG.MAX_NOTIFIED_TASK_IDS);
 }
 
 /** 永続化された state を信用せず、各フィールドの型/範囲を検証して既定値にフォールバック */
@@ -59,11 +59,11 @@ export const useNotificationStore = create<NotificationStoreState>()(
             },
 
             markTaskNotified: (taskId: string) =>
-                set((state) =>
-                    state.notifiedTaskIds.includes(taskId)
-                        ? state
-                        : { notifiedTaskIds: [...state.notifiedTaskIds, taskId] }
-                ),
+                set((state) => {
+                    const sanitizedId = taskId.trim();
+                    if (!sanitizedId || state.notifiedTaskIds.includes(sanitizedId)) return state;
+                    return { notifiedTaskIds: sanitizeTaskIds([...state.notifiedTaskIds, sanitizedId]) };
+                }),
 
             markHabitReminded: (date: string) => set({ lastHabitReminderDate: date }),
 
