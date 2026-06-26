@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { formatStorageBytes, getAppStorageUsage } from './storageUsage';
+import { classifyStorageUsage, formatStorageBytes, formatStorageUsageLevel, getAppStorageUsage } from './storageUsage';
 
 describe('getAppStorageUsage', () => {
     beforeEach(() => {
@@ -15,6 +15,7 @@ describe('getAppStorageUsage', () => {
 
         expect(usage.available).toBe(true);
         expect(usage.itemCount).toBe(2);
+        expect(usage.level).toBe('ok');
         expect(usage.bytes).toBe(
             ('quest-board-tasks'.length + '{"state":{"tasks":[]}}'.length
                 + 'quest-board-theme'.length + '{"state":{"mode":"dark"}}'.length) * 2
@@ -32,6 +33,7 @@ describe('getAppStorageUsage', () => {
             available: false,
             bytes: 0,
             itemCount: 0,
+            level: 'unavailable',
         });
     });
 
@@ -40,7 +42,22 @@ describe('getAppStorageUsage', () => {
             available: false,
             bytes: 0,
             itemCount: 0,
+            level: 'unavailable',
         });
+    });
+});
+
+describe('classifyStorageUsage', () => {
+    it('classifies storage pressure by byte thresholds', () => {
+        expect(classifyStorageUsage(0)).toBe('ok');
+        expect(classifyStorageUsage(1024 * 1024 - 1)).toBe('ok');
+        expect(classifyStorageUsage(1024 * 1024)).toBe('warning');
+        expect(classifyStorageUsage(4 * 1024 * 1024)).toBe('critical');
+    });
+
+    it('treats impossible byte values as unavailable', () => {
+        expect(classifyStorageUsage(Number.NaN)).toBe('unavailable');
+        expect(classifyStorageUsage(-1)).toBe('unavailable');
     });
 });
 
@@ -50,5 +67,14 @@ describe('formatStorageBytes', () => {
         expect(formatStorageBytes(512)).toBe('512 B');
         expect(formatStorageBytes(1536)).toBe('1.5 KB');
         expect(formatStorageBytes(2 * 1024 * 1024)).toBe('2.0 MB');
+    });
+});
+
+describe('formatStorageUsageLevel', () => {
+    it('formats storage usage levels for settings UI', () => {
+        expect(formatStorageUsageLevel('ok')).toBe('OK');
+        expect(formatStorageUsageLevel('warning')).toBe('注意');
+        expect(formatStorageUsageLevel('critical')).toBe('危険');
+        expect(formatStorageUsageLevel('unavailable')).toBe('利用不可');
     });
 });
