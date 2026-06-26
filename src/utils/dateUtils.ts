@@ -70,7 +70,18 @@ export function getJSTHour(): number {
  * ユニークIDを生成
  */
 export function generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    return `${Date.now()}-${generateRandomIdSegment()}`;
+}
+
+function generateRandomIdSegment(): string {
+    const cryptoApi = globalThis.crypto;
+    if (cryptoApi?.getRandomValues) {
+        const bytes = new Uint8Array(8);
+        cryptoApi.getRandomValues(bytes);
+        return Array.from(bytes, (byte) => byte.toString(36).padStart(2, '0')).join('');
+    }
+
+    return Math.random().toString(36).substring(2, 12);
 }
 
 /**

@@ -84,9 +84,34 @@ describe('getJSTHour', () => {
 });
 
 describe('generateId', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    });
+
     it('"{number}-{string}" の形式で返す', () => {
         const id = generateId();
         expect(id).toMatch(/^\d+-[a-z0-9]+$/);
+    });
+
+    it('crypto.getRandomValues が使える環境では crypto 由来のセグメントを使う', () => {
+        vi.spyOn(Date, 'now').mockReturnValue(123);
+        vi.stubGlobal('crypto', {
+            getRandomValues: (bytes: Uint8Array) => {
+                bytes.set([0, 1, 2, 3, 4, 5, 6, 7]);
+                return bytes;
+            },
+        });
+
+        expect(generateId()).toBe('123-0001020304050607');
+    });
+
+    it('crypto が使えない環境では Math.random にフォールバックする', () => {
+        vi.spyOn(Date, 'now').mockReturnValue(456);
+        vi.spyOn(Math, 'random').mockReturnValue(0.123456789);
+        vi.stubGlobal('crypto', undefined);
+
+        expect(generateId()).toBe(`456-${(0.123456789).toString(36).substring(2, 12)}`);
     });
 
     it('連続呼び出しでユニークなIDが返る', () => {
