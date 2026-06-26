@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatStorageBytes, getAppStorageUsage } from './storageUsage';
 
 describe('getAppStorageUsage', () => {
     beforeEach(() => {
         localStorage.clear();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('counts only Life Quest storage keys', () => {
@@ -16,9 +20,28 @@ describe('getAppStorageUsage', () => {
         expect(usage.available).toBe(true);
         expect(usage.itemCount).toBe(2);
         expect(usage.bytes).toBe(
-            ('quest-board-tasks'.length + '{"state":{"tasks":[]}}'.length
-                + 'quest-board-theme'.length + '{"state":{"mode":"dark"}}'.length) * 2
+            new TextEncoder().encode('quest-board-tasks').length
+            + new TextEncoder().encode('{"state":{"tasks":[]}}').length
+            + new TextEncoder().encode('quest-board-theme').length
+            + new TextEncoder().encode('{"state":{"mode":"dark"}}').length
         );
+    });
+
+    it('measures non-ASCII values with UTF-8 bytes when TextEncoder exists', () => {
+        const value = '{"state":{"tasks":[{"name":"習慣🔥"}]}}';
+        localStorage.setItem('quest-board-tasks', value);
+
+        expect(getAppStorageUsage(localStorage).bytes).toBe(
+            new TextEncoder().encode('quest-board-tasks').length + new TextEncoder().encode(value).length
+        );
+    });
+
+    it('falls back to a deterministic UTF-16 estimate without TextEncoder', () => {
+        const value = '{"state":{"tasks":[{"name":"習慣"}]}}';
+        vi.stubGlobal('TextEncoder', undefined);
+        localStorage.setItem('quest-board-tasks', value);
+
+        expect(getAppStorageUsage(localStorage).bytes).toBe(('quest-board-tasks'.length + value.length) * 2);
     });
 
     it('returns unavailable when storage access throws', () => {
