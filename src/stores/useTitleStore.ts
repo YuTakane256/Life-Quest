@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafePersistMerge } from '../utils/persistMerge';
 
 const MAX_TITLE_LENGTH = 40;
 
@@ -25,10 +26,9 @@ export const useTitleStore = create<TitleStoreState>()(
         {
             name: 'quest-board-title',
             version: 1,
-            merge: (persisted, current) => {
-                const incoming = (persisted as Partial<TitleStoreState> | undefined)?.activeTitle;
-                return { ...current, activeTitle: sanitizeActiveTitle(incoming) };
-            },
+            merge: createSafePersistMerge<TitleStoreState>((persisted) => ({
+                activeTitle: sanitizeActiveTitle(persisted.activeTitle),
+            })),
         }
     )
 );
