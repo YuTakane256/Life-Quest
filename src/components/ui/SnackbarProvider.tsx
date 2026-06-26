@@ -3,8 +3,7 @@ import { X, Undo2 } from 'lucide-react';
 import { UI_CONFIG } from '../../config/gameConfig';
 import { generateId } from '../../utils/dateUtils';
 import { SnackbarContext } from './snackbarContext';
-
-interface SnackbarItem { id: string; message: string; onUndo?: () => void; expiresAt: number; }
+import { appendSnackbar, type SnackbarItem } from './snackbarUtils';
 
 export function SnackbarProvider({ children }: { children: React.ReactNode }) {
     const [snackbars, setSnackbars] = useState<SnackbarItem[]>([]); const timersRef = useRef<Map<string, number>>(new Map());
@@ -13,7 +12,15 @@ export function SnackbarProvider({ children }: { children: React.ReactNode }) {
         // generateId() は内部で Date.now() + Math.random() を組み合わせるため、
         // 同一 ms で複数呼び出されても衝突しない（旧実装は Date.now() のみで衝突していた）
         const id = `snack-${generateId()}`; const expiresAt = Date.now() + UI_CONFIG.UNDO_DURATION_MS;
-        setSnackbars((prev) => [...prev, { id, message, onUndo, expiresAt }]);
+        setSnackbars((prev) => {
+            const { next, removedIds } = appendSnackbar(prev, { id, message, onUndo, expiresAt });
+            for (const removedId of removedIds) {
+                const timer = timersRef.current.get(removedId);
+                if (timer) window.clearTimeout(timer);
+                timersRef.current.delete(removedId);
+            }
+            return next;
+        });
         const timer = window.setTimeout(() => removeSnackbar(id), UI_CONFIG.UNDO_DURATION_MS); timersRef.current.set(id, timer);
     }, [removeSnackbar]);
 
