@@ -18,6 +18,16 @@ describe('clampString', () => {
         expect(clampString('hidden', 0)).toBe('');
     });
 
+    it('returns an empty string when the limit is invalid', () => {
+        expect(clampString('hidden', -1)).toBe('');
+        expect(clampString('hidden', Number.NaN)).toBe('');
+        expect(clampString('hidden', Number.POSITIVE_INFINITY)).toBe('');
+    });
+
+    it('floors fractional limits before truncating', () => {
+        expect(clampString('12345', 3.9)).toBe('123');
+    });
+
     it('handles multi-byte user text without altering in-limit content', () => {
         expect(clampString('習慣メモ', 10)).toBe('習慣メモ');
     });
