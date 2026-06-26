@@ -119,6 +119,8 @@ function restoreStorageSnapshot(snapshot: Map<string, string | null>) {
 }
 
 export function importAllData(data: BackupData): boolean {
+    if (!isValidBackup(data)) return false;
+
     const snapshot = new Map(
         BACKUP_STORAGE_SLOTS.map(({ storageKey }) => [storageKey, localStorage.getItem(storageKey)] as const)
     );
