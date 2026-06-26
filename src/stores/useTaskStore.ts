@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
-import { generateId, getTodayJST, addRecurrenceInterval } from '../utils/dateUtils';
+import { generateId, getTodayJST, addRecurrenceInterval, toIsoDatePart } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 
@@ -25,7 +25,7 @@ async function awardTaskXp(priority: Priority, completedAt: string, xpReward: nu
     store.incrementGachaCount();
     store.checkGachaMilestones();
 
-    const dateStr = completedAt.split('T')[0];
+    const dateStr = toIsoDatePart(completedAt);
     const statsStore = await getStatsStore();
     statsStore.getState().logTaskXp(dateStr, xpReward);
 }

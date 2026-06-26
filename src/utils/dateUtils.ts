@@ -53,6 +53,14 @@ export function isValidTimestamp(value: string): boolean {
 }
 
 /**
+ * ISO 8601 日時文字列から日付部分（YYYY-MM-DD）を取り出す。
+ * タイムゾーン変換は行わず、'T' より前をそのまま返す。
+ */
+export function toIsoDatePart(iso: string): string {
+    return iso.split('T')[0];
+}
+
+/**
  * 現在時刻に JST オフセットを加えた Date を返す（内部利用）。
  * 返り値の UTC フィールド（getUTC*）を読むと JST のローカル日時に対応する。
  */

@@ -3,6 +3,7 @@ import { Download, Upload } from 'lucide-react';
 import { createBackupImportSummary, formatBackupExportedAt, type BackupImportSummary } from '../../utils/backupSummary';
 import { exportAllData, importAllData, MAX_IMPORT_FILE_SIZE, parseBackupImportJson, type BackupData } from '../../utils/dataBackup';
 import { ConfirmDialog } from './ConfirmDialog';
+import { toIsoDatePart } from '../../utils/dateUtils';
 
 export function DataBackupSettings() {
     const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -26,7 +27,7 @@ export function DataBackupSettings() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `life-quest-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `life-quest-backup-${toIsoDatePart(new Date().toISOString())}.json`;
         a.click();
         URL.revokeObjectURL(url);
     };

@@ -8,6 +8,7 @@ import {
     isValidYmd,
     shiftDate,
     addRecurrenceInterval,
+    toIsoDatePart,
 } from './dateUtils';
 
 describe('isValidYmd', () => {
@@ -245,5 +246,14 @@ describe('addRecurrenceInterval', () => {
     it('不正な日付は例外にする', () => {
         expect(() => addRecurrenceInterval('2025-02-29', 'daily')).toThrow(RangeError);
         expect(() => addRecurrenceInterval('not-a-date', 'monthly')).toThrow(RangeError);
+    });
+});
+
+describe('toIsoDatePart', () => {
+    it('ISO日時から日付部分(YYYY-MM-DD)を取り出す', () => {
+        expect(toIsoDatePart('2026-06-27T12:34:56.000Z')).toBe('2026-06-27');
+    });
+    it('日付のみの文字列はそのまま返す', () => {
+        expect(toIsoDatePart('2026-06-27')).toBe('2026-06-27');
     });
 });

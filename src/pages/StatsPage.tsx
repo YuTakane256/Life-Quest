@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useGameStore } from '../stores/useGameStore';
 import { useTitleStore } from '../stores/useTitleStore';
-import { shiftDate } from '../utils/dateUtils';
+import { shiftDate, toIsoDatePart } from '../utils/dateUtils';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
 
 /** 日付セットから最長連続日数とその開始/終了日を返す */
@@ -77,7 +77,7 @@ function generateDateRange(days: number): string[] {
     const jstOffset = 9 * 60 * 60 * 1000;
     for (let i = days - 1; i >= 0; i--) {
         const d = new Date(now.getTime() + jstOffset - i * 86400000);
-        dates.push(d.toISOString().split('T')[0]);
+        dates.push(toIsoDatePart(d.toISOString()));
     }
     return dates;
 }

@@ -3,7 +3,7 @@ import { useTaskStore } from '../../stores/useTaskStore';
 import { useGameStore } from '../../stores/useGameStore';
 import { useLoginBonusStore } from '../../stores/useLoginBonusStore';
 import { useHabitStore } from '../../stores/useHabitStore';
-import { getTodayJST } from '../../utils/dateUtils';
+import { getTodayJST, toIsoDatePart } from '../../utils/dateUtils';
 import { formatStorageBytes, formatStorageUsageLevel, getAppStorageUsage } from '../../utils/storageUsage';
 
 interface StatItem {
@@ -29,7 +29,7 @@ export function UsageStatsSettings() {
     const totalHabits = habits.length;
     const activeHabitIds = new Set(
         habits
-            .filter((habit) => habit.createdAt.split('T')[0] <= today)
+            .filter((habit) => toIsoDatePart(habit.createdAt) <= today)
             .map((habit) => habit.id)
     );
     const completedHabitsToday = dailyRecords.filter(
