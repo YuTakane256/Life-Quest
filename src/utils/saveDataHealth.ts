@@ -32,6 +32,9 @@ const SAVE_DATA_SECTIONS = [
 ] as const;
 
 function byteLength(value: string): number {
+    if (typeof TextEncoder !== 'undefined') {
+        return new TextEncoder().encode(value).length;
+    }
     return value.length * 2;
 }
 

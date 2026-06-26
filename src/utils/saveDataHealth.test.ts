@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { inspectSaveDataHealth } from './saveDataHealth';
 
 describe('inspectSaveDataHealth', () => {
     beforeEach(() => {
         localStorage.clear();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('reports healthy, missing, and invalid sections', () => {
@@ -42,5 +46,28 @@ describe('inspectSaveDataHealth', () => {
 
     it('returns unavailable without storage', () => {
         expect(inspectSaveDataHealth(null).available).toBe(false);
+    });
+
+    it('uses UTF-8 byte length for non-ASCII save data', () => {
+        const value = '{"state":{"tasks":[{"name":"習慣"}]}}';
+        localStorage.setItem('quest-board-tasks', value);
+
+        const report = inspectSaveDataHealth(localStorage);
+        const section = report.sections.find((candidate) => candidate.key === 'quest-board-tasks');
+
+        expect(section?.byteLength).toBe(
+            new TextEncoder().encode('quest-board-tasks').length + new TextEncoder().encode(value).length
+        );
+    });
+
+    it('falls back to deterministic UTF-16 estimate without TextEncoder', () => {
+        const value = '{"state":{"tasks":[{"name":"習慣"}]}}';
+        vi.stubGlobal('TextEncoder', undefined);
+        localStorage.setItem('quest-board-tasks', value);
+
+        const report = inspectSaveDataHealth(localStorage);
+        const section = report.sections.find((candidate) => candidate.key === 'quest-board-tasks');
+
+        expect(section?.byteLength).toBe(('quest-board-tasks'.length + value.length) * 2);
     });
 });
