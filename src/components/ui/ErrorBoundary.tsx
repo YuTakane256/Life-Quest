@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react';
+import { createRenderErrorLogArgs } from '../../utils/errorReporting';
 
 interface Props {
     children: ReactNode;
@@ -17,7 +18,7 @@ export class ErrorBoundary extends Component<Props, State> {
     }
 
     componentDidCatch(error: Error, info: ErrorInfo) {
-        console.error('Unhandled app render error', error, info);
+        console.error(...createRenderErrorLogArgs(error, info, import.meta.env.DEV));
     }
 
     private handleRetry = () => {
