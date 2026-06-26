@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { isPlainObject, isFiniteNumber, toNonNegativeInteger, toBoundedInteger } from './persistSanitize';
+import {
+    isPlainObject,
+    isFiniteNumber,
+    toNonNegativeInteger,
+    toBoundedInteger,
+    sanitizeNullableYmd,
+    sanitizeTimestamp,
+    sanitizeNullableTimestamp,
+} from './persistSanitize';
 
 describe('isPlainObject', () => {
     it('プレーンオブジェクトを受理する', () => expect(isPlainObject({ a: 1 })).toBe(true));
@@ -28,4 +36,23 @@ describe('toBoundedInteger', () => {
     it('下限未満は下限に丸める', () => expect(toBoundedInteger(-3, 0, 1, 10)).toBe(1));
     it('上限超過は上限に丸める', () => expect(toBoundedInteger(50, 0, 1, 10)).toBe(10));
     it('数値でなければfallbackを返す', () => expect(toBoundedInteger('x', 4, 1, 10)).toBe(4));
+});
+
+describe('sanitizeNullableYmd', () => {
+    it('妥当なYMDを保持する', () => expect(sanitizeNullableYmd('2026-06-27')).toBe('2026-06-27'));
+    it('実在しない日付はnull', () => expect(sanitizeNullableYmd('2026-13-01')).toBeNull());
+    it('文字列でなければnull', () => expect(sanitizeNullableYmd(123)).toBeNull());
+});
+
+describe('sanitizeTimestamp', () => {
+    const iso = '2026-06-27T12:00:00.000Z';
+    it('妥当なISO日時を保持する', () => expect(sanitizeTimestamp(iso)).toBe(iso));
+    it('不正な文字列はfallbackを返す', () => expect(sanitizeTimestamp('nope', 'FB')).toBe('FB'));
+    it('文字列でなければfallbackを返す', () => expect(sanitizeTimestamp(null, 'FB')).toBe('FB'));
+});
+
+describe('sanitizeNullableTimestamp', () => {
+    const iso = '2026-06-27T12:00:00.000Z';
+    it('妥当なISO日時を保持する', () => expect(sanitizeNullableTimestamp(iso)).toBe(iso));
+    it('不正な文字列はnull', () => expect(sanitizeNullableTimestamp('nope')).toBeNull());
 });

@@ -2,8 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
-import { generateId, getTodayJST, addRecurrenceInterval, isValidYmd } from '../utils/dateUtils';
+import { generateId, getTodayJST, addRecurrenceInterval } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
+import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 
 /** pending completions はLocalStorageに保存しない（タイマーは復元不可能） */
 interface TaskStorePersisted {
@@ -39,32 +40,12 @@ function clearPendingCompletionTimer(pending: PendingCompletion | undefined) {
     }
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function isPriority(value: unknown): value is Priority {
     return typeof value === 'string' && PRIORITIES.includes(value as Priority);
 }
 
 function isRecurrence(value: unknown): value is Recurrence {
     return typeof value === 'string' && RECURRENCES.includes(value as Recurrence);
-}
-
-function sanitizeNullableYmd(value: unknown): string | null {
-    return typeof value === 'string' && isValidYmd(value) ? value : null;
-}
-
-function isValidTimestamp(value: string): boolean {
-    return !Number.isNaN(new Date(value).getTime());
-}
-
-function sanitizeTimestamp(value: unknown, fallback = new Date().toISOString()): string {
-    return typeof value === 'string' && isValidTimestamp(value) ? value : fallback;
-}
-
-function sanitizeNullableTimestamp(value: unknown): string | null {
-    return typeof value === 'string' && isValidTimestamp(value) ? value : null;
 }
 
 function sanitizeSubtask(raw: unknown): Subtask | null {

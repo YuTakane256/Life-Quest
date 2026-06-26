@@ -46,6 +46,13 @@ export function isValidYmd(dateStr: string): boolean {
 }
 
 /**
+ * 日時文字列（ISO 8601 等）が Date としてパース可能かを判定する。
+ */
+export function isValidTimestamp(value: string): boolean {
+    return !Number.isNaN(new Date(value).getTime());
+}
+
+/**
  * 現在時刻に JST オフセットを加えた Date を返す（内部利用）。
  * 返り値の UTC フィールド（getUTC*）を読むと JST のローカル日時に対応する。
  */

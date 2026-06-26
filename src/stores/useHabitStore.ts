@@ -5,6 +5,7 @@ import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID, HABIT_CATEGORIES } from '../config/habitCategories';
 import { generateId, getTodayJST, isValidYmd, shiftDate } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
+import { isPlainObject, sanitizeTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 
 interface HabitStorePersisted {
     habits: Habit[];
@@ -14,18 +15,6 @@ interface HabitStorePersisted {
 }
 
 const VALID_CATEGORY_IDS = new Set(HABIT_CATEGORIES.map((category) => category.id));
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isValidTimestamp(value: string): boolean {
-    return !Number.isNaN(new Date(value).getTime());
-}
-
-function sanitizeTimestamp(value: unknown, fallback = new Date().toISOString()): string {
-    return typeof value === 'string' && isValidTimestamp(value) ? value : fallback;
-}
 
 function sanitizeHabit(raw: unknown): Habit | null {
     if (!isPlainObject(raw)) return null;
@@ -66,10 +55,6 @@ function sanitizeRestDay(raw: unknown): RestDay | null {
     };
 }
 
-function sanitizeRewardDate(raw: unknown): string | null {
-    return typeof raw === 'string' && isValidYmd(raw) ? raw : null;
-}
-
 export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted {
     if (!isPlainObject(persisted)) {
         return { habits: [], dailyRecords: [], restDays: [], allCompleteRewardDates: [] };
@@ -93,7 +78,7 @@ export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted
         allCompleteRewardDates: Array.isArray(persisted.allCompleteRewardDates)
             ? Array.from(new Set(
                 persisted.allCompleteRewardDates
-                    .map(sanitizeRewardDate)
+                    .map(sanitizeNullableYmd)
                     .filter((date): date is string => date !== null)
             ))
             : [],
