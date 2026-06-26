@@ -15,6 +15,7 @@ describe('useFriendsStore', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
     it('sanitizes persisted friends and drops duplicates', () => {
@@ -47,5 +48,18 @@ describe('useFriendsStore', () => {
 
         useFriendsStore.getState().deleteFriend(id);
         expect(useFriendsStore.getState().friends).toEqual([]);
+    });
+
+    it('生成されたIDが既存フレンドと衝突しても一意なIDで追加する', () => {
+        vi.stubGlobal('crypto', undefined);
+        useFriendsStore.setState({
+            friends: [
+                { id: '1-', name: 'Existing', level: 1, totalXp: 0, maxStage: 0 },
+            ],
+        });
+
+        useFriendsStore.getState().addFriend({ name: 'Alice', level: 3, totalXp: 80, maxStage: 4 });
+
+        expect(useFriendsStore.getState().friends.map((friend) => friend.id)).toEqual(['1-', '1--1']);
     });
 });

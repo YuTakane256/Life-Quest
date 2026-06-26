@@ -65,7 +65,7 @@ describe('useTaskStore', () => {
                     {
                         id: 'task-1',
                         name: longName,
-                        dueDate: 123,
+                        dueDate: '2026-02-30',
                         priority: 'admin',
                         tags: [longTag, 42, 'keep', 'x', 'y', 'z'],
                         subtasks: [
@@ -73,16 +73,16 @@ describe('useTaskStore', () => {
                                 id: 'sub-1',
                                 name: longSubtaskName,
                                 completed: true,
-                                completedAt: '2026-06-13T01:00:00.000Z',
-                                createdAt: '2026-06-13T00:00:00.000Z',
+                                completedAt: 'not-a-date',
+                                createdAt: 'also-not-a-date',
                             },
                             { id: 'sub-2', name: '未完了', completed: 'yes', completedAt: 123 },
                             { id: 3, name: 'broken' },
                         ],
                         recurrence: 'yearly',
                         completed: 'yes',
-                        completedAt: 123,
-                        createdAt: '2026-06-13T00:00:00.000Z',
+                        completedAt: 'not-a-date',
+                        createdAt: 'not-a-date',
                     },
                 ],
             });
@@ -98,12 +98,13 @@ describe('useTaskStore', () => {
                 completed: false,
                 completedAt: null,
             });
+            expect(Number.isNaN(new Date(sanitized.tasks[0].createdAt).getTime())).toBe(false);
             expect(sanitized.tasks[0].subtasks).toMatchObject([
                 {
                     id: 'sub-1',
                     name: 'c'.repeat(UI_CONFIG.MAX_SUBTASK_NAME_LENGTH),
                     completed: true,
-                    completedAt: '2026-06-13T01:00:00.000Z',
+                    completedAt: null,
                 },
                 {
                     id: 'sub-2',
@@ -112,6 +113,44 @@ describe('useTaskStore', () => {
                     completedAt: null,
                 },
             ]);
+            expect(Number.isNaN(new Date(sanitized.tasks[0].subtasks[0].createdAt).getTime())).toBe(false);
+        });
+
+        it('有効な日付フィールドだけを永続化データから復元する', () => {
+            const sanitized = sanitizeTaskStoreState({
+                tasks: [
+                    {
+                        id: 'task-valid',
+                        name: '日付あり',
+                        dueDate: '2026-06-13',
+                        priority: 'high',
+                        tags: [],
+                        subtasks: [
+                            {
+                                id: 'sub-valid',
+                                name: '子',
+                                completed: true,
+                                completedAt: '2026-06-13T01:00:00.000Z',
+                                createdAt: '2026-06-13T00:00:00.000Z',
+                            },
+                        ],
+                        recurrence: 'none',
+                        completed: true,
+                        completedAt: '2026-06-13T02:00:00.000Z',
+                        createdAt: '2026-06-12T00:00:00.000Z',
+                    },
+                ],
+            });
+
+            expect(sanitized.tasks[0]).toMatchObject({
+                dueDate: '2026-06-13',
+                completedAt: '2026-06-13T02:00:00.000Z',
+                createdAt: '2026-06-12T00:00:00.000Z',
+            });
+            expect(sanitized.tasks[0].subtasks[0]).toMatchObject({
+                completedAt: '2026-06-13T01:00:00.000Z',
+                createdAt: '2026-06-13T00:00:00.000Z',
+            });
         });
     });
 

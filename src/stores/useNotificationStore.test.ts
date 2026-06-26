@@ -39,6 +39,17 @@ describe('useNotificationStore', () => {
             });
         });
 
+        it('通知済みタスクIDは重複除去後に上限件数へ丸める', () => {
+            const ids = Array.from(
+                { length: NOTIFICATION_CONFIG.MAX_NOTIFIED_TASK_IDS + 5 },
+                (_, index) => `task-${index}`
+            );
+
+            expect(sanitizeNotificationState({ notifiedTaskIds: ids }).notifiedTaskIds).toEqual(
+                ids.slice(-NOTIFICATION_CONFIG.MAX_NOTIFIED_TASK_IDS)
+            );
+        });
+
         it('不正な型のフィールドは復元対象に含めない', () => {
             expect(
                 sanitizeNotificationState({
@@ -123,6 +134,27 @@ describe('useNotificationStore', () => {
             useNotificationStore.getState().markTaskNotified('task-1');
             useNotificationStore.getState().markTaskNotified('task-2');
             expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['task-1', 'task-2']);
+        });
+
+        it('空白IDは追加せず、前後空白は取り除く', () => {
+            useNotificationStore.getState().markTaskNotified(' ');
+            useNotificationStore.getState().markTaskNotified(' task-1 ');
+            expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['task-1']);
+        });
+
+        it('上限を超えたら古い ID から削除する', () => {
+            const ids = Array.from(
+                { length: NOTIFICATION_CONFIG.MAX_NOTIFIED_TASK_IDS },
+                (_, index) => `task-${index}`
+            );
+            useNotificationStore.setState({ notifiedTaskIds: ids });
+
+            useNotificationStore.getState().markTaskNotified('new-task');
+
+            expect(useNotificationStore.getState().notifiedTaskIds).toEqual([
+                ...ids.slice(1),
+                'new-task',
+            ]);
         });
     });
 

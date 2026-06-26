@@ -24,4 +24,21 @@ describe('useTitleStore', () => {
         useTitleStore.getState().setActiveTitle(null);
         expect(useTitleStore.getState().activeTitle).toBeNull();
     });
+
+    it('persisted activeTitle を rehydrate 時にも検証する', async () => {
+        localStorage.setItem('quest-board-title', JSON.stringify({ state: { activeTitle: '  草原の挑戦者  ' }, version: 1 }));
+
+        await useTitleStore.persist.rehydrate();
+
+        expect(useTitleStore.getState().activeTitle).toBe('草原の挑戦者');
+    });
+
+    it('persisted state が壊れていても action を維持する', async () => {
+        localStorage.setItem('quest-board-title', JSON.stringify({ state: ['壊れた称号'], version: 1 }));
+
+        await useTitleStore.persist.rehydrate();
+
+        expect(useTitleStore.getState().activeTitle).toBeNull();
+        expect(typeof useTitleStore.getState().setActiveTitle).toBe('function');
+    });
 });

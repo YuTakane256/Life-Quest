@@ -75,6 +75,19 @@ function sanitizeFriendInput(friend: Omit<FriendProfile, 'id'>): Omit<FriendProf
     };
 }
 
+function createUniqueFriendId(existingIds: Set<string>): string {
+    const baseId = generateId();
+    if (!existingIds.has(baseId)) return baseId;
+
+    let suffix = 1;
+    let candidate = `${baseId}-${suffix}`;
+    while (existingIds.has(candidate)) {
+        suffix++;
+        candidate = `${baseId}-${suffix}`;
+    }
+    return candidate;
+}
+
 export const useFriendsStore = create<FriendsStoreState>()(
     persist(
         (set) => ({
@@ -83,7 +96,10 @@ export const useFriendsStore = create<FriendsStoreState>()(
                 const safeFriend = sanitizeFriendInput(friend);
                 if (!safeFriend) return;
                 set((state) => ({
-                    friends: [...state.friends, { id: generateId(), ...safeFriend }].slice(0, MAX_FRIENDS),
+                    friends: [
+                        ...state.friends,
+                        { id: createUniqueFriendId(new Set(state.friends.map((existing) => existing.id))), ...safeFriend },
+                    ].slice(0, MAX_FRIENDS),
                 }));
             },
             updateFriend: (id, updates) => set((state) => ({

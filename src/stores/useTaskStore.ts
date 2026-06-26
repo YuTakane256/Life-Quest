@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
-import { generateId, getTodayJST, addRecurrenceInterval } from '../utils/dateUtils';
+import { generateId, getTodayJST, addRecurrenceInterval, isValidYmd } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
 
 /** pending completions はLocalStorageに保存しない（タイマーは復元不可能） */
@@ -51,8 +51,20 @@ function isRecurrence(value: unknown): value is Recurrence {
     return typeof value === 'string' && RECURRENCES.includes(value as Recurrence);
 }
 
-function sanitizeNullableString(value: unknown): string | null {
-    return typeof value === 'string' ? value : null;
+function sanitizeNullableYmd(value: unknown): string | null {
+    return typeof value === 'string' && isValidYmd(value) ? value : null;
+}
+
+function isValidTimestamp(value: string): boolean {
+    return !Number.isNaN(new Date(value).getTime());
+}
+
+function sanitizeTimestamp(value: unknown, fallback = new Date().toISOString()): string {
+    return typeof value === 'string' && isValidTimestamp(value) ? value : fallback;
+}
+
+function sanitizeNullableTimestamp(value: unknown): string | null {
+    return typeof value === 'string' && isValidTimestamp(value) ? value : null;
 }
 
 function sanitizeSubtask(raw: unknown): Subtask | null {
@@ -63,8 +75,8 @@ function sanitizeSubtask(raw: unknown): Subtask | null {
         id: raw.id,
         name: clampString(raw.name, UI_CONFIG.MAX_SUBTASK_NAME_LENGTH),
         completed: typeof raw.completed === 'boolean' ? raw.completed : false,
-        completedAt: sanitizeNullableString(raw.completedAt),
-        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+        completedAt: sanitizeNullableTimestamp(raw.completedAt),
+        createdAt: sanitizeTimestamp(raw.createdAt),
     };
 }
 
@@ -75,7 +87,7 @@ function sanitizeTask(raw: unknown): Task | null {
     return {
         id: raw.id,
         name: clampString(raw.name, UI_CONFIG.MAX_TASK_NAME_LENGTH),
-        dueDate: sanitizeNullableString(raw.dueDate),
+        dueDate: sanitizeNullableYmd(raw.dueDate),
         priority: isPriority(raw.priority) ? raw.priority : 'medium',
         tags: Array.isArray(raw.tags)
             ? raw.tags
@@ -88,8 +100,8 @@ function sanitizeTask(raw: unknown): Task | null {
             : [],
         recurrence: isRecurrence(raw.recurrence) ? raw.recurrence : 'none',
         completed: typeof raw.completed === 'boolean' ? raw.completed : false,
-        completedAt: sanitizeNullableString(raw.completedAt),
-        createdAt: raw.createdAt,
+        completedAt: sanitizeNullableTimestamp(raw.completedAt),
+        createdAt: sanitizeTimestamp(raw.createdAt),
     };
 }
 

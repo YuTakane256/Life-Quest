@@ -15,15 +15,21 @@ const CSV_HEADERS = [
     'subtasks',
 ] as const;
 
+const FORMULA_TRIGGER_RE = /^[\t\r\n ]*[=+\-@]/;
+
+function neutralizeSpreadsheetFormula(text: string): string {
+    return FORMULA_TRIGGER_RE.test(text) ? `'${text}` : text;
+}
+
 export function escapeCsvValue(value: unknown): string {
-    const text = String(value ?? '');
+    const text = neutralizeSpreadsheetFormula(String(value ?? ''));
     if (!/[",\n\r]/.test(text)) return text;
     return `"${text.replace(/"/g, '""')}"`;
 }
 
 function formatSubtasks(task: Task): string {
     return task.subtasks
-        .map((subtask) => `${subtask.completed ? '[x]' : '[ ]'} ${subtask.name}`)
+        .map((subtask) => `${subtask.completed ? '[x]' : '[ ]'} ${neutralizeSpreadsheetFormula(subtask.name)}`)
         .join('\n');
 }
 

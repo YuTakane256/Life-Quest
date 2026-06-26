@@ -4,7 +4,7 @@ import { useGameStore } from '../../stores/useGameStore';
 import { useLoginBonusStore } from '../../stores/useLoginBonusStore';
 import { useHabitStore } from '../../stores/useHabitStore';
 import { getTodayJST } from '../../utils/dateUtils';
-import { formatStorageBytes, getAppStorageUsage } from '../../utils/storageUsage';
+import { formatStorageBytes, formatStorageUsageLevel, getAppStorageUsage } from '../../utils/storageUsage';
 
 interface StatItem {
     icon: string;
@@ -47,7 +47,7 @@ export function UsageStatsSettings() {
         { icon: '📦', label: '開封宝箱', value: openedChests.toLocaleString() },
         { icon: '🎯', label: 'タスク消化数', value: gachaCount.toLocaleString() },
         { icon: '🔥', label: '連続ログイン', value: `${loginStreak}日` },
-        { icon: '💾', label: '保存容量', value: storageUsage.available ? formatStorageBytes(storageUsage.bytes) : '利用不可' },
+        { icon: '💾', label: '保存容量', value: storageUsage.available ? `${formatStorageBytes(storageUsage.bytes)} (${formatStorageUsageLevel(storageUsage.level)})` : '利用不可' },
         { icon: '🧾', label: '保存項目', value: storageUsage.available ? storageUsage.itemCount.toLocaleString() : '—' },
     ];
 
