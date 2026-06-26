@@ -4,6 +4,7 @@ import { pickRandom } from './random';
 describe('pickRandom', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
     it('空配列は undefined を返す', () => {
@@ -19,6 +20,7 @@ describe('pickRandom', () => {
     });
 
     it('N要素配列では Math.random に応じた index の要素を返す', () => {
+        vi.stubGlobal('crypto', undefined);
         const arr = [1, 2, 3, 4, 5];
         const randomSpy = vi.spyOn(Math, 'random');
 
@@ -36,6 +38,7 @@ describe('pickRandom', () => {
     });
 
     it('Math.random をモックすると決定的に動く', () => {
+        vi.stubGlobal('crypto', undefined);
         const arr = ['a', 'b', 'c', 'd'];
         vi.spyOn(Math, 'random').mockReturnValue(0);
         expect(pickRandom(arr)).toBe('a');
@@ -43,6 +46,24 @@ describe('pickRandom', () => {
         expect(pickRandom(arr)).toBe('c');
         vi.spyOn(Math, 'random').mockReturnValue(0.999);
         expect(pickRandom(arr)).toBe('d');
+    });
+
+    it('Web Crypto が使える場合は getRandomValues の値から選ぶ', () => {
+        vi.stubGlobal('crypto', {
+            getRandomValues: (values: Uint32Array) => {
+                values[0] = 5;
+                return values;
+            },
+        });
+
+        expect(pickRandom(['a', 'b', 'c'])).toBe('c');
+    });
+
+    it('Math.random が 1 を返しても fallback index は範囲内に収まる', () => {
+        vi.stubGlobal('crypto', undefined);
+        vi.spyOn(Math, 'random').mockReturnValue(1);
+
+        expect(pickRandom(['a', 'b', 'c'])).toBe('c');
     });
 
     it('readonly 配列も扱える（TS の型制約のみのチェック）', () => {
