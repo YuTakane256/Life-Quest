@@ -3,6 +3,8 @@ import {
     DEFAULT_CATEGORY_ID,
     HABIT_CATEGORIES,
     getCategoryById,
+    getCategoryByIdOrDefault,
+    getDefaultCategory,
 } from './habitCategories';
 
 const EXPECTED_CATEGORY_IDS = [
@@ -39,9 +41,19 @@ describe('habit category config', () => {
             id: 'other',
             name: 'その他',
         });
+        expect(getDefaultCategory()).toMatchObject({
+            id: 'other',
+            name: 'その他',
+        });
     });
 
     it('存在しないカテゴリIDは undefined を返す', () => {
         expect(getCategoryById('missing-category')).toBeUndefined();
+    });
+
+    it('安全なカテゴリ解決では不正値をデフォルトカテゴリへ戻す', () => {
+        expect(getCategoryByIdOrDefault('health')).toMatchObject({ id: 'health', name: '健康' });
+        expect(getCategoryByIdOrDefault('missing-category')).toMatchObject({ id: 'other', name: 'その他' });
+        expect(getCategoryByIdOrDefault(null)).toMatchObject({ id: 'other', name: 'その他' });
     });
 });
