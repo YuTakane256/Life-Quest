@@ -125,6 +125,23 @@ describe('useGameStore.addXp', () => {
         expect(useGameStore.getState().character.totalXp).toBe(0);
     });
 
+    it('不正な XP 入力では状態を変更しない', () => {
+        useGameStore.getState().addXp(-10);
+        useGameStore.getState().addXp(Number.NaN);
+        useGameStore.getState().addXp(Number.POSITIVE_INFINITY);
+
+        const state = useGameStore.getState();
+        expect(state.character.totalXp).toBe(0);
+        expect(state.character.level).toBe(1);
+        expect(state.levelUpEvent).toBeNull();
+    });
+
+    it('小数 XP は整数に丸めてから加算する', () => {
+        useGameStore.getState().addXp(20.9);
+
+        expect(useGameStore.getState().character.totalXp).toBe(20);
+    });
+
     it('clearLevelUpEvent: 発火済みレベルアップイベントだけを消す', () => {
         useGameStore.getState().addXp(30);
         expect(useGameStore.getState().levelUpEvent).not.toBeNull();

@@ -52,38 +52,42 @@ export function createEquipmentInstance(template: EquipmentTemplate): Equipment 
 }
 
 export function calculateLevel(totalXp: number): number {
+    const safeTotalXp = nonNegativeInteger(totalXp, 0);
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
-    if (totalXp >= table[maxTableLevel]) {
-        const remainingXp = totalXp - table[maxTableLevel];
+    if (safeTotalXp >= table[maxTableLevel]) {
+        const remainingXp = safeTotalXp - table[maxTableLevel];
         return maxTableLevel + Math.floor(remainingXp / XP_CONFIG.OVERFLOW_XP_PER_LEVEL);
     }
     for (let i = maxTableLevel; i >= 0; i--) {
-        if (totalXp >= table[i]) return i;
+        if (safeTotalXp >= table[i]) return i;
     }
     return 1;
 }
 
 export function calculateNextLevelXp(level: number): number {
+    const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
-    if (level >= maxTableLevel) {
-        return table[maxTableLevel] + (level - maxTableLevel + 1) * XP_CONFIG.OVERFLOW_XP_PER_LEVEL;
+    if (safeLevel >= maxTableLevel) {
+        return table[maxTableLevel] + (safeLevel - maxTableLevel + 1) * XP_CONFIG.OVERFLOW_XP_PER_LEVEL;
     }
-    return table[level + 1];
+    return table[safeLevel + 1];
 }
 
 export function calculateXpProgress(totalXp: number, level: number): number {
+    const safeTotalXp = nonNegativeInteger(totalXp, 0);
+    const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
-    if (level >= maxTableLevel) {
-        const baseXp = table[maxTableLevel] + (level - maxTableLevel) * XP_CONFIG.OVERFLOW_XP_PER_LEVEL;
+    if (safeLevel >= maxTableLevel) {
+        const baseXp = table[maxTableLevel] + (safeLevel - maxTableLevel) * XP_CONFIG.OVERFLOW_XP_PER_LEVEL;
         const nextXp = baseXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL;
-        return (totalXp - baseXp) / (nextXp - baseXp);
+        return Math.max(0, Math.min(1, (safeTotalXp - baseXp) / (nextXp - baseXp)));
     }
-    const currentLevelXp = table[level];
-    const nextLevelXp = table[level + 1];
-    return (totalXp - currentLevelXp) / (nextLevelXp - currentLevelXp);
+    const currentLevelXp = table[safeLevel];
+    const nextLevelXp = table[safeLevel + 1];
+    return Math.max(0, Math.min(1, (safeTotalXp - currentLevelXp) / (nextLevelXp - currentLevelXp)));
 }
 
 function rollEquipment(chestType: ChestType): Equipment | null {
@@ -434,6 +438,9 @@ export const useGameStore = create<GameStoreState>()(
             },
 
             addXp: (baseXp: number) => {
+                const safeBaseXp = nonNegativeInteger(baseXp, 0);
+                if (safeBaseXp === 0) return;
+
                 const { debuff, character } = get();
                 let multiplier = 1;
                 if (debuff.active && debuff.expiresAt) {
@@ -443,7 +450,9 @@ export const useGameStore = create<GameStoreState>()(
                         set({ debuff: { ...initialDebuff } });
                     }
                 }
-                const actualXp = Math.floor(baseXp * multiplier);
+                const actualXp = Math.max(0, Math.floor(safeBaseXp * multiplier));
+                if (actualXp === 0) return;
+
                 const newTotalXp = character.totalXp + actualXp;
                 const newLevel = calculateLevel(newTotalXp);
                 const levelDiff = newLevel - character.level;
