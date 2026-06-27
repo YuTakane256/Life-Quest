@@ -13,12 +13,13 @@ import { getUnlockedBattleSkills } from '../utils/battleSkills';
 import { getBattleBackground, getMapBackground } from '../config/mapAssets';
 import heroImg from '../assets/images/hero.png';
 import heroMaleImg from '../assets/images/hero_male.png';
-import { ENEMY_IMAGES } from '../config/enemyImages';
+import { getEnemyImageSrc } from '../config/enemyImages';
 
 
 function getEnemyImage(stage: number) {
     const key = ENEMY_IMAGE_KEYS[stage];
-    if (key && ENEMY_IMAGES[key]) return { type: 'image' as const, src: ENEMY_IMAGES[key] };
+    const src = key ? getEnemyImageSrc(key) : null;
+    if (src) return { type: 'image' as const, src };
     return { type: 'emoji' as const, emoji: '❓' };
 }
 

@@ -81,3 +81,11 @@ export const ENEMY_IMAGES: Record<string, string> = {
     water_dragon: enemyWaterDragon,
     leviathan: enemyLeviathan,
 };
+
+/**
+ * 敵キーに対応する画像 URL を返す。未登録キーは null。
+ * mapAssets の getMapBackground と同様に、参照側のフォールバック処理を一本化する。
+ */
+export function getEnemyImageSrc(key: string): string | null {
+    return ENEMY_IMAGES[key] ?? null;
+}
