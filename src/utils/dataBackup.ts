@@ -15,6 +15,8 @@ export interface BackupData {
     taskSort?: unknown;
     habitSort?: unknown;
     title?: unknown;
+    friends?: unknown;
+    motion?: unknown;
 }
 
 export type BackupImportParseResult =
@@ -35,6 +37,8 @@ const BACKUP_STORAGE_SLOTS: Array<{ dataKey: BackupDataKey; storageKey: string }
     { dataKey: 'taskSort', storageKey: 'quest-board-task-sort' },
     { dataKey: 'habitSort', storageKey: 'quest-board-habit-sort' },
     { dataKey: 'title', storageKey: 'quest-board-title' },
+    { dataKey: 'friends', storageKey: 'quest-board-friends' },
+    { dataKey: 'motion', storageKey: 'quest-board-motion' },
 ];
 
 /** Plain object（配列・null は除く）かどうか */
@@ -59,6 +63,8 @@ export function isValidBackup(data: unknown): data is BackupData {
     if (data.taskSort !== undefined && !isPlainObject(data.taskSort)) return false;
     if (data.habitSort !== undefined && !isPlainObject(data.habitSort)) return false;
     if (data.title !== undefined && !isPlainObject(data.title)) return false;
+    if (data.friends !== undefined && !isPlainObject(data.friends)) return false;
+    if (data.motion !== undefined && !isPlainObject(data.motion)) return false;
     return true;
 }
 
@@ -105,6 +111,8 @@ export function exportAllData(): BackupData {
         taskSort: safeParseStorage('quest-board-task-sort'),
         habitSort: safeParseStorage('quest-board-habit-sort'),
         title: safeParseStorage('quest-board-title'),
+        friends: safeParseStorage('quest-board-friends'),
+        motion: safeParseStorage('quest-board-motion'),
     };
 }
 
