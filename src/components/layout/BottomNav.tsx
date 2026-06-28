@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { CheckSquare, Repeat, User, Map, BarChart3, Settings, Users } from 'lucide-react';
+import { CheckSquare, Repeat, User, Map, BarChart3, Settings, Users, Shield, LockKeyhole } from 'lucide-react';
 import { useGameStore } from '../../stores/useGameStore';
 import { useTaskStore } from '../../stores/useTaskStore';
 
@@ -42,9 +42,20 @@ export function BottomNav() {
     }, [battleUnlocked, navigate]);
 
     return (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 border-t" style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-default)' }}>
-            <div className="flex justify-around items-center h-16 max-w-lg mx-auto px-2">
-                {NAV_ITEMS.map((item, index) => {
+        <nav
+            className="app-navigation fixed bottom-0 left-0 right-0 z-50 border-t"
+            style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-default)' }}
+            aria-label="メインナビゲーション"
+        >
+            <div className="app-navigation-inner flex justify-around items-center h-16 max-w-lg mx-auto px-2">
+                <div className="app-navigation-brand" aria-hidden="true">
+                    <span className="app-navigation-brand-icon"><Shield size={22} /></span>
+                    <span>
+                        <strong>Life Quest</strong>
+                        <small>冒険メニュー</small>
+                    </span>
+                </div>
+                {NAV_ITEMS.map((item) => {
                     const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`); const isLocked = item.requiresBattle && !battleUnlocked;
                     const showTaskBadge = item.path === '/tasks' && pendingTaskCount > 0;
                     return (
@@ -54,11 +65,11 @@ export function BottomNav() {
                             disabled={isLocked}
                             aria-label={isLocked ? `${item.label}（未解放）` : item.label}
                             aria-current={isActive ? 'page' : undefined}
-                            title={`${item.label} Alt+${index + 1}`}
-                            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-2 rounded-lg transition-all duration-200 relative ${isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                            title={item.label}
+                            className={`app-navigation-item flex flex-col items-center justify-center gap-0.5 flex-1 py-2 rounded-lg transition-all duration-200 relative ${isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
                             style={{ color: isActive ? 'var(--color-accent-primary)' : 'var(--color-text-muted)' }}
                         >
-                            <div className={`relative transition-transform duration-200 ${isActive ? 'scale-110' : ''}`}>
+                            <div className={`app-navigation-icon relative transition-transform duration-200 ${isActive ? 'scale-110' : ''}`}>
                                 {item.icon}
                                 {showTaskBadge && (
                                     <span
@@ -70,9 +81,9 @@ export function BottomNav() {
                                     </span>
                                 )}
                             </div>
-                            <span className="text-[10px] font-medium">{item.label}</span>
-                            {isActive && <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full" style={{ backgroundColor: 'var(--color-accent-primary)' }} />}
-                            {isLocked && <div className="absolute inset-0 flex items-center justify-center"><span className="text-[8px] opacity-60">🔒</span></div>}
+                            <span className="app-navigation-label text-[10px] font-medium">{item.label}</span>
+                            {isActive && <div className="app-navigation-active absolute -top-0.5 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full" style={{ backgroundColor: 'var(--color-accent-primary)' }} />}
+                            {isLocked && <LockKeyhole className="app-navigation-lock" size={12} aria-hidden="true" />}
                         </button>
                     );
                 })}

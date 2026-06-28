@@ -266,7 +266,7 @@ export function TasksPage() {
     };
 
     return (
-        <div className="max-w-lg mx-auto px-4 pt-6">
+        <div className="app-page max-w-lg mx-auto px-4 pt-6">
             <div className="flex items-center justify-between mb-4">
                 <div>
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>タスク</h1>
@@ -697,7 +697,7 @@ export function TasksPage() {
                 onClick={toggleTaskForm}
                 aria-label={showForm ? 'タスク追加フォームを閉じる' : '新しいタスクを追加'}
                 title={showForm ? 'タスク追加フォームを閉じる' : '新しいタスクを追加'}
-                className="fixed right-4 z-40 w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                className="app-floating-button fixed right-4 z-40 w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110"
                 style={{
                     bottom: 'calc(64px + env(safe-area-inset-bottom, 0px) + 12px)',
                     backgroundColor: 'var(--color-accent-primary)',

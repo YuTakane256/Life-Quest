@@ -241,7 +241,7 @@ export function StatsPage() {
     const [tooltipInfo, setTooltipInfo] = useState<{ date: string; value: string } | null>(null);
 
     return (
-        <div className="max-w-lg mx-auto px-4 pt-6 pb-8">
+        <div className="app-page max-w-lg mx-auto px-4 pt-6 pb-8">
             {/* ヘッダー */}
             <h1 className="text-2xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>統計</h1>
 

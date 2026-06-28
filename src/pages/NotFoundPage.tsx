@@ -5,7 +5,7 @@ export function NotFoundPage() {
     const navigate = useNavigate();
 
     return (
-        <div className="max-w-lg mx-auto min-h-[calc(100dvh-5rem)] px-5 py-10 flex items-center">
+        <div className="app-page max-w-lg mx-auto min-h-[calc(100dvh-5rem)] px-5 py-10 flex items-center">
             <section
                 className="w-full rounded-xl p-5 text-center"
                 style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
