@@ -4,28 +4,31 @@ import type { NotificationStoreState } from '../types';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 import { clamp } from '../utils/numeric';
 import { isFiniteNumber } from '../utils/persistSanitize';
+import { isValidYmd } from '../utils/dateUtils';
 
 const MIN_REMINDER_HOUR = 0;
 const MAX_REMINDER_HOUR = 23;
+export const MAX_NOTIFICATION_TASK_ID_LENGTH = 128;
 
 /** リマインダー時刻（時）を 0-23 の整数に丸める。 */
-function clampReminderHour(hour: number): number {
+function clampReminderHour(hour: unknown): number {
+    if (!isFiniteNumber(hour)) return NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST;
     return clamp(Math.floor(hour), MIN_REMINDER_HOUR, MAX_REMINDER_HOUR);
 }
 
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-function isValidDateKey(value: unknown): value is string {
-    return typeof value === 'string' && DATE_KEY_PATTERN.test(value);
+function sanitizeTaskId(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const id = value.trim();
+    if (!id || id.length > MAX_NOTIFICATION_TASK_ID_LENGTH) return null;
+    return id;
 }
 
 function sanitizeTaskIds(value: unknown): string[] {
     if (!Array.isArray(value)) return [];
     return Array.from(new Set(
         value
-            .filter((id): id is string => typeof id === 'string')
-            .map((id) => id.trim())
-            .filter(Boolean)
+            .map(sanitizeTaskId)
+            .filter((id): id is string => id !== null)
     )).slice(-NOTIFICATION_CONFIG.MAX_NOTIFIED_TASK_IDS);
 }
 
@@ -41,7 +44,8 @@ export function sanitizeNotificationState(persisted: unknown): Partial<Notificat
         result.notifiedTaskIds = sanitizeTaskIds(raw.notifiedTaskIds);
     }
 
-    if (raw.lastHabitReminderDate === null || isValidDateKey(raw.lastHabitReminderDate)) {
+    if (raw.lastHabitReminderDate === null
+        || (typeof raw.lastHabitReminderDate === 'string' && isValidYmd(raw.lastHabitReminderDate))) {
         result.lastHabitReminderDate = raw.lastHabitReminderDate;
     }
 
@@ -60,7 +64,7 @@ export const useNotificationStore = create<NotificationStoreState>()(
             lastHabitReminderDate: null,
             habitReminderHour: NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST,
 
-            setEnabled: (enabled: boolean) => set({ enabled }),
+            setEnabled: (enabled: boolean) => set({ enabled: enabled === true }),
 
             setHabitReminderHour: (hour: number) => {
                 set({ habitReminderHour: clampReminderHour(hour) });
@@ -68,12 +72,15 @@ export const useNotificationStore = create<NotificationStoreState>()(
 
             markTaskNotified: (taskId: string) =>
                 set((state) => {
-                    const sanitizedId = taskId.trim();
+                    const sanitizedId = sanitizeTaskId(taskId);
                     if (!sanitizedId || state.notifiedTaskIds.includes(sanitizedId)) return state;
                     return { notifiedTaskIds: sanitizeTaskIds([...state.notifiedTaskIds, sanitizedId]) };
                 }),
 
-            markHabitReminded: (date: string) => set({ lastHabitReminderDate: date }),
+            markHabitReminded: (date: string) => {
+                if (!isValidYmd(date)) return;
+                set({ lastHabitReminderDate: date });
+            },
 
             pruneNotifiedTasks: (validTaskIds: string[]) =>
                 set((state) => {

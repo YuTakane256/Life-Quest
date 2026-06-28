@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { sanitizeNotificationState, useNotificationStore } from './useNotificationStore';
+import {
+    MAX_NOTIFICATION_TASK_ID_LENGTH,
+    sanitizeNotificationState,
+    useNotificationStore,
+} from './useNotificationStore';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 
 function reset() {
@@ -63,6 +67,7 @@ describe('useNotificationStore', () => {
 
         it('壊れた最終習慣リマインド日は復元しない', () => {
             expect(sanitizeNotificationState({ lastHabitReminderDate: '2026-6-1' })).toEqual({});
+            expect(sanitizeNotificationState({ lastHabitReminderDate: '2026-02-30' })).toEqual({});
             expect(sanitizeNotificationState({ lastHabitReminderDate: 'tomorrow' })).toEqual({});
         });
 
@@ -83,6 +88,11 @@ describe('useNotificationStore', () => {
         it('false に切替', () => {
             useNotificationStore.getState().setEnabled(true);
             useNotificationStore.getState().setEnabled(false);
+            expect(useNotificationStore.getState().enabled).toBe(false);
+        });
+
+        it('実行時の非boolean値は有効化として扱わない', () => {
+            useNotificationStore.getState().setEnabled('true' as unknown as boolean);
             expect(useNotificationStore.getState().enabled).toBe(false);
         });
     });
@@ -115,6 +125,13 @@ describe('useNotificationStore', () => {
             useNotificationStore.getState().setHabitReminderHour(23);
             expect(useNotificationStore.getState().habitReminderHour).toBe(23);
         });
+
+        it('NaNやInfinityは既定時刻へ戻す', () => {
+            useNotificationStore.getState().setHabitReminderHour(Number.NaN);
+            expect(useNotificationStore.getState().habitReminderHour).toBe(NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST);
+            useNotificationStore.getState().setHabitReminderHour(Number.POSITIVE_INFINITY);
+            expect(useNotificationStore.getState().habitReminderHour).toBe(NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST);
+        });
     });
 
     // ── markTaskNotified ──
@@ -140,6 +157,12 @@ describe('useNotificationStore', () => {
             useNotificationStore.getState().markTaskNotified(' ');
             useNotificationStore.getState().markTaskNotified(' task-1 ');
             expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['task-1']);
+        });
+
+        it('巨大IDと非文字列IDは追加しない', () => {
+            useNotificationStore.getState().markTaskNotified('x'.repeat(MAX_NOTIFICATION_TASK_ID_LENGTH + 1));
+            useNotificationStore.getState().markTaskNotified(null as unknown as string);
+            expect(useNotificationStore.getState().notifiedTaskIds).toEqual([]);
         });
 
         it('上限を超えたら古い ID から削除する', () => {
@@ -196,6 +219,12 @@ describe('useNotificationStore', () => {
             useNotificationStore.getState().markHabitReminded('2025-03-15');
             useNotificationStore.getState().markHabitReminded('2025-03-16');
             expect(useNotificationStore.getState().lastHabitReminderDate).toBe('2025-03-16');
+        });
+
+        it('実在しない日付では最終通知日を変更しない', () => {
+            useNotificationStore.getState().markHabitReminded('2025-03-15');
+            useNotificationStore.getState().markHabitReminded('2025-02-30');
+            expect(useNotificationStore.getState().lastHabitReminderDate).toBe('2025-03-15');
         });
     });
 });
