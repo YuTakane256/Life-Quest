@@ -35,6 +35,9 @@ import { getUnlockedBattleSkills, resolveBattleSkill } from '../utils/battleSkil
 import { useBattleHistoryStore } from './useBattleHistoryStore';
 import { isPlainObject, isFiniteNumber, toNonNegativeInteger, toBoundedInteger } from '../utils/persistSanitize';
 
+export const MAX_TOTAL_XP = Number.MAX_SAFE_INTEGER;
+export const MAX_GACHA_COUNT = Number.MAX_SAFE_INTEGER;
+
 // ─── ヘルパー関数 ─────────────────────────────────────────────
 
 /** EquipmentTemplate から Equipment インスタンスを生成する */
@@ -53,7 +56,7 @@ export function createEquipmentInstance(template: EquipmentTemplate): Equipment 
 }
 
 export function calculateLevel(totalXp: number): number {
-    const safeTotalXp = toNonNegativeInteger(totalXp, 0);
+    const safeTotalXp = toBoundedInteger(totalXp, 0, 0, MAX_TOTAL_XP);
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
     if (safeTotalXp >= table[maxTableLevel]) {
@@ -77,7 +80,7 @@ export function calculateNextLevelXp(level: number): number {
 }
 
 export function calculateXpProgress(totalXp: number, level: number): number {
-    const safeTotalXp = toNonNegativeInteger(totalXp, 0);
+    const safeTotalXp = toBoundedInteger(totalXp, 0, 0, MAX_TOTAL_XP);
     const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
     const table = XP_CONFIG.LEVEL_XP_TABLE;
     const maxTableLevel = table.length - 1;
@@ -120,23 +123,17 @@ export function calculateDamage(attack: number, defense: number): number {
     return Math.max(damage, BATTLE_CONFIG.MIN_DAMAGE);
 }
 
-function getNewMilestones(oldCount: number, newCount: number): GachaMilestone[] {
-    const milestones: GachaMilestone[] = [];
-    for (let count = oldCount + 1; count <= newCount; count++) {
-        const specialKeys = Object.keys(GACHA_CONFIG.SPECIAL_MILESTONES).map(Number);
-        const specialMatch = specialKeys.find((k) => k === count);
-        if (specialMatch) {
-            const special = GACHA_CONFIG.SPECIAL_MILESTONES[specialMatch as keyof typeof GACHA_CONFIG.SPECIAL_MILESTONES];
-            milestones.push({ count, chestType: special.chestType, label: special.label });
-            continue;
-        }
-        const posInCycle = count <= 100 ? count : ((count - 1) % GACHA_CONFIG.CYCLE_LENGTH) + 1;
-        const milestone = GACHA_CONFIG.MILESTONES.find((m) => m.count === posInCycle);
-        if (milestone) {
-            milestones.push({ count, chestType: milestone.chestType, label: milestone.label });
-        }
+function getMilestoneAtCount(count: number): GachaMilestone | null {
+    const special = GACHA_CONFIG.SPECIAL_MILESTONES[count as keyof typeof GACHA_CONFIG.SPECIAL_MILESTONES];
+    if (special) {
+        return { count, chestType: special.chestType, label: special.label };
     }
-    return milestones;
+
+    const posInCycle = count <= GACHA_CONFIG.CYCLE_LENGTH
+        ? count
+        : ((count - 1) % GACHA_CONFIG.CYCLE_LENGTH) + 1;
+    const milestone = GACHA_CONFIG.MILESTONES.find((candidate) => candidate.count === posInCycle);
+    return milestone ? { count, chestType: milestone.chestType, label: milestone.label } : null;
 }
 
 function pickSynthesisSlot(items: Equipment[]): EquipmentSlot {
@@ -243,7 +240,7 @@ const MAX_STAGE = BATTLE_CONFIG.STAGES[BATTLE_CONFIG.STAGES.length - 1]?.stage ?
 function sanitizeCharacter(raw: unknown): CharacterStats {
     if (!isPlainObject(raw)) return { ...initialCharacter };
 
-    const totalXp = toNonNegativeInteger(raw.totalXp, initialCharacter.totalXp);
+    const totalXp = toBoundedInteger(raw.totalXp, initialCharacter.totalXp, 0, MAX_TOTAL_XP);
     const level = calculateLevel(totalXp);
 
     return {
@@ -409,7 +406,7 @@ export function sanitizeGameStoreState(persisted: unknown): GameStorePersisted {
         character,
         debuff: sanitizeDebuff(persisted.debuff),
         equipment: sanitizeEquipmentList(persisted.equipment),
-        gachaCount: toNonNegativeInteger(persisted.gachaCount, 0),
+        gachaCount: toBoundedInteger(persisted.gachaCount, 0, 0, MAX_GACHA_COUNT),
         chestQueue: Array.isArray(persisted.chestQueue)
             ? persisted.chestQueue.map(sanitizeChest).filter((chest): chest is ChestReward => chest !== null)
             : [],
@@ -444,7 +441,7 @@ export const useGameStore = create<GameStoreState>()(
             },
 
             addXp: (baseXp: number) => {
-                const safeBaseXp = toNonNegativeInteger(baseXp, 0);
+                const safeBaseXp = toBoundedInteger(baseXp, 0, 0, MAX_TOTAL_XP);
                 if (safeBaseXp === 0) return;
 
                 const { debuff, character } = get();
@@ -459,7 +456,8 @@ export const useGameStore = create<GameStoreState>()(
                 const actualXp = Math.max(0, Math.floor(safeBaseXp * multiplier));
                 if (actualXp === 0) return;
 
-                const newTotalXp = character.totalXp + actualXp;
+                const currentTotalXp = toBoundedInteger(character.totalXp, 0, 0, MAX_TOTAL_XP);
+                const newTotalXp = Math.min(MAX_TOTAL_XP, currentTotalXp + actualXp);
                 const newLevel = calculateLevel(newTotalXp);
                 const levelDiff = newLevel - character.level;
                 const newAttack = character.baseAttack + levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.attack;
@@ -488,14 +486,18 @@ export const useGameStore = create<GameStoreState>()(
                 });
             },
 
-            incrementGachaCount: () => set((state) => ({ gachaCount: state.gachaCount + 1 })),
+            incrementGachaCount: () => set((state) => ({
+                gachaCount: Math.min(
+                    MAX_GACHA_COUNT,
+                    toBoundedInteger(state.gachaCount, 0, 0, MAX_GACHA_COUNT) + 1,
+                ),
+            })),
 
             checkGachaMilestones: () => {
                 const { gachaCount, chestQueue } = get();
-                const oldCount = gachaCount - 1;
-                const newMilestones = getNewMilestones(oldCount, gachaCount);
-                if (newMilestones.length === 0) return;
-                const newChests: ChestReward[] = newMilestones.map((m) => ({
+                const milestone = getMilestoneAtCount(toBoundedInteger(gachaCount, 0, 0, MAX_GACHA_COUNT));
+                if (!milestone) return;
+                const newChests: ChestReward[] = [milestone].map((m) => ({
                     id: generateId(),
                     chestType: m.chestType,
                     label: m.label,
