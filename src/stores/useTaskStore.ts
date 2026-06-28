@@ -242,11 +242,15 @@ export const useTaskStore = create<TaskStoreState>()(
                 if (!task) return;
 
                 if (task.completed) {
-                    // 完了を取り消す場合（既に報酬付与済みなので差し戻さない）
+                    // Undo待機中ならタイマーも止める。完了フラグだけ戻すと、古い
+                    // コールバックが後から報酬を付与して再完了させてしまう。
+                    const pending = get().pendingCompletions.find((p) => p.taskId === id);
+                    clearPendingCompletionTimer(pending);
                     set((state) => ({
                         tasks: state.tasks.map((t) =>
                             t.id === id ? { ...t, completed: false, completedAt: null } : t
                         ),
+                        pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== id),
                     }));
                     return;
                 }
@@ -260,6 +264,13 @@ export const useTaskStore = create<TaskStoreState>()(
                 const timeoutId = window.setTimeout(async () => {
                     // 5秒後に確定処理
                     const currentState = get();
+                    const activePending = currentState.pendingCompletions.find((pending) =>
+                        pending.taskId === id
+                        && pending.timeoutId === timeoutId
+                        && pending.completedAt === completedAt
+                    );
+                    if (!activePending) return;
+
                     const pendingTask = currentState.tasks.find((t) => t.id === id);
                     if (!pendingTask) return;
 

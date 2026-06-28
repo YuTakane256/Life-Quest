@@ -119,11 +119,35 @@ describe('useTaskStore.toggleComplete', () => {
         expect(useTaskStore.getState().pendingCompletions).toHaveLength(0);
     });
 
-    it('同じ未完了タスクで2回連続 toggleComplete: pending は1件のみ', () => {
+    it('Undo待ちのタスクを再トグルするとタイマーを破棄して未完了に戻す', async () => {
         const id = seedTask();
         useTaskStore.getState().toggleComplete(id);
         useTaskStore.getState().toggleComplete(id);
-        expect(useTaskStore.getState().pendingCompletions).toHaveLength(1);
+
+        expect(useTaskStore.getState().pendingCompletions).toHaveLength(0);
+        expect(useTaskStore.getState().tasks[0]).toMatchObject({
+            completed: false,
+            completedAt: null,
+        });
+
+        await vi.advanceTimersByTimeAsync(UI_CONFIG.UNDO_DURATION_MS);
+        expect(addXpSpy).not.toHaveBeenCalled();
+        expect(incGachaSpy).not.toHaveBeenCalled();
+    });
+
+    it('pending tokenが差し替わった古いタイマーは報酬を付与しない', async () => {
+        const id = seedTask();
+        useTaskStore.getState().toggleComplete(id);
+        useTaskStore.setState((state) => ({
+            pendingCompletions: state.pendingCompletions.map((pending) => ({
+                ...pending,
+                completedAt: '2099-01-01T00:00:00.000Z',
+            })),
+        }));
+
+        await vi.advanceTimersByTimeAsync(UI_CONFIG.UNDO_DURATION_MS);
+        expect(addXpSpy).not.toHaveBeenCalled();
+        expect(logTaskXpSpy).not.toHaveBeenCalled();
     });
 
     it('繰り返しタスク(daily) を完了→5秒後に次回分が自動生成される', async () => {
