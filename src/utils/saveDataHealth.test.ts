@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { inspectSaveDataHealth } from './saveDataHealth';
+import { inspectSaveDataHealth, SAVE_DATA_SECTION_KEYS } from './saveDataHealth';
 
 describe('inspectSaveDataHealth', () => {
     beforeEach(() => {
@@ -14,7 +14,7 @@ describe('inspectSaveDataHealth', () => {
         localStorage.setItem('quest-board-tasks', '{"state":{"tasks":[]}}');
         localStorage.setItem('quest-board-habits', '{');
         localStorage.setItem('quest-board-game', '[]');
-        localStorage.setItem('quest-board-stats', '{"state":{"taskXpLog":{}}}');
+        localStorage.setItem('quest-board-stats', '{"state":{"taskXpLog":{},"habitLog":{}}}');
 
         const report = inspectSaveDataHealth(localStorage);
 
@@ -25,6 +25,24 @@ describe('inspectSaveDataHealth', () => {
         expect(report.totalBytes).toBeGreaterThan(0);
         expect(report.sections.find((section) => section.key === 'quest-board-habits')?.status).toBe('invalid');
         expect(report.sections.find((section) => section.key === 'quest-board-theme')?.status).toBe('missing');
+    });
+
+    it('JSONオブジェクトでもZustand stateや必須フィールドがなければ破損扱いにする', () => {
+        localStorage.setItem('quest-board-tasks', '{"other":{}}');
+        localStorage.setItem('quest-board-stats', '{"state":{"taskXpLog":{}}}');
+
+        const report = inspectSaveDataHealth(localStorage);
+
+        expect(report.sections.find((section) => section.key === 'quest-board-tasks')?.status).toBe('invalid');
+        expect(report.sections.find((section) => section.key === 'quest-board-stats')?.status).toBe('invalid');
+    });
+
+    it('全persistストアを診断対象に含める', () => {
+        expect(inspectSaveDataHealth(localStorage).sections.map((section) => section.key)).toEqual(
+            SAVE_DATA_SECTION_KEYS
+        );
+        expect(SAVE_DATA_SECTION_KEYS).toContain('quest-board-friends');
+        expect(SAVE_DATA_SECTION_KEYS).toContain('quest-board-title');
     });
 
     it('returns unavailable when storage access throws', () => {
