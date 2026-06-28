@@ -147,23 +147,58 @@ describe('useHabitStore', () => {
                 }).allCompleteRewardDates
             ).toEqual(['2026-06-13']);
         });
+
+        it('重複した習慣ID・日別記録・お休み日は後の値を残して1件にする', () => {
+            const sanitized = sanitizeHabitStoreState({
+                habits: [
+                    { id: 'habit-1', name: 'old', categoryId: 'study', createdAt: '2025-01-01T00:00:00.000Z' },
+                    { id: 'habit-1', name: 'new', categoryId: 'health', createdAt: '2025-01-02T00:00:00.000Z' },
+                ],
+                dailyRecords: [
+                    { habitId: 'habit-1', date: '2025-05-10', completed: false, memo: 'old' },
+                    { habitId: 'habit-1', date: '2025-05-10', completed: true, memo: 'new' },
+                ],
+                restDays: [
+                    { date: '2025-05-10', isRest: false },
+                    { date: '2025-05-10', isRest: true },
+                ],
+            });
+
+            expect(sanitized.habits).toHaveLength(1);
+            expect(sanitized.habits[0].name).toBe('new');
+            expect(sanitized.dailyRecords).toEqual([
+                { habitId: 'habit-1', date: '2025-05-10', completed: true, memo: 'new' },
+            ]);
+            expect(sanitized.restDays).toEqual([{ date: '2025-05-10', isRest: true }]);
+        });
     });
 
     describe('addHabit & deleteHabit', () => {
         it('should add a habit with correct initial values', () => {
             const { addHabit } = useHabitStore.getState();
-            addHabit('Read a book', 'cat1');
+            addHabit('Read a book', 'health');
 
             const state = useHabitStore.getState();
             expect(state.habits).toHaveLength(1);
             expect(state.habits[0].name).toBe('Read a book');
-            expect(state.habits[0].categoryId).toBe('cat1');
+            expect(state.habits[0].categoryId).toBe('health');
             expect(state.habits[0].createdAt.startsWith(getTodayJST())).toBe(true);
         });
 
         it('should add a habit with DEFAULT_CATEGORY_ID if categoryId is omitted', () => {
             useHabitStore.getState().addHabit('Exercise');
             expect(useHabitStore.getState().habits[0].categoryId).toBe(DEFAULT_CATEGORY_ID);
+        });
+
+        it('空の名前を拒否し、不明なカテゴリはデフォルトへ戻す', () => {
+            useHabitStore.getState().addHabit('   ', 'health');
+            useHabitStore.getState().addHabit('Valid', 'unknown');
+
+            expect(useHabitStore.getState().habits).toHaveLength(1);
+            expect(useHabitStore.getState().habits[0]).toMatchObject({
+                name: 'Valid',
+                categoryId: DEFAULT_CATEGORY_ID,
+            });
         });
 
         it('should delete a habit by id', () => {
@@ -181,6 +216,17 @@ describe('useHabitStore', () => {
     });
 
     describe('toggleHabitCompletion & setHabitMemo', () => {
+        it('存在しない習慣IDや不正日付ではレコードを作らない', () => {
+            useHabitStore.getState().addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+
+            useHabitStore.getState().toggleHabitCompletion('missing', '2025-05-10');
+            useHabitStore.getState().toggleHabitCompletion(habitId, '2025-02-30');
+            useHabitStore.getState().setHabitMemo('missing', '2025-05-10', 'memo');
+            useHabitStore.getState().setHabitMemo(habitId, 'bad-date', 'memo');
+
+            expect(useHabitStore.getState().dailyRecords).toEqual([]);
+        });
         it('should toggle habit completion for a specific date', () => {
             const { addHabit, toggleHabitCompletion } = useHabitStore.getState();
             addHabit('Habit 1');
