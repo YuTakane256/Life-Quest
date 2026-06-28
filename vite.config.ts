@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { isSameOriginImageRequest } from './src/config/pwaCache'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -30,18 +31,23 @@ export default defineConfig({
                 ],
             },
             workbox: {
+                cleanupOutdatedCaches: true,
                 // アプリシェル（JS/CSS/HTML/フォント）をプリキャッシュしてオフライン起動を可能にする
                 globPatterns: ['**/*.{js,css,html,woff2}'],
                 // 大量の画像アセットは初回利用時にキャッシュする（プリキャッシュ肥大化を回避）
                 runtimeCaching: [
                     {
-                        urlPattern: ({ request }) => request.destination === 'image',
+                        urlPattern: isSameOriginImageRequest,
                         handler: 'CacheFirst',
                         options: {
                             cacheName: 'image-assets',
+                            cacheableResponse: {
+                                statuses: [200],
+                            },
                             expiration: {
                                 maxEntries: 200,
                                 maxAgeSeconds: 60 * 60 * 24 * 30, // 30日
+                                purgeOnQuotaError: true,
                             },
                         },
                     },
