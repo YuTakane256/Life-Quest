@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { sanitizeStatsStoreState, useStatsStore } from './useStatsStore';
+import {
+    MAX_STATS_DAILY_VALUE,
+    MAX_STATS_LOG_ENTRIES,
+    sanitizeStatsStoreState,
+    useStatsStore,
+} from './useStatsStore';
+import { shiftDate } from '../utils/dateUtils';
 
 function reset() {
     localStorage.clear();
@@ -51,6 +57,26 @@ describe('useStatsStore', () => {
                 '2026-06-14': { count: 0, allComplete: false },
             });
         });
+
+        it('各ログは最新10年分を残し、巨大値は安全整数上限へ丸める', () => {
+            const dates = Array.from(
+                { length: MAX_STATS_LOG_ENTRIES + 1 },
+                (_, index) => shiftDate('2026-12-31', -index),
+            );
+            const sanitized = sanitizeStatsStoreState({
+                taskXpLog: Object.fromEntries(dates.map((date) => [date, Number.MAX_VALUE])),
+                habitLog: Object.fromEntries(dates.map((date) => [date, {
+                    count: Number.MAX_VALUE,
+                    allComplete: false,
+                }])),
+            });
+
+            expect(Object.keys(sanitized.taskXpLog)).toHaveLength(MAX_STATS_LOG_ENTRIES);
+            expect(Object.keys(sanitized.habitLog)).toHaveLength(MAX_STATS_LOG_ENTRIES);
+            expect(sanitized.taskXpLog['2026-12-31']).toBe(MAX_STATS_DAILY_VALUE);
+            expect(sanitized.habitLog['2026-12-31'].count).toBe(MAX_STATS_DAILY_VALUE);
+            expect(sanitized.taskXpLog[dates[dates.length - 1]]).toBeUndefined();
+        });
     });
 
     // ── logTaskXp ──
@@ -90,6 +116,14 @@ describe('useStatsStore', () => {
             useStatsStore.getState().logTaskXp('2025-03-15', 10.9);
             expect(useStatsStore.getState().taskXpLog['2025-03-15']).toBe(10);
         });
+
+        it('同日の累積XPは安全整数上限で飽和する', () => {
+            useStatsStore.setState({ taskXpLog: { '2025-03-15': MAX_STATS_DAILY_VALUE } });
+
+            useStatsStore.getState().logTaskXp('2025-03-15', 10);
+
+            expect(useStatsStore.getState().taskXpLog['2025-03-15']).toBe(MAX_STATS_DAILY_VALUE);
+        });
     });
 
     // ── logHabitActivity ──
@@ -128,6 +162,15 @@ describe('useStatsStore', () => {
         it('小数countは整数に丸めて記録する', () => {
             useStatsStore.getState().logHabitActivity('2025-03-15', 3.9, true);
             expect(useStatsStore.getState().habitLog['2025-03-15']).toEqual({ count: 3, allComplete: true });
+        });
+
+        it('巨大countは安全整数上限で飽和する', () => {
+            useStatsStore.getState().logHabitActivity('2025-03-15', Number.MAX_VALUE, true);
+
+            expect(useStatsStore.getState().habitLog['2025-03-15']).toEqual({
+                count: MAX_STATS_DAILY_VALUE,
+                allComplete: true,
+            });
         });
     });
 
