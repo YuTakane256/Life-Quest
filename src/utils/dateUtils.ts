@@ -89,15 +89,37 @@ export function generateId(): string {
     return `${Date.now()}-${generateRandomIdSegment()}`;
 }
 
+let fallbackIdCounter = 0;
+
+function generateFallbackIdSegment(): string {
+    fallbackIdCounter = fallbackIdCounter >= Number.MAX_SAFE_INTEGER ? 1 : fallbackIdCounter + 1;
+
+    let randomPart = '0';
+    try {
+        const randomValue = Math.random();
+        if (Number.isFinite(randomValue) && randomValue >= 0) {
+            randomPart = randomValue.toString(36).substring(2, 12) || '0';
+        }
+    } catch {
+        // The monotonic suffix still keeps IDs unique within this runtime.
+    }
+
+    return `${randomPart}${fallbackIdCounter.toString(36).padStart(8, '0')}`;
+}
+
 function generateRandomIdSegment(): string {
     const cryptoApi = globalThis.crypto;
     if (cryptoApi?.getRandomValues) {
-        const bytes = new Uint8Array(8);
-        cryptoApi.getRandomValues(bytes);
-        return Array.from(bytes, (byte) => byte.toString(36).padStart(2, '0')).join('');
+        try {
+            const bytes = new Uint8Array(8);
+            cryptoApi.getRandomValues(bytes);
+            return Array.from(bytes, (byte) => byte.toString(36).padStart(2, '0')).join('');
+        } catch {
+            return generateFallbackIdSegment();
+        }
     }
 
-    return Math.random().toString(36).substring(2, 12);
+    return generateFallbackIdSegment();
 }
 
 /**
