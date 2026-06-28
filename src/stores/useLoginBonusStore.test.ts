@@ -82,7 +82,23 @@ describe('useLoginBonusStore', () => {
 
     it('特別宝箱付与に失敗した場合もログイン状態を確定しない', () => {
         useLoginBonusStore.setState({ lastLoginDate: '2025-03-14', streak: 6 });
+        const beforeCharacter = useGameStore.getState().character;
+        const beforeChestQueue = useGameStore.getState().chestQueue;
+        addXpSpy.mockImplementation((xp: number) => {
+            useGameStore.setState((state) => ({
+                character: { ...state.character, totalXp: state.character.totalXp + xp },
+            }));
+        });
         grantChestSpy.mockImplementation(() => {
+            useGameStore.setState((state) => ({
+                chestQueue: [...state.chestQueue, {
+                    id: 'partial-chest',
+                    chestType: LOGIN_BONUS_CONFIG.SPECIAL_CHEST_TYPE,
+                    label: LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL,
+                    opened: false,
+                    equipment: null,
+                }],
+            }));
             throw new Error('chest failed');
         });
 
@@ -96,6 +112,22 @@ describe('useLoginBonusStore', () => {
         expect(addXpSpy).toHaveBeenCalledWith(
             LOGIN_BONUS_CONFIG.BASE_XP + 6 * LOGIN_BONUS_CONFIG.XP_PER_STREAK_DAY
         );
+        expect(useGameStore.getState().character).toEqual(beforeCharacter);
+        expect(useGameStore.getState().chestQueue).toEqual(beforeChestQueue);
+    });
+
+    it('端末時計が保存済みログイン日より前に戻っても追加付与しない', () => {
+        useLoginBonusStore.setState({ lastLoginDate: '2025-03-16', streak: 2, pendingBonus: null });
+
+        useLoginBonusStore.getState().checkDailyLogin();
+
+        expect(addXpSpy).not.toHaveBeenCalled();
+        expect(grantChestSpy).not.toHaveBeenCalled();
+        expect(useLoginBonusStore.getState()).toMatchObject({
+            lastLoginDate: '2025-03-16',
+            streak: 2,
+            pendingBonus: null,
+        });
     });
 
     it('前日ログインありで翌日: streak=2', () => {
