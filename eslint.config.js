@@ -25,4 +25,30 @@ export default tseslint.config(
             '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
         },
     },
+    {
+        files: ['src/core/**/*.{ts,tsx}'],
+        rules: {
+            'no-restricted-imports': ['error', {
+                paths: [
+                    { name: 'react', message: 'Shared core must not depend on React.' },
+                    { name: 'react-dom', message: 'Shared core must not depend on React DOM.' },
+                    { name: 'react-router-dom', message: 'Shared core must not depend on Web routing.' },
+                    { name: 'zustand', message: 'Shared core must not depend on client state stores.' },
+                ],
+                patterns: [
+                    {
+                        group: ['../*'],
+                        message: 'Shared core may only import sibling core modules.',
+                    },
+                ],
+            }],
+            'no-restricted-globals': ['error',
+                { name: 'window', message: 'Shared core must not use browser APIs.' },
+                { name: 'document', message: 'Shared core must not use browser APIs.' },
+                { name: 'navigator', message: 'Shared core must not use browser APIs.' },
+                { name: 'localStorage', message: 'Use a platform storage adapter outside shared core.' },
+                { name: 'sessionStorage', message: 'Use a platform storage adapter outside shared core.' },
+            ],
+        },
+    },
 );
