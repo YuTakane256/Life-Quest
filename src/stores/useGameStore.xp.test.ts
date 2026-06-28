@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useGameStore } from './useGameStore';
+import { MAX_TOTAL_XP, calculateLevel, useGameStore } from './useGameStore';
 import { XP_CONFIG, CHARACTER_CONFIG } from '../config/gameConfig';
 
 const INITIAL = CHARACTER_CONFIG.INITIAL_STATS;
@@ -140,6 +140,24 @@ describe('useGameStore.addXp', () => {
         useGameStore.getState().addXp(20.9);
 
         expect(useGameStore.getState().character.totalXp).toBe(20);
+    });
+
+    it('XP加算は安全整数上限で飽和しInfinityにならない', () => {
+        const currentXp = MAX_TOTAL_XP - 5;
+        useGameStore.setState((state) => ({
+            character: {
+                ...state.character,
+                totalXp: currentXp,
+                level: calculateLevel(currentXp),
+            },
+        }));
+
+        useGameStore.getState().addXp(100);
+
+        const { character } = useGameStore.getState();
+        expect(character.totalXp).toBe(MAX_TOTAL_XP);
+        expect(Number.isFinite(character.level)).toBe(true);
+        expect(Number.isFinite(character.baseMaxHp)).toBe(true);
     });
 
     it('clearLevelUpEvent: 発火済みレベルアップイベントだけを消す', () => {

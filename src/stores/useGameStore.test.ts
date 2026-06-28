@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateLevel, calculateNextLevelXp, calculateXpProgress, sanitizeGameStoreState } from './useGameStore';
+import { MAX_GACHA_COUNT, MAX_TOTAL_XP, calculateLevel, calculateNextLevelXp, calculateXpProgress, sanitizeGameStoreState } from './useGameStore';
 import { BATTLE_CONFIG, CHARACTER_CONFIG, EQUIPMENT_POOL, UI_CONFIG, XP_CONFIG } from '../config/gameConfig';
 
 const TABLE = XP_CONFIG.LEVEL_XP_TABLE;
@@ -50,6 +50,18 @@ describe('sanitizeGameStoreState', () => {
             baseDefense: CHARACTER_CONFIG.INITIAL_STATS.defense + (level - 1) * CHARACTER_CONFIG.STAT_PER_LEVEL.defense,
             baseMaxHp: CHARACTER_CONFIG.INITIAL_STATS.maxHp + (level - 1) * CHARACTER_CONFIG.STAT_PER_LEVEL.maxHp,
         });
+    });
+
+    it('巨大なXPとガチャ回数は安全整数上限へ丸める', () => {
+        const sanitized = sanitizeGameStoreState({
+            character: { totalXp: Number.MAX_VALUE },
+            gachaCount: Number.MAX_VALUE,
+        });
+
+        expect(sanitized.character.totalXp).toBe(MAX_TOTAL_XP);
+        expect(sanitized.character.level).toBe(calculateLevel(MAX_TOTAL_XP));
+        expect(sanitized.gachaCount).toBe(MAX_GACHA_COUNT);
+        expect(Number.isSafeInteger(sanitized.character.baseMaxHp)).toBe(true);
     });
 
     it('装備は既知テンプレートから性能を復元し、同スロットの複数装備を解除する', () => {
