@@ -13,10 +13,17 @@ export function createSafePersistMerge<TState extends object>(
 ) {
     return (persisted: unknown, current: TState): TState => {
         try {
-            return {
-                ...current,
-                ...sanitize(readPersistedStateRecord(persisted), current),
-            };
+            const sanitized = sanitize(readPersistedStateRecord(persisted), current);
+            const merged = { ...current } as unknown as PersistedStateRecord;
+            const currentRecord = current as TState & PersistedStateRecord;
+
+            for (const [key, value] of Object.entries(sanitized)) {
+                if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
+                if (typeof currentRecord[key] === 'function') continue;
+                merged[key] = value;
+            }
+
+            return merged as TState;
         } catch {
             return current;
         }
