@@ -112,6 +112,89 @@ describe('runNotificationChecks', () => {
         expect(showNotification).not.toHaveBeenCalled();
         expect(useNotificationStore.getState().notifiedTaskIds).toEqual([]);
     });
+
+    it('Service Worker通知が失敗したタスクは通知済みにせず再試行可能にする', async () => {
+        const showNotification = vi.fn().mockRejectedValue(new Error('delivery failed'));
+        Object.defineProperty(navigator, 'serviceWorker', {
+            configurable: true,
+            value: { getRegistration: vi.fn().mockResolvedValue({ showNotification }) },
+        });
+        useTaskStore.setState({
+            tasks: [{
+                id: 'task-retry',
+                name: '再試行するタスク',
+                dueDate: '2026-06-13',
+                priority: 'medium',
+                tags: [],
+                subtasks: [],
+                recurrence: 'none',
+                completed: false,
+                completedAt: null,
+                createdAt: '2026-06-13T00:00:00.000Z',
+            }],
+            pendingCompletions: [],
+        });
+
+        await runNotificationChecks();
+
+        expect(showNotification).toHaveBeenCalledTimes(1);
+        expect(useNotificationStore.getState().notifiedTaskIds).toEqual([]);
+    });
+
+    it('Notification constructorが失敗したタスクも通知済みにしない', async () => {
+        Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: undefined });
+        vi.stubGlobal('Notification', class FailingNotification {
+            static permission: NotificationPermission = 'granted';
+            constructor() {
+                throw new Error('constructor failed');
+            }
+        });
+        useTaskStore.setState({
+            tasks: [{
+                id: 'task-constructor-failure',
+                name: '通常通知失敗',
+                dueDate: '2026-06-13',
+                priority: 'medium',
+                tags: [],
+                subtasks: [],
+                recurrence: 'none',
+                completed: false,
+                completedAt: null,
+                createdAt: '2026-06-13T00:00:00.000Z',
+            }],
+            pendingCompletions: [],
+        });
+
+        await runNotificationChecks();
+
+        expect(useNotificationStore.getState().notifiedTaskIds).toEqual([]);
+    });
+
+    it('習慣通知の配信失敗時は通知日を記録しない', async () => {
+        vi.setSystemTime(new Date('2026-06-13T11:00:00.000Z'));
+        Object.defineProperty(navigator, 'serviceWorker', {
+            configurable: true,
+            value: {
+                getRegistration: vi.fn().mockResolvedValue({
+                    showNotification: vi.fn().mockRejectedValue(new Error('delivery failed')),
+                }),
+            },
+        });
+        useHabitStore.setState({
+            habits: [{
+                id: 'habit-1',
+                name: '未完了の習慣',
+                categoryId: 'other',
+                createdAt: '2026-06-13T00:00:00.000Z',
+            }],
+            dailyRecords: [],
+            restDays: [],
+        });
+
+        await runNotificationChecks();
+
+        expect(useNotificationStore.getState().lastHabitReminderDate).toBeNull();
+    });
 });
 
 describe('resolveHabitReminderHour', () => {
