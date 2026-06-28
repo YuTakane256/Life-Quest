@@ -24,6 +24,8 @@ const validBackup: BackupData = {
     taskSort: {},
     habitSort: {},
     title: {},
+    friends: {},
+    motion: {},
 };
 
 describe('dataBackup utilities', () => {
@@ -61,7 +63,7 @@ describe('dataBackup utilities', () => {
         });
 
         it('allows optional settings stores to be omitted', () => {
-            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, title, ...withoutOptionalStores } = validBackup;
+            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, title, friends, motion, ...withoutOptionalStores } = validBackup;
             expect(theme).toEqual({});
             expect(notifications).toEqual({});
             expect(loginBonus).toEqual({});
@@ -69,6 +71,8 @@ describe('dataBackup utilities', () => {
             expect(taskSort).toEqual({});
             expect(habitSort).toEqual({});
             expect(title).toEqual({});
+            expect(friends).toEqual({});
+            expect(motion).toEqual({});
             expect(isValidBackup(withoutOptionalStores)).toBe(true);
         });
     });
@@ -124,6 +128,8 @@ describe('dataBackup utilities', () => {
             localStorage.setItem('quest-board-task-sort', '{"state":{"sortMode":"priority"}}');
             localStorage.setItem('quest-board-habit-sort', '{"state":{"sortMode":"streak"}}');
             localStorage.setItem('quest-board-title', '{"state":{"activeTitle":"収集家"}}');
+            localStorage.setItem('quest-board-friends', '{"state":{"friends":[]}}');
+            localStorage.setItem('quest-board-motion', '{"state":{"mode":"reduced"}}');
 
             expect(exportAllData()).toEqual({
                 version: BACKUP_VERSION,
@@ -139,6 +145,8 @@ describe('dataBackup utilities', () => {
                 taskSort: { state: { sortMode: 'priority' } },
                 habitSort: { state: { sortMode: 'streak' } },
                 title: { state: { activeTitle: '収集家' } },
+                friends: { state: { friends: [] } },
+                motion: { state: { mode: 'reduced' } },
             });
         });
 
@@ -155,6 +163,8 @@ describe('dataBackup utilities', () => {
             expect(JSON.parse(localStorage.getItem('quest-board-task-sort') || '{}')).toEqual({});
             expect(JSON.parse(localStorage.getItem('quest-board-habit-sort') || '{}')).toEqual({});
             expect(JSON.parse(localStorage.getItem('quest-board-title') || '{}')).toEqual({});
+            expect(JSON.parse(localStorage.getItem('quest-board-friends') || '{}')).toEqual({});
+            expect(JSON.parse(localStorage.getItem('quest-board-motion') || '{}')).toEqual({});
         });
 
         it('rejects malformed runtime payloads before touching storage', () => {
@@ -173,7 +183,7 @@ describe('dataBackup utilities', () => {
         });
 
         it('imports older backups that omit optional stores', () => {
-            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, title, ...legacyBackup } = validBackup;
+            const { theme, notifications, loginBonus, battleHistory, taskSort, habitSort, title, friends, motion, ...legacyBackup } = validBackup;
             expect(theme).toEqual({});
             expect(notifications).toEqual({});
             expect(loginBonus).toEqual({});
@@ -181,6 +191,8 @@ describe('dataBackup utilities', () => {
             expect(taskSort).toEqual({});
             expect(habitSort).toEqual({});
             expect(title).toEqual({});
+            expect(friends).toEqual({});
+            expect(motion).toEqual({});
 
             localStorage.setItem('quest-board-theme', '{"state":{"mode":"dark"}}');
             localStorage.setItem('quest-board-notifications', '{"state":{"enabled":true}}');
@@ -189,6 +201,8 @@ describe('dataBackup utilities', () => {
             localStorage.setItem('quest-board-task-sort', '{"state":{"sortMode":"priority"}}');
             localStorage.setItem('quest-board-habit-sort', '{"state":{"sortMode":"streak"}}');
             localStorage.setItem('quest-board-title', '{"state":{"activeTitle":"old"}}');
+            localStorage.setItem('quest-board-friends', '{"state":{"friends":[{"id":"old"}]}}');
+            localStorage.setItem('quest-board-motion', '{"state":{"mode":"reduced"}}');
 
             expect(importAllData(legacyBackup)).toBe(true);
             expect(localStorage.getItem('quest-board-theme')).toBeNull();
@@ -198,6 +212,8 @@ describe('dataBackup utilities', () => {
             expect(localStorage.getItem('quest-board-task-sort')).toBeNull();
             expect(localStorage.getItem('quest-board-habit-sort')).toBeNull();
             expect(localStorage.getItem('quest-board-title')).toBeNull();
+            expect(localStorage.getItem('quest-board-friends')).toBeNull();
+            expect(localStorage.getItem('quest-board-motion')).toBeNull();
         });
 
         it('rolls back all touched keys if an import write fails', () => {
