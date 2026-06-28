@@ -19,6 +19,8 @@ const VALID_CATEGORY_IDS = new Set(HABIT_CATEGORIES.map((category) => category.i
 function sanitizeHabit(raw: unknown): Habit | null {
     if (!isPlainObject(raw)) return null;
     if (typeof raw.id !== 'string' || typeof raw.name !== 'string') return null;
+    const name = clampString(raw.name.trim(), UI_CONFIG.MAX_HABIT_NAME_LENGTH);
+    if (!name) return null;
 
     const categoryId = typeof raw.categoryId === 'string' && VALID_CATEGORY_IDS.has(raw.categoryId)
         ? raw.categoryId
@@ -26,10 +28,23 @@ function sanitizeHabit(raw: unknown): Habit | null {
 
     return {
         id: raw.id,
-        name: clampString(raw.name, UI_CONFIG.MAX_HABIT_NAME_LENGTH),
+        name,
         categoryId,
         createdAt: sanitizeTimestamp(raw.createdAt),
     };
+}
+
+function dedupeByKey<T>(items: T[], getKey: (item: T) => string): T[] {
+    const seen = new Set<string>();
+    const deduped: T[] = [];
+    for (let index = items.length - 1; index >= 0; index--) {
+        const item = items[index];
+        const key = getKey(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(item);
+    }
+    return deduped.reverse();
 }
 
 function sanitizeDailyRecord(raw: unknown, validHabitIds: Set<string>): HabitDailyRecord | null {
@@ -61,19 +76,26 @@ export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted
     }
 
     const habits = Array.isArray(persisted.habits)
-        ? persisted.habits.map(sanitizeHabit).filter((habit): habit is Habit => habit !== null)
+        ? dedupeByKey(
+            persisted.habits.map(sanitizeHabit).filter((habit): habit is Habit => habit !== null),
+            (habit) => habit.id,
+        )
         : [];
     const validHabitIds = new Set(habits.map((habit) => habit.id));
 
     return {
         habits,
         dailyRecords: Array.isArray(persisted.dailyRecords)
-            ? persisted.dailyRecords
+            ? dedupeByKey(persisted.dailyRecords
                 .map((record) => sanitizeDailyRecord(record, validHabitIds))
-                .filter((record): record is HabitDailyRecord => record !== null)
+                .filter((record): record is HabitDailyRecord => record !== null),
+            (record) => `${record.habitId}\u0000${record.date}`)
             : [],
         restDays: Array.isArray(persisted.restDays)
-            ? persisted.restDays.map(sanitizeRestDay).filter((restDay): restDay is RestDay => restDay !== null)
+            ? dedupeByKey(
+                persisted.restDays.map(sanitizeRestDay).filter((restDay): restDay is RestDay => restDay !== null),
+                (restDay) => restDay.date,
+            )
             : [],
         allCompleteRewardDates: Array.isArray(persisted.allCompleteRewardDates)
             ? Array.from(new Set(
@@ -94,10 +116,14 @@ export const useHabitStore = create<HabitStoreState>()(
             allCompleteRewardDates: [],
 
             addHabit: (name: string, categoryId?: string) => {
+                const safeName = clampString(name.trim(), UI_CONFIG.MAX_HABIT_NAME_LENGTH);
+                if (!safeName) return;
                 const newHabit: Habit = {
                     id: generateId(),
-                    name: clampString(name, UI_CONFIG.MAX_HABIT_NAME_LENGTH),
-                    categoryId: categoryId || DEFAULT_CATEGORY_ID,
+                    name: safeName,
+                    categoryId: typeof categoryId === 'string' && VALID_CATEGORY_IDS.has(categoryId)
+                        ? categoryId
+                        : DEFAULT_CATEGORY_ID,
                     createdAt: new Date().toISOString(),
                 };
                 set((state) => ({ habits: [...state.habits, newHabit] }));
@@ -111,6 +137,7 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             toggleHabitCompletion: (habitId: string, date: string) => {
+                if (!isValidYmd(date) || !get().habits.some((habit) => habit.id === habitId)) return;
                 const existingRecord = get().dailyRecords.find(
                     (r) => r.habitId === habitId && r.date === date
                 );
@@ -173,6 +200,7 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             setHabitMemo: (habitId: string, date: string, memo: string) => {
+                if (!isValidYmd(date) || !get().habits.some((habit) => habit.id === habitId)) return;
                 const safeMemo = clampString(memo, UI_CONFIG.MAX_HABIT_MEMO_LENGTH);
                 const existingRecord = get().dailyRecords.find(
                     (r) => r.habitId === habitId && r.date === date
@@ -201,6 +229,7 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             setRestDay: (date: string) => {
+                if (!isValidYmd(date)) return;
                 const existing = get().restDays.find((r) => r.date === date);
                 if (existing) {
                     set((state) => ({
@@ -216,7 +245,7 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             isRestDay: (date: string) => {
-                return get().restDays.some((r) => r.date === date && r.isRest);
+                return isValidYmd(date) && get().restDays.some((r) => r.date === date && r.isRest);
             },
 
             getTodayRecords: () => {
@@ -225,6 +254,7 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             areAllHabitsComplete: (date: string) => {
+                if (!isValidYmd(date)) return false;
                 const { habits, dailyRecords } = get();
                 if (habits.length === 0) return false;
                 return habits.every((habit) => {
