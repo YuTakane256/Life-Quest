@@ -37,6 +37,8 @@ import { isPlainObject, isFiniteNumber, toNonNegativeInteger, toBoundedInteger }
 
 export const MAX_TOTAL_XP = Number.MAX_SAFE_INTEGER;
 export const MAX_GACHA_COUNT = Number.MAX_SAFE_INTEGER;
+export const MAX_EQUIPMENT_ITEMS = 2000;
+export const MAX_CHEST_QUEUE_ITEMS = 500;
 
 // ─── ヘルパー関数 ─────────────────────────────────────────────
 
@@ -290,12 +292,29 @@ function sanitizeEquipment(raw: unknown): Equipment | null {
     };
 }
 
+function capEquipmentCollection(items: Equipment[]): Equipment[] {
+    if (items.length <= MAX_EQUIPMENT_ITEMS) return items;
+
+    const keepIndexes = new Set<number>();
+    const equippedIndexes = items
+        .map((item, index) => item.equipped ? index : -1)
+        .filter((index) => index >= 0)
+        .slice(-MAX_EQUIPMENT_ITEMS);
+    equippedIndexes.forEach((index) => keepIndexes.add(index));
+
+    for (let index = items.length - 1; index >= 0 && keepIndexes.size < MAX_EQUIPMENT_ITEMS; index--) {
+        if (!items[index].equipped) keepIndexes.add(index);
+    }
+
+    return items.filter((_, index) => keepIndexes.has(index));
+}
+
 function sanitizeEquipmentList(raw: unknown): Equipment[] {
     if (!Array.isArray(raw)) return [];
 
     const seenIds = new Set<string>();
     const equippedSlots = new Set<EquipmentSlot>();
-    return raw
+    return capEquipmentCollection(raw
         .map(sanitizeEquipment)
         .filter((item): item is Equipment => item !== null)
         .filter((item) => {
@@ -308,7 +327,7 @@ function sanitizeEquipmentList(raw: unknown): Equipment[] {
             if (equippedSlots.has(item.slot)) return { ...item, equipped: false };
             equippedSlots.add(item.slot);
             return item;
-        });
+        }));
 }
 
 function isChestType(value: unknown): value is ChestType {
@@ -329,6 +348,23 @@ function sanitizeChest(raw: unknown): ChestReward | null {
         equipment,
         ...(typeof raw.isStarterCharacter === 'boolean' ? { isStarterCharacter: raw.isStarterCharacter } : {}),
     };
+}
+
+function capChestQueue(items: ChestReward[]): ChestReward[] {
+    if (items.length <= MAX_CHEST_QUEUE_ITEMS) return items;
+
+    const keepIndexes = new Set<number>();
+    const unopenedIndexes = items
+        .map((item, index) => item.opened ? -1 : index)
+        .filter((index) => index >= 0)
+        .slice(-MAX_CHEST_QUEUE_ITEMS);
+    unopenedIndexes.forEach((index) => keepIndexes.add(index));
+
+    for (let index = items.length - 1; index >= 0 && keepIndexes.size < MAX_CHEST_QUEUE_ITEMS; index--) {
+        if (items[index].opened) keepIndexes.add(index);
+    }
+
+    return items.filter((_, index) => keepIndexes.has(index));
 }
 
 function sanitizeEnemy(raw: unknown): Enemy | null {
@@ -408,7 +444,9 @@ export function sanitizeGameStoreState(persisted: unknown): GameStorePersisted {
         equipment: sanitizeEquipmentList(persisted.equipment),
         gachaCount: toBoundedInteger(persisted.gachaCount, 0, 0, MAX_GACHA_COUNT),
         chestQueue: Array.isArray(persisted.chestQueue)
-            ? persisted.chestQueue.map(sanitizeChest).filter((chest): chest is ChestReward => chest !== null)
+            ? capChestQueue(
+                persisted.chestQueue.map(sanitizeChest).filter((chest): chest is ChestReward => chest !== null)
+            )
             : [],
         battle: sanitizeBattle(persisted.battle, character),
     };
@@ -505,7 +543,7 @@ export const useGameStore = create<GameStoreState>()(
                     equipment: null,
                     isStarterCharacter: m.chestType === 'blue' && m.count === 5,
                 }));
-                set({ chestQueue: [...chestQueue, ...newChests] });
+                set({ chestQueue: capChestQueue([...chestQueue, ...newChests]) });
             },
 
             openChest: (chestId: string) => {
@@ -522,10 +560,12 @@ export const useGameStore = create<GameStoreState>()(
                     isStarterCharacter: chest.isStarterCharacter ?? false,
                 };
                 set((state) => ({
-                    chestQueue: state.chestQueue.map((c) =>
+                    chestQueue: capChestQueue(state.chestQueue.map((c) =>
                         c.id === chestId ? { ...c, opened: true, equipment } : c
-                    ),
-                    equipment: equipment ? [...state.equipment, equipment] : state.equipment,
+                    )),
+                    equipment: equipment
+                        ? capEquipmentCollection([...state.equipment, equipment])
+                        : state.equipment,
                     battle: chest.isStarterCharacter ? { ...state.battle, battleUnlocked: true } : state.battle,
                     pendingChestReveal: reveal,
                 }));
@@ -900,7 +940,7 @@ export const useGameStore = create<GameStoreState>()(
                     opened: false,
                     equipment: null,
                 };
-                set((state) => ({ chestQueue: [...state.chestQueue, newChest] }));
+                set((state) => ({ chestQueue: capChestQueue([...state.chestQueue, newChest]) }));
             },
         }),
         {

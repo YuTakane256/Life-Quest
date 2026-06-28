@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_GACHA_COUNT, MAX_TOTAL_XP, calculateLevel, calculateNextLevelXp, calculateXpProgress, sanitizeGameStoreState } from './useGameStore';
+import {
+    MAX_CHEST_QUEUE_ITEMS,
+    MAX_EQUIPMENT_ITEMS,
+    MAX_GACHA_COUNT,
+    MAX_TOTAL_XP,
+    calculateLevel,
+    calculateNextLevelXp,
+    calculateXpProgress,
+    sanitizeGameStoreState,
+} from './useGameStore';
 import { BATTLE_CONFIG, CHARACTER_CONFIG, EQUIPMENT_POOL, UI_CONFIG, XP_CONFIG } from '../config/gameConfig';
 
 const TABLE = XP_CONFIG.LEVEL_XP_TABLE;
@@ -198,6 +207,39 @@ describe('sanitizeGameStoreState', () => {
 
         expect(sanitized.battle.status).toBe('idle');
         expect(sanitized.battle.enemy).toBeNull();
+    });
+
+    it('装備上限を超えた場合は装備中アイテムと新しい未装備品を優先する', () => {
+        const template = EQUIPMENT_POOL[0];
+        const equipment = Array.from({ length: MAX_EQUIPMENT_ITEMS + 2 }, (_, index) => ({
+            id: `eq-${index}`,
+            templateId: template.id,
+            equipped: index === 0,
+        }));
+
+        const sanitized = sanitizeGameStoreState({ equipment });
+
+        expect(sanitized.equipment).toHaveLength(MAX_EQUIPMENT_ITEMS);
+        expect(sanitized.equipment.some((item) => item.id === 'eq-0' && item.equipped)).toBe(true);
+        expect(sanitized.equipment.some((item) => item.id === 'eq-1')).toBe(false);
+        expect(sanitized.equipment.some((item) => item.id === `eq-${MAX_EQUIPMENT_ITEMS + 1}`)).toBe(true);
+    });
+
+    it('宝箱上限を超えた場合は未開封と新しい開封済み宝箱を優先する', () => {
+        const chestQueue = Array.from({ length: MAX_CHEST_QUEUE_ITEMS + 2 }, (_, index) => ({
+            id: `chest-${index}`,
+            chestType: 'wood',
+            label: `${index}`,
+            opened: index !== 0,
+            equipment: null,
+        }));
+
+        const sanitized = sanitizeGameStoreState({ chestQueue });
+
+        expect(sanitized.chestQueue).toHaveLength(MAX_CHEST_QUEUE_ITEMS);
+        expect(sanitized.chestQueue.some((chest) => chest.id === 'chest-0' && !chest.opened)).toBe(true);
+        expect(sanitized.chestQueue.some((chest) => chest.id === 'chest-1')).toBe(false);
+        expect(sanitized.chestQueue.some((chest) => chest.id === `chest-${MAX_CHEST_QUEUE_ITEMS + 1}`)).toBe(true);
     });
 });
 
