@@ -1,3 +1,5 @@
+import { utf8ByteLength } from './bytes';
+
 export type SaveDataSectionStatus = 'healthy' | 'missing' | 'invalid';
 
 export interface SaveDataSectionReport {
@@ -31,13 +33,6 @@ const SAVE_DATA_SECTIONS = [
     { key: 'quest-board-habit-sort', label: '習慣並び順', required: false },
 ] as const;
 
-function byteLength(value: string): number {
-    if (typeof TextEncoder !== 'undefined') {
-        return new TextEncoder().encode(value).length;
-    }
-    return value.length * 2;
-}
-
 function inspectSection(storage: Storage, section: typeof SAVE_DATA_SECTIONS[number]): SaveDataSectionReport {
     const value = storage.getItem(section.key);
     if (value === null) {
@@ -50,13 +45,13 @@ function inspectSection(storage: Storage, section: typeof SAVE_DATA_SECTIONS[num
         return {
             ...section,
             status: isObject ? 'healthy' : 'invalid',
-            byteLength: byteLength(section.key) + byteLength(value),
+            byteLength: utf8ByteLength(section.key) + utf8ByteLength(value),
         };
     } catch {
         return {
             ...section,
             status: 'invalid',
-            byteLength: byteLength(section.key) + byteLength(value),
+            byteLength: utf8ByteLength(section.key) + utf8ByteLength(value),
         };
     }
 }

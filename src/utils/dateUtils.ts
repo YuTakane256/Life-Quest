@@ -46,24 +46,40 @@ export function isValidYmd(dateStr: string): boolean {
 }
 
 /**
+ * 日時文字列（ISO 8601 等）が Date としてパース可能かを判定する。
+ */
+export function isValidTimestamp(value: string): boolean {
+    return !Number.isNaN(new Date(value).getTime());
+}
+
+/**
+ * ISO 8601 日時文字列から日付部分（YYYY-MM-DD）を取り出す。
+ * タイムゾーン変換は行わず、'T' より前をそのまま返す。
+ */
+export function toIsoDatePart(iso: string): string {
+    return iso.split('T')[0];
+}
+
+/**
+ * 現在時刻に JST オフセットを加えた Date を返す（内部利用）。
+ * 返り値の UTC フィールド（getUTC*）を読むと JST のローカル日時に対応する。
+ */
+function getJstNow(): Date {
+    return new Date(Date.now() + TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000);
+}
+
+/**
  * 現在のJSTの日付文字列を返す (YYYY-MM-DD)
  */
 export function getTodayJST(): string {
-    const jstOffsetMs = TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000;
-    const jstNow = new Date(Date.now() + jstOffsetMs);
-    const y = jstNow.getUTCFullYear();
-    const m = String(jstNow.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(jstNow.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return formatYmd(getJstNow());
 }
 
 /**
  * 現在のJSTの時（0〜23）を返す
  */
 export function getJSTHour(): number {
-    const now = new Date();
-    const jstMs = now.getTime() + TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000;
-    return new Date(jstMs).getUTCHours();
+    return getJstNow().getUTCHours();
 }
 
 /**

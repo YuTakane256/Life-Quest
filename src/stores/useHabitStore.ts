@@ -3,8 +3,9 @@ import { persist } from 'zustand/middleware';
 import type { Habit, HabitDailyRecord, HabitStoreState, RestDay } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID, HABIT_CATEGORIES } from '../config/habitCategories';
-import { generateId, getTodayJST, isValidYmd, shiftDate } from '../utils/dateUtils';
+import { generateId, getTodayJST, isValidYmd, shiftDate, toIsoDatePart } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
+import { isPlainObject, sanitizeTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 
 interface HabitStorePersisted {
     habits: Habit[];
@@ -14,18 +15,6 @@ interface HabitStorePersisted {
 }
 
 const VALID_CATEGORY_IDS = new Set(HABIT_CATEGORIES.map((category) => category.id));
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isValidTimestamp(value: string): boolean {
-    return !Number.isNaN(new Date(value).getTime());
-}
-
-function sanitizeTimestamp(value: unknown, fallback = new Date().toISOString()): string {
-    return typeof value === 'string' && isValidTimestamp(value) ? value : fallback;
-}
 
 function sanitizeHabit(raw: unknown): Habit | null {
     if (!isPlainObject(raw)) return null;
@@ -66,10 +55,6 @@ function sanitizeRestDay(raw: unknown): RestDay | null {
     };
 }
 
-function sanitizeRewardDate(raw: unknown): string | null {
-    return typeof raw === 'string' && isValidYmd(raw) ? raw : null;
-}
-
 export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted {
     if (!isPlainObject(persisted)) {
         return { habits: [], dailyRecords: [], restDays: [], allCompleteRewardDates: [] };
@@ -93,7 +78,7 @@ export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted
         allCompleteRewardDates: Array.isArray(persisted.allCompleteRewardDates)
             ? Array.from(new Set(
                 persisted.allCompleteRewardDates
-                    .map(sanitizeRewardDate)
+                    .map(sanitizeNullableYmd)
                     .filter((date): date is string => date !== null)
             ))
             : [],
@@ -244,7 +229,7 @@ export const useHabitStore = create<HabitStoreState>()(
                 if (habits.length === 0) return false;
                 return habits.every((habit) => {
                     // 指定日より後に作成された習慣は達成の必要なしとみなす
-                    const createdDate = habit.createdAt.split('T')[0];
+                    const createdDate = toIsoDatePart(habit.createdAt);
                     if (date < createdDate) return true;
 
                     return dailyRecords.some(
@@ -261,7 +246,7 @@ export const useHabitStore = create<HabitStoreState>()(
 
                 const habit = get().habits.find((h) => h.id === habitId);
                 if (!habit) return 0;
-                const createdDate = habit.createdAt.split('T')[0];
+                const createdDate = toIsoDatePart(habit.createdAt);
 
                 // 今日から過去へ遡って連続達成日数を数える。
                 // dailyRecords は30日でクリーンアップされるため最大31日まで遡れば十分。
@@ -295,7 +280,7 @@ export const useHabitStore = create<HabitStoreState>()(
                 const habit = habits.find((h) => h.id === habitId);
                 if (!habit) return null;
 
-                const createdDate = habit.createdAt.split('T')[0];
+                const createdDate = toIsoDatePart(habit.createdAt);
                 const today = getTodayJST();
                 let total = 0;
                 let completed = 0;

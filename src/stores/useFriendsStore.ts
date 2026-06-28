@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { generateId } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
+import { isPlainObject, toBoundedInteger } from '../utils/persistSanitize';
 
 export interface FriendProfile {
     id: string;
@@ -23,16 +24,6 @@ const MAX_FRIEND_NAME_LENGTH = 30;
 const MAX_LEVEL = 9999;
 const MAX_STAGE = 999;
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
-    return typeof value === 'number' && Number.isFinite(value)
-        ? Math.max(min, Math.min(max, Math.floor(value)))
-        : fallback;
-}
-
 function sanitizeFriend(raw: unknown): FriendProfile | null {
     if (!isPlainObject(raw) || typeof raw.id !== 'string' || typeof raw.name !== 'string') return null;
     const name = clampString(raw.name.trim(), MAX_FRIEND_NAME_LENGTH);
@@ -41,9 +32,9 @@ function sanitizeFriend(raw: unknown): FriendProfile | null {
     return {
         id: raw.id,
         name,
-        level: boundedInteger(raw.level, 1, 1, MAX_LEVEL),
-        totalXp: boundedInteger(raw.totalXp, 0, 0, Number.MAX_SAFE_INTEGER),
-        maxStage: boundedInteger(raw.maxStage, 0, 0, MAX_STAGE),
+        level: toBoundedInteger(raw.level, 1, 1, MAX_LEVEL),
+        totalXp: toBoundedInteger(raw.totalXp, 0, 0, Number.MAX_SAFE_INTEGER),
+        maxStage: toBoundedInteger(raw.maxStage, 0, 0, MAX_STAGE),
     };
 }
 
@@ -69,9 +60,9 @@ function sanitizeFriendInput(friend: Omit<FriendProfile, 'id'>): Omit<FriendProf
     if (name.length === 0) return null;
     return {
         name,
-        level: boundedInteger(friend.level, 1, 1, MAX_LEVEL),
-        totalXp: boundedInteger(friend.totalXp, 0, 0, Number.MAX_SAFE_INTEGER),
-        maxStage: boundedInteger(friend.maxStage, 0, 0, MAX_STAGE),
+        level: toBoundedInteger(friend.level, 1, 1, MAX_LEVEL),
+        totalXp: toBoundedInteger(friend.totalXp, 0, 0, Number.MAX_SAFE_INTEGER),
+        maxStage: toBoundedInteger(friend.maxStage, 0, 0, MAX_STAGE),
     };
 }
 

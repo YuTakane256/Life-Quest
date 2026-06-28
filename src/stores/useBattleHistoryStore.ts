@@ -2,19 +2,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { BattleHistoryEntry, BattleHistoryStoreState } from '../types';
 import { BATTLE_CONFIG } from '../config/gameConfig';
+import { isPlainObject, toNonNegativeInteger } from '../utils/persistSanitize';
 
 interface BattleHistoryStorePersisted {
     history: BattleHistoryEntry[];
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function nonNegativeInteger(value: unknown, fallback = 0): number {
-    return typeof value === 'number' && Number.isFinite(value)
-        ? Math.max(0, Math.floor(value))
-        : fallback;
 }
 
 function sanitizeTimestamp(value: unknown): string | null {
@@ -27,10 +18,10 @@ function sanitizeTimestamp(value: unknown): string | null {
 function sanitizeBattleLog(raw: unknown): BattleHistoryEntry['logs'][number] | null {
     if (!isPlainObject(raw) || typeof raw.message !== 'string') return null;
     return {
-        turn: nonNegativeInteger(raw.turn),
+        turn: toNonNegativeInteger(raw.turn),
         message: raw.message.slice(0, 200),
-        playerHp: nonNegativeInteger(raw.playerHp),
-        enemyHp: nonNegativeInteger(raw.enemyHp),
+        playerHp: toNonNegativeInteger(raw.playerHp),
+        enemyHp: toNonNegativeInteger(raw.enemyHp),
     };
 }
 
@@ -41,7 +32,7 @@ function sanitizeBattleHistoryEntry(raw: unknown): BattleHistoryEntry | null {
     if (!timestamp) return null;
     if (raw.outcome !== 'victory' && raw.outcome !== 'defeat') return null;
 
-    const stage = nonNegativeInteger(raw.stage, -1);
+    const stage = toNonNegativeInteger(raw.stage, -1);
     const stageData = BATTLE_CONFIG.STAGES.find((entry) => entry.stage === stage);
     if (!stageData) return null;
 
@@ -50,12 +41,12 @@ function sanitizeBattleHistoryEntry(raw: unknown): BattleHistoryEntry | null {
         timestamp,
         stage,
         enemyName: typeof raw.enemyName === 'string' ? raw.enemyName.slice(0, 80) : stageData.name,
-        enemyMaxHp: nonNegativeInteger(raw.enemyMaxHp, stageData.hp),
-        enemyAttack: nonNegativeInteger(raw.enemyAttack, stageData.attack),
-        enemyDefense: nonNegativeInteger(raw.enemyDefense, stageData.defense),
+        enemyMaxHp: toNonNegativeInteger(raw.enemyMaxHp, stageData.hp),
+        enemyAttack: toNonNegativeInteger(raw.enemyAttack, stageData.attack),
+        enemyDefense: toNonNegativeInteger(raw.enemyDefense, stageData.defense),
         outcome: raw.outcome,
-        turnCount: nonNegativeInteger(raw.turnCount),
-        xpEarned: nonNegativeInteger(raw.xpEarned),
+        turnCount: toNonNegativeInteger(raw.turnCount),
+        xpEarned: toNonNegativeInteger(raw.xpEarned),
         logs: Array.isArray(raw.logs)
             ? raw.logs.map(sanitizeBattleLog).filter((log): log is BattleHistoryEntry['logs'][number] => log !== null).slice(0, 200)
             : [],

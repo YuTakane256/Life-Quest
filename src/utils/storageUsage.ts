@@ -1,3 +1,5 @@
+import { utf8ByteLength } from './bytes';
+
 const APP_STORAGE_PREFIX = 'quest-board-';
 const STORAGE_WARNING_BYTES = 1024 * 1024;
 const STORAGE_CRITICAL_BYTES = 4 * 1024 * 1024;
@@ -9,13 +11,6 @@ export interface StorageUsage {
     bytes: number;
     itemCount: number;
     level: StorageUsageLevel;
-}
-
-function estimateStorageBytes(value: string): number {
-    if (typeof TextEncoder !== 'undefined') {
-        return new TextEncoder().encode(value).length;
-    }
-    return value.length * 2;
 }
 
 export function getAppStorageUsage(storage: Storage | null | undefined = globalThis.localStorage): StorageUsage {
@@ -30,7 +25,7 @@ export function getAppStorageUsage(storage: Storage | null | undefined = globalT
             if (!key || !key.startsWith(APP_STORAGE_PREFIX)) continue;
 
             const value = storage.getItem(key) ?? '';
-            bytes += estimateStorageBytes(key) + estimateStorageBytes(value);
+            bytes += utf8ByteLength(key) + utf8ByteLength(value);
             itemCount++;
         }
 

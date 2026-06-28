@@ -2,6 +2,16 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { NotificationStoreState } from '../types';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
+import { clamp } from '../utils/numeric';
+import { isFiniteNumber } from '../utils/persistSanitize';
+
+const MIN_REMINDER_HOUR = 0;
+const MAX_REMINDER_HOUR = 23;
+
+/** リマインダー時刻（時）を 0-23 の整数に丸める。 */
+function clampReminderHour(hour: number): number {
+    return clamp(Math.floor(hour), MIN_REMINDER_HOUR, MAX_REMINDER_HOUR);
+}
 
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -35,8 +45,8 @@ export function sanitizeNotificationState(persisted: unknown): Partial<Notificat
         result.lastHabitReminderDate = raw.lastHabitReminderDate;
     }
 
-    if (typeof raw.habitReminderHour === 'number' && Number.isFinite(raw.habitReminderHour)) {
-        result.habitReminderHour = Math.max(0, Math.min(23, Math.floor(raw.habitReminderHour)));
+    if (isFiniteNumber(raw.habitReminderHour)) {
+        result.habitReminderHour = clampReminderHour(raw.habitReminderHour);
     }
 
     return result;
@@ -53,9 +63,7 @@ export const useNotificationStore = create<NotificationStoreState>()(
             setEnabled: (enabled: boolean) => set({ enabled }),
 
             setHabitReminderHour: (hour: number) => {
-                // 0-23 の範囲にクランプ
-                const clamped = Math.max(0, Math.min(23, Math.floor(hour)));
-                set({ habitReminderHour: clamped });
+                set({ habitReminderHour: clampReminderHour(hour) });
             },
 
             markTaskNotified: (taskId: string) =>

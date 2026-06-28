@@ -3,6 +3,7 @@ import {
     BATTLE_SKILLS,
     type BattleSkillDefinition,
 } from '../config/battleSkills';
+import { clamp, nonNegativeInteger, nonNegativeRatio } from './numeric';
 
 export interface BattleSkillContext {
     attack: number;
@@ -14,18 +15,6 @@ export type BattleSkillResolution =
     | { type: 'damage'; skill: BattleSkillDefinition; damage: number }
     | { type: 'heal'; skill: BattleSkillDefinition; heal: number }
     | { type: 'guard'; skill: BattleSkillDefinition; damageReduction: number; durationTurns: number };
-
-function nonNegativeInteger(value: number): number {
-    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
-}
-
-function nonNegativeRatio(value: number): number {
-    return Number.isFinite(value) ? Math.max(0, value) : 0;
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-}
 
 export function getUnlockedBattleSkills(
     level: number,

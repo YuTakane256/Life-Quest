@@ -6,8 +6,8 @@ import type { Priority, Recurrence } from '../types';
 
 const DEFAULT_PRIORITY: Priority = 'medium';
 const DEFAULT_RECURRENCE: Recurrence = 'none';
-const PRIORITIES: readonly Priority[] = ['low', 'medium', 'high'];
-const RECURRENCES: readonly Recurrence[] = ['none', 'daily', 'weekly', 'monthly'];
+export const PRIORITIES: readonly Priority[] = ['low', 'medium', 'high'];
+export const RECURRENCES: readonly Recurrence[] = ['none', 'daily', 'weekly', 'monthly'];
 
 export const PRIORITY_LABELS: Record<Priority, string> = {
     low: '低',

@@ -1,3 +1,5 @@
+import { nonNegativeInteger } from './numeric';
+
 export interface HpDisplayState {
     current: number;
     max: number;
@@ -5,13 +7,9 @@ export interface HpDisplayState {
     widthPercent: string;
 }
 
-function sanitizeHpValue(value: number): number {
-    return Number.isFinite(value) ? Math.floor(value) : 0;
-}
-
 export function getHpDisplayState(current: number, max: number): HpDisplayState {
-    const safeMax = Math.max(0, sanitizeHpValue(max));
-    const safeCurrent = Math.max(0, sanitizeHpValue(current));
+    const safeMax = nonNegativeInteger(max);
+    const safeCurrent = nonNegativeInteger(current);
 
     if (safeMax === 0) {
         return {
