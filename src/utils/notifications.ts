@@ -51,7 +51,7 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  * Service Worker が使える場合はそちら経由（インストール済みPWAで確実）、
  * 無ければ通常の Notification を使う。
  */
-async function showAppNotification(title: string, body: string, tag: string): Promise<void> {
+async function showAppNotification(title: string, body: string, tag: string): Promise<boolean> {
     // title / body を必ずカットして、上流の漏れによる巨大通知を防ぐ
     const safeTitle = title.slice(0, NOTIFICATION_TEXT_MAX);
     const safeBody = body.slice(0, NOTIFICATION_TEXT_MAX);
@@ -61,12 +61,14 @@ async function showAppNotification(title: string, body: string, tag: string): Pr
             const registration = await navigator.serviceWorker.getRegistration();
             if (registration) {
                 await registration.showNotification(safeTitle, options);
-                return;
+                return true;
             }
         }
         new Notification(safeTitle, options);
+        return true;
     } catch {
-        // 通知表示に失敗しても致命的ではないので握りつぶす
+        // 失敗を呼び出し元へ返し、重複防止状態を更新せず次回再試行させる。
+        return false;
     }
 }
 
@@ -109,12 +111,12 @@ export async function runNotificationChecks(): Promise<void> {
             if (Number.isNaN(deadline)) continue;
 
             if (deadline - now <= windowMs) {
-                await showAppNotification(
+                const delivered = await showAppNotification(
                     'タスクの期限が近づいています',
                     `「${task.name}」の期限が近づいています`,
                     `task-deadline-${task.id}`
                 );
-                useNotificationStore.getState().markTaskNotified(task.id);
+                if (delivered) useNotificationStore.getState().markTaskNotified(task.id);
             }
         }
 
@@ -133,12 +135,12 @@ export async function runNotificationChecks(): Promise<void> {
                 !habitStore.areAllHabitsComplete(today)
             ) {
                 const incompleteCount = countIncompleteHabits(today);
-                await showAppNotification(
+                const delivered = await showAppNotification(
                     '今日の習慣がまだ残っています',
                     `未完了の習慣が${incompleteCount}件あります。寝る前に済ませましょう！`,
                     `habit-reminder-${today}`
                 );
-                useNotificationStore.getState().markHabitReminded(today);
+                if (delivered) useNotificationStore.getState().markHabitReminded(today);
             }
         }
     } finally {
