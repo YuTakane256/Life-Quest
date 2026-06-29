@@ -1,3 +1,5 @@
+import { utf8ByteLength } from './bytes';
+
 export const BACKUP_VERSION = 1;
 export const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -21,7 +23,7 @@ export interface BackupData {
 
 export type BackupImportParseResult =
     | { ok: true; data: BackupData }
-    | { ok: false; reason: 'malformed-json' | 'invalid-backup' };
+    | { ok: false; reason: 'file-too-large' | 'malformed-json' | 'invalid-backup' };
 
 type BackupDataKey = keyof Omit<BackupData, 'version' | 'exportedAt'>;
 
@@ -82,6 +84,10 @@ export function safeParseStorage(key: string): unknown {
 }
 
 export function parseBackupImportJson(text: string): BackupImportParseResult {
+    if (utf8ByteLength(text) > MAX_IMPORT_FILE_SIZE) {
+        return { ok: false, reason: 'file-too-large' };
+    }
+
     let parsed: unknown;
     try {
         parsed = JSON.parse(text);
@@ -94,6 +100,27 @@ export function parseBackupImportJson(text: string): BackupImportParseResult {
     }
 
     return { ok: true, data: parsed };
+}
+
+interface PreparedStorageWrite {
+    storageKey: string;
+    serializedValue: string | null;
+}
+
+function prepareStorageWrites(data: BackupData): PreparedStorageWrite[] | null {
+    try {
+        let totalBytes = 0;
+        const writes = BACKUP_STORAGE_SLOTS.map(({ dataKey, storageKey }) => {
+            const value = data[dataKey];
+            const serializedValue = value === undefined ? null : JSON.stringify(value);
+            totalBytes += utf8ByteLength(storageKey);
+            if (serializedValue !== null) totalBytes += utf8ByteLength(serializedValue);
+            return { storageKey, serializedValue };
+        });
+        return totalBytes <= MAX_IMPORT_FILE_SIZE ? writes : null;
+    } catch {
+        return null;
+    }
 }
 
 export function exportAllData(): BackupData {
@@ -128,18 +155,24 @@ function restoreStorageSnapshot(snapshot: Map<string, string | null>) {
 
 export function importAllData(data: BackupData): boolean {
     if (!isValidBackup(data)) return false;
+    const writes = prepareStorageWrites(data);
+    if (!writes) return false;
 
-    const snapshot = new Map(
-        BACKUP_STORAGE_SLOTS.map(({ storageKey }) => [storageKey, localStorage.getItem(storageKey)] as const)
-    );
+    let snapshot: Map<string, string | null>;
+    try {
+        snapshot = new Map(
+            writes.map(({ storageKey }) => [storageKey, localStorage.getItem(storageKey)] as const)
+        );
+    } catch {
+        return false;
+    }
 
     try {
-        for (const { dataKey, storageKey } of BACKUP_STORAGE_SLOTS) {
-            const value = data[dataKey];
-            if (value === undefined) {
+        for (const { storageKey, serializedValue } of writes) {
+            if (serializedValue === null) {
                 localStorage.removeItem(storageKey);
             } else {
-                localStorage.setItem(storageKey, JSON.stringify(value));
+                localStorage.setItem(storageKey, serializedValue);
             }
         }
         return true;

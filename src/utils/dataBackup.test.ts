@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     BACKUP_VERSION,
+    MAX_IMPORT_FILE_SIZE,
     exportAllData,
     importAllData,
     isPlainObject,
@@ -111,6 +112,13 @@ describe('dataBackup utilities', () => {
                 reason: 'invalid-backup',
             });
         });
+
+        it('UTF-8で上限を超える入力はJSON.parse前に拒否する', () => {
+            expect(parseBackupImportJson('あ'.repeat(Math.floor(MAX_IMPORT_FILE_SIZE / 3) + 1))).toEqual({
+                ok: false,
+                reason: 'file-too-large',
+            });
+        });
     });
 
     describe('exportAllData / importAllData', () => {
@@ -180,6 +188,26 @@ describe('dataBackup utilities', () => {
             expect(importAllData(malformedPayload)).toBe(false);
             expect(localStorage.getItem('quest-board-tasks')).toBe('{"state":{"tasks":["old"]}}');
             expect(localStorage.getItem('quest-board-theme')).toBe('{"state":{"mode":"dark"}}');
+        });
+
+        it('巨大runtime payloadはstorage変更前に拒否する', () => {
+            localStorage.setItem('quest-board-tasks', '{"state":{"tasks":["old"]}}');
+            const oversized = {
+                ...validBackup,
+                tasks: { payload: 'x'.repeat(MAX_IMPORT_FILE_SIZE) },
+            };
+
+            expect(importAllData(oversized)).toBe(false);
+            expect(localStorage.getItem('quest-board-tasks')).toBe('{"state":{"tasks":["old"]}}');
+        });
+
+        it('循環参照を含むruntime payloadはstorage変更前に拒否する', () => {
+            localStorage.setItem('quest-board-tasks', '{"state":{"tasks":["old"]}}');
+            const circular: Record<string, unknown> = {};
+            circular.self = circular;
+
+            expect(importAllData({ ...validBackup, tasks: circular })).toBe(false);
+            expect(localStorage.getItem('quest-board-tasks')).toBe('{"state":{"tasks":["old"]}}');
         });
 
         it('imports older backups that omit optional stores', () => {
