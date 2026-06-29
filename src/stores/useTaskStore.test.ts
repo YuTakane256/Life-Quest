@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { sanitizeTaskStoreState, useTaskStore } from './useTaskStore';
+import {
+    MAX_PERSISTED_TASKS,
+    MAX_SUBTASKS_PER_TASK,
+    sanitizeTaskStoreState,
+    useTaskStore,
+} from './useTaskStore';
 import type { Subtask } from '../types';
 import { UI_CONFIG } from '../config/gameConfig';
 
@@ -152,6 +157,32 @@ describe('useTaskStore', () => {
                 createdAt: '2026-06-13T00:00:00.000Z',
             });
         });
+
+        it('大量の保存データは新しいタスクと上限内のサブタスクだけ復元する', () => {
+            const makeSubtask = (index: number) => ({
+                id: `sub-${index}`,
+                name: `子${index}`,
+                completed: false,
+                completedAt: null,
+                createdAt: '2026-06-13T00:00:00.000Z',
+            });
+            const tasks = Array.from({ length: MAX_PERSISTED_TASKS + 2 }, (_, index) => ({
+                id: `task-${index}`,
+                name: `タスク${index}`,
+                createdAt: '2026-06-13T00:00:00.000Z',
+                subtasks: index === MAX_PERSISTED_TASKS + 1
+                    ? Array.from({ length: MAX_SUBTASKS_PER_TASK + 2 }, (_, subtaskIndex) => makeSubtask(subtaskIndex))
+                    : [],
+            }));
+
+            const sanitized = sanitizeTaskStoreState({ tasks });
+
+            expect(sanitized.tasks).toHaveLength(MAX_PERSISTED_TASKS);
+            expect(sanitized.tasks[0].id).toBe('task-2');
+            const newestTask = sanitized.tasks[sanitized.tasks.length - 1];
+            expect(newestTask.subtasks).toHaveLength(MAX_SUBTASKS_PER_TASK);
+            expect(newestTask.subtasks[MAX_SUBTASKS_PER_TASK - 1].id).toBe(`sub-${MAX_SUBTASKS_PER_TASK - 1}`);
+        });
     });
 
     describe('addTask', () => {
@@ -190,6 +221,21 @@ describe('useTaskStore', () => {
             const task = useTaskStore.getState().tasks[0];
             expect(task.tags).toEqual([]);
             expect(task.subtasks).toEqual([]);
+        });
+
+        it('タスク上限に達したら追加を無視する', () => {
+            const tasks = sanitizeTaskStoreState({
+                tasks: Array.from({ length: MAX_PERSISTED_TASKS }, (_, index) => ({
+                    id: `task-${index}`,
+                    name: `タスク${index}`,
+                    createdAt: '2026-06-13T00:00:00.000Z',
+                })),
+            }).tasks;
+            useTaskStore.setState({ tasks });
+
+            useTaskStore.getState().addTask('追加不可', null, 'medium', 'none');
+
+            expect(useTaskStore.getState().tasks).toHaveLength(MAX_PERSISTED_TASKS);
         });
     });
 
@@ -316,6 +362,24 @@ describe('useTaskStore', () => {
             const id = useTaskStore.getState().tasks[0].id;
             useTaskStore.getState().addSubtask(id, '  名前  ');
             expect(useTaskStore.getState().tasks[0].subtasks[0].name).toBe('名前');
+        });
+
+        it('サブタスク上限に達したら追加を無視する', () => {
+            useTaskStore.getState().addTask('親', null, 'medium', 'none', [], Array.from(
+                { length: MAX_SUBTASKS_PER_TASK },
+                (_, index) => ({
+                    id: `sub-${index}`,
+                    name: `子${index}`,
+                    completed: false,
+                    completedAt: null,
+                    createdAt: '2026-06-13T00:00:00.000Z',
+                })
+            ));
+            const id = useTaskStore.getState().tasks[0].id;
+
+            useTaskStore.getState().addSubtask(id, '追加不可');
+
+            expect(useTaskStore.getState().tasks[0].subtasks).toHaveLength(MAX_SUBTASKS_PER_TASK);
         });
     });
 });

@@ -12,6 +12,9 @@ interface TaskStorePersisted {
     tasks: Task[];
 }
 
+export const MAX_PERSISTED_TASKS = 2000;
+export const MAX_SUBTASKS_PER_TASK = 200;
+
 // gameStoreを遅延importして循環参照を避ける
 const getGameStore = () => import('./useGameStore').then(m => m.useGameStore);
 const getStatsStore = () => import('./useStatsStore').then(m => m.useStatsStore);
@@ -75,7 +78,10 @@ function sanitizeTask(raw: unknown): Task | null {
                 .map((tag) => clampString(tag, UI_CONFIG.MAX_TAG_LENGTH))
             : [],
         subtasks: Array.isArray(raw.subtasks)
-            ? raw.subtasks.map(sanitizeSubtask).filter((subtask): subtask is Subtask => subtask !== null)
+            ? raw.subtasks
+                .map(sanitizeSubtask)
+                .filter((subtask): subtask is Subtask => subtask !== null)
+                .slice(0, MAX_SUBTASKS_PER_TASK)
             : [],
         recurrence: isRecurrence(raw.recurrence) ? raw.recurrence : 'none',
         completed: typeof raw.completed === 'boolean' ? raw.completed : false,
@@ -90,7 +96,10 @@ export function sanitizeTaskStoreState(persisted: unknown): TaskStorePersisted {
     }
 
     return {
-        tasks: persisted.tasks.map(sanitizeTask).filter((task): task is Task => task !== null),
+        tasks: persisted.tasks
+            .map(sanitizeTask)
+            .filter((task): task is Task => task !== null)
+            .slice(-MAX_PERSISTED_TASKS),
     };
 }
 
@@ -129,14 +138,17 @@ export const useTaskStore = create<TaskStoreState>()(
             pendingCompletions: [],
 
             addTask: (name: string, dueDate: string | null, priority: Priority, recurrence: Recurrence = 'none', tags: string[] = [], subtasks: Subtask[] = []) => {
+                if (get().tasks.length >= MAX_PERSISTED_TASKS) return;
                 const safeName = clampString(name, UI_CONFIG.MAX_TASK_NAME_LENGTH);
                 const safeTags = tags
                     .slice(0, UI_CONFIG.MAX_TAGS_PER_TASK)
                     .map((t) => clampString(t, UI_CONFIG.MAX_TAG_LENGTH));
-                const safeSubtasks = subtasks.map((s) => ({
-                    ...s,
-                    name: clampString(s.name, UI_CONFIG.MAX_SUBTASK_NAME_LENGTH),
-                }));
+                const safeSubtasks = subtasks
+                    .slice(0, MAX_SUBTASKS_PER_TASK)
+                    .map((s) => ({
+                        ...s,
+                        name: clampString(s.name, UI_CONFIG.MAX_SUBTASK_NAME_LENGTH),
+                    }));
                 const newTask: Task = {
                     id: generateId(),
                     name: safeName,
@@ -164,7 +176,7 @@ export const useTaskStore = create<TaskStoreState>()(
                 }
 
                 // サブタスク更新時は親タスクの完了状態を再計算する
-                const nextSubtasks = updates.subtasks;
+                const nextSubtasks = updates.subtasks.slice(0, MAX_SUBTASKS_PER_TASK);
                 const now = new Date().toISOString();
                 const allComplete = nextSubtasks.length > 0 && nextSubtasks.every((s) => s.completed);
 
@@ -184,13 +196,14 @@ export const useTaskStore = create<TaskStoreState>()(
                             completed = false;
                             completedAt = null;
                         }
-                        return { ...t, ...updates, completed, completedAt };
+                        return { ...t, ...updates, subtasks: nextSubtasks, completed, completedAt };
                     }),
                     pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== id),
                 }));
             },
 
             duplicateTask: (id: string) => {
+                if (get().tasks.length >= MAX_PERSISTED_TASKS) return null;
                 const source = get().tasks.find((t) => t.id === id);
                 if (!source) return null;
                 const now = new Date().toISOString();
@@ -290,7 +303,7 @@ export const useTaskStore = create<TaskStoreState>()(
                         const exists = get().tasks.some(
                             (t) => !t.completed && t.recurrence === next.recurrence && t.name === next.name && t.dueDate === next.dueDate
                         );
-                        if (!exists) {
+                        if (!exists && get().tasks.length < MAX_PERSISTED_TASKS) {
                             set((state) => ({ tasks: [...state.tasks, next] }));
                         }
                     }
@@ -313,6 +326,9 @@ export const useTaskStore = create<TaskStoreState>()(
             addSubtask: (taskId: string, name: string) => {
                 const trimmedName = clampString(name.trim(), UI_CONFIG.MAX_SUBTASK_NAME_LENGTH);
                 if (!trimmedName) return;
+
+                const task = get().tasks.find((candidate) => candidate.id === taskId);
+                if (!task || task.subtasks.length >= MAX_SUBTASKS_PER_TASK) return;
 
                 const pending = get().pendingCompletions.find((p) => p.taskId === taskId);
                 clearPendingCompletionTimer(pending);
@@ -412,7 +428,7 @@ export const useTaskStore = create<TaskStoreState>()(
                         const exists = get().tasks.some(
                             (t) => !t.completed && t.recurrence === next.recurrence && t.name === next.name && t.dueDate === next.dueDate
                         );
-                        if (!exists) {
+                        if (!exists && get().tasks.length < MAX_PERSISTED_TASKS) {
                             set((state) => ({ tasks: [...state.tasks, next] }));
                         }
                     }
