@@ -2,7 +2,11 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { BattleHistoryEntry, BattleHistoryStoreState } from '../types';
 import { BATTLE_CONFIG } from '../config/gameConfig';
-import { isPlainObject, toNonNegativeInteger } from '../utils/persistSanitize';
+import { isPlainObject, toBoundedInteger } from '../utils/persistSanitize';
+
+export const MAX_BATTLE_HISTORY_ID_LENGTH = 128;
+export const MAX_BATTLE_HISTORY_LOG_ENTRIES = 200;
+const MAX_HISTORY_NUMBER = Number.MAX_SAFE_INTEGER;
 
 interface BattleHistoryStorePersisted {
     history: BattleHistoryEntry[];
@@ -18,37 +22,39 @@ function sanitizeTimestamp(value: unknown): string | null {
 function sanitizeBattleLog(raw: unknown): BattleHistoryEntry['logs'][number] | null {
     if (!isPlainObject(raw) || typeof raw.message !== 'string') return null;
     return {
-        turn: toNonNegativeInteger(raw.turn),
+        turn: toBoundedInteger(raw.turn, 0, 0, MAX_HISTORY_NUMBER),
         message: raw.message.slice(0, 200),
-        playerHp: toNonNegativeInteger(raw.playerHp),
-        enemyHp: toNonNegativeInteger(raw.enemyHp),
+        playerHp: toBoundedInteger(raw.playerHp, 0, 0, MAX_HISTORY_NUMBER),
+        enemyHp: toBoundedInteger(raw.enemyHp, 0, 0, MAX_HISTORY_NUMBER),
     };
 }
 
 function sanitizeBattleHistoryEntry(raw: unknown): BattleHistoryEntry | null {
     if (!isPlainObject(raw)) return null;
     if (typeof raw.id !== 'string') return null;
+    const id = raw.id.trim();
+    if (!id || id.length > MAX_BATTLE_HISTORY_ID_LENGTH) return null;
     const timestamp = sanitizeTimestamp(raw.timestamp);
     if (!timestamp) return null;
     if (raw.outcome !== 'victory' && raw.outcome !== 'defeat') return null;
 
-    const stage = toNonNegativeInteger(raw.stage, -1);
+    const stage = toBoundedInteger(raw.stage, -1, 0, MAX_HISTORY_NUMBER);
     const stageData = BATTLE_CONFIG.STAGES.find((entry) => entry.stage === stage);
     if (!stageData) return null;
 
     return {
-        id: raw.id,
+        id,
         timestamp,
         stage,
         enemyName: typeof raw.enemyName === 'string' ? raw.enemyName.slice(0, 80) : stageData.name,
-        enemyMaxHp: toNonNegativeInteger(raw.enemyMaxHp, stageData.hp),
-        enemyAttack: toNonNegativeInteger(raw.enemyAttack, stageData.attack),
-        enemyDefense: toNonNegativeInteger(raw.enemyDefense, stageData.defense),
+        enemyMaxHp: toBoundedInteger(raw.enemyMaxHp, stageData.hp, 0, MAX_HISTORY_NUMBER),
+        enemyAttack: toBoundedInteger(raw.enemyAttack, stageData.attack, 0, MAX_HISTORY_NUMBER),
+        enemyDefense: toBoundedInteger(raw.enemyDefense, stageData.defense, 0, MAX_HISTORY_NUMBER),
         outcome: raw.outcome,
-        turnCount: toNonNegativeInteger(raw.turnCount),
-        xpEarned: toNonNegativeInteger(raw.xpEarned),
+        turnCount: toBoundedInteger(raw.turnCount, 0, 0, MAX_HISTORY_NUMBER),
+        xpEarned: toBoundedInteger(raw.xpEarned, 0, 0, MAX_HISTORY_NUMBER),
         logs: Array.isArray(raw.logs)
-            ? raw.logs.map(sanitizeBattleLog).filter((log): log is BattleHistoryEntry['logs'][number] => log !== null).slice(0, 200)
+            ? raw.logs.map(sanitizeBattleLog).filter((log): log is BattleHistoryEntry['logs'][number] => log !== null).slice(0, MAX_BATTLE_HISTORY_LOG_ENTRIES)
             : [],
     };
 }
@@ -81,10 +87,12 @@ export const useBattleHistoryStore = create<BattleHistoryStoreState>()(
             history: [],
 
             addBattleResult: (entry: BattleHistoryEntry) => {
+                const sanitized = sanitizeBattleHistoryEntry(entry);
+                if (!sanitized) return;
                 set((state) => ({
                     history: [
-                        entry,
-                        ...state.history.filter((historyEntry) => historyEntry.id !== entry.id),
+                        sanitized,
+                        ...state.history.filter((historyEntry) => historyEntry.id !== sanitized.id),
                     ].slice(0, BATTLE_CONFIG.BATTLE_HISTORY_MAX_ENTRIES),
                 }));
             },

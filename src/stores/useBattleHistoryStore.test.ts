@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BATTLE_CONFIG } from '../config/gameConfig';
-import { sanitizeBattleHistoryStoreState, useBattleHistoryStore } from './useBattleHistoryStore';
+import type { BattleHistoryEntry } from '../types';
+import {
+    MAX_BATTLE_HISTORY_ID_LENGTH,
+    MAX_BATTLE_HISTORY_LOG_ENTRIES,
+    sanitizeBattleHistoryStoreState,
+    useBattleHistoryStore,
+} from './useBattleHistoryStore';
 
 function reset() {
     localStorage.clear();
@@ -203,5 +209,62 @@ describe('useBattleHistoryStore', () => {
         useBattleHistoryStore.getState().addBattleResult(replacementEntry);
 
         expect(useBattleHistoryStore.getState().history).toEqual([replacementEntry]);
+    });
+
+    it('addBattleResult は不正ステージと巨大IDを保存しない', () => {
+        const stage = BATTLE_CONFIG.STAGES[0];
+        const base = {
+            id: 'history-1',
+            timestamp: '2026-06-13T00:00:00.000Z',
+            stage: stage.stage,
+            enemyName: stage.name,
+            enemyMaxHp: stage.hp,
+            enemyAttack: stage.attack,
+            enemyDefense: stage.defense,
+            outcome: 'victory',
+            turnCount: 1,
+            xpEarned: stage.xpReward,
+            logs: [],
+        };
+
+        useBattleHistoryStore.getState().addBattleResult({ ...base, stage: 999 } as BattleHistoryEntry);
+        useBattleHistoryStore.getState().addBattleResult({
+            ...base,
+            id: 'x'.repeat(MAX_BATTLE_HISTORY_ID_LENGTH + 1),
+        } as BattleHistoryEntry);
+
+        expect(useBattleHistoryStore.getState().history).toEqual([]);
+    });
+
+    it('addBattleResult も日時・ID・ログ件数と文字列を正規化する', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-06-13T12:00:00.000Z'));
+        const stage = BATTLE_CONFIG.STAGES[0];
+        const logs = Array.from({ length: MAX_BATTLE_HISTORY_LOG_ENTRIES + 5 }, (_, index) => ({
+            turn: index + 1,
+            message: 'm'.repeat(220),
+            playerHp: 10,
+            enemyHp: 5,
+        }));
+
+        useBattleHistoryStore.getState().addBattleResult({
+            id: ' runtime-id ',
+            timestamp: '2999-01-01T00:00:00.000Z',
+            stage: stage.stage,
+            enemyName: stage.name,
+            enemyMaxHp: stage.hp,
+            enemyAttack: stage.attack,
+            enemyDefense: stage.defense,
+            outcome: 'victory',
+            turnCount: logs.length,
+            xpEarned: stage.xpReward,
+            logs,
+        });
+
+        const saved = useBattleHistoryStore.getState().history[0];
+        expect(saved.id).toBe('runtime-id');
+        expect(saved.timestamp).toBe('2026-06-13T12:00:00.000Z');
+        expect(saved.logs).toHaveLength(MAX_BATTLE_HISTORY_LOG_ENTRIES);
+        expect(saved.logs[0].message).toHaveLength(200);
     });
 });
