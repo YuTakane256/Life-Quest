@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { LoginBonus, LoginBonusStoreState } from '../types';
+import type { GameStoreState, LoginBonus, LoginBonusStoreState } from '../types';
 import { LOGIN_BONUS_CONFIG } from '../config/gameConfig';
 import { getTodayJST, isValidYmd, shiftDate } from '../utils/dateUtils';
 import { useGameStore } from './useGameStore';
@@ -14,6 +14,36 @@ function calculateBonusXp(streak: number): number {
 }
 
 let isChecking = false;
+
+type GameRewardSnapshot = Pick<
+    GameStoreState,
+    | 'character'
+    | 'debuff'
+    | 'equipment'
+    | 'gachaCount'
+    | 'chestQueue'
+    | 'battle'
+    | 'levelUpEvent'
+    | 'pendingChestReveal'
+>;
+
+function captureGameRewardState(): GameRewardSnapshot {
+    const state = useGameStore.getState();
+    return {
+        character: state.character,
+        debuff: state.debuff,
+        equipment: state.equipment,
+        gachaCount: state.gachaCount,
+        chestQueue: state.chestQueue,
+        battle: state.battle,
+        levelUpEvent: state.levelUpEvent,
+        pendingChestReveal: state.pendingChestReveal,
+    };
+}
+
+function restoreGameRewardState(snapshot: GameRewardSnapshot): void {
+    useGameStore.setState(snapshot);
+}
 
 export const useLoginBonusStore = create<LoginBonusStoreState>()(
     persist(
@@ -30,8 +60,9 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
                     const today = getTodayJST();
                     const { lastLoginDate, streak } = get();
 
-                    // 今日分のボーナスは受け取り済み
-                    if (lastLoginDate === today) return;
+                    // 今日分は受取済み。端末時計が過去へ戻った場合も、保存済みの
+                    // 日付に追いつくまでは追加報酬を付与しない。
+                    if (lastLoginDate !== null && lastLoginDate >= today) return;
 
                     // 前日にログインしていれば連続日数を継続、そうでなければ1日目にリセット
                     const isConsecutive = lastLoginDate === shiftDate(today, -1);
@@ -40,16 +71,8 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
                     const xp = calculateBonusXp(newStreak);
                     const isSpecialDay = newStreak % LOGIN_BONUS_CONFIG.SPECIAL_CHEST_INTERVAL === 0;
 
-                    // 報酬を付与する
+                    const gameSnapshot = captureGameRewardState();
                     const gameStore = useGameStore.getState();
-                    gameStore.addXp(xp);
-                    if (isSpecialDay) {
-                        gameStore.grantChest(
-                            LOGIN_BONUS_CONFIG.SPECIAL_CHEST_TYPE,
-                            LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL
-                        );
-                    }
-
                     const bonus: LoginBonus = {
                         date: today,
                         streak: newStreak,
@@ -57,7 +80,24 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
                         chestLabel: isSpecialDay ? LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL : null,
                     };
 
-                    set({ lastLoginDate: today, streak: newStreak, pendingBonus: bonus });
+                    try {
+                        gameStore.addXp(xp);
+                        if (isSpecialDay) {
+                            gameStore.grantChest(
+                                LOGIN_BONUS_CONFIG.SPECIAL_CHEST_TYPE,
+                                LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL
+                            );
+                        }
+                        set({ lastLoginDate: today, streak: newStreak, pendingBonus: bonus });
+                    } catch (error) {
+                        try {
+                            restoreGameRewardState(gameSnapshot);
+                            set({ lastLoginDate, streak, pendingBonus: null });
+                        } catch {
+                            // Storage自体が利用不能でも、元の付与エラーを優先して返す。
+                        }
+                        throw error;
+                    }
                 } finally {
                     isChecking = false;
                 }
