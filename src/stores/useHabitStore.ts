@@ -14,6 +14,11 @@ interface HabitStorePersisted {
     allCompleteRewardDates: string[];
 }
 
+export const MAX_PERSISTED_HABITS = 200;
+export const MAX_HABIT_DAILY_RECORDS = 10000;
+export const MAX_HABIT_REST_DAYS = 3660;
+export const MAX_HABIT_REWARD_DATES = 3660;
+
 const VALID_CATEGORY_IDS = new Set(HABIT_CATEGORIES.map((category) => category.id));
 
 function sanitizeHabit(raw: unknown): Habit | null {
@@ -79,7 +84,7 @@ export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted
         ? dedupeByKey(
             persisted.habits.map(sanitizeHabit).filter((habit): habit is Habit => habit !== null),
             (habit) => habit.id,
-        )
+        ).slice(-MAX_PERSISTED_HABITS)
         : [];
     const validHabitIds = new Set(habits.map((habit) => habit.id));
 
@@ -90,19 +95,20 @@ export function sanitizeHabitStoreState(persisted: unknown): HabitStorePersisted
                 .map((record) => sanitizeDailyRecord(record, validHabitIds))
                 .filter((record): record is HabitDailyRecord => record !== null),
             (record) => `${record.habitId}\u0000${record.date}`)
+                .slice(-MAX_HABIT_DAILY_RECORDS)
             : [],
         restDays: Array.isArray(persisted.restDays)
             ? dedupeByKey(
                 persisted.restDays.map(sanitizeRestDay).filter((restDay): restDay is RestDay => restDay !== null),
                 (restDay) => restDay.date,
-            )
+            ).slice(-MAX_HABIT_REST_DAYS)
             : [],
         allCompleteRewardDates: Array.isArray(persisted.allCompleteRewardDates)
             ? Array.from(new Set(
                 persisted.allCompleteRewardDates
                     .map(sanitizeNullableYmd)
                     .filter((date): date is string => date !== null)
-            ))
+            )).slice(-MAX_HABIT_REWARD_DATES)
             : [],
     };
 }
@@ -116,6 +122,7 @@ export const useHabitStore = create<HabitStoreState>()(
             allCompleteRewardDates: [],
 
             addHabit: (name: string, categoryId?: string) => {
+                if (get().habits.length >= MAX_PERSISTED_HABITS) return;
                 const safeName = clampString(name.trim(), UI_CONFIG.MAX_HABIT_NAME_LENGTH);
                 if (!safeName) return;
                 const newHabit: Habit = {
@@ -160,7 +167,7 @@ export const useHabitStore = create<HabitStoreState>()(
                         memo: '',
                     };
                     set((state) => ({
-                        dailyRecords: [...state.dailyRecords, newRecord],
+                        dailyRecords: [...state.dailyRecords, newRecord].slice(-MAX_HABIT_DAILY_RECORDS),
                     }));
                 }
 
@@ -184,7 +191,7 @@ export const useHabitStore = create<HabitStoreState>()(
                                 ? latest.allCompleteRewardDates
                                 : (() => {
                                     shouldAwardReward = true;
-                                    return [...latest.allCompleteRewardDates, date];
+                                    return [...latest.allCompleteRewardDates, date].slice(-MAX_HABIT_REWARD_DATES);
                                 })(),
                         }));
                         if (!shouldAwardReward) return;
@@ -223,7 +230,7 @@ export const useHabitStore = create<HabitStoreState>()(
                         memo: safeMemo,
                     };
                     set((state) => ({
-                        dailyRecords: [...state.dailyRecords, newRecord],
+                        dailyRecords: [...state.dailyRecords, newRecord].slice(-MAX_HABIT_DAILY_RECORDS),
                     }));
                 }
             },
@@ -239,7 +246,7 @@ export const useHabitStore = create<HabitStoreState>()(
                     }));
                 } else {
                     set((state) => ({
-                        restDays: [...state.restDays, { date, isRest: true }],
+                        restDays: [...state.restDays, { date, isRest: true }].slice(-MAX_HABIT_REST_DAYS),
                     }));
                 }
             },

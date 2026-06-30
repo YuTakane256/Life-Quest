@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { sanitizeHabitStoreState, useHabitStore } from './useHabitStore';
+import {
+    MAX_HABIT_DAILY_RECORDS,
+    MAX_HABIT_REST_DAYS,
+    MAX_HABIT_REWARD_DATES,
+    MAX_PERSISTED_HABITS,
+    sanitizeHabitStoreState,
+    useHabitStore,
+} from './useHabitStore';
 import { useGameStore } from './useGameStore';
 import { getTodayJST, shiftDate } from '../utils/dateUtils';
 import { DEFAULT_CATEGORY_ID } from '../config/habitCategories';
@@ -171,6 +178,44 @@ describe('useHabitStore', () => {
             ]);
             expect(sanitized.restDays).toEqual([{ date: '2025-05-10', isRest: true }]);
         });
+
+        it('大量の永続化データは重複排除後の新しい記録だけ上限まで残す', () => {
+            const habits = Array.from({ length: MAX_PERSISTED_HABITS + 2 }, (_, index) => ({
+                id: `habit-${index}`,
+                name: `習慣${index}`,
+                createdAt: '2025-01-01T00:00:00.000Z',
+            }));
+            const retainedHabitIds = habits.slice(-MAX_PERSISTED_HABITS).map((habit) => habit.id);
+            const dailyRecords = Array.from({ length: MAX_HABIT_DAILY_RECORDS + 2 }, (_, index) => ({
+                habitId: retainedHabitIds[index % retainedHabitIds.length],
+                date: shiftDate('2025-05-10', -Math.floor(index / retainedHabitIds.length)),
+                completed: true,
+                memo: `${index}`,
+            }));
+            const restDays = Array.from({ length: MAX_HABIT_REST_DAYS + 2 }, (_, index) => ({
+                date: shiftDate('2025-05-10', -index),
+                isRest: true,
+            }));
+            const rewardDates = Array.from({ length: MAX_HABIT_REWARD_DATES + 2 }, (_, index) =>
+                shiftDate('2025-05-10', -index)
+            );
+
+            const sanitized = sanitizeHabitStoreState({
+                habits,
+                dailyRecords,
+                restDays,
+                allCompleteRewardDates: rewardDates,
+            });
+
+            expect(sanitized.habits).toHaveLength(MAX_PERSISTED_HABITS);
+            expect(sanitized.habits[0].id).toBe('habit-2');
+            expect(sanitized.dailyRecords).toHaveLength(MAX_HABIT_DAILY_RECORDS);
+            expect(sanitized.dailyRecords[0].memo).toBe('2');
+            expect(sanitized.restDays).toHaveLength(MAX_HABIT_REST_DAYS);
+            expect(sanitized.restDays[0].date).toBe(shiftDate('2025-05-10', -2));
+            expect(sanitized.allCompleteRewardDates).toHaveLength(MAX_HABIT_REWARD_DATES);
+            expect(sanitized.allCompleteRewardDates[0]).toBe(shiftDate('2025-05-10', -2));
+        });
     });
 
     describe('addHabit & deleteHabit', () => {
@@ -199,6 +244,21 @@ describe('useHabitStore', () => {
                 name: 'Valid',
                 categoryId: DEFAULT_CATEGORY_ID,
             });
+        });
+
+        it('習慣上限に達したら追加を無視する', () => {
+            useHabitStore.setState({
+                habits: Array.from({ length: MAX_PERSISTED_HABITS }, (_, index) => ({
+                    id: `habit-${index}`,
+                    name: `習慣${index}`,
+                    categoryId: DEFAULT_CATEGORY_ID,
+                    createdAt: '2025-01-01T00:00:00.000Z',
+                })),
+            });
+
+            useHabitStore.getState().addHabit('追加不可');
+
+            expect(useHabitStore.getState().habits).toHaveLength(MAX_PERSISTED_HABITS);
         });
 
         it('should delete a habit by id', () => {
@@ -270,6 +330,26 @@ describe('useHabitStore', () => {
             expect(record?.memo).toBe('Good job');
         });
 
+        it('新しい日次記録では上限を超えた古い記録を破棄する', () => {
+            useHabitStore.getState().addHabit('Habit 1');
+            const habitId = useHabitStore.getState().habits[0].id;
+            useHabitStore.setState({
+                dailyRecords: Array.from({ length: MAX_HABIT_DAILY_RECORDS }, (_, index) => ({
+                    habitId,
+                    date: shiftDate('2025-05-09', -index),
+                    completed: false,
+                    memo: `${index}`,
+                })),
+            });
+
+            useHabitStore.getState().setHabitMemo(habitId, '2025-05-10', 'new');
+
+            const records = useHabitStore.getState().dailyRecords;
+            expect(records).toHaveLength(MAX_HABIT_DAILY_RECORDS);
+            expect(records.some((record) => record.memo === '0')).toBe(false);
+            expect(records[records.length - 1].memo).toBe('new');
+        });
+
         it('同じ日の全習慣達成報酬は再達成しても一度だけ付与する', async () => {
             vi.useRealTimers();
             const { addHabit, toggleHabitCompletion } = useHabitStore.getState();
@@ -305,6 +385,22 @@ describe('useHabitStore', () => {
             expect(isRestDay(today)).toBe(false);
             setRestDay(today);
             expect(isRestDay(today)).toBe(true);
+        });
+
+        it('新しい休息日では上限を超えた古い記録を破棄する', () => {
+            useHabitStore.setState({
+                restDays: Array.from({ length: MAX_HABIT_REST_DAYS }, (_, index) => ({
+                    date: shiftDate('2025-05-09', -index),
+                    isRest: true,
+                })),
+            });
+
+            useHabitStore.getState().setRestDay('2025-05-10');
+
+            const restDays = useHabitStore.getState().restDays;
+            expect(restDays).toHaveLength(MAX_HABIT_REST_DAYS);
+            expect(restDays[0].date).toBe('2025-05-08');
+            expect(restDays[restDays.length - 1].date).toBe('2025-05-10');
         });
     });
 
