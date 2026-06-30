@@ -1,29 +1,16 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Edit3, Calendar, Flag, X, Tag, ChevronDown, ChevronRight, ListPlus, Repeat, ArrowUpDown, Search, CalendarClock, Copy, HelpCircle, Download } from 'lucide-react';
+import { Plus, Trash2, Edit3, X, ChevronDown, ChevronRight, ListPlus, Repeat, Copy, HelpCircle, Download } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
-import { useTaskSortStore, type TaskSortMode } from '../stores/useTaskSortStore';
+import { useTaskSortStore } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/snackbarContext';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { isOverdue, generateId, formatRelativeDate, getTodayJST } from '../utils/dateUtils';
 import { tasksToCsv } from '../utils/taskCsv';
 import { PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_SORT_ORDER, RECURRENCE_LABELS } from '../config/taskLabels';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
-
-type DueFilter = 'all' | 'dueSoon' | 'overdue';
-const DUE_FILTER_OPTIONS: { value: DueFilter; label: string }[] = [
-    { value: 'all', label: 'すべて' },
-    { value: 'dueSoon', label: '今日まで' },
-    { value: 'overdue', label: '期限切れ' },
-];
-
-type PriorityFilter = 'all' | Priority;
-const PRIORITY_FILTER_OPTIONS: { value: PriorityFilter; label: string }[] = [
-    { value: 'all', label: 'すべて' },
-    { value: 'high', label: '高' },
-    { value: 'medium', label: '中' },
-    { value: 'low', label: '低' },
-];
+import { TaskFilters, type DueFilter, type PriorityFilter } from '../components/tasks/TaskFilters';
+import { TaskForm } from '../components/tasks/TaskForm';
 
 export function TasksPage() {
     const navigate = useNavigate();
@@ -305,252 +292,49 @@ export function TasksPage() {
                 </div>
             </div>
 
-            {/* 検索 */}
-            <div className="relative mb-3">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--color-text-muted)' }} />
-                <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="タスクを検索..."
-                    className="w-full pl-9 pr-9 py-2 rounded-lg text-sm outline-none"
-                    style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
-                />
-                {searchQuery && (
-                    <button
-                        type="button"
-                        onClick={() => setSearchQuery('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors hover:opacity-70"
-                        style={{ color: 'var(--color-text-muted)' }}
-                        aria-label="検索をクリア"
-                    >
-                        <X size={14} />
-                    </button>
-                )}
-            </div>
-
-            {/* 期限クイックフィルタ */}
-            <div className="flex items-center gap-2 mb-3">
-                <CalendarClock size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
-                {DUE_FILTER_OPTIONS.map((option) => {
-                    const isActive = dueFilter === option.value;
-                    return (
-                        <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => setDueFilter(option.value)}
-                            className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-200"
-                            style={{
-                                backgroundColor: isActive ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
-                                color: isActive ? 'white' : 'var(--color-text-secondary)',
-                                border: `1px solid ${isActive ? 'var(--color-accent-primary)' : 'var(--color-border-default)'}`,
-                            }}
-                        >
-                            {option.label}
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* 優先度クイックフィルタ */}
-            <div className="flex items-center gap-2 mb-3">
-                <Flag size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
-                {PRIORITY_FILTER_OPTIONS.map((option) => {
-                    const isActive = priorityFilter === option.value;
-                    const activeColor = option.value === 'all' ? 'var(--color-accent-primary)' : PRIORITY_COLORS[option.value];
-                    return (
-                        <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => setPriorityFilter(option.value)}
-                            className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-200"
-                            style={{
-                                backgroundColor: isActive ? activeColor : 'var(--color-bg-secondary)',
-                                color: isActive ? 'white' : 'var(--color-text-secondary)',
-                                border: `1px solid ${isActive ? activeColor : 'var(--color-border-default)'}`,
-                            }}
-                        >
-                            {option.label}
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* 並び替え */}
-            <div className="flex items-center gap-2 mb-4">
-                <ArrowUpDown size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
-                <select
-                    value={sortMode}
-                    onChange={(e) => setSortMode(e.target.value as TaskSortMode)}
-                    aria-label="並び替え"
-                    className="px-3 py-1.5 rounded-lg text-xs outline-none"
-                    style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-default)' }}
-                >
-                    <option value="dueDate">期限順</option>
-                    <option value="priority">優先度順</option>
-                    <option value="createdAt">作成日順</option>
-                </select>
-                {deletableCompletedCount > 0 && (
-                    <button
-                        type="button"
-                        onClick={() => setShowDeleteCompletedConfirm(true)}
-                        className="ml-auto flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs transition-colors hover:opacity-80"
-                        style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-danger)', border: '1px solid var(--color-border-default)' }}
-                    >
-                        <Trash2 size={13} />
-                        完了{deletableCompletedCount}件を削除
-                    </button>
-                )}
-            </div>
-
-            {/* タグフィルター */}
-            {allTags.length > 0 && (
-                <div className="mb-4 -mx-4 px-4" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                    <div className="flex gap-2 pb-1" style={{ minWidth: 'max-content' }}>
-                        <Tag size={14} className="flex-shrink-0 mt-1" style={{ color: 'var(--color-text-muted)' }} />
-                        {allTags.map((tag) => {
-                            const isActive = selectedTags.includes(tag);
-                            return (
-                                <button
-                                    key={tag}
-                                    onClick={() => toggleTagFilter(tag)}
-                                    className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 flex-shrink-0"
-                                    style={{
-                                        backgroundColor: isActive ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
-                                        color: isActive ? 'white' : 'var(--color-text-secondary)',
-                                        border: `1px solid ${isActive ? 'var(--color-accent-primary)' : 'var(--color-border-default)'}`,
-                                    }}
-                                >
-                                    {tag}
-                                </button>
-                            );
-                        })}
-                        {selectedTags.length > 0 && (
-                            <button
-                                onClick={() => setSelectedTags([])}
-                                className="px-2 py-1 rounded-full text-xs transition-colors flex-shrink-0"
-                                style={{ color: 'var(--color-text-muted)' }}
-                            >
-                                クリア
-                            </button>
-                        )}
-                    </div>
-                </div>
-            )}
+            <TaskFilters
+                searchQuery={searchQuery}
+                dueFilter={dueFilter}
+                priorityFilter={priorityFilter}
+                sortMode={sortMode}
+                allTags={allTags}
+                selectedTags={selectedTags}
+                deletableCompletedCount={deletableCompletedCount}
+                onSearchQueryChange={setSearchQuery}
+                onDueFilterChange={setDueFilter}
+                onPriorityFilterChange={setPriorityFilter}
+                onSortModeChange={setSortMode}
+                onToggleTag={toggleTagFilter}
+                onClearTags={() => setSelectedTags([])}
+                onRequestDeleteCompleted={() => setShowDeleteCompletedConfirm(true)}
+            />
 
             {showForm && (
-                <form onSubmit={handleSubmit} className="mb-6 p-4 rounded-xl animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="タスク名を入力..." autoFocus
-                        className="w-full px-3 py-2.5 rounded-lg text-sm outline-none mb-3"
-                        style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} />
-                    <div className="flex gap-3 mb-3">
-                        <div className="flex-1">
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}><Calendar size={12} className="inline mr-1" />期限</label>
-                            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} />
-                        </div>
-                        <div className="flex-1">
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}><Flag size={12} className="inline mr-1" />重要度</label>
-                            <select value={priority} onChange={(e) => setPriority(e.target.value as Priority)}
-                                className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}>
-                                <option value="low">低</option><option value="medium">中</option><option value="high">高</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* 繰り返し設定 */}
-                    <div className="mb-3">
-                        <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}><Repeat size={12} className="inline mr-1" />繰り返し</label>
-                        <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)}
-                            className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}>
-                            <option value="none">なし</option>
-                            <option value="daily">毎日</option>
-                            <option value="weekly">毎週</option>
-                            <option value="monthly">毎月</option>
-                        </select>
-                    </div>
-
-                    {/* タグ入力 */}
-                    <div className="mb-3">
-                        <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>
-                            <Tag size={12} className="inline mr-1" />タグ
-                        </label>
-                        <div className="flex flex-wrap gap-1.5 px-3 py-2 rounded-lg min-h-[38px]"
-                            style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
-                            {tags.map((tag) => (
-                                <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                                    style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
-                                    {tag}
-                                    <button type="button" onClick={() => handleRemoveTag(tag)} aria-label={`タグ「${tag}」を削除`} className="hover:opacity-70">
-                                        <X size={12} />
-                                    </button>
-                                </span>
-                            ))}
-                            <input
-                                type="text"
-                                value={tagInput}
-                                onChange={(e) => setTagInput(e.target.value)}
-                                onKeyDown={handleTagKeyDown}
-                                onBlur={handleAddTag}
-                                placeholder={tags.length === 0 ? "タグを入力 (Enter/スペースで追加)" : ""}
-                                className="flex-1 min-w-[80px] text-sm outline-none bg-transparent"
-                                style={{ color: 'var(--color-text-primary)' }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* サブタスク入力 */}
-                    <div className="mb-3">
-                        <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>
-                            <ListPlus size={12} className="inline mr-1" />サブタスク
-                        </label>
-                        {formSubtasks.length > 0 && (
-                            <div className="flex flex-col gap-1.5 mb-1.5">
-                                {formSubtasks.map((subtask) => (
-                                    <div key={subtask.id} className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                                        style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
-                                        <span className={`flex-1 min-w-0 text-sm ${subtask.completed ? 'line-through' : ''}`}
-                                            style={{ color: subtask.completed ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>
-                                            {subtask.name}
-                                        </span>
-                                        <button type="button" onClick={() => handleRemoveFormSubtask(subtask.id)}
-                                            aria-label={`サブタスク「${subtask.name}」を削除`}
-                                            className="p-0.5 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
-                                            <X size={14} />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={formSubtaskInput}
-                                onChange={(e) => setFormSubtaskInput(e.target.value)}
-                                onKeyDown={handleFormSubtaskKeyDown}
-                                placeholder="サブタスクを入力 (Enterで追加)"
-                                className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
-                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
-                            />
-                            <button type="button" onClick={handleAddFormSubtask}
-                                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors hover:opacity-90"
-                                style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
-                                <ListPlus size={16} />
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                        <button type="submit" className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors hover:opacity-90"
-                            style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>{editingTask ? '更新' : '追加'}</button>
-                        <button type="button" onClick={() => { setShowForm(false); setEditingTask(null); resetForm(); }}
-                            className="px-4 py-2.5 rounded-lg text-sm transition-colors hover:opacity-70"
-                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button>
-                    </div>
-                </form>
+                <TaskForm
+                    editing={editingTask !== null}
+                    name={name}
+                    dueDate={dueDate}
+                    priority={priority}
+                    recurrence={recurrence}
+                    tags={tags}
+                    tagInput={tagInput}
+                    subtasks={formSubtasks}
+                    subtaskInput={formSubtaskInput}
+                    onSubmit={handleSubmit}
+                    onCancel={() => { setShowForm(false); setEditingTask(null); resetForm(); }}
+                    onNameChange={setName}
+                    onDueDateChange={setDueDate}
+                    onPriorityChange={setPriority}
+                    onRecurrenceChange={setRecurrence}
+                    onTagInputChange={setTagInput}
+                    onTagKeyDown={handleTagKeyDown}
+                    onAddTag={handleAddTag}
+                    onRemoveTag={handleRemoveTag}
+                    onSubtaskInputChange={setFormSubtaskInput}
+                    onSubtaskKeyDown={handleFormSubtaskKeyDown}
+                    onAddSubtask={handleAddFormSubtask}
+                    onRemoveSubtask={handleRemoveFormSubtask}
+                />
             )}
 
             <div className="flex flex-col gap-2">
