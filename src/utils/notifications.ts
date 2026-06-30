@@ -22,6 +22,14 @@ const BADGE_URL = '/favicon.png';
 const NOTIFICATION_TEXT_MAX = 200;
 let isRunningNotificationChecks = false;
 
+function getNotificationApi(): typeof Notification | null {
+    try {
+        return typeof globalThis.Notification === 'function' ? globalThis.Notification : null;
+    } catch {
+        return null;
+    }
+}
+
 export function resolveHabitReminderHour(hour: unknown): number {
     if (typeof hour !== 'number' || !Number.isFinite(hour)) {
         return NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST;
@@ -31,19 +39,45 @@ export function resolveHabitReminderHour(hour: unknown): number {
 
 /** このブラウザが通知に対応しているか */
 export function isNotificationSupported(): boolean {
-    return typeof window !== 'undefined' && 'Notification' in window;
+    return getNotificationApi() !== null;
 }
 
 /** 現在の通知許可状態。未対応なら 'unsupported' */
 export function getNotificationPermission(): NotificationPermission | 'unsupported' {
-    if (!isNotificationSupported()) return 'unsupported';
-    return Notification.permission;
+    const notificationApi = getNotificationApi();
+    if (!notificationApi) return 'unsupported';
+    try {
+        const permission = notificationApi.permission;
+        return permission === 'granted' || permission === 'denied' || permission === 'default'
+            ? permission
+            : 'unsupported';
+    } catch {
+        return 'unsupported';
+    }
 }
 
 /** 通知の許可をユーザーに要求する */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
-    if (!isNotificationSupported()) return 'denied';
-    return Notification.requestPermission();
+    const notificationApi = getNotificationApi();
+    if (!notificationApi) return 'denied';
+    try {
+        if (typeof notificationApi.requestPermission !== 'function') return 'denied';
+        const permission = await notificationApi.requestPermission();
+        return permission === 'granted' || permission === 'denied' || permission === 'default'
+            ? permission
+            : 'denied';
+    } catch {
+        return 'denied';
+    }
+}
+
+async function getServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
+    try {
+        if (!('serviceWorker' in navigator)) return null;
+        return await navigator.serviceWorker.getRegistration() ?? null;
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -56,15 +90,23 @@ async function showAppNotification(title: string, body: string, tag: string): Pr
     const safeTitle = title.slice(0, NOTIFICATION_TEXT_MAX);
     const safeBody = body.slice(0, NOTIFICATION_TEXT_MAX);
     const options: NotificationOptions = { body: safeBody, tag, icon: ICON_URL, badge: BADGE_URL };
-    try {
-        if ('serviceWorker' in navigator) {
-            const registration = await navigator.serviceWorker.getRegistration();
-            if (registration) {
-                await registration.showNotification(safeTitle, options);
-                return true;
-            }
+
+    const registration = await getServiceWorkerRegistration();
+    if (registration) {
+        try {
+            await registration.showNotification(safeTitle, options);
+            return true;
+        } catch {
+            // Service Worker経由で失敗した場合は、重複通知を避けるため通常通知にフォールバックしない。
+            return false;
         }
-        new Notification(safeTitle, options);
+    }
+
+    try {
+        if (getNotificationPermission() !== 'granted') return false;
+        const notificationApi = getNotificationApi();
+        if (!notificationApi) return false;
+        new notificationApi(safeTitle, options);
         return true;
     } catch {
         // 失敗を呼び出し元へ返し、重複防止状態を更新せず次回再試行させる。
