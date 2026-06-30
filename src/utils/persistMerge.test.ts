@@ -37,6 +37,36 @@ describe('persistMerge', () => {
         expect(merged).toEqual({ mode: 'system', setMode });
     });
 
+    it('sanitizer が返した値でも current state のアクションを上書きしない', () => {
+        const setMode = () => undefined;
+        const merge = createSafePersistMerge<{ mode: string; setMode: () => void }>(() => ({
+            mode: 'light',
+            setMode: null as unknown as () => void,
+        }));
+
+        const merged = merge({ mode: 'light', setMode: null }, { mode: 'dark', setMode });
+
+        expect(merged).toEqual({ mode: 'light', setMode });
+    });
+
+    it('prototype pollution に使われるキーをマージしない', () => {
+        const malicious = JSON.parse(
+            '{"mode":"light","__proto__":{"polluted":true},"prototype":{"polluted":true},"constructor":{"prototype":{"polluted":true}}}'
+        ) as Record<string, unknown>;
+        const merge = createSafePersistMerge<{ mode: string }>((persisted) =>
+            persisted as unknown as Partial<{ mode: string }>
+        );
+
+        const merged = merge(malicious, { mode: 'dark' });
+
+        expect(merged.mode).toBe('light');
+        expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+        expect(Object.prototype.hasOwnProperty.call(merged, '__proto__')).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(merged, 'prototype')).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(merged, 'constructor')).toBe(false);
+        expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    });
+
     it('sanitizer が例外を投げても current state を維持する', () => {
         const setMode = () => undefined;
         const current = { mode: 'dark', setMode };
