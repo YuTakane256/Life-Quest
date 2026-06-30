@@ -1,4 +1,5 @@
 import { utf8ByteLength } from './bytes';
+import { getWebLocalStorage } from '../platform/storage';
 
 const APP_STORAGE_PREFIX = 'quest-board-';
 const STORAGE_WARNING_BYTES = 1024 * 1024;
@@ -13,7 +14,7 @@ export interface StorageUsage {
     level: StorageUsageLevel;
 }
 
-export function getAppStorageUsage(storage: Storage | null | undefined = globalThis.localStorage): StorageUsage {
+export function getAppStorageUsage(storage: Storage | null | undefined = getWebLocalStorage()): StorageUsage {
     if (!storage) return { available: false, bytes: 0, itemCount: 0, level: 'unavailable' };
 
     try {

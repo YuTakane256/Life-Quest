@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import type { Habit, HabitDailyRecord, HabitStoreState, RestDay } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID, HABIT_CATEGORIES } from '../config/habitCategories';
@@ -352,6 +353,7 @@ export const useHabitStore = create<HabitStoreState>()(
         }),
         {
             name: 'quest-board-habits',
+            storage: createWebPersistStorage(),
             merge: (persisted, current) => ({
                 ...current,
                 ...sanitizeHabitStoreState(persisted),

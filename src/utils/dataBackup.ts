@@ -1,4 +1,5 @@
 import { utf8ByteLength } from './bytes';
+import { getWebLocalStorage } from '../platform/storage';
 
 export const BACKUP_VERSION = 1;
 export const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -75,9 +76,9 @@ export function isValidBackup(data: unknown): data is BackupData {
  * 値が壊れている／DevTools 経由で書き換えられている場合でも、
  * エクスポート全体がクラッシュしないよう空オブジェクトでフォールバックする。
  */
-export function safeParseStorage(key: string): unknown {
+export function safeParseStorage(key: string, storage: Storage | null = getWebLocalStorage()): unknown {
     try {
-        return JSON.parse(localStorage.getItem(key) || '{}');
+        return JSON.parse(storage?.getItem(key) || '{}');
     } catch {
         return {};
     }
@@ -123,45 +124,46 @@ function prepareStorageWrites(data: BackupData): PreparedStorageWrite[] | null {
     }
 }
 
-export function exportAllData(): BackupData {
+export function exportAllData(storage: Storage | null = getWebLocalStorage()): BackupData {
     return {
         version: BACKUP_VERSION,
         exportedAt: new Date().toISOString(),
-        tasks: safeParseStorage('quest-board-tasks'),
-        habits: safeParseStorage('quest-board-habits'),
-        game: safeParseStorage('quest-board-game'),
-        stats: safeParseStorage('quest-board-stats'),
-        theme: safeParseStorage('quest-board-theme'),
-        notifications: safeParseStorage('quest-board-notifications'),
-        loginBonus: safeParseStorage('quest-board-login-bonus'),
-        battleHistory: safeParseStorage('quest-board-battle-history'),
-        taskSort: safeParseStorage('quest-board-task-sort'),
-        habitSort: safeParseStorage('quest-board-habit-sort'),
-        title: safeParseStorage('quest-board-title'),
-        friends: safeParseStorage('quest-board-friends'),
-        motion: safeParseStorage('quest-board-motion'),
+        tasks: safeParseStorage('quest-board-tasks', storage),
+        habits: safeParseStorage('quest-board-habits', storage),
+        game: safeParseStorage('quest-board-game', storage),
+        stats: safeParseStorage('quest-board-stats', storage),
+        theme: safeParseStorage('quest-board-theme', storage),
+        notifications: safeParseStorage('quest-board-notifications', storage),
+        loginBonus: safeParseStorage('quest-board-login-bonus', storage),
+        battleHistory: safeParseStorage('quest-board-battle-history', storage),
+        taskSort: safeParseStorage('quest-board-task-sort', storage),
+        habitSort: safeParseStorage('quest-board-habit-sort', storage),
+        title: safeParseStorage('quest-board-title', storage),
+        friends: safeParseStorage('quest-board-friends', storage),
+        motion: safeParseStorage('quest-board-motion', storage),
     };
 }
 
-function restoreStorageSnapshot(snapshot: Map<string, string | null>) {
+function restoreStorageSnapshot(snapshot: Map<string, string | null>, storage: Storage) {
     for (const [key, value] of snapshot) {
         if (value === null) {
-            localStorage.removeItem(key);
+            storage.removeItem(key);
         } else {
-            localStorage.setItem(key, value);
+            storage.setItem(key, value);
         }
     }
 }
 
-export function importAllData(data: BackupData): boolean {
+export function importAllData(data: BackupData, storage: Storage | null = getWebLocalStorage()): boolean {
     if (!isValidBackup(data)) return false;
+    if (!storage) return false;
     const writes = prepareStorageWrites(data);
     if (!writes) return false;
 
     let snapshot: Map<string, string | null>;
     try {
         snapshot = new Map(
-            writes.map(({ storageKey }) => [storageKey, localStorage.getItem(storageKey)] as const)
+            writes.map(({ storageKey }) => [storageKey, storage.getItem(storageKey)] as const)
         );
     } catch {
         return false;
@@ -170,15 +172,15 @@ export function importAllData(data: BackupData): boolean {
     try {
         for (const { storageKey, serializedValue } of writes) {
             if (serializedValue === null) {
-                localStorage.removeItem(storageKey);
+                storage.removeItem(storageKey);
             } else {
-                localStorage.setItem(storageKey, serializedValue);
+                storage.setItem(storageKey, serializedValue);
             }
         }
         return true;
     } catch {
         try {
-            restoreStorageSnapshot(snapshot);
+            restoreStorageSnapshot(snapshot, storage);
         } catch {
             // Best-effort rollback: the import still reports failure if storage remains unavailable.
         }

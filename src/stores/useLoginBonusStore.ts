@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import type { GameStoreState, LoginBonus, LoginBonusStoreState } from '../types';
 import { LOGIN_BONUS_CONFIG } from '../config/gameConfig';
 import { getTodayJST, isValidYmd, shiftDate } from '../utils/dateUtils';
@@ -107,6 +108,7 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
         }),
         {
             name: 'quest-board-login-bonus',
+            storage: createWebPersistStorage(),
             version: 1,
             // pendingBonus は表示用の一時状態なので永続化しない
             partialize: (state) => ({

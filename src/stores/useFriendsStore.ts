@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import { generateId } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
 import { isPlainObject, toBoundedInteger } from '../utils/persistSanitize';
@@ -106,6 +107,7 @@ export const useFriendsStore = create<FriendsStoreState>()(
         }),
         {
             name: 'quest-board-friends',
+            storage: createWebPersistStorage(),
             version: 1,
             merge: (persisted, current) => ({
                 ...current,

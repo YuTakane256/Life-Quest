@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import { createSafePersistMerge } from '../utils/persistMerge';
 
 /** タスク一覧の並び順 */
@@ -24,6 +25,7 @@ export const useTaskSortStore = create<TaskSortStoreState>()(
         }),
         {
             name: 'quest-board-task-sort',
+            storage: createWebPersistStorage(),
             version: 1,
             merge: createSafePersistMerge<TaskSortStoreState>((persisted) => ({
                 sortMode: sanitizeTaskSortMode(persisted.sortMode),

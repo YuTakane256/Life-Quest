@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import { createSafePersistMerge } from '../utils/persistMerge';
 
 export type MotionMode = 'system' | 'standard' | 'reduced';
@@ -23,6 +24,7 @@ export const useMotionStore = create<MotionStoreState>()(
         }),
         {
             name: 'quest-board-motion',
+            storage: createWebPersistStorage(),
             version: 1,
             merge: createSafePersistMerge<MotionStoreState>((persisted) => ({
                 mode: sanitizeMotionMode(persisted.mode),

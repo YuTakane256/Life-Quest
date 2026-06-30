@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import type {
     CharacterStats,
     Debuff,
@@ -945,6 +946,7 @@ export const useGameStore = create<GameStoreState>()(
         }),
         {
             name: 'quest-board-game',
+            storage: createWebPersistStorage(),
             // UI 用の一時イベント（levelUpEvent / pendingChestReveal）は永続化しない。
             // これらが localStorage に残ると、リロード時にモーダルが意図せず再表示される。
             // また、細工された localStorage で起動時に勝手に発火させられる嫌がらせも防ぐ。

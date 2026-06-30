@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import { createSafePersistMerge } from '../utils/persistMerge';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -25,6 +26,7 @@ export const useThemeStore = create<ThemeStoreState>()(
         }),
         {
             name: 'quest-board-theme',
+            storage: createWebPersistStorage(),
             version: 1,
             // localStorage から読み込んだ persisted state を信用せず、mode を必ず検証する
             merge: createSafePersistMerge<ThemeStoreState>((persisted) => ({
