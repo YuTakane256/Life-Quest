@@ -112,7 +112,36 @@ describe('generateId', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.123456789);
         vi.stubGlobal('crypto', undefined);
 
-        expect(generateId()).toBe(`456-${(0.123456789).toString(36).substring(2, 12)}`);
+        expect(generateId()).toMatch(new RegExp(`^456-${(0.123456789).toString(36).substring(2, 12)}[a-z0-9]+$`));
+    });
+
+    it('同一時刻・同一乱数が続いてもフォールバックIDは衝突しない', () => {
+        vi.spyOn(Date, 'now').mockReturnValue(456);
+        vi.spyOn(Math, 'random').mockReturnValue(0.5);
+        vi.stubGlobal('crypto', undefined);
+
+        const ids = new Set(Array.from({ length: 100 }, () => generateId()));
+
+        expect(ids.size).toBe(100);
+    });
+
+    it('crypto.getRandomValues が失敗してもフォールバックIDを返す', () => {
+        vi.spyOn(Date, 'now').mockReturnValue(789);
+        vi.spyOn(Math, 'random').mockImplementation(() => {
+            throw new Error('random unavailable');
+        });
+        vi.stubGlobal('crypto', {
+            getRandomValues: () => {
+                throw new Error('crypto unavailable');
+            },
+        });
+
+        const first = generateId();
+        const second = generateId();
+
+        expect(first).toMatch(/^789-[a-z0-9]+$/);
+        expect(second).toMatch(/^789-[a-z0-9]+$/);
+        expect(first).not.toBe(second);
     });
 
     it('連続呼び出しでユニークなIDが返る', () => {

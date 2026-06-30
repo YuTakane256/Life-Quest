@@ -51,15 +51,23 @@ describe('useFriendsStore', () => {
     });
 
     it('生成されたIDが既存フレンドと衝突しても一意なIDで追加する', () => {
-        vi.stubGlobal('crypto', undefined);
+        vi.stubGlobal('crypto', {
+            getRandomValues: (bytes: Uint8Array) => {
+                bytes.fill(0);
+                return bytes;
+            },
+        });
         useFriendsStore.setState({
             friends: [
-                { id: '1-', name: 'Existing', level: 1, totalXp: 0, maxStage: 0 },
+                { id: '1-0000000000000000', name: 'Existing', level: 1, totalXp: 0, maxStage: 0 },
             ],
         });
 
         useFriendsStore.getState().addFriend({ name: 'Alice', level: 3, totalXp: 80, maxStage: 4 });
 
-        expect(useFriendsStore.getState().friends.map((friend) => friend.id)).toEqual(['1-', '1--1']);
+        expect(useFriendsStore.getState().friends.map((friend) => friend.id)).toEqual([
+            '1-0000000000000000',
+            '1-0000000000000000-1',
+        ]);
     });
 });
