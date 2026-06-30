@@ -17,3 +17,16 @@ export {
     type BattleSkillResolution,
     type BattleSkillType,
 } from './battleSkills';
+export {
+    createPersistStorageEnvelope,
+    createSafePersistMerge,
+    isPersistedStateRecord,
+    isPersistStorageEnvelope,
+    parsePersistStorageEnvelope,
+    readPersistedStateRecord,
+    readPersistStorageEnvelope,
+    serializePersistStorageEnvelope,
+    type NormalizedPersistStorageEnvelope,
+    type PersistedStateRecord,
+    type PersistStorageEnvelope,
+} from './persist';

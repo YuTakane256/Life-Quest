@@ -20,6 +20,10 @@
       "types": "./src/numeric.ts",
       "import": "./src/numeric.ts"
     },
+    "./persist": {
+      "types": "./src/persist.ts",
+      "import": "./src/persist.ts"
+    },
     "./validation": {
       "types": "./src/validation.ts",
       "import": "./src/validation.ts"
