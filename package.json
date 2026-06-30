@@ -9,10 +9,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:core": "npm run typecheck --workspace @life-quest/core",
     "typecheck": "tsc -b --noEmit",
+    "typecheck:core": "npm run typecheck --workspace @life-quest/core",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:core": "npm run test --workspace @life-quest/core",
     "test:watch": "vitest"
   },
   "dependencies": {
