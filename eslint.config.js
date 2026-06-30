@@ -26,7 +26,7 @@ export default tseslint.config(
         },
     },
     {
-        files: ['src/core/**/*.{ts,tsx}'],
+        files: ['packages/core/src/**/*.{ts,tsx}'],
         rules: {
             'no-restricted-imports': ['error', {
                 paths: [
