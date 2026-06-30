@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isSameOriginImageRequest } from './pwaCache'
+import {
+    isSameOriginImageRequest,
+    PWA_APP_SHELL_GLOB_PATTERNS,
+    PWA_IMAGE_CACHE_BUDGET,
+} from './pwaCache'
 
 function request(destination: RequestDestination): Request {
     return { destination } as Request
@@ -24,5 +28,22 @@ describe('isSameOriginImageRequest', () => {
             request: request('script'),
             url: new URL('/assets/app.js', globalThis.location.origin),
         })).toBe(false)
+    })
+})
+
+describe('PWA cache budgets', () => {
+    it('keeps large image files out of the app-shell precache', () => {
+        expect(PWA_APP_SHELL_GLOB_PATTERNS).toEqual(['**/*.{js,css,html,woff2}'])
+        expect(PWA_APP_SHELL_GLOB_PATTERNS.join(',')).not.toMatch(/png|jpe?g|webp|gif|svg/)
+    })
+
+    it('keeps runtime image cache bounded', () => {
+        expect(PWA_IMAGE_CACHE_BUDGET).toEqual({
+            cacheName: 'image-assets',
+            maxEntries: 200,
+            maxAgeSeconds: 2_592_000,
+        })
+        expect(PWA_IMAGE_CACHE_BUDGET.maxEntries).toBeLessThanOrEqual(200)
+        expect(PWA_IMAGE_CACHE_BUDGET.maxAgeSeconds).toBeLessThanOrEqual(60 * 60 * 24 * 30)
     })
 })
