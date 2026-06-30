@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { PRIORITIES, RECURRENCES } from '../config/taskLabels';
@@ -451,6 +452,7 @@ export const useTaskStore = create<TaskStoreState>()(
         }),
         {
             name: 'quest-board-tasks',
+            storage: createWebPersistStorage(),
             partialize: (state): TaskStorePersisted => ({
                 tasks: state.tasks,
             }),

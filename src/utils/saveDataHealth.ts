@@ -1,4 +1,5 @@
 import { utf8ByteLength } from './bytes';
+import { getWebLocalStorage } from '../platform/storage';
 
 export type SaveDataSectionStatus = 'healthy' | 'missing' | 'invalid';
 
@@ -100,7 +101,7 @@ function inspectSection(storage: Storage, section: SaveDataSectionDefinition): S
     }
 }
 
-export function inspectSaveDataHealth(storage: Storage | null | undefined = globalThis.localStorage): SaveDataHealthReport {
+export function inspectSaveDataHealth(storage: Storage | null | undefined = getWebLocalStorage()): SaveDataHealthReport {
     if (!storage) {
         return { available: false, sections: [], healthyCount: 0, missingCount: 0, invalidCount: 0, totalBytes: 0 };
     }

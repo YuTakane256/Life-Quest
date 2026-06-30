@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import type { NotificationStoreState } from '../types';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 import { clamp } from '../utils/numeric';
@@ -92,6 +93,7 @@ export const useNotificationStore = create<NotificationStoreState>()(
         }),
         {
             name: 'quest-board-notifications',
+            storage: createWebPersistStorage(),
             version: 1,
             merge: (persisted, current) => ({ ...current, ...sanitizeNotificationState(persisted) }),
         }

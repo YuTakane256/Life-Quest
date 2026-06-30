@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import { createSafePersistMerge } from '../utils/persistMerge';
 
 /** 習慣一覧の並び順 */
@@ -24,6 +25,7 @@ export const useHabitSortStore = create<HabitSortStoreState>()(
         }),
         {
             name: 'quest-board-habit-sort',
+            storage: createWebPersistStorage(),
             version: 1,
             merge: createSafePersistMerge<HabitSortStoreState>((persisted) => ({
                 sortMode: sanitizeHabitSortMode(persisted.sortMode),

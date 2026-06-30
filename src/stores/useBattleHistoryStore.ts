@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import type { BattleHistoryEntry, BattleHistoryStoreState } from '../types';
 import { BATTLE_CONFIG } from '../config/gameConfig';
 import { isPlainObject, toBoundedInteger } from '../utils/persistSanitize';
@@ -101,6 +102,7 @@ export const useBattleHistoryStore = create<BattleHistoryStoreState>()(
         }),
         {
             name: 'quest-board-battle-history',
+            storage: createWebPersistStorage(),
             version: 1,
             partialize: (state): BattleHistoryStorePersisted => ({
                 history: state.history,

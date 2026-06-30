@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import { createSafePersistMerge } from '../utils/persistMerge';
 
 const MAX_TITLE_LENGTH = 40;
@@ -25,6 +26,7 @@ export const useTitleStore = create<TitleStoreState>()(
         }),
         {
             name: 'quest-board-title',
+            storage: createWebPersistStorage(),
             version: 1,
             merge: createSafePersistMerge<TitleStoreState>((persisted) => ({
                 activeTitle: sanitizeActiveTitle(persisted.activeTitle),

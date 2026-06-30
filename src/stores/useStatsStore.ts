@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createWebPersistStorage } from '../platform/storage';
 import type { StatsStoreState } from '../types';
 import { isValidYmd } from '../utils/dateUtils';
 
@@ -101,6 +102,7 @@ export const useStatsStore = create<StatsStoreState>()(
         }),
         {
             name: 'quest-board-stats',
+            storage: createWebPersistStorage(),
             version: 1,
             merge: (persisted, current) => ({
                 ...current,
