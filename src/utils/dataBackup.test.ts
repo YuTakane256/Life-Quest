@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+    BACKUP_INTEGRITY_ALGORITHM,
     BACKUP_VERSION,
     MAX_IMPORT_FILE_SIZE,
+    calculateBackupChecksum,
     exportAllData,
     importAllData,
     isPlainObject,
     isValidBackup,
     parseBackupImportJson,
     safeParseStorage,
+    withBackupIntegrity,
     type BackupData,
 } from './dataBackup';
 
@@ -48,6 +51,25 @@ describe('dataBackup utilities', () => {
     describe('isValidBackup', () => {
         it('accepts a valid backup payload', () => {
             expect(isValidBackup(validBackup)).toBe(true);
+        });
+
+        it('accepts a valid backup payload with integrity metadata', () => {
+            const backupWithIntegrity = withBackupIntegrity(validBackup);
+
+            expect(backupWithIntegrity.integrity).toEqual({
+                algorithm: BACKUP_INTEGRITY_ALGORITHM,
+                checksum: calculateBackupChecksum(validBackup),
+            });
+            expect(isValidBackup(backupWithIntegrity)).toBe(true);
+        });
+
+        it('rejects a backup payload with mismatched integrity metadata', () => {
+            const backupWithIntegrity = withBackupIntegrity(validBackup);
+
+            expect(isValidBackup({
+                ...backupWithIntegrity,
+                tasks: { state: { tasks: ['tampered'] } },
+            })).toBe(false);
         });
 
         it('rejects invalid version and exportedAt values', () => {
@@ -99,6 +121,25 @@ describe('dataBackup utilities', () => {
             });
         });
 
+        it('チェックサムが一致するbackup JSONを BackupData として返す', () => {
+            const backupWithIntegrity = withBackupIntegrity(validBackup);
+            expect(parseBackupImportJson(JSON.stringify(backupWithIntegrity))).toEqual({
+                ok: true,
+                data: backupWithIntegrity,
+            });
+        });
+
+        it('チェックサムが一致しないbackup JSONは invalid-backup として返す', () => {
+            const backupWithIntegrity = withBackupIntegrity(validBackup);
+            expect(parseBackupImportJson(JSON.stringify({
+                ...backupWithIntegrity,
+                stats: { state: { taskXpLog: { '2026-01-01': 999 } } },
+            }))).toEqual({
+                ok: false,
+                reason: 'invalid-backup',
+            });
+        });
+
         it('壊れた JSON は malformed-json として返す', () => {
             expect(parseBackupImportJson('{')).toEqual({
                 ok: false,
@@ -139,7 +180,7 @@ describe('dataBackup utilities', () => {
             localStorage.setItem('quest-board-friends', '{"state":{"friends":[]}}');
             localStorage.setItem('quest-board-motion', '{"state":{"mode":"reduced"}}');
 
-            expect(exportAllData()).toEqual({
+            expect(exportAllData()).toEqual(withBackupIntegrity({
                 version: BACKUP_VERSION,
                 exportedAt: '2026-02-03T04:05:06.000Z',
                 tasks: { state: { tasks: [] } },
@@ -155,7 +196,7 @@ describe('dataBackup utilities', () => {
                 title: { state: { activeTitle: '収集家' } },
                 friends: { state: { friends: [] } },
                 motion: { state: { mode: 'reduced' } },
-            });
+            }));
         });
 
         it('imports backup data into the expected storage keys', () => {
