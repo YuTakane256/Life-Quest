@@ -1,4 +1,11 @@
 import { createJSONStorage, type PersistStorage, type StateStorage } from 'zustand/middleware';
+import {
+    createUnavailableStorageAdapter,
+    createWebStorageAdapter,
+    createZustandStateStorage,
+    type PlatformStorageAdapter,
+    type SyncPlatformStorageAdapter,
+} from './storageAdapter';
 
 export function getWebLocalStorage(): Storage | null {
     try {
@@ -9,14 +16,19 @@ export function getWebLocalStorage(): Storage | null {
     }
 }
 
-function getRequiredWebStorage(): StateStorage {
+export function createWebLocalStorageAdapter(): SyncPlatformStorageAdapter {
+    return createWebStorageAdapter(getWebLocalStorage());
+}
+
+export function getPlatformStorageAdapter(): PlatformStorageAdapter {
     const storage = getWebLocalStorage();
-    if (!storage) {
-        throw new Error('Web localStorage is unavailable.');
-    }
-    return storage;
+    return storage ? createWebStorageAdapter(storage) : createUnavailableStorageAdapter();
+}
+
+function createWebStateStorage(): StateStorage {
+    return createZustandStateStorage(getPlatformStorageAdapter());
 }
 
 export function createWebPersistStorage<S = unknown>(): PersistStorage<S> | undefined {
-    return createJSONStorage<S>(() => getRequiredWebStorage());
+    return createJSONStorage<S>(() => createWebStateStorage());
 }
