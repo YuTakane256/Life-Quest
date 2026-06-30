@@ -36,11 +36,17 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Type check shared core package
+        run: npm run typecheck:core
+
       - name: Lint
         run: npm run lint
 
       - name: Test
         run: npm test -- --run
+
+      - name: Test shared core package
+        run: npm run test:core
 
       - name: Build
         run: npm run build
