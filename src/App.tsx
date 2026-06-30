@@ -30,7 +30,7 @@ function HelpFloatingButton() {
     return (
         <button
             onClick={() => navigate('/help')}
-            className="fixed right-4 z-40 w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110"
+            className="app-floating-button fixed right-4 z-40 w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110"
             style={{
                 bottom: 'calc(64px + env(safe-area-inset-bottom, 0px) + 12px)',
                 backgroundColor: 'var(--color-bg-card)',
@@ -66,8 +66,8 @@ function App() {
             <BrowserRouter>
                 <SnackbarProvider>
                     <ThemeController />
-                    <div className="flex flex-col relative" style={{ minHeight: '100dvh' }}>
-                        <main className="flex-1 pb-20">
+                    <div className="app-shell flex flex-col relative">
+                        <main className="app-main flex-1">
                             <Routes>
                                 <Route path="/" element={<Navigate to="/tasks" replace />} />
                                 <Route path="/tasks" element={<TasksPage />} />

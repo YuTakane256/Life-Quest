@@ -84,7 +84,7 @@ export function CharacterPage() {
     useModalEscape(isEditingProfile, () => setIsEditingProfile(false));
 
     return (
-        <div className="max-w-lg mx-auto px-5 pt-6 pb-28">
+        <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-28">
             {/* キャラクターカード */}
             <div className="rounded-2xl p-5 mb-4 relative" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', filter: debuff.active ? 'brightness(0.7)' : undefined }}>
                 <button onClick={() => { setEditName(character.name); setEditAvatar(character.avatar); setIsEditingProfile(true); }}
@@ -333,7 +333,7 @@ export function InventoryPage() {
     const navigate = useNavigate();
 
     return (
-        <div className="max-w-lg mx-auto px-5 pt-6 pb-28">
+        <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-28">
             <div className="flex items-center gap-3 mb-4">
                 <button
                     onClick={() => navigate('/character')}

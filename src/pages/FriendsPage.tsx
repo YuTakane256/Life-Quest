@@ -67,7 +67,7 @@ export function FriendsPage() {
     };
 
     return (
-        <div className="max-w-lg mx-auto px-5 pt-6 pb-28">
+        <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-28">
             <div className="flex items-center gap-2 mb-5">
                 <Users size={22} style={{ color: 'var(--color-accent-primary)' }} />
                 <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>友達</h1>

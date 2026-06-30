@@ -80,7 +80,7 @@ export function MapBattlePage() {
     // マップ未解放
     if (!battle.battleUnlocked) {
         return (
-            <div className="max-w-lg mx-auto px-4 pt-6">
+            <div className="app-page max-w-lg mx-auto px-4 pt-6">
                 <div className="text-center py-20">
                     <div className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: 'var(--color-bg-card)' }}>
                         <span className="text-4xl">🔒</span>
@@ -101,7 +101,7 @@ export function MapBattlePage() {
         const unlockedSkills = getUnlockedBattleSkills(character.level);
 
         return (
-            <div className="max-w-lg mx-auto px-5 pt-6 pb-4 relative z-0">
+            <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-4 relative z-0">
                 {/* 背景画像オーバーレイ */}
                 <div className="fixed inset-0 -z-10 bg-cover bg-center"
                     style={{
@@ -242,7 +242,7 @@ export function MapBattlePage() {
 
     // ─── マップ一覧 ───
     return (
-        <div className="max-w-lg mx-auto px-5 pt-6 pb-4 relative overflow-hidden z-0">
+        <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-4 relative overflow-hidden z-0">
             {/* 背景画像 */}
             <div className="fixed inset-0 -z-10 bg-cover bg-center"
                 style={{ backgroundImage: `url(${getMapBackground(selectedMap.theme)})`, opacity: 0.35 }} />

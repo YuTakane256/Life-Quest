@@ -104,7 +104,7 @@ export function HabitsPage() {
     const completedCount = habits.filter((h) => getRecordForHabit(h.id)?.completed).length;
 
     return (
-        <div className="max-w-lg mx-auto px-4 pt-6">
+        <div className="app-page max-w-lg mx-auto px-4 pt-6">
             {/* ヘッダー */}
             <div className="flex items-center justify-between mb-4">
                 <div>
