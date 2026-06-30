@@ -3,10 +3,17 @@ import { getWebLocalStorage } from '../platform/storage';
 
 export const BACKUP_VERSION = 1;
 export const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+export const BACKUP_INTEGRITY_ALGORITHM = 'fnv1a-32';
+
+export interface BackupIntegrity {
+    algorithm: typeof BACKUP_INTEGRITY_ALGORITHM;
+    checksum: string;
+}
 
 export interface BackupData {
     version: number;
     exportedAt: string;
+    integrity?: BackupIntegrity;
     tasks: unknown;
     habits: unknown;
     game: unknown;
@@ -26,7 +33,7 @@ export type BackupImportParseResult =
     | { ok: true; data: BackupData }
     | { ok: false; reason: 'file-too-large' | 'malformed-json' | 'invalid-backup' };
 
-type BackupDataKey = keyof Omit<BackupData, 'version' | 'exportedAt'>;
+type BackupDataKey = keyof Omit<BackupData, 'version' | 'exportedAt' | 'integrity'>;
 
 const BACKUP_STORAGE_SLOTS: Array<{ dataKey: BackupDataKey; storageKey: string }> = [
     { dataKey: 'tasks', storageKey: 'quest-board-tasks' },
@@ -44,6 +51,52 @@ const BACKUP_STORAGE_SLOTS: Array<{ dataKey: BackupDataKey; storageKey: string }
     { dataKey: 'motion', storageKey: 'quest-board-motion' },
 ];
 
+function normalizeForChecksum(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(normalizeForChecksum);
+    }
+
+    if (!isPlainObject(value)) {
+        return value;
+    }
+
+    return Object.fromEntries(
+        Object.keys(value)
+            .sort()
+            .filter((key) => value[key] !== undefined)
+            .map((key) => [key, normalizeForChecksum(value[key])])
+    );
+}
+
+function getBackupChecksumPayload(data: BackupData): Omit<BackupData, 'integrity'> {
+    const payload = { ...data };
+    delete payload.integrity;
+    return payload;
+}
+
+export function calculateBackupChecksum(data: BackupData): string {
+    const serialized = JSON.stringify(normalizeForChecksum(getBackupChecksumPayload(data)));
+    let hash = 0x811c9dc5;
+
+    for (let i = 0; i < serialized.length; i++) {
+        hash ^= serialized.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+
+    return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function withBackupIntegrity(data: Omit<BackupData, 'integrity'>): BackupData {
+    const backup: BackupData = { ...data };
+    return {
+        ...backup,
+        integrity: {
+            algorithm: BACKUP_INTEGRITY_ALGORITHM,
+            checksum: calculateBackupChecksum(backup),
+        },
+    };
+}
+
 /** Plain object（配列・null は除く）かどうか */
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
     return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -55,6 +108,16 @@ export function isValidBackup(data: unknown): data is BackupData {
     if (data.version !== BACKUP_VERSION) return false;
     if (typeof data.exportedAt !== 'string') return false;
     if (Number.isNaN(new Date(data.exportedAt).getTime())) return false;
+    if (data.integrity !== undefined) {
+        if (!isPlainObject(data.integrity)) return false;
+        if (data.integrity.algorithm !== BACKUP_INTEGRITY_ALGORITHM) return false;
+        if (typeof data.integrity.checksum !== 'string') return false;
+        try {
+            if (data.integrity.checksum !== calculateBackupChecksum(data as unknown as BackupData)) return false;
+        } catch {
+            return false;
+        }
+    }
     if (!isPlainObject(data.tasks)) return false;
     if (!isPlainObject(data.habits)) return false;
     if (!isPlainObject(data.game)) return false;
@@ -125,7 +188,7 @@ function prepareStorageWrites(data: BackupData): PreparedStorageWrite[] | null {
 }
 
 export function exportAllData(storage: Storage | null = getWebLocalStorage()): BackupData {
-    return {
+    return withBackupIntegrity({
         version: BACKUP_VERSION,
         exportedAt: new Date().toISOString(),
         tasks: safeParseStorage('quest-board-tasks', storage),
@@ -141,7 +204,7 @@ export function exportAllData(storage: Storage | null = getWebLocalStorage()): B
         title: safeParseStorage('quest-board-title', storage),
         friends: safeParseStorage('quest-board-friends', storage),
         motion: safeParseStorage('quest-board-motion', storage),
-    };
+    });
 }
 
 function restoreStorageSnapshot(snapshot: Map<string, string | null>, storage: Storage) {
