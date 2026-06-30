@@ -1,0 +1,36 @@
+{
+  "name": "@life-quest/core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./battleSkills": {
+      "types": "./src/battleSkills.ts",
+      "import": "./src/battleSkills.ts"
+    },
+    "./hp": {
+      "types": "./src/hp.ts",
+      "import": "./src/hp.ts"
+    },
+    "./numeric": {
+      "types": "./src/numeric.ts",
+      "import": "./src/numeric.ts"
+    },
+    "./validation": {
+      "types": "./src/validation.ts",
+      "import": "./src/validation.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.2",
+    "vitest": "^4.1.7"
+  }
+}
