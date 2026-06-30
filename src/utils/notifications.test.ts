@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveHabitReminderHour, runNotificationChecks } from './notifications';
+import {
+    getNotificationPermission,
+    isNotificationSupported,
+    requestNotificationPermission,
+    resolveHabitReminderHour,
+    runNotificationChecks,
+} from './notifications';
 import { NOTIFICATION_CONFIG } from '../config/gameConfig';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useNotificationStore } from '../stores/useNotificationStore';
@@ -8,6 +14,16 @@ import { useTaskStore } from '../stores/useTaskStore';
 class GrantedNotification {
     static permission: NotificationPermission = 'granted';
     static requestPermission = vi.fn();
+}
+
+class RecordingNotification {
+    static permission: NotificationPermission = 'granted';
+    static requestPermission = vi.fn();
+    static calls: Array<{ title: string; options: NotificationOptions }> = [];
+
+    constructor(title: string, options: NotificationOptions) {
+        RecordingNotification.calls.push({ title, options });
+    }
 }
 
 function resetStores() {
@@ -27,6 +43,7 @@ describe('runNotificationChecks', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-06-13T03:00:00.000Z'));
         resetStores();
+        RecordingNotification.calls = [];
         vi.stubGlobal('Notification', GrantedNotification);
     });
 
@@ -70,6 +87,8 @@ describe('runNotificationChecks', () => {
         const firstRun = runNotificationChecks();
         const secondRun = runNotificationChecks();
 
+        await Promise.resolve();
+        await Promise.resolve();
         await secondRun;
         expect(showNotification).toHaveBeenCalledTimes(1);
 
@@ -170,6 +189,40 @@ describe('runNotificationChecks', () => {
         expect(useNotificationStore.getState().notifiedTaskIds).toEqual([]);
     });
 
+    it('Service Worker registration取得に失敗したら通常Notificationへフォールバックする', async () => {
+        vi.stubGlobal('Notification', RecordingNotification);
+        Object.defineProperty(navigator, 'serviceWorker', {
+            configurable: true,
+            value: {
+                getRegistration: vi.fn().mockRejectedValue(new Error('registration unavailable')),
+            },
+        });
+        useTaskStore.setState({
+            tasks: [{
+                id: 'task-fallback',
+                name: '通常通知へフォールバック',
+                dueDate: '2026-06-13',
+                priority: 'medium',
+                tags: [],
+                subtasks: [],
+                recurrence: 'none',
+                completed: false,
+                completedAt: null,
+                createdAt: '2026-06-13T00:00:00.000Z',
+            }],
+            pendingCompletions: [],
+        });
+
+        await runNotificationChecks();
+
+        expect(RecordingNotification.calls).toHaveLength(1);
+        expect(RecordingNotification.calls[0]).toMatchObject({
+            title: 'タスクの期限が近づいています',
+            options: { tag: 'task-deadline-task-fallback' },
+        });
+        expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['task-fallback']);
+    });
+
     it('習慣通知の配信失敗時は通知日を記録しない', async () => {
         vi.setSystemTime(new Date('2026-06-13T11:00:00.000Z'));
         Object.defineProperty(navigator, 'serviceWorker', {
@@ -194,6 +247,32 @@ describe('runNotificationChecks', () => {
         await runNotificationChecks();
 
         expect(useNotificationStore.getState().lastHabitReminderDate).toBeNull();
+    });
+});
+
+describe('notification platform capability helpers', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('treats missing Notification API as unsupported and denies permission requests', async () => {
+        vi.stubGlobal('Notification', undefined);
+
+        expect(isNotificationSupported()).toBe(false);
+        expect(getNotificationPermission()).toBe('unsupported');
+        await expect(requestNotificationPermission()).resolves.toBe('denied');
+    });
+
+    it('normalizes permission API failures to denied/unsupported values', async () => {
+        vi.stubGlobal('Notification', class BrokenNotification {
+            static get permission() {
+                throw new Error('permission unavailable');
+            }
+            static requestPermission = vi.fn().mockRejectedValue(new Error('prompt failed'));
+        });
+
+        expect(getNotificationPermission()).toBe('unsupported');
+        await expect(requestNotificationPermission()).resolves.toBe('denied');
     });
 });
 
