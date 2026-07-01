@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     BACKUP_INTEGRITY_ALGORITHM,
     BACKUP_VERSION,
+    MAX_BACKUP_STRUCTURE_DEPTH,
+    MAX_BACKUP_STRUCTURE_NODES,
     MAX_IMPORT_FILE_SIZE,
     calculateBackupChecksum,
     exportAllData,
+    hasSafeBackupStructure,
     importAllData,
     isPlainObject,
     isValidBackup,
@@ -45,6 +48,39 @@ describe('dataBackup utilities', () => {
             expect(isPlainObject(null)).toBe(false);
             expect(isPlainObject([])).toBe(false);
             expect(isPlainObject('object')).toBe(false);
+        });
+    });
+
+    describe('hasSafeBackupStructure', () => {
+        it('accepts values at the configured depth boundary', () => {
+            let value: unknown = null;
+            for (let depth = 0; depth < MAX_BACKUP_STRUCTURE_DEPTH; depth += 1) {
+                value = { child: value };
+            }
+
+            expect(hasSafeBackupStructure(value)).toBe(true);
+        });
+
+        it('rejects structures beyond the configured depth boundary', () => {
+            let value: unknown = null;
+            for (let depth = 0; depth <= MAX_BACKUP_STRUCTURE_DEPTH; depth += 1) {
+                value = { child: value };
+            }
+
+            expect(hasSafeBackupStructure(value)).toBe(false);
+        });
+
+        it('rejects structures beyond the configured node boundary', () => {
+            expect(hasSafeBackupStructure(new Array(MAX_BACKUP_STRUCTURE_NODES).fill(null))).toBe(false);
+            expect(hasSafeBackupStructure(new Array(MAX_BACKUP_STRUCTURE_NODES - 1).fill(null))).toBe(true);
+        });
+
+        it('rejects cyclic objects passed by direct callers', () => {
+            const cyclic: Record<string, unknown> = {};
+            cyclic.self = cyclic;
+
+            expect(hasSafeBackupStructure(cyclic)).toBe(false);
+            expect(() => calculateBackupChecksum({ ...validBackup, tasks: cyclic })).toThrow(RangeError);
         });
     });
 
@@ -97,6 +133,15 @@ describe('dataBackup utilities', () => {
             expect(friends).toEqual({});
             expect(motion).toEqual({});
             expect(isValidBackup(withoutOptionalStores)).toBe(true);
+        });
+
+        it('rejects a backup before checksum work when its structure is too deep', () => {
+            let tasks: Record<string, unknown> = {};
+            for (let depth = 0; depth <= MAX_BACKUP_STRUCTURE_DEPTH; depth += 1) {
+                tasks = { child: tasks };
+            }
+
+            expect(isValidBackup({ ...validBackup, tasks })).toBe(false);
         });
     });
 

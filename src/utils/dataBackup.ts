@@ -3,6 +3,8 @@ import { getWebLocalStorage } from '../platform/storage';
 
 export const BACKUP_VERSION = 1;
 export const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+export const MAX_BACKUP_STRUCTURE_DEPTH = 64;
+export const MAX_BACKUP_STRUCTURE_NODES = 100_000;
 export const BACKUP_INTEGRITY_ALGORITHM = 'fnv1a-32';
 
 export interface BackupIntegrity {
@@ -74,7 +76,47 @@ function getBackupChecksumPayload(data: BackupData): Omit<BackupData, 'integrity
     return payload;
 }
 
+/**
+ * Bounds work performed by validation and checksum normalization.
+ * JSON cannot contain cycles, but direct callers can still pass cyclic objects.
+ */
+export function hasSafeBackupStructure(value: unknown): boolean {
+    const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
+    const seen = new WeakSet<object>();
+    let nodeCount = 0;
+
+    try {
+        while (pending.length > 0) {
+            const current = pending.pop();
+            if (!current) break;
+
+            nodeCount += 1;
+            if (nodeCount > MAX_BACKUP_STRUCTURE_NODES) return false;
+            if (current.depth > MAX_BACKUP_STRUCTURE_DEPTH) return false;
+
+            if (typeof current.value !== 'object' || current.value === null) continue;
+            if (seen.has(current.value)) return false;
+            seen.add(current.value);
+
+            const children = Array.isArray(current.value)
+                ? current.value
+                : Object.values(current.value);
+
+            for (const child of children) {
+                pending.push({ value: child, depth: current.depth + 1 });
+            }
+        }
+    } catch {
+        return false;
+    }
+
+    return true;
+}
+
 export function calculateBackupChecksum(data: BackupData): string {
+    if (!hasSafeBackupStructure(data)) {
+        throw new RangeError('Backup structure exceeds complexity limits');
+    }
     const serialized = JSON.stringify(normalizeForChecksum(getBackupChecksumPayload(data)));
     let hash = 0x811c9dc5;
 
@@ -105,6 +147,7 @@ export function isPlainObject(v: unknown): v is Record<string, unknown> {
 /** バックアップ JSON が想定する構造になっているか検証する型ガード */
 export function isValidBackup(data: unknown): data is BackupData {
     if (!isPlainObject(data)) return false;
+    if (!hasSafeBackupStructure(data)) return false;
     if (data.version !== BACKUP_VERSION) return false;
     if (typeof data.exportedAt !== 'string') return false;
     if (Number.isNaN(new Date(data.exportedAt).getTime())) return false;
