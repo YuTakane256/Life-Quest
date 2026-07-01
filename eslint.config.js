@@ -18,7 +18,10 @@ export default tseslint.config(
             'react-refresh': reactRefresh,
         },
         rules: {
-            ...reactHooks.configs.recommended.rules,
+            // React Compiler rules in plugin v7 need a dedicated adoption pass.
+            // Keep the stable hook correctness rules enabled until then.
+            'react-hooks/rules-of-hooks': 'error',
+            'react-hooks/exhaustive-deps': 'warn',
             'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
             // 既存コードの noisy パターンを許容
             '@typescript-eslint/no-explicit-any': 'warn',
