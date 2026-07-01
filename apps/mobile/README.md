@@ -1,6 +1,6 @@
 # Life Quest Mobile
 
-Expo SDK 54 と Expo Router を使うモバイルアプリの土台です。Web版と同じnpm workspaceに置き、`@life-quest/core`のプラットフォーム非依存ロジックを共有します。
+Expo SDK 56 と Expo Router を使うモバイルアプリの土台です。Web版と同じnpm workspaceに置き、`@life-quest/core`のプラットフォーム非依存ロジックを共有します。
 
 ```bash
 npm install
