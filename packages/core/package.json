@@ -24,6 +24,10 @@
       "types": "./src/persist.ts",
       "import": "./src/persist.ts"
     },
+    "./tasks": {
+      "types": "./src/tasks.ts",
+      "import": "./src/tasks.ts"
+    },
     "./validation": {
       "types": "./src/validation.ts",
       "import": "./src/validation.ts"

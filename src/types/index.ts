@@ -3,34 +3,11 @@
  */
 
 import type { EquipmentTemplate, Rarity, EquipmentSlot, ChestType } from '../config/gameConfig';
+import type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
+
+export type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
 
 // ─── タスク関連 ───────────────────────────────────────────────
-export type Priority = 'low' | 'medium' | 'high';
-
-/** タスクの繰り返し周期 */
-export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
-
-export interface Task {
-    id: string;
-    name: string;
-    dueDate: string | null; // ISO 8601
-    priority: Priority;
-    tags: string[]; // ユーザー定義タグ
-    subtasks: Subtask[];
-    recurrence: Recurrence; // 繰り返し設定（none = 繰り返しなし）
-    completed: boolean;
-    completedAt: string | null; // ISO 8601
-    createdAt: string; // ISO 8601
-}
-
-export interface Subtask {
-    id: string;
-    name: string;
-    completed: boolean;
-    completedAt: string | null; // ISO 8601
-    createdAt: string; // ISO 8601
-}
-
 /** 完了待機中のタスク（5秒Undo用） */
 export interface PendingCompletion {
     taskId: string;
