@@ -16,6 +16,10 @@
       "types": "./src/hp.ts",
       "import": "./src/hp.ts"
     },
+    "./habits": {
+      "types": "./src/habits.ts",
+      "import": "./src/habits.ts"
+    },
     "./numeric": {
       "types": "./src/numeric.ts",
       "import": "./src/numeric.ts"
