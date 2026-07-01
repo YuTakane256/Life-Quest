@@ -23,11 +23,11 @@
   },
   "dependencies": {
     "@life-quest/core": "file:packages/core",
-    "lucide-react": "^0.477.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "lucide-react": "^1.23.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
