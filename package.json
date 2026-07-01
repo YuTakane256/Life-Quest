@@ -14,6 +14,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:core": "npm run typecheck --workspace @life-quest/core",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
     "typecheck": "tsc -b --noEmit",
     "typecheck:core": "npm run typecheck --workspace @life-quest/core",
     "lint": "eslint .",
@@ -33,6 +35,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.2",
     "@types/react": "^19.0.10",
