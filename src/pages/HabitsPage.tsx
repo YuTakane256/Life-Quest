@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown } from 'lucide-react';
+import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown, ChevronRight } from 'lucide-react';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortStore';
 import { getTodayJST } from '../utils/dateUtils';
@@ -7,6 +7,7 @@ import { HABIT_CATEGORIES, getCategoryById, DEFAULT_CATEGORY_ID } from '../confi
 import type { Habit } from '../types';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useModalEscape } from '../hooks/useModalEscape';
+import { HabitHeatmapModal } from '../components/habits/HabitHeatmapModal';
 
 const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
     { value: 'createdAt', label: '作成順' },
@@ -16,7 +17,7 @@ const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
 ];
 
 export function HabitsPage() {
-    const { habits, dailyRecords, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak, getHabitCompletionRate } = useHabitStore();
+    const { habits, dailyRecords, restDays, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak, getHabitCompletionRate } = useHabitStore();
     const { sortMode, setSortMode } = useHabitSortStore();
     const [showForm, setShowForm] = useState(false);
     const [name, setName] = useState('');
@@ -25,6 +26,7 @@ export function HabitsPage() {
     const [memoText, setMemoText] = useState('');
     const [showRestConfirm, setShowRestConfirm] = useState(false);
     const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
+    const [historyHabitId, setHistoryHabitId] = useState<string | null>(null);
 
     const today = getTodayJST();
     const isRest = isRestDay(today);
@@ -274,7 +276,13 @@ export function HabitsPage() {
                                             >
                                                 {isCompleted && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
                                             </button>
-                                            <div className="flex-1 min-w-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => setHistoryHabitId(habit.id)}
+                                                className="flex-1 min-w-0 text-left rounded-lg focus:outline-none focus-visible:ring-2"
+                                                style={{ '--tw-ring-color': category.color } as React.CSSProperties}
+                                                aria-label={`「${habit.name}」の達成履歴を表示`}
+                                            >
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     <p className={`text-sm font-medium ${isCompleted ? 'line-through' : ''}`} style={{ color: 'var(--color-text-primary)' }}>{habit.name}</p>
                                                     {streak > 0 && (
@@ -296,8 +304,9 @@ export function HabitsPage() {
                                                     )}
                                                 </div>
                                                 {record?.memo && <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}><MessageSquare size={10} />{record.memo}</p>}
-                                            </div>
-                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true" />
                                                 <button onClick={() => deleteHabit(habit.id)} aria-label={`「${habit.name}」を削除`} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
                                             </div>
                                         </div>
@@ -336,6 +345,22 @@ export function HabitsPage() {
                 onConfirm={handleRestDay}
                 onClose={() => setShowRestConfirm(false)}
             />
+
+            {historyHabitId && (() => {
+                const habit = habits.find((candidate) => candidate.id === historyHabitId);
+                if (!habit) return null;
+                const category = getCategoryById(habit.categoryId || DEFAULT_CATEGORY_ID);
+                return (
+                    <HabitHeatmapModal
+                        habit={habit}
+                        dailyRecords={dailyRecords}
+                        restDays={restDays}
+                        color={category?.color || 'var(--color-accent-emerald)'}
+                        streak={statsMap.get(habit.id)?.streak ?? 0}
+                        onClose={() => setHistoryHabitId(null)}
+                    />
+                );
+            })()}
         </div>
     );
 }

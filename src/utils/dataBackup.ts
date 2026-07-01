@@ -49,7 +49,6 @@ const BACKUP_STORAGE_SLOTS: Array<{ dataKey: BackupDataKey; storageKey: string }
     { dataKey: 'taskSort', storageKey: 'quest-board-task-sort' },
     { dataKey: 'habitSort', storageKey: 'quest-board-habit-sort' },
     { dataKey: 'title', storageKey: 'quest-board-title' },
-    { dataKey: 'friends', storageKey: 'quest-board-friends' },
     { dataKey: 'motion', storageKey: 'quest-board-motion' },
 ];
 
@@ -245,7 +244,6 @@ export function exportAllData(storage: Storage | null = getWebLocalStorage()): B
         taskSort: safeParseStorage('quest-board-task-sort', storage),
         habitSort: safeParseStorage('quest-board-habit-sort', storage),
         title: safeParseStorage('quest-board-title', storage),
-        friends: safeParseStorage('quest-board-friends', storage),
         motion: safeParseStorage('quest-board-motion', storage),
     });
 }

@@ -615,14 +615,14 @@ export const useGameStore = create<GameStoreState>()(
             },
 
             processBattleTurn: () => {
-                const { battle } = get();
+                const { battle, character } = get();
                 if (battle.status !== 'fighting' || !battle.enemy) return;
                 const effectiveStats = get().getEffectiveStats();
                 const turn = battle.logs.length + 1;
                 const playerDamage = calculateDamage(effectiveStats.attack, battle.enemy.defense);
                 const newEnemyHp = Math.max(0, battle.enemy.hp - playerDamage);
                 const logs: BattleLog[] = [...battle.logs];
-                logs.push({ turn, message: `あなたの攻撃！ ${battle.enemy.name}に${playerDamage}ダメージ！`, playerHp: battle.playerHp, enemyHp: newEnemyHp });
+                logs.push({ turn, message: `${character.name}の攻撃！ ${battle.enemy.name}に${playerDamage}ダメージ！`, playerHp: battle.playerHp, enemyHp: newEnemyHp });
                 if (newEnemyHp <= 0) {
                     set({ battle: { ...battle, status: 'victory', enemy: { ...battle.enemy, hp: 0 }, logs } });
                     // 勝利時にXPを付与
@@ -642,7 +642,7 @@ export const useGameStore = create<GameStoreState>()(
                 const newPlayerHp = Math.max(0, battle.playerHp - enemyDamage);
                 logs.push({
                     turn,
-                    message: `${battle.enemy.name}の攻撃！ あなたに${enemyDamage}ダメージ！${guardReduction > 0 ? ' 防御効果で軽減！' : ''}`,
+                    message: `${battle.enemy.name}の攻撃！ ${character.name}に${enemyDamage}ダメージ！${guardReduction > 0 ? ' 防御効果で軽減！' : ''}`,
                     playerHp: newPlayerHp,
                     enemyHp: newEnemyHp,
                 });
@@ -760,7 +760,7 @@ export const useGameStore = create<GameStoreState>()(
                 });
                 logs.push({
                     turn,
-                    message: `${enemy.name}の攻撃！ あなたに${enemyDamage}ダメージ！${guardReduction > 0 ? ' 防御効果で軽減！' : ''}`,
+                    message: `${enemy.name}の攻撃！ ${character.name}に${enemyDamage}ダメージ！${guardReduction > 0 ? ' 防御効果で軽減！' : ''}`,
                     playerHp,
                     enemyHp: enemy.hp,
                 });

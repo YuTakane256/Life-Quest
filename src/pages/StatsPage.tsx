@@ -241,12 +241,18 @@ export function StatsPage() {
     const [tooltipInfo, setTooltipInfo] = useState<{ date: string; value: string } | null>(null);
 
     return (
-        <div className="app-page max-w-lg mx-auto px-4 pt-6 pb-8">
+        <div className="app-page max-w-lg mx-auto px-4 pt-6 pb-8 grid grid-cols-1 md:grid-cols-2 gap-x-5">
             {/* ヘッダー */}
-            <h1 className="text-2xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>統計</h1>
+            <div className="order-1 md:col-span-2 flex items-end justify-between gap-3 mb-4">
+                <div>
+                    <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>統計</h1>
+                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>日々の積み重ねと自己ベスト</p>
+                </div>
+                <span className="text-[11px] px-2 py-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>過去{TOTAL_DAYS}日</span>
+            </div>
 
             {/* 今週のXPサマリー */}
-            <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+            <div className="order-5 rounded-xl p-4 mb-5 md:mb-0" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
                 <div className="flex items-center justify-between mb-3">
                     <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>今週のXP</h2>
                     <span className="text-sm font-bold" style={{ color: 'var(--color-accent-primary)' }}>
@@ -278,7 +284,7 @@ export function StatsPage() {
             </div>
 
             {/* 自己ベスト記録 */}
-            <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+            <div className="order-6 rounded-xl p-4 mb-5 md:mb-0" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
                 <h2 className="text-sm font-semibold mb-3 flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
                     <span>🏆</span>自己ベスト記録
                 </h2>
@@ -305,7 +311,7 @@ export function StatsPage() {
             </div>
 
             {/* 実績 */}
-            <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+            <div className="order-7 md:col-span-2 rounded-xl p-4 mb-5 mt-0 md:mt-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
                 <div className="flex items-center justify-between gap-3 mb-3">
                     <h2 className="text-sm font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
                         <span>🏅</span>実績
@@ -358,7 +364,7 @@ export function StatsPage() {
             </div>
 
             {/* セグメントコントロール */}
-            <div className="flex rounded-xl p-1 mb-5" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
+            <div className="order-2 md:col-span-2 flex rounded-xl p-1 mb-4" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
                 {(['tasks', 'habits'] as TabMode[]).map((tab) => (
                     <button
                         key={tab}
@@ -375,7 +381,7 @@ export function StatsPage() {
             </div>
 
             {/* サマリーカード */}
-            <div className="grid grid-cols-2 gap-3 mb-5">
+            <div className="order-3 md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <SummaryCard
                     label={mode === 'tasks' ? '合計XP' : '合計達成数'}
                     value={stats.totalXp}
@@ -391,10 +397,18 @@ export function StatsPage() {
             </div>
 
             {/* ヒートマップ */}
-            <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>
-                    {mode === 'tasks' ? 'XP獲得ヒートマップ' : '習慣達成ヒートマップ'}
-                </h2>
+            <div className="order-4 md:col-span-2 rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                        <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                            {mode === 'tasks' ? 'XP獲得ヒートマップ' : '習慣達成ヒートマップ'}
+                        </h2>
+                        <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                            {mode === 'tasks' ? '濃い日ほど獲得XPが多い日です' : '濃い日ほど多くの習慣を達成しています'}
+                        </p>
+                    </div>
+                    <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>セルを選択して詳細</span>
+                </div>
 
                 {/* 月ラベル */}
                 <div className="flex ml-7 mb-1 gap-0" style={{ position: 'relative' }}>

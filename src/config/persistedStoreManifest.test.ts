@@ -5,7 +5,6 @@ import {
     PERSISTED_STORE_MANIFEST,
 } from './persistedStoreManifest';
 import battleHistoryStoreSource from '../stores/useBattleHistoryStore.ts?raw';
-import friendsStoreSource from '../stores/useFriendsStore.ts?raw';
 import gameStoreSource from '../stores/useGameStore.ts?raw';
 import habitSortStoreSource from '../stores/useHabitSortStore.ts?raw';
 import habitStoreSource from '../stores/useHabitStore.ts?raw';
@@ -20,7 +19,6 @@ import titleStoreSource from '../stores/useTitleStore.ts?raw';
 
 const persistedStoreSources = [
     battleHistoryStoreSource,
-    friendsStoreSource,
     gameStoreSource,
     habitSortStoreSource,
     habitStoreSource,

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useHabitStore } from './useHabitStore';
+import { HABIT_HISTORY_RETENTION_DAYS, useHabitStore } from './useHabitStore';
 import { UI_CONFIG } from '../config/gameConfig';
 import { getTodayJST, shiftDate } from '../utils/dateUtils';
 import type { Habit, HabitDailyRecord, RestDay } from '../types';
@@ -119,10 +119,10 @@ describe('useHabitStore edge coverage', () => {
         expect(useHabitStore.getState().isRestDay(today)).toBe(true);
     });
 
-    it('checkAndResetHabits は30日より古い記録だけを削除し、境界日は残す', () => {
+    it('checkAndResetHabits は履歴保持期間より古い記録だけを削除し、境界日は残す', () => {
         const today = getTodayJST();
-        const cutoff = shiftDate(today, -30);
-        const tooOld = shiftDate(today, -31);
+        const cutoff = shiftDate(today, -HABIT_HISTORY_RETENTION_DAYS);
+        const tooOld = shiftDate(today, -(HABIT_HISTORY_RETENTION_DAYS + 1));
         useHabitStore.setState({
             dailyRecords: [
                 makeRecord({ date: tooOld, memo: 'drop' }),
@@ -144,7 +144,7 @@ describe('useHabitStore edge coverage', () => {
         expect(useHabitStore.getState().allCompleteRewardDates).toEqual([cutoff, today]);
     });
 
-    it('getHabitStreak は保持期間の31日分までを連続日数として数える', () => {
+    it('getHabitStreak は保持期間内の連続日数を数える', () => {
         const today = getTodayJST();
         const habit = makeHabit({ id: 'habit-a', createdAt: '2025-04-01T00:00:00.000Z' });
         useHabitStore.setState({
@@ -154,7 +154,7 @@ describe('useHabitStore edge coverage', () => {
             ),
         });
 
-        expect(useHabitStore.getState().getHabitStreak(habit.id)).toBe(31);
+        expect(useHabitStore.getState().getHabitStreak(habit.id)).toBe(36);
     });
 
     it('getHabitCompletionRate は作成前とお休み日を分母から除外する', () => {

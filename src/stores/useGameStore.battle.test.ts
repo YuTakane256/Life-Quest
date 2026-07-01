@@ -184,3 +184,31 @@ describe('useGameStore battle skills', () => {
         expect(battle.guardTurnsRemaining).toBe(1);
     });
 });
+
+describe('useGameStore battle identity', () => {
+    beforeEach(() => {
+        resetStore();
+        useGameStore.setState((state) => ({
+            character: { ...state.character, name: 'アルテミス' },
+            battle: { ...state.battle, battleUnlocked: true },
+        }));
+    });
+
+    it('uses the configured character name in regular battle logs', () => {
+        useGameStore.getState().startBattle(firstStage.stage);
+        useGameStore.getState().processBattleTurn();
+
+        const messages = useGameStore.getState().battle.logs.map((log) => log.message);
+        expect(messages[0]).toContain('アルテミスの攻撃');
+        expect(messages[1]).toContain('アルテミスに');
+        expect(messages.join(' ')).not.toContain('あなた');
+    });
+
+    it('uses the configured character name when a skill triggers an enemy attack', () => {
+        useGameStore.getState().startBattle(firstStage.stage);
+        useGameStore.getState().activateBattleSkill('power_strike');
+
+        const logs = useGameStore.getState().battle.logs;
+        expect(logs[logs.length - 1]?.message).toContain('アルテミスに');
+    });
+});

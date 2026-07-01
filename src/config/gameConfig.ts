@@ -345,10 +345,10 @@ export const EQUIPMENT_POOL: readonly EquipmentTemplate[] = [
 /** レアリティ別の売却時XP */
 export const SELL_XP_BY_RARITY: Record<Rarity, number> = {
     common: 5,
-    uncommon: 15,
-    rare: 40,
-    epic: 100,
-    legendary: 250,
+    uncommon: 20,
+    rare: 70,
+    epic: 240,
+    legendary: 800,
 };
 
 /** レアリティの昇格順 */

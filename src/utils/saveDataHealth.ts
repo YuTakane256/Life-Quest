@@ -53,7 +53,6 @@ export const SAVE_DATA_SECTION_KEYS = [
     'quest-board-battle-history',
     'quest-board-task-sort',
     'quest-board-habit-sort',
-    'quest-board-friends',
     'quest-board-title',
 ] as const;
 
@@ -69,7 +68,6 @@ const SAVE_DATA_SECTIONS: readonly SaveDataSectionDefinition[] = [
     { key: 'quest-board-battle-history', label: 'バトル履歴', required: false, validate: (state) => hasArray(state, 'history') },
     { key: 'quest-board-task-sort', label: 'タスク並び順', required: false, validate: (state) => typeof state.sortMode === 'string' },
     { key: 'quest-board-habit-sort', label: '習慣並び順', required: false, validate: (state) => typeof state.sortMode === 'string' },
-    { key: 'quest-board-friends', label: '友達', required: false, validate: (state) => hasArray(state, 'friends') },
     { key: 'quest-board-title', label: '称号', required: false, validate: (state) => state.activeTitle === null || typeof state.activeTitle === 'string' },
 ];
 

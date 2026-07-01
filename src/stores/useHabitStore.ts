@@ -19,6 +19,7 @@ export const MAX_PERSISTED_HABITS = 200;
 export const MAX_HABIT_DAILY_RECORDS = 10000;
 export const MAX_HABIT_REST_DAYS = 3660;
 export const MAX_HABIT_REWARD_DATES = 3660;
+export const HABIT_HISTORY_RETENTION_DAYS = 180;
 
 const VALID_CATEGORY_IDS = new Set(HABIT_CATEGORIES.map((category) => category.id));
 
@@ -286,9 +287,8 @@ export const useHabitStore = create<HabitStoreState>()(
                 if (!habit) return 0;
                 const createdDate = toIsoDatePart(habit.createdAt);
 
-                // 今日から過去へ遡って連続達成日数を数える。
-                // dailyRecords は30日でクリーンアップされるため最大31日まで遡れば十分。
-                for (let i = 0; i < 31; i++) {
+                // 今日から、個別ヒートマップと同じ保持期間まで遡る。
+                for (let i = 0; i <= HABIT_HISTORY_RETENTION_DAYS; i++) {
                     if (cursor < createdDate) break;
 
                     const isRest = restDays.some((r) => r.date === cursor && r.isRest);
@@ -339,10 +339,10 @@ export const useHabitStore = create<HabitStoreState>()(
             },
 
             checkAndResetHabits: () => {
-                // 古いレコードのクリーンアップ（30日以上前のものを削除）。
+                // 個別ヒートマップの表示期間より古い記録を削除する。
                 // dailyRecords / restDays は JST 日付（YYYY-MM-DD）で保存されているので、
                 // cutoff も JST ベースで計算する（UTC ベースだと JST 深夜 0-9 時に 1 日ずれる）。
-                const cutoffStr = shiftDate(getTodayJST(), -30);
+                const cutoffStr = shiftDate(getTodayJST(), -HABIT_HISTORY_RETENTION_DAYS);
 
                 set((state) => ({
                     dailyRecords: state.dailyRecords.filter((r) => r.date >= cutoffStr),

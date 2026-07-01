@@ -19,7 +19,6 @@ const CharacterPage = lazy(() => import('./pages/CharacterPage').then((module) =
 const InventoryPage = lazy(() => import('./pages/CharacterPage').then((module) => ({ default: module.InventoryPage })));
 const MapBattlePage = lazy(() => import('./pages/MapBattlePage').then((module) => ({ default: module.MapBattlePage })));
 const StatsPage = lazy(() => import('./pages/StatsPage').then((module) => ({ default: module.StatsPage })));
-const FriendsPage = lazy(() => import('./pages/FriendsPage').then((module) => ({ default: module.FriendsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })));
 const HelpPage = lazy(() => import('./pages/HelpPage').then((module) => ({ default: module.HelpPage })));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((module) => ({ default: module.NotFoundPage })));
@@ -92,7 +91,6 @@ function App() {
                                     <Route path="/character/inventory" element={<InventoryPage />} />
                                     <Route path="/map" element={<MapBattlePage />} />
                                     <Route path="/stats" element={<StatsPage />} />
-                                    <Route path="/friends" element={<FriendsPage />} />
                                     <Route path="/settings" element={<SettingsPage />} />
                                     <Route path="/help" element={<HelpPage />} />
                                     <Route path="*" element={<NotFoundPage />} />
