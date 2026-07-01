@@ -74,4 +74,16 @@ describe('useGameStore.sellItem', () => {
         // すべて売却済み
         expect(useGameStore.getState().equipment).toHaveLength(0);
     });
+
+    it('合成後のアイテムは素材3個を別々に売るより多くのXPになる', () => {
+        const rarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+
+        for (let index = 1; index < rarityOrder.length; index++) {
+            const ingredientRarity = rarityOrder[index - 1];
+            const resultRarity = rarityOrder[index];
+            expect(SELL_XP_BY_RARITY[resultRarity]).toBeGreaterThan(
+                SELL_XP_BY_RARITY[ingredientRarity] * 3,
+            );
+        }
+    });
 });

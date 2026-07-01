@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { CheckSquare, Repeat, User, Map, BarChart3, Settings, Users, Shield, LockKeyhole } from 'lucide-react';
+import { CheckSquare, Repeat, User, Map, BarChart3, Settings, Shield, LockKeyhole } from 'lucide-react';
 import { useGameStore } from '../../stores/useGameStore';
 import { useTaskStore } from '../../stores/useTaskStore';
 
@@ -8,7 +8,6 @@ const NAV_ITEMS = [
     { path: '/tasks', label: 'タスク', icon: <CheckSquare size={22} /> },
     { path: '/habits', label: '習慣', icon: <Repeat size={22} /> },
     { path: '/stats', label: '統計', icon: <BarChart3 size={22} /> },
-    { path: '/friends', label: '友達', icon: <Users size={22} /> },
     { path: '/character', label: 'キャラ', icon: <User size={22} /> },
     { path: '/map', label: 'マップ', icon: <Map size={22} />, requiresBattle: true },
     { path: '/settings', label: '設定', icon: <Settings size={22} /> },

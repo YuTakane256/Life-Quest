@@ -41,7 +41,6 @@ describe('inspectSaveDataHealth', () => {
         expect(inspectSaveDataHealth(localStorage).sections.map((section) => section.key)).toEqual(
             SAVE_DATA_SECTION_KEYS
         );
-        expect(SAVE_DATA_SECTION_KEYS).toContain('quest-board-friends');
         expect(SAVE_DATA_SECTION_KEYS).toContain('quest-board-title');
     });
 

@@ -4,7 +4,6 @@ export type PersistedStoreDomain =
     | 'game'
     | 'stats'
     | 'settings'
-    | 'social'
     | 'battle';
 
 export interface PersistedStoreDefinition {
@@ -104,14 +103,6 @@ export const PERSISTED_STORE_MANIFEST = [
         requiredForBackup: false,
         version: 1,
         migrationOwner: 'settings-store',
-    },
-    {
-        storageKey: 'quest-board-friends',
-        label: '友達',
-        domain: 'social',
-        requiredForBackup: false,
-        version: 1,
-        migrationOwner: 'web-store',
     },
     {
         storageKey: 'quest-board-title',

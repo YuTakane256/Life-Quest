@@ -239,7 +239,6 @@ describe('dataBackup utilities', () => {
                 taskSort: { state: { sortMode: 'priority' } },
                 habitSort: { state: { sortMode: 'streak' } },
                 title: { state: { activeTitle: '収集家' } },
-                friends: { state: { friends: [] } },
                 motion: { state: { mode: 'reduced' } },
             }));
         });
@@ -257,7 +256,7 @@ describe('dataBackup utilities', () => {
             expect(JSON.parse(localStorage.getItem('quest-board-task-sort') || '{}')).toEqual({});
             expect(JSON.parse(localStorage.getItem('quest-board-habit-sort') || '{}')).toEqual({});
             expect(JSON.parse(localStorage.getItem('quest-board-title') || '{}')).toEqual({});
-            expect(JSON.parse(localStorage.getItem('quest-board-friends') || '{}')).toEqual({});
+            expect(localStorage.getItem('quest-board-friends')).toBeNull();
             expect(JSON.parse(localStorage.getItem('quest-board-motion') || '{}')).toEqual({});
         });
 
@@ -326,7 +325,7 @@ describe('dataBackup utilities', () => {
             expect(localStorage.getItem('quest-board-task-sort')).toBeNull();
             expect(localStorage.getItem('quest-board-habit-sort')).toBeNull();
             expect(localStorage.getItem('quest-board-title')).toBeNull();
-            expect(localStorage.getItem('quest-board-friends')).toBeNull();
+            expect(localStorage.getItem('quest-board-friends')).toBe('{"state":{"friends":[{"id":"old"}]}}');
             expect(localStorage.getItem('quest-board-motion')).toBeNull();
         });
 
