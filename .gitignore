@@ -4,6 +4,8 @@ node_modules/
 # ビルド成果物（npm run build で生成されるためコミットしない）
 dist/
 dist-ssr/
+playwright-report/
+test-results/
 
 # TypeScript のインクリメンタルビルドキャッシュ
 *.tsbuildinfo
