@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Life Quest",
+    "slug": "life-quest",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "lifequest",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    }
+  }
+}
