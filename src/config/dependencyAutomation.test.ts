@@ -1,0 +1,29 @@
+import { describe, expect, it } from 'vitest';
+import dependabotConfig from '../../.github/dependabot.yml?raw';
+import auditWorkflow from '../../.github/workflows/dependency-audit.yml?raw';
+
+describe('dependency automation policy', () => {
+    it('monitors npm and GitHub Actions dependencies every week', () => {
+        expect(dependabotConfig).toContain('package-ecosystem: npm');
+        expect(dependabotConfig).toContain('package-ecosystem: github-actions');
+        expect(dependabotConfig.match(/interval: weekly/g)).toHaveLength(2);
+        expect(dependabotConfig).toContain('dependency-type: production');
+        expect(dependabotConfig).toContain('dependency-type: development');
+    });
+
+    it('runs a least-privilege production audit on a schedule and on demand', () => {
+        expect(auditWorkflow).toContain("cron: '0 0 * * 1'");
+        expect(auditWorkflow).toContain('workflow_dispatch:');
+        expect(auditWorkflow).toContain('permissions:\n  contents: read');
+        expect(auditWorkflow).toContain('npm audit --package-lock-only --omit=dev --audit-level=high');
+    });
+
+    it('pins every third-party action to a full commit SHA', () => {
+        const actionReferences = [...auditWorkflow.matchAll(/uses:\s+([^\s]+)/g)].map((match) => match[1]);
+        expect(actionReferences.length).toBeGreaterThan(0);
+        for (const reference of actionReferences) {
+            expect(reference).toMatch(/^[^@]+@[a-f0-9]{40}$/);
+        }
+        expect(auditWorkflow).toContain('persist-credentials: false');
+    });
+});
