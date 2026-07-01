@@ -14,10 +14,20 @@ describe('map and enemy asset coverage', () => {
     });
 
     it('all configured map themes resolve to map and battle backgrounds', () => {
+        const mapBackgrounds = new Set<string>();
+        const battleBackgrounds = new Set<string>();
+
         for (const map of MAP_CONFIG) {
-            expect(getMapBackground(map.theme), `${map.name} map background`).toBeTruthy();
-            expect(getBattleBackground(map.theme), `${map.name} battle background`).toBeTruthy();
+            const mapBackground = getMapBackground(map.theme);
+            const battleBackground = getBattleBackground(map.theme);
+            expect(mapBackground, `${map.name} map background`).toBeTruthy();
+            expect(battleBackground, `${map.name} battle background`).toBeTruthy();
+            mapBackgrounds.add(mapBackground);
+            battleBackgrounds.add(battleBackground);
         }
+
+        expect(mapBackgrounds.size).toBe(MAP_CONFIG.length);
+        expect(battleBackgrounds.size).toBe(MAP_CONFIG.length);
     });
 
     it('unknown themes fall back to grassland backgrounds', () => {
