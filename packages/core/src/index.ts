@@ -30,3 +30,15 @@ export {
     type PersistedStateRecord,
     type PersistStorageEnvelope,
 } from './persist';
+export {
+    createTask,
+    removeTask,
+    sanitizeTaskCollection,
+    TASK_LIMITS,
+    toggleTaskCompletion,
+    type CreateTaskInput,
+    type Priority,
+    type Recurrence,
+    type Subtask,
+    type Task,
+} from './tasks';
