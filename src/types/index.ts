@@ -4,8 +4,10 @@
 
 import type { EquipmentTemplate, Rarity, EquipmentSlot, ChestType } from '../config/gameConfig';
 import type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
+import type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
 
 export type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
+export type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
 
 // ─── タスク関連 ───────────────────────────────────────────────
 /** 完了待機中のタスク（5秒Undo用） */
@@ -16,21 +18,6 @@ export interface PendingCompletion {
 }
 
 // ─── 習慣関連 ───────────────────────────────────────────────
-export interface Habit {
-    id: string;
-    name: string;
-    categoryId: string; // habitCategories.ts の HabitCategory.id
-    createdAt: string; // ISO 8601
-}
-
-/** 日別の習慣達成記録 */
-export interface HabitDailyRecord {
-    habitId: string;
-    date: string; // YYYY-MM-DD (JST)
-    completed: boolean;
-    memo: string;
-}
-
 /** お休みフラグ */
 export interface RestDay {
     date: string; // YYYY-MM-DD (JST)
