@@ -35,8 +35,25 @@ import { BATTLE_SKILL_CONFIG } from '../config/battleSkills';
 import { getUnlockedBattleSkills, resolveBattleSkill } from '../utils/battleSkills';
 import { useBattleHistoryStore } from './useBattleHistoryStore';
 import { isPlainObject, isFiniteNumber, toNonNegativeInteger, toBoundedInteger } from '../utils/persistSanitize';
+import {
+    MAX_TOTAL_XP,
+    calculateDamage,
+    calculateEffectiveStats,
+    calculateLevel,
+    getBestEquipmentIdsBySlot,
+    getDominantEquipmentSlots,
+    getGuardReduction,
+    tickSkillCooldowns,
+} from '../utils/gameCalculations';
 
-export const MAX_TOTAL_XP = Number.MAX_SAFE_INTEGER;
+export {
+    MAX_TOTAL_XP,
+    calculateDamage,
+    calculateLevel,
+    calculateNextLevelXp,
+    calculateXpProgress,
+} from '../utils/gameCalculations';
+
 export const MAX_GACHA_COUNT = Number.MAX_SAFE_INTEGER;
 export const MAX_EQUIPMENT_ITEMS = 2000;
 export const MAX_CHEST_QUEUE_ITEMS = 500;
@@ -56,45 +73,6 @@ export function createEquipmentInstance(template: EquipmentTemplate): Equipment 
         hpBonus: template.hpBonus,
         equipped: false,
     };
-}
-
-export function calculateLevel(totalXp: number): number {
-    const safeTotalXp = toBoundedInteger(totalXp, 0, 0, MAX_TOTAL_XP);
-    const table = XP_CONFIG.LEVEL_XP_TABLE;
-    const maxTableLevel = table.length - 1;
-    if (safeTotalXp >= table[maxTableLevel]) {
-        const remainingXp = safeTotalXp - table[maxTableLevel];
-        return maxTableLevel + Math.floor(remainingXp / XP_CONFIG.OVERFLOW_XP_PER_LEVEL);
-    }
-    for (let i = maxTableLevel; i >= 0; i--) {
-        if (safeTotalXp >= table[i]) return i;
-    }
-    return 1;
-}
-
-export function calculateNextLevelXp(level: number): number {
-    const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
-    const table = XP_CONFIG.LEVEL_XP_TABLE;
-    const maxTableLevel = table.length - 1;
-    if (safeLevel >= maxTableLevel) {
-        return table[maxTableLevel] + (safeLevel - maxTableLevel + 1) * XP_CONFIG.OVERFLOW_XP_PER_LEVEL;
-    }
-    return table[safeLevel + 1];
-}
-
-export function calculateXpProgress(totalXp: number, level: number): number {
-    const safeTotalXp = toBoundedInteger(totalXp, 0, 0, MAX_TOTAL_XP);
-    const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
-    const table = XP_CONFIG.LEVEL_XP_TABLE;
-    const maxTableLevel = table.length - 1;
-    if (safeLevel >= maxTableLevel) {
-        const baseXp = table[maxTableLevel] + (safeLevel - maxTableLevel) * XP_CONFIG.OVERFLOW_XP_PER_LEVEL;
-        const nextXp = baseXp + XP_CONFIG.OVERFLOW_XP_PER_LEVEL;
-        return Math.max(0, Math.min(1, (safeTotalXp - baseXp) / (nextXp - baseXp)));
-    }
-    const currentLevelXp = table[safeLevel];
-    const nextLevelXp = table[safeLevel + 1];
-    return Math.max(0, Math.min(1, (safeTotalXp - currentLevelXp) / (nextLevelXp - currentLevelXp)));
 }
 
 function rollEquipment(chestType: ChestType): Equipment | null {
@@ -121,11 +99,6 @@ function rollEquipment(chestType: ChestType): Equipment | null {
     return createEquipmentInstance(template);
 }
 
-export function calculateDamage(attack: number, defense: number): number {
-    const damage = Math.floor(attack - defense * BATTLE_CONFIG.DEFENSE_FACTOR);
-    return Math.max(damage, BATTLE_CONFIG.MIN_DAMAGE);
-}
-
 function getMilestoneAtCount(count: number): GachaMilestone | null {
     const special = GACHA_CONFIG.SPECIAL_MILESTONES[count as keyof typeof GACHA_CONFIG.SPECIAL_MILESTONES];
     if (special) {
@@ -140,13 +113,7 @@ function getMilestoneAtCount(count: number): GachaMilestone | null {
 }
 
 function pickSynthesisSlot(items: Equipment[]): EquipmentSlot {
-    const slotCounts = items.reduce<Record<EquipmentSlot, number>>((counts, item) => {
-        counts[item.slot] += 1;
-        return counts;
-    }, { weapon: 0, armor: 0, accessory: 0 });
-    const maxCount = Math.max(...Object.values(slotCounts));
-    const tiedSlots = (Object.keys(slotCounts) as EquipmentSlot[]).filter((slot) => slotCounts[slot] === maxCount);
-    return pickRandom(tiedSlots) as EquipmentSlot;
+    return pickRandom(getDominantEquipmentSlots(items)) as EquipmentSlot;
 }
 
 function canStartBattleStage(battle: BattleState, stage: number): boolean {
@@ -162,20 +129,6 @@ function sanitizeSkillCooldowns(raw: unknown): Record<string, number> {
             .filter(([skillId, turns]) => typeof skillId === 'string' && isFiniteNumber(turns) && turns > 0)
             .map(([skillId, turns]) => [skillId, Math.floor(turns as number)])
     );
-}
-
-function tickSkillCooldowns(cooldowns: Record<string, number>): Record<string, number> {
-    return Object.fromEntries(
-        Object.entries(cooldowns)
-            .map(([skillId, turns]) => [skillId, Math.max(0, turns - 1)] as const)
-            .filter(([, turns]) => turns > 0)
-    );
-}
-
-function getGuardReduction(battle: BattleState): number {
-    return battle.guardTurnsRemaining > 0
-        ? Math.max(0, Math.min(BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION, battle.guardDamageReduction))
-        : 0;
 }
 
 /** バトル終了時に履歴ストアへ結果スナップショットを記録する。 */
@@ -592,18 +545,7 @@ export const useGameStore = create<GameStoreState>()(
             autoEquipBest: () => {
                 const { equipment } = get();
                 const slots: EquipmentSlot[] = ['weapon', 'armor', 'accessory'];
-                // 各スロットで totalBonus が最大のアイテムを選ぶ
-                const bestIdBySlot = new Map<EquipmentSlot, string>();
-                for (const slot of slots) {
-                    const slotItems = equipment.filter((e) => e.slot === slot);
-                    if (slotItems.length === 0) continue;
-                    const best = slotItems.reduce((acc, e) => {
-                        const score = e.attackBonus + e.defenseBonus + e.hpBonus;
-                        const accScore = acc.attackBonus + acc.defenseBonus + acc.hpBonus;
-                        return score > accScore ? e : acc;
-                    });
-                    bestIdBySlot.set(slot, best.id);
-                }
+                const bestIdBySlot = getBestEquipmentIdsBySlot(equipment);
 
                 // 既に最強が装備済みなら変更なし
                 const alreadyOptimal = slots.every((slot) => {
@@ -638,15 +580,7 @@ export const useGameStore = create<GameStoreState>()(
 
             getEffectiveStats: () => {
                 const { character, equipment } = get();
-                const equippedItems = equipment.filter((e) => e.equipped);
-                const bonusAttack = equippedItems.reduce((sum, e) => sum + e.attackBonus, 0);
-                const bonusDefense = equippedItems.reduce((sum, e) => sum + e.defenseBonus, 0);
-                const bonusHp = equippedItems.reduce((sum, e) => sum + e.hpBonus, 0);
-                return {
-                    attack: character.baseAttack + bonusAttack,
-                    defense: character.baseDefense + bonusDefense,
-                    maxHp: character.baseMaxHp + bonusHp,
-                };
+                return calculateEffectiveStats(character, equipment);
             },
 
             startBattle: (stage: number) => {
@@ -697,7 +631,7 @@ export const useGameStore = create<GameStoreState>()(
                     recordBattleResult(battle.currentStage, battle.enemy, 'victory', logs);
                     return;
                 }
-                const guardReduction = getGuardReduction(battle);
+                const guardReduction = getGuardReduction(battle, BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION);
                 const baseEnemyDamage = calculateDamage(battle.enemy.attack, effectiveStats.defense);
                 const enemyDamage = Math.max(
                     BATTLE_CONFIG.MIN_DAMAGE,
@@ -809,7 +743,10 @@ export const useGameStore = create<GameStoreState>()(
                     });
                 }
 
-                const guardReduction = getGuardReduction({ ...battle, guardTurnsRemaining, guardDamageReduction });
+                const guardReduction = getGuardReduction(
+                    { guardTurnsRemaining, guardDamageReduction },
+                    BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION,
+                );
                 const baseEnemyDamage = calculateDamage(enemy.attack, effectiveStats.defense);
                 const enemyDamage = Math.max(
                     BATTLE_CONFIG.MIN_DAMAGE,
