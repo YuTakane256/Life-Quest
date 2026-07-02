@@ -20,6 +20,10 @@
       "types": "./src/habits.ts",
       "import": "./src/habits.ts"
     },
+    "./equipment": {
+      "types": "./src/equipment.ts",
+      "import": "./src/equipment.ts"
+    },
     "./numeric": {
       "types": "./src/numeric.ts",
       "import": "./src/numeric.ts"

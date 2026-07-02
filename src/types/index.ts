@@ -2,12 +2,19 @@
  * アプリケーション全体で使用する型定義
  */
 
-import type { EquipmentTemplate, Rarity, EquipmentSlot, ChestType } from '../config/gameConfig';
+import type { ChestType } from '../config/gameConfig';
 import type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
 import type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
+import type {
+    Equipment,
+    EquipmentSlot,
+    EquipmentTemplate,
+    Rarity,
+} from '@life-quest/core/equipment';
 
 export type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
 export type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
+export type { Equipment } from '@life-quest/core/equipment';
 
 // ─── タスク関連 ───────────────────────────────────────────────
 /** 完了待機中のタスク（5秒Undo用） */
@@ -25,18 +32,6 @@ export interface RestDay {
 }
 
 // ─── キャラクター関連 ─────────────────────────────────────────
-export interface Equipment {
-    id: string; // ユニークなインスタンスID
-    templateId: string; // EquipmentTemplate.id への参照
-    name: string;
-    slot: EquipmentSlot;
-    rarity: Rarity;
-    attackBonus: number;
-    defenseBonus: number;
-    hpBonus: number;
-    equipped: boolean;
-}
-
 export interface CharacterStats {
     name: string;
     avatar: 'male' | 'female';
