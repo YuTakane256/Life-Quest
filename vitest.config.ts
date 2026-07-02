@@ -9,7 +9,12 @@ export default defineConfig({
         // ストアテストで localStorage / window が必要になるので jsdom を既定にする
         environment: 'jsdom',
         globals: false,
-        include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'packages/**/*.test.ts'],
+        include: [
+            'src/**/*.test.ts',
+            'src/**/*.test.tsx',
+            'packages/**/*.test.ts',
+            'apps/mobile/**/*.test.ts',
+        ],
         // 各テストで同じ store インスタンスを共有しないよう isolate を有効化
         isolate: true,
     },
