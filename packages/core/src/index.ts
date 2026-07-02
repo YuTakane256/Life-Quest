@@ -72,6 +72,17 @@ export {
     type SynthesisSelection,
 } from './equipment';
 export {
+    EQUIPMENT_POOL,
+    GACHA_CONFIG,
+    getMilestoneAtCount,
+    rollEquipmentTemplate,
+    SELL_XP_BY_RARITY,
+    SYNTHESIS_CONFIG,
+    type ChestReward,
+    type ChestType,
+    type GachaMilestone,
+} from './rewards';
+export {
     applyCharacterXp,
     calculateLevel,
     calculateNextLevelXp,

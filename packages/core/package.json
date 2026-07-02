@@ -36,6 +36,10 @@
       "types": "./src/progression.ts",
       "import": "./src/progression.ts"
     },
+    "./rewards": {
+      "types": "./src/rewards.ts",
+      "import": "./src/rewards.ts"
+    },
     "./tasks": {
       "types": "./src/tasks.ts",
       "import": "./src/tasks.ts"
