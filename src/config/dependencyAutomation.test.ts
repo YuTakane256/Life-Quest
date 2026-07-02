@@ -11,6 +11,13 @@ describe('dependency automation policy', () => {
         expect(dependabotConfig).toContain('dependency-type: development');
     });
 
+    it('groups routine updates but leaves major upgrades isolated', () => {
+        expect(dependabotConfig.match(/update-types:/g)).toHaveLength(2);
+        expect(dependabotConfig.match(/- minor/g)).toHaveLength(2);
+        expect(dependabotConfig.match(/- patch/g)).toHaveLength(2);
+        expect(dependabotConfig).not.toContain('- major');
+    });
+
     it('runs a least-privilege production audit on a schedule and on demand', () => {
         expect(auditWorkflow).toContain("cron: '0 0 * * 1'");
         expect(auditWorkflow).toContain('workflow_dispatch:');
