@@ -17,7 +17,6 @@ import type {
 import type { EquipmentTemplate } from '../config/gameConfig';
 import {
     XP_CONFIG,
-    GACHA_CONFIG,
     CHARACTER_CONFIG,
     BATTLE_CONFIG,
     EQUIPMENT_POOL,
@@ -25,7 +24,6 @@ import {
     SYNTHESIS_CONFIG,
     UI_CONFIG,
     type ChestType,
-    type GachaMilestone,
 } from '../config/gameConfig';
 import { generateId } from '../utils/dateUtils';
 import { clampString } from '../utils/validation';
@@ -49,6 +47,7 @@ import {
     selectSynthesisIngredients,
 } from '@life-quest/core/equipment';
 import { applyCharacterXp } from '@life-quest/core/progression';
+import { getMilestoneAtCount, rollEquipmentTemplate } from '@life-quest/core/rewards';
 
 export {
     MAX_TOTAL_XP,
@@ -70,40 +69,8 @@ export function createEquipmentInstance(template: EquipmentTemplate): Equipment 
 }
 
 function rollEquipment(chestType: ChestType): Equipment | null {
-    const dropRates = GACHA_CONFIG.DROP_RATES[chestType];
-    if (!dropRates) return null;
-    if ('starter_character' in dropRates && dropRates.starter_character === 1.0) {
-        return null;
-    }
-    const roll = Math.random();
-    let cumulative = 0;
-    let selectedRarity: string = 'common';
-    for (const [rarity, rate] of Object.entries(dropRates)) {
-        if (rarity === 'starter_character') continue;
-        cumulative += rate as number;
-        if (roll <= cumulative) {
-            selectedRarity = rarity;
-            break;
-        }
-    }
-    const candidates = EQUIPMENT_POOL.filter((e) => e.rarity === selectedRarity);
-    if (candidates.length === 0) return null;
-    const template = pickRandom(candidates);
-    if (!template) return null;
-    return createEquipmentInstance(template);
-}
-
-function getMilestoneAtCount(count: number): GachaMilestone | null {
-    const special = GACHA_CONFIG.SPECIAL_MILESTONES[count as keyof typeof GACHA_CONFIG.SPECIAL_MILESTONES];
-    if (special) {
-        return { count, chestType: special.chestType, label: special.label };
-    }
-
-    const posInCycle = count <= GACHA_CONFIG.CYCLE_LENGTH
-        ? count
-        : ((count - 1) % GACHA_CONFIG.CYCLE_LENGTH) + 1;
-    const milestone = GACHA_CONFIG.MILESTONES.find((candidate) => candidate.count === posInCycle);
-    return milestone ? { count, chestType: milestone.chestType, label: milestone.label } : null;
+    const template = rollEquipmentTemplate(chestType);
+    return template ? createEquipmentInstance(template) : null;
 }
 
 function canStartBattleStage(battle: BattleState, stage: number): boolean {

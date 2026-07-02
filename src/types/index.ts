@@ -49,14 +49,9 @@ export interface Debuff {
 }
 
 // ─── ガチャ関連 ────────────────────────────────────────────────
-export interface ChestReward {
-    id: string;
-    chestType: ChestType;
-    label: string;
-    opened: boolean;
-    equipment: Equipment | null; // 開封後にセット
-    isStarterCharacter?: boolean; // 初回の青宝箱
-}
+// 宝箱報酬の型は @life-quest/core/rewards でMobileと共有する
+export type { ChestReward } from '@life-quest/core/rewards';
+import type { ChestReward } from '@life-quest/core/rewards';
 
 // ─── バトル関連 ────────────────────────────────────────────────
 export interface Enemy {
