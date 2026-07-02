@@ -3,10 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Habit } from '@life-quest/core/habits';
 import { useMobileHabitStore } from '../../src/stores/useMobileHabitStore';
-
-function getTodayJst(): string {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-}
+import { getTodayJst } from '../../src/utils/date';
 
 export default function HabitsScreen() {
     const habits = useMobileHabitStore((state) => state.habits);
