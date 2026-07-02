@@ -71,3 +71,15 @@ export {
     type Rarity,
     type SynthesisSelection,
 } from './equipment';
+export {
+    applyCharacterXp,
+    calculateLevel,
+    calculateNextLevelXp,
+    calculateXpProgress,
+    CHARACTER_CONFIG,
+    MAX_TOTAL_XP,
+    XP_CONFIG,
+    type ApplyCharacterXpResult,
+    type CharacterProgressionState,
+    type CharacterStatGains,
+} from './progression';

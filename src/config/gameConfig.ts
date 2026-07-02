@@ -10,60 +10,7 @@ import {
 } from '@life-quest/core/equipment';
 
 export type { EquipmentSlot, EquipmentTemplate, Rarity } from '@life-quest/core/equipment';
-
-// ─── XP (経験値) 設定 ─────────────────────────────────────────
-export const XP_CONFIG = {
-    /** 重要度別の報酬XP */
-    REWARD_BY_PRIORITY: {
-        low: 10,
-        medium: 20,
-        high: 30,
-    } as const,
-
-    /** サブタスク完了時の親タスク報酬に対する倍率 */
-    SUBTASK_REWARD_RATIO: 0.5,
-
-    /** 習慣全達成時のボーナスXP */
-    HABIT_ALL_COMPLETE_BONUS: 15,
-
-    /** デバフ中のXP倍率 */
-    DEBUFF_XP_MULTIPLIER: 0.8,
-
-    /** デバフ持続時間（ミリ秒） */
-    DEBUFF_DURATION_MS: 24 * 60 * 60 * 1000, // 1日
-
-    /**
-     * レベルアップに必要な累計XPテーブル。
-     * index = レベル番号 (0はダミー)。
-     * 例: LEVEL_XP_TABLE[2] = レベル2に必要な累計XP
-     */
-    LEVEL_XP_TABLE: [
-        0,     // Lv0 (dummy)
-        0,     // Lv1 (初期)
-        30,    // Lv2
-        80,    // Lv3
-        150,   // Lv4
-        250,   // Lv5
-        400,   // Lv6
-        600,   // Lv7
-        850,   // Lv8
-        1150,  // Lv9
-        1500,  // Lv10
-        2000,  // Lv11
-        2600,  // Lv12
-        3300,  // Lv13
-        4100,  // Lv14
-        5000,  // Lv15
-        6000,  // Lv16
-        7200,  // Lv17
-        8600,  // Lv18
-        10200, // Lv19
-        12000, // Lv20
-    ] as readonly number[],
-
-    /** レベルテーブルを超過した場合の1レベルあたりの追加XP */
-    OVERFLOW_XP_PER_LEVEL: 2000,
-} as const;
+export { XP_CONFIG } from '@life-quest/core/progression';
 
 // ─── ガチャ (宝箱) 設定 ───────────────────────────────────────
 export type ChestType = 'blue' | 'wood' | 'silver' | 'gold' | 'red_gold' | 'rainbow';
@@ -166,25 +113,7 @@ export const LOGIN_BONUS_CONFIG = {
 } as const;
 
 // ─── キャラクター / バトル設定 ────────────────────────────────
-export const CHARACTER_CONFIG = {
-    /** 初期ステータス */
-    INITIAL_STATS: {
-        name: 'あなた',
-        avatar: 'female',
-        level: 1,
-        totalXp: 0,
-        attack: 5,
-        defense: 3,
-        maxHp: 50,
-    } as const,
-
-    /** レベルアップ時のステータス上昇量 */
-    STAT_PER_LEVEL: {
-        attack: 2,
-        defense: 1,
-        maxHp: 10,
-    } as const,
-} as const;
+export { CHARACTER_CONFIG } from '@life-quest/core/progression';
 
 export const BATTLE_CONFIG = {
     /** ステージ別の敵データ */

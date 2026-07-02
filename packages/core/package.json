@@ -32,6 +32,10 @@
       "types": "./src/persist.ts",
       "import": "./src/persist.ts"
     },
+    "./progression": {
+      "types": "./src/progression.ts",
+      "import": "./src/progression.ts"
+    },
     "./tasks": {
       "types": "./src/tasks.ts",
       "import": "./src/tasks.ts"

@@ -48,6 +48,7 @@ import {
     getEquipmentSellXp,
     selectSynthesisIngredients,
 } from '@life-quest/core/equipment';
+import { applyCharacterXp } from '@life-quest/core/progression';
 
 export {
     MAX_TOTAL_XP,
@@ -422,9 +423,6 @@ export const useGameStore = create<GameStoreState>()(
             },
 
             addXp: (baseXp: number) => {
-                const safeBaseXp = toBoundedInteger(baseXp, 0, 0, MAX_TOTAL_XP);
-                if (safeBaseXp === 0) return;
-
                 const { debuff, character } = get();
                 let multiplier = 1;
                 if (debuff.active && debuff.expiresAt) {
@@ -434,35 +432,20 @@ export const useGameStore = create<GameStoreState>()(
                         set({ debuff: { ...initialDebuff } });
                     }
                 }
-                const actualXp = Math.max(0, Math.floor(safeBaseXp * multiplier));
-                if (actualXp === 0) return;
+                const result = applyCharacterXp(character, baseXp, multiplier);
+                if (result.appliedXp === 0) return;
 
-                const currentTotalXp = toBoundedInteger(character.totalXp, 0, 0, MAX_TOTAL_XP);
-                const newTotalXp = Math.min(MAX_TOTAL_XP, currentTotalXp + actualXp);
-                const newLevel = calculateLevel(newTotalXp);
-                const levelDiff = newLevel - character.level;
-                const newAttack = character.baseAttack + levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.attack;
-                const newDefense = character.baseDefense + levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.defense;
-                const newMaxHp = character.baseMaxHp + levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.maxHp;
-
-                const levelUpEvent: LevelUpEvent | null = levelDiff > 0 ? {
+                const levelUpEvent: LevelUpEvent | null = result.levelGain > 0 ? {
                     id: generateId(),
                     fromLevel: character.level,
-                    toLevel: newLevel,
-                    attackGain: levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.attack,
-                    defenseGain: levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.defense,
-                    hpGain: levelDiff * CHARACTER_CONFIG.STAT_PER_LEVEL.maxHp,
+                    toLevel: result.character.level,
+                    attackGain: result.statGains.attack,
+                    defenseGain: result.statGains.defense,
+                    hpGain: result.statGains.maxHp,
                 } : null;
 
                 set({
-                    character: {
-                        ...character,
-                        totalXp: newTotalXp,
-                        level: newLevel,
-                        baseAttack: newAttack,
-                        baseDefense: newDefense,
-                        baseMaxHp: newMaxHp,
-                    },
+                    character: { ...character, ...result.character },
                     ...(levelUpEvent ? { levelUpEvent } : {}),
                 });
             },
