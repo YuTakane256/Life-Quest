@@ -5,6 +5,7 @@ import {
     sanitizeTaskCollection,
     TASK_LIMITS,
     toggleTaskCompletion,
+    type Priority,
     type Task,
 } from '@life-quest/core/tasks';
 import { create } from 'zustand';
@@ -15,7 +16,7 @@ import { useMobileGameStore } from './useMobileGameStore';
 interface MobileTaskStore {
     tasks: Task[];
     hasHydrated: boolean;
-    addTask: (name: string) => boolean;
+    addTask: (name: string, priority?: Priority) => boolean;
     toggleTask: (taskId: string) => void;
     deleteTask: (taskId: string) => void;
     setHasHydrated: (value: boolean) => void;
@@ -26,9 +27,9 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
         (set, get) => ({
             tasks: [],
             hasHydrated: false,
-            addTask: (name) => {
+            addTask: (name, priority = 'medium') => {
                 if (get().tasks.length >= TASK_LIMITS.maxTasks) return false;
-                const task = createTask({ id: createMobileId(), name, now: new Date().toISOString() });
+                const task = createTask({ id: createMobileId(), name, priority, now: new Date().toISOString() });
                 if (!task) return false;
                 set((state) => ({ tasks: [...state.tasks, task] }));
                 return true;
