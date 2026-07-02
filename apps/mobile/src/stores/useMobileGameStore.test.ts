@@ -323,3 +323,50 @@ describe('報酬付与（二重付与防止）', () => {
         expect(envelope.state.rewardLedger.rewardedTaskIds).toContain('task-atomic');
     });
 });
+
+describe('hydration前の操作ガード', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        resetStore();
+        useMobileGameStore.setState({ hasHydrated: false });
+    });
+
+    it('hydration前は報酬付与がno-opになり、状態が変化しない', () => {
+        expect(useMobileGameStore.getState().grantTaskCompletionReward('t1', 'high')).toBe(false);
+        expect(useMobileGameStore.getState().grantHabitAllCompleteBonus('2026-07-02')).toBe(false);
+
+        const state = useMobileGameStore.getState();
+        expect(state.character.totalXp).toBe(0);
+        expect(state.gachaCount).toBe(0);
+        expect(state.rewardLedger).toEqual({ rewardedTaskIds: [], habitBonusDates: [] });
+    });
+
+    it('hydration前は装備・宝箱・キャラクター操作もno-opになる', () => {
+        useMobileGameStore.setState({
+            chestQueue: [{ id: 'c1', chestType: 'wood', label: 'x', opened: false, equipment: null }],
+            equipment: [item('a', 'wooden_sword')],
+        });
+
+        expect(useMobileGameStore.getState().addXp(100)).toBeNull();
+        expect(useMobileGameStore.getState().openChest('c1')).toBeNull();
+        expect(useMobileGameStore.getState().sellItem('a')).toBe(0);
+        expect(useMobileGameStore.getState().autoEquipBest()).toBe(false);
+        expect(useMobileGameStore.getState().synthesizeItems(['a'])).toBeNull();
+        useMobileGameStore.getState().equipItem('a');
+        useMobileGameStore.getState().updateCharacter({ name: '変更' });
+        useMobileGameStore.getState().incrementGachaCount();
+
+        const state = useMobileGameStore.getState();
+        expect(state.character.totalXp).toBe(0);
+        expect(state.character.name).not.toBe('変更');
+        expect(state.chestQueue[0].opened).toBe(false);
+        expect(state.equipment[0].equipped).toBe(false);
+        expect(state.gachaCount).toBe(0);
+    });
+
+    it('hydration完了後は通常どおり操作できる', () => {
+        useMobileGameStore.getState().setHasHydrated(true);
+        expect(useMobileGameStore.getState().grantTaskCompletionReward('t1', 'low')).toBe(true);
+        expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.low);
+    });
+});

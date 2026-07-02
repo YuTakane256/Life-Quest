@@ -146,18 +146,22 @@ export const useMobileGameStore = create<MobileGameStore>()(
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
             clearLastLevelUp: () => set({ lastLevelUp: null }),
 
-            updateCharacter: (updates) => set((state) => ({
-                character: {
-                    ...state.character,
-                    ...(updates.name !== undefined
-                        ? { name: clampString(updates.name, GAME_STATE_LIMITS.maxCharacterNameLength) }
-                        : {}),
-                    ...(updates.avatar !== undefined ? { avatar: updates.avatar } : {}),
-                },
-            })),
+            updateCharacter: (updates) => {
+                if (!get().hasHydrated) return;
+                set((state) => ({
+                    character: {
+                        ...state.character,
+                        ...(updates.name !== undefined
+                            ? { name: clampString(updates.name, GAME_STATE_LIMITS.maxCharacterNameLength) }
+                            : {}),
+                        ...(updates.avatar !== undefined ? { avatar: updates.avatar } : {}),
+                    },
+                }));
+            },
 
             addXp: (baseXp) => {
-                const { character } = get();
+                const { character, hasHydrated } = get();
+                if (!hasHydrated) return null;
                 const result = applyCharacterXp(character, baseXp);
                 if (result.appliedXp === 0 && result.levelGain === 0) return null;
 
@@ -169,12 +173,16 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 return result;
             },
 
-            incrementGachaCount: () => set((state) => ({
-                gachaCount: Math.min(Number.MAX_SAFE_INTEGER, state.gachaCount + 1),
-            })),
+            incrementGachaCount: () => {
+                if (!get().hasHydrated) return;
+                set((state) => ({
+                    gachaCount: Math.min(Number.MAX_SAFE_INTEGER, state.gachaCount + 1),
+                }));
+            },
 
             checkGachaMilestones: () => {
-                const { gachaCount, chestQueue } = get();
+                const { gachaCount, chestQueue, hasHydrated } = get();
+                if (!hasHydrated) return;
                 const milestone = getMilestoneAtCount(gachaCount);
                 if (!milestone) return;
                 const chest: ChestReward = {
@@ -189,7 +197,8 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             openChest: (chestId) => {
-                const { chestQueue } = get();
+                const { chestQueue, hasHydrated } = get();
+                if (!hasHydrated) return null;
                 const chest = chestQueue.find((candidate) => candidate.id === chestId);
                 if (!chest || chest.opened) return null;
 
@@ -207,6 +216,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             equipItem: (equipmentId) => {
+                if (!get().hasHydrated) return;
                 const item = get().equipment.find((candidate) => candidate.id === equipmentId);
                 if (!item) return;
                 set((state) => ({
@@ -218,14 +228,18 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 }));
             },
 
-            unequipItem: (equipmentId) => set((state) => ({
-                equipment: state.equipment.map((candidate) =>
-                    candidate.id === equipmentId ? { ...candidate, equipped: false } : candidate
-                ),
-            })),
+            unequipItem: (equipmentId) => {
+                if (!get().hasHydrated) return;
+                set((state) => ({
+                    equipment: state.equipment.map((candidate) =>
+                        candidate.id === equipmentId ? { ...candidate, equipped: false } : candidate
+                    ),
+                }));
+            },
 
             autoEquipBest: () => {
-                const { equipment } = get();
+                const { equipment, hasHydrated } = get();
+                if (!hasHydrated) return false;
                 const bestIdBySlot = getBestEquipmentIdsBySlot(equipment);
 
                 const alreadyOptimal = EQUIPMENT_SLOTS.every((slot) => {
@@ -247,6 +261,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             sellItem: (equipmentId) => {
+                if (!get().hasHydrated) return 0;
                 const item = get().equipment.find((candidate) => candidate.id === equipmentId);
                 if (!item || item.equipped) return 0;
                 const xpGain = getEquipmentSellXp(item, SELL_XP_BY_RARITY);
@@ -258,6 +273,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             synthesizeItems: (equipmentIds) => {
+                if (!get().hasHydrated) return null;
                 const selection = selectSynthesisIngredients(
                     equipmentIds,
                     get().equipment,
@@ -292,6 +308,10 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             grantTaskCompletionReward: (taskId, priority) => {
+                // hydration完了前は付与しない。永続化済みの台帳を読み込む前に付与すると、
+                // rehydrationのmergeで上書きされて消失・重複する。復元後は rewardSync の
+                // 再照合が完了済みタスクから安全に付与し直す。
+                if (!get().hasHydrated) return false;
                 const claim = claimTaskReward(get().rewardLedger, taskId);
                 if (!claim.granted) return false;
                 applyRewardGrant(claim.ledger, XP_CONFIG.REWARD_BY_PRIORITY[priority]);
@@ -299,6 +319,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             grantHabitAllCompleteBonus: (date) => {
+                if (!get().hasHydrated) return false;
                 const claim = claimHabitAllCompleteBonus(get().rewardLedger, date);
                 if (!claim.granted) return false;
                 applyRewardGrant(claim.ledger, XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
