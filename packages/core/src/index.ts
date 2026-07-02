@@ -52,7 +52,18 @@ export {
     toggleHabitDailyRecord,
     type Habit,
     type HabitDailyRecord,
+    type RestDay,
 } from './habits';
+export {
+    convertLegacyHabitSnapshot,
+    convertLegacyTaskSnapshot,
+    sanitizeCanonicalHabitSnapshot,
+    sanitizeCanonicalTaskSnapshot,
+    SYNC_SNAPSHOT_LIMITS,
+    SYNC_SNAPSHOT_VERSION,
+    type CanonicalHabitSnapshot,
+    type CanonicalTaskSnapshot,
+} from './syncSnapshots';
 export {
     calculateEffectiveEquipmentStats,
     createEquipmentFromTemplate,

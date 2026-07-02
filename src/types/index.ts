@@ -4,7 +4,7 @@
 
 import type { ChestType } from '../config/gameConfig';
 import type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
-import type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
+import type { Habit, HabitDailyRecord, RestDay } from '@life-quest/core/habits';
 import type {
     Equipment,
     EquipmentSlot,
@@ -13,7 +13,7 @@ import type {
 } from '@life-quest/core/equipment';
 
 export type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
-export type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
+export type { Habit, HabitDailyRecord, RestDay } from '@life-quest/core/habits';
 export type { Equipment } from '@life-quest/core/equipment';
 
 // ─── タスク関連 ───────────────────────────────────────────────
@@ -25,12 +25,6 @@ export interface PendingCompletion {
 }
 
 // ─── 習慣関連 ───────────────────────────────────────────────
-/** お休みフラグ */
-export interface RestDay {
-    date: string; // YYYY-MM-DD (JST)
-    isRest: boolean;
-}
-
 // ─── キャラクター関連 ─────────────────────────────────────────
 export interface CharacterStats {
     name: string;

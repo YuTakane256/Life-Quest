@@ -48,6 +48,10 @@
       "types": "./src/tasks.ts",
       "import": "./src/tasks.ts"
     },
+    "./syncSnapshots": {
+      "types": "./src/syncSnapshots.ts",
+      "import": "./src/syncSnapshots.ts"
+    },
     "./validation": {
       "types": "./src/validation.ts",
       "import": "./src/validation.ts"

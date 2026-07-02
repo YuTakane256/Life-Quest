@@ -14,6 +14,11 @@ export interface HabitDailyRecord {
     memo: string;
 }
 
+export interface RestDay {
+    date: string;
+    isRest: boolean;
+}
+
 export const HABIT_LIMITS = {
     maxHabits: 500,
     maxRecords: 50_000,
