@@ -16,6 +16,10 @@
       "types": "./src/hp.ts",
       "import": "./src/hp.ts"
     },
+    "./legacyMigration": {
+      "types": "./src/legacyMigration.ts",
+      "import": "./src/legacyMigration.ts"
+    },
     "./habits": {
       "types": "./src/habits.ts",
       "import": "./src/habits.ts"

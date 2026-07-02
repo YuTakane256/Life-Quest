@@ -55,6 +55,19 @@ export {
     type RestDay,
 } from './habits';
 export {
+    LEGACY_STORAGE_KEYS,
+    migrateLegacyQuestBoardData,
+    MIGRATION_JOURNAL_KEY,
+    MIGRATION_JOURNAL_VERSION,
+    type LegacyMigrationOptions,
+    type LegacyStorageReader,
+    type MigrationJournal,
+    type MigrationReport,
+    type MigrationSection,
+    type MigrationSectionResult,
+    type MigrationSectionStatus,
+} from './legacyMigration';
+export {
     convertLegacyHabitSnapshot,
     convertLegacyGameSnapshot,
     convertLegacyTaskSnapshot,
