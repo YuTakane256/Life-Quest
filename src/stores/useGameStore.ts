@@ -22,7 +22,6 @@ import {
     BATTLE_CONFIG,
     EQUIPMENT_POOL,
     SELL_XP_BY_RARITY,
-    RARITY_ORDER,
     SYNTHESIS_CONFIG,
     UI_CONFIG,
     type ChestType,
@@ -41,10 +40,14 @@ import {
     calculateEffectiveStats,
     calculateLevel,
     getBestEquipmentIdsBySlot,
-    getDominantEquipmentSlots,
     getGuardReduction,
     tickSkillCooldowns,
 } from '../utils/gameCalculations';
+import {
+    createEquipmentFromTemplate,
+    getEquipmentSellXp,
+    selectSynthesisIngredients,
+} from '@life-quest/core/equipment';
 
 export {
     MAX_TOTAL_XP,
@@ -62,17 +65,7 @@ export const MAX_CHEST_QUEUE_ITEMS = 500;
 
 /** EquipmentTemplate から Equipment インスタンスを生成する */
 export function createEquipmentInstance(template: EquipmentTemplate): Equipment {
-    return {
-        id: generateId(),
-        templateId: template.id,
-        name: template.name,
-        slot: template.slot,
-        rarity: template.rarity,
-        attackBonus: template.attackBonus,
-        defenseBonus: template.defenseBonus,
-        hpBonus: template.hpBonus,
-        equipped: false,
-    };
+    return createEquipmentFromTemplate(generateId(), template);
 }
 
 function rollEquipment(chestType: ChestType): Equipment | null {
@@ -110,10 +103,6 @@ function getMilestoneAtCount(count: number): GachaMilestone | null {
         : ((count - 1) % GACHA_CONFIG.CYCLE_LENGTH) + 1;
     const milestone = GACHA_CONFIG.MILESTONES.find((candidate) => candidate.count === posInCycle);
     return milestone ? { count, chestType: milestone.chestType, label: milestone.label } : null;
-}
-
-function pickSynthesisSlot(items: Equipment[]): EquipmentSlot {
-    return pickRandom(getDominantEquipmentSlots(items)) as EquipmentSlot;
 }
 
 function canStartBattleStage(battle: BattleState, stage: number): boolean {
@@ -831,7 +820,7 @@ export const useGameStore = create<GameStoreState>()(
                 const { equipment } = get();
                 const item = equipment.find((e) => e.id === equipmentId);
                 if (!item || item.equipped) return 0;
-                const xpGain = SELL_XP_BY_RARITY[item.rarity];
+                const xpGain = getEquipmentSellXp(item, SELL_XP_BY_RARITY);
                 set((state) => ({
                     equipment: state.equipment.filter((e) => e.id !== equipmentId),
                 }));
@@ -841,22 +830,19 @@ export const useGameStore = create<GameStoreState>()(
 
             synthesizeItems: (equipmentIds: string[]) => {
                 const { equipment } = get();
-                // 渡されたIDの重複チェック（不正操作防止）
-                const uniqueIds = new Set(equipmentIds);
-                if (uniqueIds.size !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
-                if (equipmentIds.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
-                const items = equipmentIds.map((id) => equipment.find((e) => e.id === id)).filter(Boolean) as import('../types').Equipment[];
-                if (items.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return null;
-                // 全アイテムが同レアリティ・未装備であることを確認
-                const rarity = items[0].rarity;
-                if (items.some((i) => i.rarity !== rarity || i.equipped)) return null;
-                // legendary は合成不可
-                const rarityIndex = RARITY_ORDER.indexOf(rarity);
-                if (rarityIndex < 0 || rarityIndex >= RARITY_ORDER.length - 1) return null;
-                const nextRarity = RARITY_ORDER[rarityIndex + 1];
-                // 素材で一番多い装備種別を引き継ぐ。同数なら対象種別をランダムに決める。
-                const synthesisSlot = pickSynthesisSlot(items);
-                const candidates = EQUIPMENT_POOL.filter((e) => e.rarity === nextRarity && e.slot === synthesisSlot);
+                const selection = selectSynthesisIngredients(
+                    equipmentIds,
+                    equipment,
+                    SYNTHESIS_CONFIG.REQUIRED_COUNT,
+                );
+                if (!selection) return null;
+
+                // 同数なら対象種別をランダムに決め、その種別の上位装備を抽選する。
+                const synthesisSlot = pickRandom(selection.dominantSlots);
+                if (!synthesisSlot) return null;
+                const candidates = EQUIPMENT_POOL.filter(
+                    (template) => template.rarity === selection.nextRarity && template.slot === synthesisSlot,
+                );
                 if (candidates.length === 0) return null;
                 const template = pickRandom(candidates);
                 if (!template) return null;

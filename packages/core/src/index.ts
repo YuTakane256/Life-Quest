@@ -52,3 +52,22 @@ export {
     type Habit,
     type HabitDailyRecord,
 } from './habits';
+export {
+    calculateEffectiveEquipmentStats,
+    createEquipmentFromTemplate,
+    EQUIPMENT_RARITIES,
+    EQUIPMENT_SLOTS,
+    getBestEquipmentIdsBySlot,
+    getDominantEquipmentSlots,
+    getEquipmentScore,
+    getEquipmentSellXp,
+    getNextEquipmentRarity,
+    selectSynthesisIngredients,
+    type BaseCharacterStats,
+    type EffectiveStats,
+    type Equipment,
+    type EquipmentSlot,
+    type EquipmentTemplate,
+    type Rarity,
+    type SynthesisSelection,
+} from './equipment';

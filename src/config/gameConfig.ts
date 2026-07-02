@@ -3,6 +3,14 @@
  * コンポーネント内にマジックナンバーを記述せず、必ずここから参照する。
  */
 
+import {
+    EQUIPMENT_RARITIES,
+    type EquipmentTemplate,
+    type Rarity,
+} from '@life-quest/core/equipment';
+
+export type { EquipmentSlot, EquipmentTemplate, Rarity } from '@life-quest/core/equipment';
+
 // ─── XP (経験値) 設定 ─────────────────────────────────────────
 export const XP_CONFIG = {
     /** 重要度別の報酬XP */
@@ -305,19 +313,6 @@ export const ENEMY_IMAGE_KEYS: Record<number, string> = {
 };
 
 // ─── 装備設定 ─────────────────────────────────────────────────
-export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
-export type EquipmentSlot = 'weapon' | 'armor' | 'accessory';
-
-export interface EquipmentTemplate {
-    id: string;
-    name: string;
-    slot: EquipmentSlot;
-    rarity: Rarity;
-    attackBonus: number;
-    defenseBonus: number;
-    hpBonus: number;
-}
-
 export const EQUIPMENT_POOL: readonly EquipmentTemplate[] = [
     // Common
     { id: 'wooden_sword', name: '木の剣', slot: 'weapon', rarity: 'common', attackBonus: 2, defenseBonus: 0, hpBonus: 0 },
@@ -352,7 +347,7 @@ export const SELL_XP_BY_RARITY: Record<Rarity, number> = {
 };
 
 /** レアリティの昇格順 */
-export const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+export const RARITY_ORDER: readonly Rarity[] = EQUIPMENT_RARITIES;
 
 export const SYNTHESIS_CONFIG = {
     /** 合成に必要な同レアリティアイテム数 */
