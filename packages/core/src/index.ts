@@ -56,13 +56,19 @@ export {
 } from './habits';
 export {
     convertLegacyHabitSnapshot,
+    convertLegacyGameSnapshot,
     convertLegacyTaskSnapshot,
+    sanitizeCanonicalGameSnapshot,
     sanitizeCanonicalHabitSnapshot,
     sanitizeCanonicalTaskSnapshot,
     SYNC_SNAPSHOT_LIMITS,
     SYNC_SNAPSHOT_VERSION,
     type CanonicalHabitSnapshot,
+    type CanonicalBattleProgress,
+    type CanonicalDebuffState,
+    type CanonicalGameSnapshot,
     type CanonicalTaskSnapshot,
+    type LegacyGameSnapshotSources,
 } from './syncSnapshots';
 export {
     calculateEffectiveEquipmentStats,
@@ -87,6 +93,7 @@ export {
     capChestQueue,
     capEquipmentCollection,
     claimHabitAllCompleteBonus,
+    claimSubtaskReward,
     claimTaskReward,
     createEmptyRewardLedger,
     createInitialCharacterState,

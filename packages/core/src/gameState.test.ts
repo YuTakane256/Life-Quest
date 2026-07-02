@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     claimHabitAllCompleteBonus,
+    claimSubtaskReward,
     claimTaskReward,
     createEmptyRewardLedger,
     createInitialCharacterState,
@@ -127,9 +128,11 @@ describe('sanitizeRewardLedger', () => {
     it('文字列以外・空文字・重複を除外する', () => {
         const result = sanitizeRewardLedger({
             rewardedTaskIds: ['t1', 't1', '', 42, null, 't2'],
+            rewardedSubtaskIds: ['s1', 's1', null, 's2'],
             habitBonusDates: ['2026-07-01', '2026-07-01', false],
         });
         expect(result.rewardedTaskIds).toEqual(['t1', 't2']);
+        expect(result.rewardedSubtaskIds).toEqual(['s1', 's2']);
         expect(result.habitBonusDates).toEqual(['2026-07-01']);
     });
 
@@ -140,9 +143,21 @@ describe('sanitizeRewardLedger', () => {
         expect(result.rewardedTaskIds[0]).toBe('t5');
     });
 
+    it('サブタスク台帳も専用上限を超えた古いIDを捨てる', () => {
+        const ids = Array.from(
+            { length: GAME_STATE_LIMITS.maxRewardedSubtaskIds + 2 },
+            (_, i) => `s${i}`,
+        );
+        const result = sanitizeRewardLedger({ rewardedSubtaskIds: ids });
+
+        expect(result.rewardedSubtaskIds).toHaveLength(GAME_STATE_LIMITS.maxRewardedSubtaskIds);
+        expect(result.rewardedSubtaskIds[0]).toBe('s2');
+    });
+
     it('不正な入力には空の台帳を返す', () => {
-        expect(sanitizeRewardLedger(undefined)).toEqual({ rewardedTaskIds: [], habitBonusDates: [] });
-        expect(sanitizeRewardLedger('x')).toEqual({ rewardedTaskIds: [], habitBonusDates: [] });
+        const emptyLedger = { rewardedTaskIds: [], rewardedSubtaskIds: [], habitBonusDates: [] };
+        expect(sanitizeRewardLedger(undefined)).toEqual(emptyLedger);
+        expect(sanitizeRewardLedger('x')).toEqual(emptyLedger);
     });
 });
 
@@ -229,5 +244,21 @@ describe('claimHabitAllCompleteBonus', () => {
         expect(claimHabitAllCompleteBonus(createEmptyRewardLedger(), 'today').granted).toBe(false);
         expect(claimHabitAllCompleteBonus(createEmptyRewardLedger(), '').granted).toBe(false);
         expect(claimHabitAllCompleteBonus(createEmptyRewardLedger(), '2026/07/02').granted).toBe(false);
+    });
+});
+
+describe('claimSubtaskReward', () => {
+    it('サブタスクIDごとに一度だけ付与を許可する', () => {
+        const first = claimSubtaskReward(createEmptyRewardLedger(), 'subtask-1');
+        const second = claimSubtaskReward(first.ledger, 'subtask-1');
+
+        expect(first.granted).toBe(true);
+        expect(first.ledger.rewardedSubtaskIds).toEqual(['subtask-1']);
+        expect(second.granted).toBe(false);
+        expect(second.ledger).toBe(first.ledger);
+    });
+
+    it('空IDを拒否する', () => {
+        expect(claimSubtaskReward(createEmptyRewardLedger(), '').granted).toBe(false);
     });
 });
