@@ -75,6 +75,17 @@ describe('useMobileTaskStore', () => {
         expect(envelope.state).not.toHaveProperty('hasHydrated');
     });
 
+    it('hydration完了前の追加・変更・削除を無視する', () => {
+        useMobileTaskStore.setState({ tasks: [task('t1')], hasHydrated: false });
+
+        expect(useMobileTaskStore.getState().addTask('復元中')).toBe(false);
+        useMobileTaskStore.getState().toggleTask('t1');
+        useMobileTaskStore.getState().deleteTask('t1');
+
+        expect(useMobileTaskStore.getState().tasks).toEqual([task('t1')]);
+        expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+    });
+
     it('addTask は指定した優先度で作成し、省略時は medium にする', () => {
         useMobileTaskStore.getState().addTask('高優先タスク', 'high');
         useMobileTaskStore.getState().addTask('既定タスク');

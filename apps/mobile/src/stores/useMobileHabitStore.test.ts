@@ -25,7 +25,7 @@ function habit(id: string): Habit {
 describe('useMobileHabitStore', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        useMobileHabitStore.setState({ habits: [], records: [], hasHydrated: true });
+        useMobileHabitStore.setState({ habits: [], records: [], rewardEligibleDates: [], hasHydrated: true });
         useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, lastLevelUp: null });
     });
 
@@ -74,7 +74,20 @@ describe('useMobileHabitStore', () => {
         const envelope = JSON.parse(serialized as string) as { state: Record<string, unknown> };
         expect(envelope.state.habits).toHaveLength(1);
         expect(envelope.state.records).toEqual([]);
+        expect(envelope.state.rewardEligibleDates).toEqual([]);
         expect(envelope.state).not.toHaveProperty('hasHydrated');
+    });
+
+    it('hydration完了前の追加・変更・削除を無視する', () => {
+        useMobileHabitStore.setState({ habits: [habit('h1')], hasHydrated: false });
+
+        expect(useMobileHabitStore.getState().addHabit('復元中')).toBe(false);
+        useMobileHabitStore.getState().toggleToday('h1', '2026-07-02');
+        useMobileHabitStore.getState().deleteHabit('h1');
+
+        expect(useMobileHabitStore.getState().habits).toHaveLength(1);
+        expect(useMobileHabitStore.getState().records).toEqual([]);
+        expect(useMobileHabitStore.getState().rewardEligibleDates).toEqual([]);
     });
 
     describe('ゲーム報酬連携', () => {
@@ -91,6 +104,7 @@ describe('useMobileHabitStore', () => {
             expect(game.character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
             expect(game.gachaCount).toBe(1);
             expect(game.rewardLedger.habitBonusDates).toEqual([DATE]);
+            expect(useMobileHabitStore.getState().rewardEligibleDates).toEqual([DATE]);
         });
 
         it('達成解除→再達成しても同日ボーナスは再付与されない', () => {
@@ -112,6 +126,7 @@ describe('useMobileHabitStore', () => {
 
             expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS * 2);
             expect(useMobileGameStore.getState().rewardLedger.habitBonusDates).toEqual(['2026-07-02', '2026-07-03']);
+            expect(useMobileHabitStore.getState().rewardEligibleDates).toEqual(['2026-07-02', '2026-07-03']);
         });
 
         it('習慣が1つも無い状態ではボーナスが付与されない', () => {

@@ -29,7 +29,12 @@ function completedTask(id: string, priority: Task['priority'] = 'medium'): Task 
 function resetAllStores({ hydrated = true } = {}) {
     useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: hydrated, lastLevelUp: null });
     useMobileTaskStore.setState({ tasks: [], hasHydrated: hydrated });
-    useMobileHabitStore.setState({ habits: [], records: [], hasHydrated: hydrated });
+    useMobileHabitStore.setState({
+        habits: [],
+        records: [],
+        rewardEligibleDates: [],
+        hasHydrated: hydrated,
+    });
 }
 
 describe('reconcileRewards（再照合による報酬回復）', () => {
@@ -96,6 +101,17 @@ describe('reconcileRewards（再照合による報酬回復）', () => {
 
         expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
         expect(useMobileGameStore.getState().rewardLedger.habitBonusDates).toEqual([TODAY]);
+    });
+
+    it('日付をまたいでも永続化された習慣報酬の受給資格を回収する', () => {
+        const previousDate = '2026-07-01';
+        useMobileHabitStore.setState({ rewardEligibleDates: [previousDate] });
+
+        reconcileRewards(TODAY);
+        reconcileRewards('2026-07-03');
+
+        expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
+        expect(useMobileGameStore.getState().rewardLedger.habitBonusDates).toEqual([previousDate]);
     });
 
     it('ゲームストアがhydration前なら何もしない', () => {
@@ -190,6 +206,7 @@ describe('hydration順序の競合', () => {
             useMobileHabitStore.setState({
                 habits: [habit],
                 records: [{ habitId: 'h1', date: TODAY, completed: true, memo: '' }],
+                rewardEligibleDates: [TODAY],
                 hasHydrated: true,
             });
 

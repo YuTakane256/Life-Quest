@@ -28,13 +28,14 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
             tasks: [],
             hasHydrated: false,
             addTask: (name, priority = 'medium') => {
-                if (get().tasks.length >= TASK_LIMITS.maxTasks) return false;
+                if (!get().hasHydrated || get().tasks.length >= TASK_LIMITS.maxTasks) return false;
                 const task = createTask({ id: createMobileId(), name, priority, now: new Date().toISOString() });
                 if (!task) return false;
                 set((state) => ({ tasks: [...state.tasks, task] }));
                 return true;
             },
             toggleTask: (taskId) => {
+                if (!get().hasHydrated) return;
                 const before = get().tasks.find((task) => task.id === taskId);
                 set((state) => ({
                     tasks: toggleTaskCompletion(state.tasks, taskId, new Date().toISOString()),
@@ -45,7 +46,10 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     useMobileGameStore.getState().grantTaskCompletionReward(taskId, before.priority);
                 }
             },
-            deleteTask: (taskId) => set((state) => ({ tasks: removeTask(state.tasks, taskId) })),
+            deleteTask: (taskId) => {
+                if (!get().hasHydrated) return;
+                set((state) => ({ tasks: removeTask(state.tasks, taskId) }));
+            },
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
         }),
         {

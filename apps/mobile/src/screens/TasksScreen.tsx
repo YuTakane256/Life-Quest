@@ -24,7 +24,7 @@ export default function TasksScreen() {
     const [filter, setFilter] = useState<TaskFilter>('open');
     const visibleTasks = useMemo(() => tasks.filter((task) => filter === 'all' || (filter === 'done' ? task.completed : !task.completed)), [filter, tasks]);
     const openCount = tasks.filter((task) => !task.completed).length;
-    const handleAdd = () => { if (addTask(draft, priority)) setDraft(''); };
+    const handleAdd = () => { if (hasHydrated && addTask(draft, priority)) setDraft(''); };
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -32,7 +32,7 @@ export default function TasksScreen() {
                 <View style={styles.header}><View><Text style={styles.title}>タスク</Text><Text style={styles.summary}>{openCount}件の未完了タスク</Text></View><StorageBadge ready={hasHydrated} /></View>
                 <View style={styles.composer}>
                     <TextInput value={draft} onChangeText={setDraft} onSubmitEditing={handleAdd} placeholder="新しいタスク" placeholderTextColor="#737d90" returnKeyType="done" style={styles.input} maxLength={200} />
-                    <Pressable accessibilityRole="button" accessibilityLabel="タスクを追加" disabled={!draft.trim()} onPress={handleAdd} style={({ pressed }) => [styles.addButton, (!draft.trim() || pressed) && styles.muted]}><Text style={styles.addSymbol}>＋</Text></Pressable>
+                    <Pressable accessibilityRole="button" accessibilityLabel="タスクを追加" disabled={!hasHydrated || !draft.trim()} onPress={handleAdd} style={({ pressed }) => [styles.addButton, (!hasHydrated || !draft.trim() || pressed) && styles.muted]}><Text style={styles.addSymbol}>＋</Text></Pressable>
                 </View>
                 <View style={styles.priorityRow}>
                     <Text style={styles.priorityCaption}>優先度</Text>

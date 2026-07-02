@@ -11,10 +11,6 @@
  * - 各ストアのhydration完了を購読し、揃った時点で再照合する（eventual consistency）。
  *   hydration前のtoggleはゲームストア側でno-opになるが（useMobileGameStore参照）、
  *   ドメイン状態には残るため、ここで拾い直される。
- *
- * 既知の限界: 習慣の全達成ボーナスは「今日」の日付のみ再照合する。
- * 過去日のボーナスがクラッシュで失われた場合、日付をまたぐと再付与されない
- * （タスク報酬は日付に依存しないため常に再照合される）。
  */
 import { areAllHabitsComplete } from '@life-quest/core/habits';
 import { getTodayJst } from '../utils/date';
@@ -40,8 +36,15 @@ export function reconcileRewards(today: string = getTodayJst()): void {
     }
 
     const habitState = useMobileHabitStore.getState();
-    if (habitState.hasHydrated && areAllHabitsComplete(habitState.habits, habitState.records, today)) {
-        game.grantHabitAllCompleteBonus(today);
+    if (habitState.hasHydrated) {
+        for (const date of habitState.rewardEligibleDates) {
+            game.grantHabitAllCompleteBonus(date);
+        }
+
+        // 旧スキーマに受給資格が無い場合も、今日の全達成は従来通り回収する。
+        if (areAllHabitsComplete(habitState.habits, habitState.records, today)) {
+            game.grantHabitAllCompleteBonus(today);
+        }
     }
 }
 
