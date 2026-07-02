@@ -10,6 +10,7 @@ import {
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
+import { useMobileGameStore } from './useMobileGameStore';
 
 interface MobileTaskStore {
     tasks: Task[];
@@ -32,9 +33,17 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 set((state) => ({ tasks: [...state.tasks, task] }));
                 return true;
             },
-            toggleTask: (taskId) => set((state) => ({
-                tasks: toggleTaskCompletion(state.tasks, taskId, new Date().toISOString()),
-            })),
+            toggleTask: (taskId) => {
+                const before = get().tasks.find((task) => task.id === taskId);
+                set((state) => ({
+                    tasks: toggleTaskCompletion(state.tasks, taskId, new Date().toISOString()),
+                }));
+                // 未完了→完了への遷移でのみ報酬を付与する。
+                // 二重付与防止はゲームストア側の報酬台帳が保証する。
+                if (before && !before.completed) {
+                    useMobileGameStore.getState().grantTaskCompletionReward(taskId, before.priority);
+                }
+            },
             deleteTask: (taskId) => set((state) => ({ tasks: removeTask(state.tasks, taskId) })),
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
         }),

@@ -43,6 +43,7 @@ export {
     type Task,
 } from './tasks';
 export {
+    areAllHabitsComplete,
     createHabit,
     HABIT_LIMITS,
     removeHabitData,
@@ -74,6 +75,8 @@ export {
 export {
     capChestQueue,
     capEquipmentCollection,
+    claimHabitAllCompleteBonus,
+    claimTaskReward,
     createEmptyRewardLedger,
     createInitialCharacterState,
     createInitialGameStateSnapshot,
@@ -88,6 +91,7 @@ export {
     type AvatarId,
     type CharacterState,
     type GameStateSnapshot,
+    type RewardClaim,
     type RewardLedger,
 } from './gameState';
 export {

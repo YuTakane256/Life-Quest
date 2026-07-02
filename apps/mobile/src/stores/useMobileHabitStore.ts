@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+    areAllHabitsComplete,
     createHabit,
     HABIT_LIMITS,
     removeHabitData,
@@ -12,6 +13,7 @@ import {
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
+import { useMobileGameStore } from './useMobileGameStore';
 
 interface MobileHabitStore {
     habits: Habit[];
@@ -36,9 +38,17 @@ export const useMobileHabitStore = create<MobileHabitStore>()(
                 set((state) => ({ habits: [...state.habits, habit] }));
                 return true;
             },
-            toggleToday: (habitId, date) => set((state) => ({
-                records: toggleHabitDailyRecord(state.records, habitId, date),
-            })),
+            toggleToday: (habitId, date) => {
+                set((state) => ({
+                    records: toggleHabitDailyRecord(state.records, habitId, date),
+                }));
+                // 全習慣が完了した日にボーナスを付与する。
+                // 「1日1回」の保証はゲームストア側の報酬台帳が持つ。
+                const { habits, records } = get();
+                if (areAllHabitsComplete(habits, records, date)) {
+                    useMobileGameStore.getState().grantHabitAllCompleteBonus(date);
+                }
+            },
             deleteHabit: (habitId) => set((state) => removeHabitData(state.habits, state.records, habitId)),
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
         }),

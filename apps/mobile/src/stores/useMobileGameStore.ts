@@ -18,6 +18,8 @@ import {
     type Equipment,
 } from '@life-quest/core/equipment';
 import {
+    claimHabitAllCompleteBonus,
+    claimTaskReward,
     createInitialGameStateSnapshot,
     sanitizeGameStateSnapshot,
     GAME_STATE_LIMITS,
@@ -28,7 +30,8 @@ import {
     type GameStateSnapshot,
     type RewardLedger,
 } from '@life-quest/core/gameState';
-import { applyCharacterXp, type ApplyCharacterXpResult } from '@life-quest/core/progression';
+import { applyCharacterXp, XP_CONFIG, type ApplyCharacterXpResult } from '@life-quest/core/progression';
+import type { Priority } from '@life-quest/core/tasks';
 import {
     getMilestoneAtCount,
     rollEquipmentTemplate,
@@ -73,6 +76,16 @@ interface MobileGameStore extends GameStateSnapshot {
     /** 同レアリティ3個を消費して上位レアリティ装備を生成する。 */
     synthesizeItems: (equipmentIds: string[]) => Equipment | null;
     getEffectiveStats: () => EffectiveStats;
+    /**
+     * タスク完了報酬（優先度別XP + ガチャ進行）を付与する。
+     * 同じタスクIDには一度しか付与しない。付与したら true。
+     */
+    grantTaskCompletionReward: (taskId: string, priority: Priority) => boolean;
+    /**
+     * 習慣全達成ボーナス（XP + ガチャ進行）を付与する。
+     * 同じ日付 (YYYY-MM-DD) には一度しか付与しない。付与したら true。
+     */
+    grantHabitAllCompleteBonus: (date: string) => boolean;
 }
 
 /** 永続化スキーマのバージョン。フィールド構成を変えるときに上げ、migrate で吸収する。 */
@@ -93,7 +106,39 @@ function toLevelUpSummary(fromLevel: number, result: ApplyCharacterXpResult): Le
 
 export const useMobileGameStore = create<MobileGameStore>()(
     persist(
-        (set, get) => ({
+        (set, get) => {
+            /**
+             * 報酬付与（台帳更新・XP・ガチャカウント・マイルストーン宝箱）を
+             * 単一の set で適用する。永続化が1回の書き込みになるため、
+             * 途中断で「XPだけ付与されて台帳が残らない」状態が起きない。
+             */
+            const applyRewardGrant = (ledger: RewardLedger, baseXp: number): void => {
+                const state = get();
+                const result = applyCharacterXp(state.character, baseXp);
+                const levelUp = toLevelUpSummary(state.character.level, result);
+                const gachaCount = Math.min(Number.MAX_SAFE_INTEGER, state.gachaCount + 1);
+                const milestone = getMilestoneAtCount(gachaCount);
+                const chestQueue = milestone
+                    ? capChestQueue([...state.chestQueue, {
+                        id: createMobileId(),
+                        chestType: milestone.chestType,
+                        label: milestone.label,
+                        opened: false,
+                        equipment: null,
+                        isStarterCharacter: milestone.chestType === 'blue' && milestone.count === 5,
+                    }])
+                    : state.chestQueue;
+
+                set({
+                    rewardLedger: ledger,
+                    character: { ...state.character, ...result.character },
+                    gachaCount,
+                    chestQueue,
+                    ...(levelUp ? { lastLevelUp: levelUp } : {}),
+                });
+            };
+
+            return {
             ...initialSnapshot,
             hasHydrated: false,
             lastLevelUp: null,
@@ -101,18 +146,22 @@ export const useMobileGameStore = create<MobileGameStore>()(
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
             clearLastLevelUp: () => set({ lastLevelUp: null }),
 
-            updateCharacter: (updates) => set((state) => ({
-                character: {
-                    ...state.character,
-                    ...(updates.name !== undefined
-                        ? { name: clampString(updates.name, GAME_STATE_LIMITS.maxCharacterNameLength) }
-                        : {}),
-                    ...(updates.avatar !== undefined ? { avatar: updates.avatar } : {}),
-                },
-            })),
+            updateCharacter: (updates) => {
+                if (!get().hasHydrated) return;
+                set((state) => ({
+                    character: {
+                        ...state.character,
+                        ...(updates.name !== undefined
+                            ? { name: clampString(updates.name, GAME_STATE_LIMITS.maxCharacterNameLength) }
+                            : {}),
+                        ...(updates.avatar !== undefined ? { avatar: updates.avatar } : {}),
+                    },
+                }));
+            },
 
             addXp: (baseXp) => {
-                const { character } = get();
+                const { character, hasHydrated } = get();
+                if (!hasHydrated) return null;
                 const result = applyCharacterXp(character, baseXp);
                 if (result.appliedXp === 0 && result.levelGain === 0) return null;
 
@@ -124,12 +173,16 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 return result;
             },
 
-            incrementGachaCount: () => set((state) => ({
-                gachaCount: Math.min(Number.MAX_SAFE_INTEGER, state.gachaCount + 1),
-            })),
+            incrementGachaCount: () => {
+                if (!get().hasHydrated) return;
+                set((state) => ({
+                    gachaCount: Math.min(Number.MAX_SAFE_INTEGER, state.gachaCount + 1),
+                }));
+            },
 
             checkGachaMilestones: () => {
-                const { gachaCount, chestQueue } = get();
+                const { gachaCount, chestQueue, hasHydrated } = get();
+                if (!hasHydrated) return;
                 const milestone = getMilestoneAtCount(gachaCount);
                 if (!milestone) return;
                 const chest: ChestReward = {
@@ -144,7 +197,8 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             openChest: (chestId) => {
-                const { chestQueue } = get();
+                const { chestQueue, hasHydrated } = get();
+                if (!hasHydrated) return null;
                 const chest = chestQueue.find((candidate) => candidate.id === chestId);
                 if (!chest || chest.opened) return null;
 
@@ -162,6 +216,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             equipItem: (equipmentId) => {
+                if (!get().hasHydrated) return;
                 const item = get().equipment.find((candidate) => candidate.id === equipmentId);
                 if (!item) return;
                 set((state) => ({
@@ -173,14 +228,18 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 }));
             },
 
-            unequipItem: (equipmentId) => set((state) => ({
-                equipment: state.equipment.map((candidate) =>
-                    candidate.id === equipmentId ? { ...candidate, equipped: false } : candidate
-                ),
-            })),
+            unequipItem: (equipmentId) => {
+                if (!get().hasHydrated) return;
+                set((state) => ({
+                    equipment: state.equipment.map((candidate) =>
+                        candidate.id === equipmentId ? { ...candidate, equipped: false } : candidate
+                    ),
+                }));
+            },
 
             autoEquipBest: () => {
-                const { equipment } = get();
+                const { equipment, hasHydrated } = get();
+                if (!hasHydrated) return false;
                 const bestIdBySlot = getBestEquipmentIdsBySlot(equipment);
 
                 const alreadyOptimal = EQUIPMENT_SLOTS.every((slot) => {
@@ -202,6 +261,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             sellItem: (equipmentId) => {
+                if (!get().hasHydrated) return 0;
                 const item = get().equipment.find((candidate) => candidate.id === equipmentId);
                 if (!item || item.equipped) return 0;
                 const xpGain = getEquipmentSellXp(item, SELL_XP_BY_RARITY);
@@ -213,6 +273,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
             },
 
             synthesizeItems: (equipmentIds) => {
+                if (!get().hasHydrated) return null;
                 const selection = selectSynthesisIngredients(
                     equipmentIds,
                     get().equipment,
@@ -245,7 +306,27 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 const { character, equipment } = get();
                 return calculateEffectiveEquipmentStats(character, equipment);
             },
-        }),
+
+            grantTaskCompletionReward: (taskId, priority) => {
+                // hydration完了前は付与しない。永続化済みの台帳を読み込む前に付与すると、
+                // rehydrationのmergeで上書きされて消失・重複する。復元後は rewardSync の
+                // 再照合が完了済みタスクから安全に付与し直す。
+                if (!get().hasHydrated) return false;
+                const claim = claimTaskReward(get().rewardLedger, taskId);
+                if (!claim.granted) return false;
+                applyRewardGrant(claim.ledger, XP_CONFIG.REWARD_BY_PRIORITY[priority]);
+                return true;
+            },
+
+            grantHabitAllCompleteBonus: (date) => {
+                if (!get().hasHydrated) return false;
+                const claim = claimHabitAllCompleteBonus(get().rewardLedger, date);
+                if (!claim.granted) return false;
+                applyRewardGrant(claim.ledger, XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
+                return true;
+            },
+            };
+        },
         {
             name: 'quest-board-game',
             version: GAME_STORE_VERSION,

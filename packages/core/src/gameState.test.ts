@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+    claimHabitAllCompleteBonus,
+    claimTaskReward,
+    createEmptyRewardLedger,
     createInitialCharacterState,
     createInitialGameStateSnapshot,
     GAME_STATE_LIMITS,
@@ -167,5 +170,64 @@ describe('sanitizeGameStateSnapshot', () => {
     it('gachaCount の負数・NaN は 0 にする', () => {
         expect(sanitizeGameStateSnapshot({ gachaCount: -5 }).gachaCount).toBe(0);
         expect(sanitizeGameStateSnapshot({ gachaCount: Number.NaN }).gachaCount).toBe(0);
+    });
+});
+
+describe('claimTaskReward', () => {
+    it('未付与のタスクIDには付与を許可し、台帳へ追記する', () => {
+        const claim = claimTaskReward(createEmptyRewardLedger(), 'task-1');
+        expect(claim.granted).toBe(true);
+        expect(claim.ledger.rewardedTaskIds).toEqual(['task-1']);
+    });
+
+    it('付与済みのタスクIDには二度と付与しない', () => {
+        const first = claimTaskReward(createEmptyRewardLedger(), 'task-1');
+        const second = claimTaskReward(first.ledger, 'task-1');
+        expect(second.granted).toBe(false);
+        expect(second.ledger).toBe(first.ledger);
+    });
+
+    it('空のタスクIDは拒否する', () => {
+        expect(claimTaskReward(createEmptyRewardLedger(), '').granted).toBe(false);
+    });
+
+    it('台帳が上限に達したら古いIDから捨てる', () => {
+        let ledger = createEmptyRewardLedger();
+        ledger = {
+            ...ledger,
+            rewardedTaskIds: Array.from({ length: GAME_STATE_LIMITS.maxRewardedTaskIds }, (_, i) => `t${i}`),
+        };
+        const claim = claimTaskReward(ledger, 'new-task');
+        expect(claim.granted).toBe(true);
+        expect(claim.ledger.rewardedTaskIds).toHaveLength(GAME_STATE_LIMITS.maxRewardedTaskIds);
+        expect(claim.ledger.rewardedTaskIds[claim.ledger.rewardedTaskIds.length - 1]).toBe('new-task');
+        expect(claim.ledger.rewardedTaskIds).not.toContain('t0');
+    });
+});
+
+describe('claimHabitAllCompleteBonus', () => {
+    it('未付与の日付には付与を許可し、台帳へ追記する', () => {
+        const claim = claimHabitAllCompleteBonus(createEmptyRewardLedger(), '2026-07-02');
+        expect(claim.granted).toBe(true);
+        expect(claim.ledger.habitBonusDates).toEqual(['2026-07-02']);
+    });
+
+    it('同じ日付には二度と付与しない', () => {
+        const first = claimHabitAllCompleteBonus(createEmptyRewardLedger(), '2026-07-02');
+        const second = claimHabitAllCompleteBonus(first.ledger, '2026-07-02');
+        expect(second.granted).toBe(false);
+    });
+
+    it('翌日には再度付与できる', () => {
+        const first = claimHabitAllCompleteBonus(createEmptyRewardLedger(), '2026-07-02');
+        const second = claimHabitAllCompleteBonus(first.ledger, '2026-07-03');
+        expect(second.granted).toBe(true);
+        expect(second.ledger.habitBonusDates).toEqual(['2026-07-02', '2026-07-03']);
+    });
+
+    it('YYYY-MM-DD 形式でない日付は拒否する', () => {
+        expect(claimHabitAllCompleteBonus(createEmptyRewardLedger(), 'today').granted).toBe(false);
+        expect(claimHabitAllCompleteBonus(createEmptyRewardLedger(), '').granted).toBe(false);
+        expect(claimHabitAllCompleteBonus(createEmptyRewardLedger(), '2026/07/02').granted).toBe(false);
     });
 });
