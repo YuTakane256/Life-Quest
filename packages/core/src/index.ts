@@ -71,6 +71,23 @@ export {
     type LegacyGameSnapshotSources,
 } from './syncSnapshots';
 export {
+    CANONICAL_STORAGE_KEYS,
+    createCanonicalSnapshotRepositories,
+    createSnapshotRepository,
+    SNAPSHOT_REPOSITORY_VERSION,
+    type CanonicalSnapshotRepositories,
+    type RepositoryLoadResult,
+    type RepositoryRemoveResult,
+    type RepositorySaveResult,
+    type RepositoryStorage,
+    type RepositoryStorageResult,
+    type RepositoryWriteFailure,
+    type SnapshotRepository,
+    type SnapshotRepositoryEnvelope,
+    type SnapshotRepositoryOptions,
+    type VersionedSnapshot,
+} from './syncRepository';
+export {
     calculateEffectiveEquipmentStats,
     createEquipmentFromTemplate,
     EQUIPMENT_RARITIES,
