@@ -52,6 +52,10 @@
       "types": "./src/syncSnapshots.ts",
       "import": "./src/syncSnapshots.ts"
     },
+    "./syncRepository": {
+      "types": "./src/syncRepository.ts",
+      "import": "./src/syncRepository.ts"
+    },
     "./validation": {
       "types": "./src/validation.ts",
       "import": "./src/validation.ts"
