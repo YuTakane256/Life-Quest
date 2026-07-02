@@ -12,6 +12,10 @@
       "types": "./src/battleSkills.ts",
       "import": "./src/battleSkills.ts"
     },
+    "./canonicalSync": {
+      "types": "./src/canonicalSync.ts",
+      "import": "./src/canonicalSync.ts"
+    },
     "./hp": {
       "types": "./src/hp.ts",
       "import": "./src/hp.ts"

@@ -55,6 +55,11 @@ export {
     type RestDay,
 } from './habits';
 export {
+    writeCanonicalSnapshot,
+    type CanonicalWriteResult,
+    type CanonicalWriteStatus,
+} from './canonicalSync';
+export {
     LEGACY_STORAGE_KEYS,
     migrateLegacyQuestBoardData,
     MIGRATION_JOURNAL_KEY,
