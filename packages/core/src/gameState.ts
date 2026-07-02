@@ -23,6 +23,8 @@ export const GAME_STATE_LIMITS = {
     maxChestLabelLength: 120,
     /** 報酬台帳に保持するタスクID数の上限 */
     maxRewardedTaskIds: 4000,
+    /** 報酬台帳に保持するサブタスクID数の上限 */
+    maxRewardedSubtaskIds: 20_000,
     /** 報酬台帳に保持する習慣ボーナス日付数の上限 */
     maxHabitBonusDates: 400,
 } as const;
@@ -47,6 +49,8 @@ export interface CharacterState {
 export interface RewardLedger {
     /** 完了報酬を付与済みのタスクID */
     rewardedTaskIds: string[];
+    /** 完了報酬を付与済みのサブタスクID */
+    rewardedSubtaskIds: string[];
     /** 習慣全達成ボーナスを付与済みの日付 (YYYY-MM-DD) */
     habitBonusDates: string[];
 }
@@ -76,7 +80,7 @@ export function createInitialCharacterState(): CharacterState {
 }
 
 export function createEmptyRewardLedger(): RewardLedger {
-    return { rewardedTaskIds: [], habitBonusDates: [] };
+    return { rewardedTaskIds: [], rewardedSubtaskIds: [], habitBonusDates: [] };
 }
 
 export function createInitialGameStateSnapshot(): GameStateSnapshot {
@@ -255,6 +259,10 @@ export function sanitizeRewardLedger(raw: unknown): RewardLedger {
     if (!isPersistedStateRecord(raw)) return createEmptyRewardLedger();
     return {
         rewardedTaskIds: sanitizeStringList(raw.rewardedTaskIds, GAME_STATE_LIMITS.maxRewardedTaskIds),
+        rewardedSubtaskIds: sanitizeStringList(
+            raw.rewardedSubtaskIds,
+            GAME_STATE_LIMITS.maxRewardedSubtaskIds,
+        ),
         habitBonusDates: sanitizeStringList(raw.habitBonusDates, GAME_STATE_LIMITS.maxHabitBonusDates),
     };
 }
@@ -289,6 +297,24 @@ export function claimTaskReward(ledger: RewardLedger, taskId: string): RewardCla
                 ledger.rewardedTaskIds,
                 taskId,
                 GAME_STATE_LIMITS.maxRewardedTaskIds,
+            ),
+        },
+    };
+}
+
+/** 同じサブタスクの完了報酬を複数端末・再試行で重複付与しない。 */
+export function claimSubtaskReward(ledger: RewardLedger, subtaskId: string): RewardClaim {
+    if (!subtaskId || ledger.rewardedSubtaskIds.includes(subtaskId)) {
+        return { granted: false, ledger };
+    }
+    return {
+        granted: true,
+        ledger: {
+            ...ledger,
+            rewardedSubtaskIds: appendCapped(
+                ledger.rewardedSubtaskIds,
+                subtaskId,
+                GAME_STATE_LIMITS.maxRewardedSubtaskIds,
             ),
         },
     };

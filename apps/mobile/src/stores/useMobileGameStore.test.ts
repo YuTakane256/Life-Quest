@@ -338,7 +338,11 @@ describe('hydration前の操作ガード', () => {
         const state = useMobileGameStore.getState();
         expect(state.character.totalXp).toBe(0);
         expect(state.gachaCount).toBe(0);
-        expect(state.rewardLedger).toEqual({ rewardedTaskIds: [], habitBonusDates: [] });
+        expect(state.rewardLedger).toEqual({
+            rewardedTaskIds: [],
+            rewardedSubtaskIds: [],
+            habitBonusDates: [],
+        });
     });
 
     it('hydration前は装備・宝箱・キャラクター操作もno-opになる', () => {
