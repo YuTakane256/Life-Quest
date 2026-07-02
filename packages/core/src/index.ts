@@ -42,3 +42,13 @@ export {
     type Subtask,
     type Task,
 } from './tasks';
+export {
+    createHabit,
+    HABIT_LIMITS,
+    removeHabitData,
+    sanitizeHabitCollection,
+    sanitizeHabitRecords,
+    toggleHabitDailyRecord,
+    type Habit,
+    type HabitDailyRecord,
+} from './habits';
