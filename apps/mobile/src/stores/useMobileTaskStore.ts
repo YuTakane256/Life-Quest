@@ -9,6 +9,7 @@ import {
 } from '@life-quest/core/tasks';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { createMobileId } from '../utils/createMobileId';
 
 interface MobileTaskStore {
     tasks: Task[];
@@ -17,11 +18,6 @@ interface MobileTaskStore {
     toggleTask: (taskId: string) => void;
     deleteTask: (taskId: string) => void;
     setHasHydrated: (value: boolean) => void;
-}
-
-function createMobileId(): string {
-    if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export const useMobileTaskStore = create<MobileTaskStore>()(

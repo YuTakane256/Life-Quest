@@ -11,6 +11,7 @@ import {
 } from '@life-quest/core/habits';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { createMobileId } from '../utils/createMobileId';
 
 interface MobileHabitStore {
     habits: Habit[];
@@ -20,11 +21,6 @@ interface MobileHabitStore {
     toggleToday: (habitId: string, date: string) => void;
     deleteHabit: (habitId: string) => void;
     setHasHydrated: (value: boolean) => void;
-}
-
-function createMobileId(): string {
-    if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export const useMobileHabitStore = create<MobileHabitStore>()(
