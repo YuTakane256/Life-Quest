@@ -11,5 +11,6 @@ Use `@life-quest/core` as the public API for cross-platform code. Existing Web
 import paths remain as compatibility re-exports while modules are migrated
 incrementally.
 
-The shared domains currently include tasks, habits, equipment and synthesis,
-battle skills, persistence, validation, numeric helpers, and HP display rules.
+The shared domains currently include tasks, habits, character progression,
+equipment and synthesis, battle skills, persistence, validation, numeric
+helpers, and HP display rules.
