@@ -251,3 +251,75 @@ describe('useMobileGameStore', () => {
         });
     });
 });
+
+describe('報酬付与（二重付与防止）', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        resetStore();
+    });
+
+    it('タスク完了報酬はXP・ガチャカウント・台帳を同時に更新する', () => {
+        const granted = useMobileGameStore.getState().grantTaskCompletionReward('task-1', 'high');
+        expect(granted).toBe(true);
+
+        const state = useMobileGameStore.getState();
+        expect(state.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.high);
+        expect(state.gachaCount).toBe(1);
+        expect(state.rewardLedger.rewardedTaskIds).toEqual(['task-1']);
+    });
+
+    it('同じタスクIDには二度と付与しない', () => {
+        useMobileGameStore.getState().grantTaskCompletionReward('task-1', 'high');
+        const second = useMobileGameStore.getState().grantTaskCompletionReward('task-1', 'high');
+        expect(second).toBe(false);
+
+        const state = useMobileGameStore.getState();
+        expect(state.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.high);
+        expect(state.gachaCount).toBe(1);
+    });
+
+    it('5タスク目の完了でマイルストーン宝箱が付与される', () => {
+        for (let i = 0; i < 5; i++) {
+            useMobileGameStore.getState().grantTaskCompletionReward(`task-${i}`, 'low');
+        }
+        const state = useMobileGameStore.getState();
+        expect(state.gachaCount).toBe(5);
+        expect(state.chestQueue).toHaveLength(1);
+        expect(state.chestQueue[0]).toMatchObject({ chestType: 'blue', isStarterCharacter: true });
+    });
+
+    it('習慣全達成ボーナスは同じ日付に一度だけ付与される', () => {
+        expect(useMobileGameStore.getState().grantHabitAllCompleteBonus('2026-07-02')).toBe(true);
+        expect(useMobileGameStore.getState().grantHabitAllCompleteBonus('2026-07-02')).toBe(false);
+        expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
+
+        expect(useMobileGameStore.getState().grantHabitAllCompleteBonus('2026-07-03')).toBe(true);
+        expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS * 2);
+    });
+
+    it('rehydration相当のmergeを経ても台帳が保持され重複しない', () => {
+        useMobileGameStore.getState().grantTaskCompletionReward('task-1', 'medium');
+
+        // 永続化された状態を merge で復元するシミュレーション
+        const persistOptions = useMobileGameStore.persist.getOptions();
+        const persisted = persistOptions.partialize?.(useMobileGameStore.getState());
+        const merged = persistOptions.merge?.(persisted, useMobileGameStore.getState());
+        useMobileGameStore.setState(merged as Parameters<typeof useMobileGameStore.setState>[0]);
+
+        expect(useMobileGameStore.getState().grantTaskCompletionReward('task-1', 'medium')).toBe(false);
+        expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
+    });
+
+    it('報酬付与はXPと台帳を単一のset（永続化1回分）で書き込む', async () => {
+        storage.setItem.mockClear();
+        useMobileGameStore.getState().grantTaskCompletionReward('task-atomic', 'low');
+
+        await vi.waitFor(() => expect(storage.setItem).toHaveBeenCalled());
+        const [, serialized] = storage.setItem.mock.calls.at(-1) ?? [];
+        const envelope = JSON.parse(serialized as string) as {
+            state: { character: { totalXp: number }; rewardLedger: { rewardedTaskIds: string[] } };
+        };
+        expect(envelope.state.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.low);
+        expect(envelope.state.rewardLedger.rewardedTaskIds).toContain('task-atomic');
+    });
+});

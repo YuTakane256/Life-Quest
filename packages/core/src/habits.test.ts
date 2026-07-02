@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    areAllHabitsComplete,
     createHabit,
     removeHabitData,
     sanitizeHabitCollection,
@@ -37,5 +38,40 @@ describe('habit domain', () => {
             { habitId: 'missing', date: '2026-07-01', completed: true },
         ], new Set(['h1']));
         expect(records).toEqual([{ habitId: 'h1', date: '2026-07-01', completed: true, memo: '' }]);
+    });
+});
+
+describe('areAllHabitsComplete', () => {
+    const habits = [
+        createHabit('h1', '運動', 'health', 'now')!,
+        createHabit('h2', '読書', 'learning', 'now')!,
+    ];
+
+    it('全習慣が完了した日に true を返す', () => {
+        const records = [
+            { habitId: 'h1', date: '2026-07-02', completed: true, memo: '' },
+            { habitId: 'h2', date: '2026-07-02', completed: true, memo: '' },
+        ];
+        expect(areAllHabitsComplete(habits, records, '2026-07-02')).toBe(true);
+    });
+
+    it('未完了の習慣が残っていれば false', () => {
+        const records = [
+            { habitId: 'h1', date: '2026-07-02', completed: true, memo: '' },
+            { habitId: 'h2', date: '2026-07-02', completed: false, memo: '' },
+        ];
+        expect(areAllHabitsComplete(habits, records, '2026-07-02')).toBe(false);
+    });
+
+    it('別の日付のレコードは数えない', () => {
+        const records = [
+            { habitId: 'h1', date: '2026-07-01', completed: true, memo: '' },
+            { habitId: 'h2', date: '2026-07-01', completed: true, memo: '' },
+        ];
+        expect(areAllHabitsComplete(habits, records, '2026-07-02')).toBe(false);
+    });
+
+    it('習慣が1つも無ければ false', () => {
+        expect(areAllHabitsComplete([], [], '2026-07-02')).toBe(false);
     });
 });

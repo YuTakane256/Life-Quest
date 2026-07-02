@@ -259,6 +259,62 @@ export function sanitizeRewardLedger(raw: unknown): RewardLedger {
     };
 }
 
+// ─── 報酬付与判定 ─────────────────────────────────────────────
+
+/** 報酬付与判定の結果。granted が true のときだけ報酬を適用し、新しい台帳を保存する。 */
+export interface RewardClaim {
+    granted: boolean;
+    ledger: RewardLedger;
+}
+
+const YMD_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function appendCapped(list: readonly string[], value: string, maxItems: number): string[] {
+    return [...list, value].slice(-maxItems);
+}
+
+/**
+ * タスク完了報酬を付与すべきか判定する。
+ * 同じタスクIDには一度しか付与しない（完了取り消し→再完了でも再付与しない）。
+ */
+export function claimTaskReward(ledger: RewardLedger, taskId: string): RewardClaim {
+    if (!taskId || ledger.rewardedTaskIds.includes(taskId)) {
+        return { granted: false, ledger };
+    }
+    return {
+        granted: true,
+        ledger: {
+            ...ledger,
+            rewardedTaskIds: appendCapped(
+                ledger.rewardedTaskIds,
+                taskId,
+                GAME_STATE_LIMITS.maxRewardedTaskIds,
+            ),
+        },
+    };
+}
+
+/**
+ * 習慣全達成ボーナスを付与すべきか判定する。
+ * 同じ日付 (YYYY-MM-DD) には一度しか付与しない。
+ */
+export function claimHabitAllCompleteBonus(ledger: RewardLedger, date: string): RewardClaim {
+    if (!YMD_PATTERN.test(date) || ledger.habitBonusDates.includes(date)) {
+        return { granted: false, ledger };
+    }
+    return {
+        granted: true,
+        ledger: {
+            ...ledger,
+            habitBonusDates: appendCapped(
+                ledger.habitBonusDates,
+                date,
+                GAME_STATE_LIMITS.maxHabitBonusDates,
+            ),
+        },
+    };
+}
+
 /** ゲーム状態スナップショット全体を正規化する。 */
 export function sanitizeGameStateSnapshot(persisted: unknown): GameStateSnapshot {
     if (!isPersistedStateRecord(persisted)) return createInitialGameStateSnapshot();

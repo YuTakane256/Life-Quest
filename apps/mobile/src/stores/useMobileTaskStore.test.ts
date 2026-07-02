@@ -1,6 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASK_LIMITS, createTask, type Task } from '@life-quest/core/tasks';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
+import { XP_CONFIG } from '@life-quest/core/progression';
+import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileTaskStore } from './useMobileTaskStore';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
@@ -23,6 +26,7 @@ describe('useMobileTaskStore', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         useMobileTaskStore.setState({ tasks: [], hasHydrated: true });
+        useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, lastLevelUp: null });
     });
 
     it('adds a normalized task and rejects an empty name', () => {
@@ -69,5 +73,42 @@ describe('useMobileTaskStore', () => {
         const envelope = JSON.parse(serialized as string) as { state: Record<string, unknown> };
         expect(envelope.state.tasks).toHaveLength(1);
         expect(envelope.state).not.toHaveProperty('hasHydrated');
+    });
+
+    describe('ゲーム報酬連携', () => {
+        it('タスク完了で優先度に応じたXPとガチャカウントが付与される', () => {
+            useMobileTaskStore.getState().addTask('報酬テスト');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+
+            useMobileTaskStore.getState().toggleTask(id);
+
+            const game = useMobileGameStore.getState();
+            expect(game.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
+            expect(game.gachaCount).toBe(1);
+            expect(game.rewardLedger.rewardedTaskIds).toEqual([id]);
+        });
+
+        it('完了取り消し→再完了しても報酬は再付与されない', () => {
+            useMobileTaskStore.getState().addTask('往復テスト');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+
+            useMobileTaskStore.getState().toggleTask(id); // 完了
+            useMobileTaskStore.getState().toggleTask(id); // 取り消し
+            useMobileTaskStore.getState().toggleTask(id); // 再完了
+
+            const game = useMobileGameStore.getState();
+            expect(game.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
+            expect(game.gachaCount).toBe(1);
+        });
+
+        it('完了→未完了への遷移では報酬が付与されない', () => {
+            useMobileTaskStore.getState().addTask('遷移テスト');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            useMobileTaskStore.getState().toggleTask(id); // 完了
+
+            const xpAfterComplete = useMobileGameStore.getState().character.totalXp;
+            useMobileTaskStore.getState().toggleTask(id); // 取り消し
+            expect(useMobileGameStore.getState().character.totalXp).toBe(xpAfterComplete);
+        });
     });
 });
