@@ -20,6 +20,7 @@
     "typecheck:core": "npm run typecheck --workspace @life-quest/core",
     "lint": "eslint .",
     "mobile:start": "npm run start --workspace @life-quest/mobile",
+    "mobile:export": "npm run export:android --workspace @life-quest/mobile",
     "mobile:typecheck": "npm run typecheck --workspace @life-quest/mobile",
     "preview": "vite preview",
     "test": "vitest run",

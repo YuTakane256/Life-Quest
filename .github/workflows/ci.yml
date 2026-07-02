@@ -39,6 +39,9 @@ jobs:
       - name: Type check shared core package
         run: npm run typecheck:core
 
+      - name: Type check mobile app
+        run: npm run mobile:typecheck
+
       - name: Lint
         run: npm run lint
 
@@ -50,3 +53,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Export Android mobile bundle
+        run: npm run mobile:export
