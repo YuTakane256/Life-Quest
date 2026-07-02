@@ -75,6 +75,14 @@ describe('useMobileTaskStore', () => {
         expect(envelope.state).not.toHaveProperty('hasHydrated');
     });
 
+    it('addTask は指定した優先度で作成し、省略時は medium にする', () => {
+        useMobileTaskStore.getState().addTask('高優先タスク', 'high');
+        useMobileTaskStore.getState().addTask('既定タスク');
+
+        expect(useMobileTaskStore.getState().tasks[0].priority).toBe('high');
+        expect(useMobileTaskStore.getState().tasks[1].priority).toBe('medium');
+    });
+
     describe('ゲーム報酬連携', () => {
         it('タスク完了で優先度に応じたXPとガチャカウントが付与される', () => {
             useMobileTaskStore.getState().addTask('報酬テスト');
@@ -99,6 +107,15 @@ describe('useMobileTaskStore', () => {
             const game = useMobileGameStore.getState();
             expect(game.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
             expect(game.gachaCount).toBe(1);
+        });
+
+        it('選択した優先度に応じたXPが付与される', () => {
+            useMobileTaskStore.getState().addTask('高優先', 'high');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+
+            useMobileTaskStore.getState().toggleTask(id);
+
+            expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.high);
         });
 
         it('完了→未完了への遷移では報酬が付与されない', () => {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EQUIPMENT_SLOTS, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { calculateNextLevelXp, calculateXpProgress } from '@life-quest/core/progression';
@@ -37,6 +37,7 @@ export default function CharacterScreen() {
     const character = useMobileGameStore((state) => state.character);
     const equipment = useMobileGameStore((state) => state.equipment);
     const chestQueue = useMobileGameStore((state) => state.chestQueue);
+    const hasHydrated = useMobileGameStore((state) => state.hasHydrated);
     const lastLevelUp = useMobileGameStore((state) => state.lastLevelUp);
     const updateCharacter = useMobileGameStore((state) => state.updateCharacter);
     const clearLastLevelUp = useMobileGameStore((state) => state.clearLastLevelUp);
@@ -63,6 +64,7 @@ export default function CharacterScreen() {
         }
         return map;
     }, [equipment]);
+    // 最大2000件になり得るため FlatList で仮想化して描画する
     const inventory = useMemo(
         () => [...equipment].sort((a, b) => a.slot.localeCompare(b.slot) || a.name.localeCompare(b.name)),
         [equipment],
@@ -127,209 +129,246 @@ export default function CharacterScreen() {
         );
     };
 
-    return (
-        <SafeAreaView style={styles.safeArea}>
-            <ScrollView contentContainerStyle={styles.scroll}>
-                <View style={styles.content}>
-                    <Text style={styles.title}>キャラクター</Text>
+    if (!hasHydrated) {
+        return (
+            <SafeAreaView style={styles.safeArea}>
+                <View style={styles.loading}>
+                    <Text style={styles.loadingText}>保存データを読み込み中…</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
-                    {lastLevelUp && (
-                        <View style={styles.banner} accessibilityRole="alert">
-                            <Text style={styles.bannerText}>
-                                レベルアップ！ Lv.{lastLevelUp.fromLevel} → Lv.{lastLevelUp.toLevel}
-                                {'\n'}攻撃+{lastLevelUp.attackGain} / 防御+{lastLevelUp.defenseGain} / HP+{lastLevelUp.hpGain}
-                            </Text>
-                            <Pressable accessibilityRole="button" accessibilityLabel="レベルアップ通知を閉じる" onPress={clearLastLevelUp} hitSlop={10}>
-                                <Text style={styles.bannerClose}>×</Text>
-                            </Pressable>
-                        </View>
-                    )}
-                    {lastRevealText && (
-                        <View style={styles.banner} accessibilityRole="alert">
-                            <Text style={styles.bannerText}>{lastRevealText}</Text>
-                            <Pressable accessibilityRole="button" accessibilityLabel="入手通知を閉じる" onPress={() => setLastRevealText(null)} hitSlop={10}>
-                                <Text style={styles.bannerClose}>×</Text>
-                            </Pressable>
-                        </View>
-                    )}
+    const listHeader = (
+        <View style={styles.headerContent}>
+            <Text style={styles.title}>キャラクター</Text>
 
-                    {/* プロフィール */}
-                    <View style={styles.card}>
-                        <View style={styles.profileRow}>
-                            <View style={styles.avatarCircle}>
-                                <Text style={styles.avatarSymbol}>
-                                    {AVATAR_OPTIONS.find((option) => option.id === character.avatar)?.symbol ?? '👩'}
-                                </Text>
-                            </View>
-                            <View style={styles.flex}>
-                                <TextInput
-                                    value={nameDraft ?? character.name}
-                                    onChangeText={setNameDraft}
-                                    onBlur={commitName}
-                                    onSubmitEditing={commitName}
-                                    maxLength={30}
-                                    accessibilityLabel="キャラクター名"
-                                    style={styles.nameInput}
-                                    placeholderTextColor="#737d90"
-                                />
-                                <Text style={styles.levelText}>Lv.{character.level}</Text>
-                            </View>
-                        </View>
-                        <View style={styles.avatarSwitch}>
-                            {AVATAR_OPTIONS.map((option) => (
-                                <Pressable
-                                    key={option.id}
-                                    accessibilityRole="radio"
-                                    accessibilityState={{ selected: character.avatar === option.id }}
-                                    accessibilityLabel={`アバターを${option.label}にする`}
-                                    onPress={() => updateCharacter({ avatar: option.id })}
-                                    style={[styles.segment, character.avatar === option.id && styles.segmentActive]}
-                                >
-                                    <Text style={[styles.segmentText, character.avatar === option.id && styles.segmentTextActive]}>
-                                        {option.symbol} {option.label}
-                                    </Text>
-                                </Pressable>
-                            ))}
-                        </View>
+            {lastLevelUp && (
+                <View style={styles.banner} accessibilityRole="alert">
+                    <Text style={styles.bannerText}>
+                        レベルアップ！ Lv.{lastLevelUp.fromLevel} → Lv.{lastLevelUp.toLevel}
+                        {'\n'}攻撃+{lastLevelUp.attackGain} / 防御+{lastLevelUp.defenseGain} / HP+{lastLevelUp.hpGain}
+                    </Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel="レベルアップ通知を閉じる" onPress={clearLastLevelUp} hitSlop={10}>
+                        <Text style={styles.bannerClose}>×</Text>
+                    </Pressable>
+                </View>
+            )}
+            {lastRevealText && (
+                <View style={styles.banner} accessibilityRole="alert">
+                    <Text style={styles.bannerText}>{lastRevealText}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel="入手通知を閉じる" onPress={() => setLastRevealText(null)} hitSlop={10}>
+                        <Text style={styles.bannerClose}>×</Text>
+                    </Pressable>
+                </View>
+            )}
 
-                        {/* XP進捗 */}
-                        <View
-                            accessibilityRole="progressbar"
-                            accessibilityLabel={`経験値 ${character.totalXp} / 次のレベルまで ${Math.max(0, nextLevelXp - character.totalXp)}`}
-                            style={styles.progressTrack}
-                        >
-                            <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
-                        </View>
-                        <Text style={styles.progressText}>XP {character.totalXp} / {nextLevelXp}</Text>
-
-                        {/* ステータス */}
-                        <View style={styles.statsRow}>
-                            <StatCell label="攻撃" base={character.baseAttack} effective={stats.attack} />
-                            <StatCell label="防御" base={character.baseDefense} effective={stats.defense} />
-                            <StatCell label="HP" base={character.baseMaxHp} effective={stats.maxHp} />
-                        </View>
+            {/* プロフィール */}
+            <View style={styles.card}>
+                <View style={styles.profileRow}>
+                    <View style={styles.avatarCircle}>
+                        <Text style={styles.avatarSymbol}>
+                            {AVATAR_OPTIONS.find((option) => option.id === character.avatar)?.symbol ?? '👩'}
+                        </Text>
                     </View>
-
-                    {/* 宝箱 */}
-                    {unopenedChests.length > 0 && (
-                        <View style={styles.card}>
-                            <Text style={styles.sectionTitle}>宝箱（{unopenedChests.length}）</Text>
-                            {unopenedChests.map((chest) => (
-                                <View key={chest.id} style={styles.chestRow}>
-                                    <Text style={styles.chestLabel}>🎁 {chest.label}</Text>
-                                    <Pressable
-                                        accessibilityRole="button"
-                                        accessibilityLabel={`${chest.label}を開封する`}
-                                        onPress={() => handleOpenChest(chest.id, chest.label)}
-                                        style={({ pressed }) => [styles.primaryButton, pressed && styles.muted]}
-                                    >
-                                        <Text style={styles.primaryButtonText}>開封</Text>
-                                    </Pressable>
-                                </View>
-                            ))}
-                        </View>
-                    )}
-
-                    {/* 装備中 */}
-                    <View style={styles.card}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>装備中</Text>
-                            <Pressable
-                                accessibilityRole="button"
-                                accessibilityLabel="各部位の最強装備を自動で装着する"
-                                onPress={() => { autoEquipBest(); }}
-                                style={({ pressed }) => [styles.secondaryButton, pressed && styles.muted]}
-                            >
-                                <Text style={styles.secondaryButtonText}>自動装備</Text>
-                            </Pressable>
-                        </View>
-                        {EQUIPMENT_SLOTS.map((slot) => {
-                            const item = equippedBySlot.get(slot);
-                            return (
-                                <View key={slot} style={styles.slotRow}>
-                                    <Text style={styles.slotLabel}>{SLOT_LABELS[slot]}</Text>
-                                    {item ? (
-                                        <Text style={[styles.slotItemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
-                                            {item.name}
-                                        </Text>
-                                    ) : (
-                                        <Text style={styles.slotEmpty}>なし</Text>
-                                    )}
-                                </View>
-                            );
-                        })}
-                    </View>
-
-                    {/* インベントリ */}
-                    <View style={styles.card}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>インベントリ（{inventory.length}）</Text>
-                            <Pressable
-                                accessibilityRole="button"
-                                accessibilityState={{ disabled: !canSynthesize }}
-                                accessibilityLabel={`選択した${SYNTHESIS_CONFIG.REQUIRED_COUNT}個の装備を合成する`}
-                                disabled={!canSynthesize}
-                                onPress={handleSynthesize}
-                                style={({ pressed }) => [styles.secondaryButton, (!canSynthesize || pressed) && styles.muted]}
-                            >
-                                <Text style={styles.secondaryButtonText}>合成（{selectedItems.length}/{SYNTHESIS_CONFIG.REQUIRED_COUNT}）</Text>
-                            </Pressable>
-                        </View>
-                        <Text style={styles.hint}>同じレアリティの未装備品{SYNTHESIS_CONFIG.REQUIRED_COUNT}個を選ぶと上位レアリティへ合成できます。</Text>
-                        {inventory.length === 0 && (
-                            <Text style={styles.emptyText}>装備はまだありません。タスクを達成して宝箱を集めましょう。</Text>
-                        )}
-                        {inventory.map((item) => {
-                            const selected = selectedIds.includes(item.id);
-                            return (
-                                <View key={item.id} style={[styles.itemRow, selected && styles.itemRowSelected]}>
-                                    <Pressable
-                                        accessibilityRole="checkbox"
-                                        accessibilityState={{ checked: selected, disabled: item.equipped }}
-                                        accessibilityLabel={`${item.name}を合成素材に${selected ? '選択解除' : '選択'}する`}
-                                        disabled={item.equipped}
-                                        onPress={() => toggleSelect(item)}
-                                        style={[styles.selectBox, selected && styles.selectBoxActive, item.equipped && styles.muted]}
-                                        hitSlop={6}
-                                    >
-                                        {selected && <Text style={styles.selectMark}>✓</Text>}
-                                    </Pressable>
-                                    <View style={styles.flex}>
-                                        <Text style={[styles.itemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
-                                            {item.name}{item.equipped ? '（装備中）' : ''}
-                                        </Text>
-                                        <Text style={styles.itemMeta}>
-                                            {RARITY_LABELS[item.rarity]} / {SLOT_LABELS[item.slot]}
-                                            {item.attackBonus > 0 ? ` 攻+${item.attackBonus}` : ''}
-                                            {item.defenseBonus > 0 ? ` 防+${item.defenseBonus}` : ''}
-                                            {item.hpBonus > 0 ? ` HP+${item.hpBonus}` : ''}
-                                        </Text>
-                                    </View>
-                                    <Pressable
-                                        accessibilityRole="button"
-                                        accessibilityLabel={item.equipped ? `${item.name}を外す` : `${item.name}を装備する`}
-                                        onPress={() => item.equipped ? unequipItem(item.id) : equipItem(item.id)}
-                                        style={({ pressed }) => [styles.secondaryButton, pressed && styles.muted]}
-                                    >
-                                        <Text style={styles.secondaryButtonText}>{item.equipped ? '外す' : '装備'}</Text>
-                                    </Pressable>
-                                    <Pressable
-                                        accessibilityRole="button"
-                                        accessibilityState={{ disabled: item.equipped }}
-                                        accessibilityLabel={`${item.name}を売却する`}
-                                        disabled={item.equipped}
-                                        onPress={() => handleSell(item)}
-                                        style={({ pressed }) => [styles.dangerButton, (item.equipped || pressed) && styles.muted]}
-                                    >
-                                        <Text style={styles.dangerButtonText}>売却</Text>
-                                    </Pressable>
-                                </View>
-                            );
-                        })}
+                    <View style={styles.flex}>
+                        <TextInput
+                            value={nameDraft ?? character.name}
+                            onChangeText={setNameDraft}
+                            onBlur={commitName}
+                            onSubmitEditing={commitName}
+                            maxLength={30}
+                            accessibilityLabel="キャラクター名"
+                            style={styles.nameInput}
+                            placeholderTextColor="#737d90"
+                        />
+                        <Text style={styles.levelText}>Lv.{character.level}</Text>
                     </View>
                 </View>
-            </ScrollView>
+                <View style={styles.avatarSwitch}>
+                    {AVATAR_OPTIONS.map((option) => (
+                        <Pressable
+                            key={option.id}
+                            accessibilityRole="radio"
+                            accessibilityState={{ selected: character.avatar === option.id }}
+                            accessibilityLabel={`アバターを${option.label}にする`}
+                            onPress={() => updateCharacter({ avatar: option.id })}
+                            style={[styles.segment, character.avatar === option.id && styles.segmentActive]}
+                        >
+                            <Text style={[styles.segmentText, character.avatar === option.id && styles.segmentTextActive]}>
+                                {option.symbol} {option.label}
+                            </Text>
+                        </Pressable>
+                    ))}
+                </View>
+
+                {/* XP進捗 */}
+                <View
+                    accessibilityRole="progressbar"
+                    accessibilityLabel={`経験値 ${character.totalXp} / 次のレベルまで ${Math.max(0, nextLevelXp - character.totalXp)}`}
+                    style={styles.progressTrack}
+                >
+                    <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
+                </View>
+                <Text style={styles.progressText}>XP {character.totalXp} / {nextLevelXp}</Text>
+
+                {/* ステータス */}
+                <View style={styles.statsRow}>
+                    <StatCell label="攻撃" base={character.baseAttack} effective={stats.attack} />
+                    <StatCell label="防御" base={character.baseDefense} effective={stats.defense} />
+                    <StatCell label="HP" base={character.baseMaxHp} effective={stats.maxHp} />
+                </View>
+            </View>
+
+            {/* 宝箱 */}
+            {unopenedChests.length > 0 && (
+                <View style={styles.card}>
+                    <Text style={styles.sectionTitle}>宝箱（{unopenedChests.length}）</Text>
+                    {unopenedChests.map((chest) => (
+                        <View key={chest.id} style={styles.chestRow}>
+                            <Text style={styles.chestLabel}>🎁 {chest.label}</Text>
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={`${chest.label}を開封する`}
+                                onPress={() => handleOpenChest(chest.id, chest.label)}
+                                style={({ pressed }) => [styles.primaryButton, pressed && styles.muted]}
+                            >
+                                <Text style={styles.primaryButtonText}>開封</Text>
+                            </Pressable>
+                        </View>
+                    ))}
+                </View>
+            )}
+
+            {/* 装備中 */}
+            <View style={styles.card}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>装備中</Text>
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="各部位の最強装備を自動で装着する"
+                        onPress={() => { autoEquipBest(); }}
+                        style={({ pressed }) => [styles.secondaryButton, pressed && styles.muted]}
+                    >
+                        <Text style={styles.secondaryButtonText}>自動装備</Text>
+                    </Pressable>
+                </View>
+                {EQUIPMENT_SLOTS.map((slot) => {
+                    const item = equippedBySlot.get(slot);
+                    return (
+                        <View key={slot} style={styles.slotRow}>
+                            <Text style={styles.slotLabel}>{SLOT_LABELS[slot]}</Text>
+                            {item ? (
+                                <Text style={[styles.slotItemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
+                                    {item.name}
+                                </Text>
+                            ) : (
+                                <Text style={styles.slotEmpty}>なし</Text>
+                            )}
+                        </View>
+                    );
+                })}
+            </View>
+
+            {/* インベントリ見出し（行自体はFlatListが仮想化して描画する） */}
+            <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>インベントリ（{inventory.length}）</Text>
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: !canSynthesize }}
+                    accessibilityLabel={`選択した${SYNTHESIS_CONFIG.REQUIRED_COUNT}個の装備を合成する`}
+                    disabled={!canSynthesize}
+                    onPress={handleSynthesize}
+                    style={({ pressed }) => [styles.secondaryButton, (!canSynthesize || pressed) && styles.muted]}
+                >
+                    <Text style={styles.secondaryButtonText}>合成（{selectedItems.length}/{SYNTHESIS_CONFIG.REQUIRED_COUNT}）</Text>
+                </Pressable>
+            </View>
+            <Text style={styles.hint}>同じレアリティの未装備品{SYNTHESIS_CONFIG.REQUIRED_COUNT}個を選ぶと上位レアリティへ合成できます。</Text>
+        </View>
+    );
+
+    return (
+        <SafeAreaView style={styles.safeArea}>
+            <FlatList
+                data={inventory}
+                keyExtractor={(item) => item.id}
+                ListHeaderComponent={listHeader}
+                ListEmptyComponent={
+                    <Text style={styles.emptyText}>装備はまだありません。タスクを達成して宝箱を集めましょう。</Text>
+                }
+                renderItem={({ item }) => (
+                    <InventoryRow
+                        item={item}
+                        selected={selectedIds.includes(item.id)}
+                        onToggleSelect={toggleSelect}
+                        onEquipToggle={(target) => target.equipped ? unequipItem(target.id) : equipItem(target.id)}
+                        onSell={handleSell}
+                    />
+                )}
+                contentContainerStyle={styles.listContent}
+                keyboardShouldPersistTaps="handled"
+            />
         </SafeAreaView>
+    );
+}
+
+function InventoryRow({
+    item,
+    selected,
+    onToggleSelect,
+    onEquipToggle,
+    onSell,
+}: {
+    item: Equipment;
+    selected: boolean;
+    onToggleSelect: (item: Equipment) => void;
+    onEquipToggle: (item: Equipment) => void;
+    onSell: (item: Equipment) => void;
+}) {
+    return (
+        <View style={[styles.itemRow, selected && styles.itemRowSelected]}>
+            <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected, disabled: item.equipped }}
+                accessibilityLabel={`${item.name}を合成素材に${selected ? '選択解除' : '選択'}する`}
+                disabled={item.equipped}
+                onPress={() => onToggleSelect(item)}
+                style={[styles.selectBox, selected && styles.selectBoxActive, item.equipped && styles.muted]}
+                hitSlop={6}
+            >
+                {selected && <Text style={styles.selectMark}>✓</Text>}
+            </Pressable>
+            <View style={styles.flex}>
+                <Text style={[styles.itemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
+                    {item.name}{item.equipped ? '（装備中）' : ''}
+                </Text>
+                <Text style={styles.itemMeta}>
+                    {RARITY_LABELS[item.rarity]} / {SLOT_LABELS[item.slot]}
+                    {item.attackBonus > 0 ? ` 攻+${item.attackBonus}` : ''}
+                    {item.defenseBonus > 0 ? ` 防+${item.defenseBonus}` : ''}
+                    {item.hpBonus > 0 ? ` HP+${item.hpBonus}` : ''}
+                </Text>
+            </View>
+            <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={item.equipped ? `${item.name}を外す` : `${item.name}を装備する`}
+                onPress={() => onEquipToggle(item)}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.muted]}
+            >
+                <Text style={styles.secondaryButtonText}>{item.equipped ? '外す' : '装備'}</Text>
+            </Pressable>
+            <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: item.equipped }}
+                accessibilityLabel={`${item.name}を売却する`}
+                disabled={item.equipped}
+                onPress={() => onSell(item)}
+                style={({ pressed }) => [styles.dangerButton, (item.equipped || pressed) && styles.muted]}
+            >
+                <Text style={styles.dangerButtonText}>売却</Text>
+            </Pressable>
+        </View>
     );
 }
 
@@ -347,9 +386,11 @@ function StatCell({ label, base, effective }: { label: string; base: number; eff
 const styles = StyleSheet.create({
     flex: { flex: 1 },
     safeArea: { flex: 1, backgroundColor: '#0e1017' },
-    scroll: { paddingBottom: 32 },
+    loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    loadingText: { color: '#737d90', fontSize: 14, fontWeight: '600' },
     // タブレット幅でも読みやすいよう本文幅を制限して中央寄せする
-    content: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, gap: 14 },
+    listContent: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 32, gap: 8 },
+    headerContent: { gap: 14, marginBottom: 6 },
     title: { color: '#f6f7fb', fontSize: 28, fontWeight: '800', paddingTop: 20 },
     banner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#22301f', borderColor: '#3f6e35', borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
     bannerText: { flex: 1, color: '#bfe8a8', fontSize: 13, fontWeight: '600', lineHeight: 19 },
