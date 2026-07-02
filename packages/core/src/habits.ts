@@ -52,6 +52,21 @@ export function toggleHabitDailyRecord(
     );
 }
 
+/** 指定日にすべての習慣が完了しているか。習慣が1つも無い場合は false。 */
+export function areAllHabitsComplete(
+    habits: readonly Habit[],
+    records: readonly HabitDailyRecord[],
+    date: string,
+): boolean {
+    if (habits.length === 0) return false;
+    const completedIds = new Set(
+        records
+            .filter((record) => record.date === date && record.completed)
+            .map((record) => record.habitId),
+    );
+    return habits.every((habit) => completedIds.has(habit.id));
+}
+
 export function removeHabitData(
     habits: readonly Habit[],
     records: readonly HabitDailyRecord[],

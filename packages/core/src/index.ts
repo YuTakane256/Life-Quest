@@ -43,6 +43,7 @@ export {
     type Task,
 } from './tasks';
 export {
+    areAllHabitsComplete,
     createHabit,
     HABIT_LIMITS,
     removeHabitData,
@@ -71,6 +72,28 @@ export {
     type Rarity,
     type SynthesisSelection,
 } from './equipment';
+export {
+    capChestQueue,
+    capEquipmentCollection,
+    claimHabitAllCompleteBonus,
+    claimTaskReward,
+    createEmptyRewardLedger,
+    createInitialCharacterState,
+    createInitialGameStateSnapshot,
+    GAME_STATE_LIMITS,
+    sanitizeCharacterState,
+    sanitizeChestQueue,
+    sanitizeChestReward,
+    sanitizeEquipmentCollection,
+    sanitizeEquipmentItem,
+    sanitizeGameStateSnapshot,
+    sanitizeRewardLedger,
+    type AvatarId,
+    type CharacterState,
+    type GameStateSnapshot,
+    type RewardClaim,
+    type RewardLedger,
+} from './gameState';
 export {
     EQUIPMENT_POOL,
     GACHA_CONFIG,

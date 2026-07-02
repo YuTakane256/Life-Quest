@@ -5,23 +5,21 @@ import {
     sanitizeTaskCollection,
     TASK_LIMITS,
     toggleTaskCompletion,
+    type Priority,
     type Task,
 } from '@life-quest/core/tasks';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { createMobileId } from '../utils/createMobileId';
+import { useMobileGameStore } from './useMobileGameStore';
 
 interface MobileTaskStore {
     tasks: Task[];
     hasHydrated: boolean;
-    addTask: (name: string) => boolean;
+    addTask: (name: string, priority?: Priority) => boolean;
     toggleTask: (taskId: string) => void;
     deleteTask: (taskId: string) => void;
     setHasHydrated: (value: boolean) => void;
-}
-
-function createMobileId(): string {
-    if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export const useMobileTaskStore = create<MobileTaskStore>()(
@@ -29,17 +27,29 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
         (set, get) => ({
             tasks: [],
             hasHydrated: false,
-            addTask: (name) => {
-                if (get().tasks.length >= TASK_LIMITS.maxTasks) return false;
-                const task = createTask({ id: createMobileId(), name, now: new Date().toISOString() });
+            addTask: (name, priority = 'medium') => {
+                if (!get().hasHydrated || get().tasks.length >= TASK_LIMITS.maxTasks) return false;
+                const task = createTask({ id: createMobileId(), name, priority, now: new Date().toISOString() });
                 if (!task) return false;
                 set((state) => ({ tasks: [...state.tasks, task] }));
                 return true;
             },
-            toggleTask: (taskId) => set((state) => ({
-                tasks: toggleTaskCompletion(state.tasks, taskId, new Date().toISOString()),
-            })),
-            deleteTask: (taskId) => set((state) => ({ tasks: removeTask(state.tasks, taskId) })),
+            toggleTask: (taskId) => {
+                if (!get().hasHydrated) return;
+                const before = get().tasks.find((task) => task.id === taskId);
+                set((state) => ({
+                    tasks: toggleTaskCompletion(state.tasks, taskId, new Date().toISOString()),
+                }));
+                // 未完了→完了への遷移でのみ報酬を付与する。
+                // 二重付与防止はゲームストア側の報酬台帳が保証する。
+                if (before && !before.completed) {
+                    useMobileGameStore.getState().grantTaskCompletionReward(taskId, before.priority);
+                }
+            },
+            deleteTask: (taskId) => {
+                if (!get().hasHydrated) return;
+                set((state) => ({ tasks: removeTask(state.tasks, taskId) }));
+            },
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
         }),
         {
