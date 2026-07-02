@@ -72,6 +72,25 @@ export {
     type SynthesisSelection,
 } from './equipment';
 export {
+    capChestQueue,
+    capEquipmentCollection,
+    createEmptyRewardLedger,
+    createInitialCharacterState,
+    createInitialGameStateSnapshot,
+    GAME_STATE_LIMITS,
+    sanitizeCharacterState,
+    sanitizeChestQueue,
+    sanitizeChestReward,
+    sanitizeEquipmentCollection,
+    sanitizeEquipmentItem,
+    sanitizeGameStateSnapshot,
+    sanitizeRewardLedger,
+    type AvatarId,
+    type CharacterState,
+    type GameStateSnapshot,
+    type RewardLedger,
+} from './gameState';
+export {
     EQUIPMENT_POOL,
     GACHA_CONFIG,
     getMilestoneAtCount,

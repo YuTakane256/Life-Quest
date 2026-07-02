@@ -24,6 +24,10 @@
       "types": "./src/equipment.ts",
       "import": "./src/equipment.ts"
     },
+    "./gameState": {
+      "types": "./src/gameState.ts",
+      "import": "./src/gameState.ts"
+    },
     "./numeric": {
       "types": "./src/numeric.ts",
       "import": "./src/numeric.ts"
