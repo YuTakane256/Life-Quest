@@ -5,7 +5,9 @@ import {
 } from '@life-quest/core/syncRepository';
 import { LEGACY_STORAGE_KEYS } from '@life-quest/core/legacyMigration';
 import type { CanonicalGameSnapshot, CanonicalTaskSnapshot } from '@life-quest/core/syncSnapshots';
+import { createWebCanonicalRepositories } from './canonicalRepositories';
 import { startWebCanonicalSync } from './canonicalSync';
+import { useGameStore } from '../stores/useGameStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
 
@@ -159,5 +161,80 @@ describe('startWebCanonicalSync', () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
 
         expect(map.get(CANONICAL_STORAGE_KEYS.tasks)).toBe(before);
+    });
+
+    describe('起動時シード（canonical読み取り）', () => {
+        it('未確認のcanonicalがあればストアをシードする（tasks/game/title、バトルは進行度のみ）', async () => {
+            const { storage } = createMemoryStorage();
+            const repositories = createWebCanonicalRepositories(storage);
+            await repositories.tasks.save({ tasks: [task('from-canonical', true)] }, null);
+            await repositories.game.save({
+                character: { name: '別端末の勇者', avatar: 'male', totalXp: 30 },
+                equipment: [],
+                chestQueue: [],
+                gachaCount: 9,
+                rewardLedger: { rewardedTaskIds: ['from-canonical'], rewardedSubtaskIds: [], habitBonusDates: [] },
+                activeTitle: '称号テスト',
+                battleProgress: { battleUnlocked: true, currentStage: 5, maxClearedStage: 4 },
+            }, null);
+
+            const battleStatusBefore = useGameStore.getState().battle.status;
+            const sync = startWebCanonicalSync(storage);
+            try {
+                await sync.ready;
+
+                expect(useTaskStore.getState().tasks.map((item) => item.id)).toEqual(['from-canonical']);
+                const game = useGameStore.getState();
+                expect(game.character.name).toBe('別端末の勇者');
+                expect(game.character.level).toBe(2); // totalXpから再計算済みのcanonical値
+                expect(game.gachaCount).toBe(9);
+                expect(game.battle.battleUnlocked).toBe(true);
+                expect(game.battle.currentStage).toBe(5);
+                expect(game.battle.status).toBe(battleStatusBefore); // 一時状態は保持
+                expect(useTitleStore.getState().activeTitle).toBe('称号テスト');
+            } finally {
+                sync.stop();
+            }
+        });
+
+        it('確認済みrevisionのままなら（クラッシュ窓）シードせず、ローカルをwrite-backで追い付かせる', async () => {
+            const { map, storage } = createMemoryStorage();
+
+            // 1回目の起動: canonicalが作られカーソルが記録される
+            useTaskStore.setState({ tasks: [task('t1')] });
+            const first = startWebCanonicalSync(storage);
+            await first.ready;
+            first.stop();
+
+            // canonical書き込みだけ失敗した状況を模擬: ローカル（ストア/legacy）だけ進む
+            useTaskStore.setState({ tasks: [task('t1'), task('t2-local')] });
+
+            // 2回目の起動: revisionはカーソルと一致 → シードで巻き戻さない
+            const second = startWebCanonicalSync(storage);
+            try {
+                await second.ready;
+
+                expect(useTaskStore.getState().tasks.map((item) => item.id)).toEqual(['t1', 't2-local']);
+                const canonical = readData<CanonicalTaskSnapshot>(map, CANONICAL_STORAGE_KEYS.tasks);
+                expect(canonical.tasks.map((item) => item.id)).toEqual(['t1', 't2-local']);
+            } finally {
+                second.stop();
+            }
+        });
+
+        it('シード直後のflushはunchanged（シードとwrite-backが一致する）', async () => {
+            const { storage } = createMemoryStorage();
+            const repositories = createWebCanonicalRepositories(storage);
+            await repositories.tasks.save({ tasks: [task('seeded')] }, null);
+
+            const sync = startWebCanonicalSync(storage);
+            try {
+                await sync.ready;
+                const results = await sync.flush();
+                expect(results.tasks?.status).toBe('unchanged');
+            } finally {
+                sync.stop();
+            }
+        });
     });
 });

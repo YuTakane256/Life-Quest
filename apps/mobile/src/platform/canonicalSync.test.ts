@@ -4,6 +4,7 @@ import { CANONICAL_STORAGE_KEYS } from '@life-quest/core/syncRepository';
 import type { CanonicalGameSnapshot, CanonicalTaskSnapshot } from '@life-quest/core/syncSnapshots';
 import { createTask, type Task } from '@life-quest/core/tasks';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMobileCanonicalRepositories } from './canonicalRepositories';
 import { startMobileCanonicalSync } from './canonicalSync';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
@@ -156,7 +157,7 @@ describe('startMobileCanonicalSync', () => {
         }
     });
 
-    it('旧キーに対してremoveItemや上書きを行わない', async () => {
+    it('旧キーを削除せず、シード経由でもデータ内容が保持される', async () => {
         const legacyGame = JSON.stringify({ state: { character: { totalXp: 30 } }, version: 1 });
         memory.set('quest-board-game', legacyGame);
 
@@ -164,10 +165,92 @@ describe('startMobileCanonicalSync', () => {
         try {
             await sync.ready;
 
+            // ブリッジは旧キーをremoveItemしない。
+            // （シードでストアが更新されると、ストア自身のpersistが旧キーを
+            //   正規化された同内容で再保存する — それは通常のストア動作）
             expect(storage.removeItem).not.toHaveBeenCalled();
-            expect(memory.get('quest-board-game')).toBe(legacyGame);
+            const persisted = JSON.parse(memory.get('quest-board-game')!) as {
+                state: { character: { totalXp: number } };
+            };
+            expect(persisted.state.character.totalXp).toBe(30);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(30);
         } finally {
             sync.stop();
         }
+    });
+
+    describe('起動時シード（canonical読み取り）', () => {
+        it('未確認のcanonicalがあればhydration後にストアをシードし、台帳はunionになる', async () => {
+            // 別端末由来を模した canonical を直接用意する
+            const repositories = createMobileCanonicalRepositories();
+            await repositories.game.save({
+                character: { name: '別端末の勇者', avatar: 'male', totalXp: 30 },
+                equipment: [],
+                chestQueue: [],
+                gachaCount: 9,
+                rewardLedger: { rewardedTaskIds: ['remote-task'], rewardedSubtaskIds: [], habitBonusDates: [] },
+            }, null);
+
+            // ローカルの台帳にはremoteに無い証跡がある（クラッシュ窓相当）
+            useMobileGameStore.setState({
+                rewardLedger: { rewardedTaskIds: ['local-task'], rewardedSubtaskIds: [], habitBonusDates: [] },
+            });
+
+            const sync = startMobileCanonicalSync();
+            try {
+                await sync.ready;
+
+                const game = useMobileGameStore.getState();
+                expect(game.character.name).toBe('別端末の勇者');
+                expect(game.gachaCount).toBe(9);
+                // 台帳はcanonicalとローカルのunion（証跡は縮めない）
+                expect(game.rewardLedger.rewardedTaskIds).toEqual(
+                    expect.arrayContaining(['remote-task', 'local-task']),
+                );
+            } finally {
+                sync.stop();
+            }
+        });
+
+        it('確認済みrevisionのままなら（クラッシュ窓）シードせず、write-backで追い付かせる', async () => {
+            // 1回目の起動: canonical作成 + カーソル記録
+            useMobileTaskStore.setState({ tasks: [task('t1')] });
+            const first = startMobileCanonicalSync();
+            await first.ready;
+            first.stop();
+
+            // ローカルだけ進んだ状況（canonical書き込み失敗を模擬）
+            useMobileTaskStore.setState({ tasks: [task('t1'), task('t2-local')] });
+
+            const second = startMobileCanonicalSync();
+            try {
+                await second.ready;
+
+                expect(useMobileTaskStore.getState().tasks.map((item) => item.id)).toEqual(['t1', 't2-local']);
+                const canonical = readData<CanonicalTaskSnapshot>(CANONICAL_STORAGE_KEYS.tasks);
+                expect(canonical.tasks.map((item) => item.id)).toEqual(['t1', 't2-local']);
+            } finally {
+                second.stop();
+            }
+        });
+
+        it('hydration前はシードされず、hydration完了後にシードされる', async () => {
+            const repositories = createMobileCanonicalRepositories();
+            await repositories.tasks.save({ tasks: [task('from-canonical')] }, null);
+            resetStores({ hydrated: false });
+
+            const sync = startMobileCanonicalSync();
+            try {
+                await sync.ready;
+                expect(useMobileTaskStore.getState().tasks).toEqual([]); // 未hydrationでは触らない
+
+                useMobileTaskStore.setState({ hasHydrated: true });
+                await sync.flush();
+
+                expect(useMobileTaskStore.getState().tasks.map((item) => item.id)).toEqual(['from-canonical']);
+            } finally {
+                sync.stop();
+            }
+        });
     });
 });
