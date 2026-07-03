@@ -55,9 +55,12 @@ export {
     type RestDay,
 } from './habits';
 export {
+    createSyncCursor,
+    SYNC_CURSOR_KEY,
     writeCanonicalSnapshot,
     type CanonicalWriteResult,
     type CanonicalWriteStatus,
+    type SyncCursor,
 } from './canonicalSync';
 export {
     DARK_THEME,

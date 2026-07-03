@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { writeCanonicalSnapshot } from './canonicalSync';
+import { createSyncCursor, SYNC_CURSOR_KEY, writeCanonicalSnapshot } from './canonicalSync';
 import {
     CANONICAL_STORAGE_KEYS,
     createCanonicalSnapshotRepositories,
@@ -153,5 +153,50 @@ describe('writeCanonicalSnapshot', () => {
         );
 
         expect(result).toEqual({ status: 'updated', revision: 3 });
+    });
+});
+
+describe('createSyncCursor', () => {
+    it('記録したrevisionを読み戻せる（セクション独立）', async () => {
+        const { storage } = createMemoryStorage();
+        const cursor = createSyncCursor(storage);
+
+        await cursor.recordSeenRevision('tasks', 3);
+        await cursor.recordSeenRevision('game', 7);
+
+        expect(await cursor.readSeenRevision('tasks')).toBe(3);
+        expect(await cursor.readSeenRevision('game')).toBe(7);
+        expect(await cursor.readSeenRevision('habits')).toBeNull();
+    });
+
+    it('壊れたカーソルは空として扱う', async () => {
+        const { map, storage } = createMemoryStorage();
+        map.set(SYNC_CURSOR_KEY, '{broken');
+        const cursor = createSyncCursor(storage);
+
+        expect(await cursor.readSeenRevision('tasks')).toBeNull();
+        await cursor.recordSeenRevision('tasks', 2);
+        expect(await cursor.readSeenRevision('tasks')).toBe(2);
+    });
+
+    it('不正な値（非整数・0以下）は無視する', async () => {
+        const { map, storage } = createMemoryStorage();
+        map.set(SYNC_CURSOR_KEY, JSON.stringify({ tasks: 'x', habits: 0, game: 2.5 }));
+        const cursor = createSyncCursor(storage);
+
+        expect(await cursor.readSeenRevision('tasks')).toBeNull();
+        expect(await cursor.readSeenRevision('habits')).toBeNull();
+        expect(await cursor.readSeenRevision('game')).toBeNull();
+    });
+
+    it('書き込み失敗は握りつぶす（次回に余分なシードが起きるだけ）', async () => {
+        const failing = {
+            getItem: () => null,
+            setItem: () => { throw new Error('denied'); },
+            removeItem: () => {},
+        };
+        const cursor = createSyncCursor(failing);
+
+        await expect(cursor.recordSeenRevision('tasks', 1)).resolves.toBeUndefined();
     });
 });
