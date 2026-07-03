@@ -25,7 +25,7 @@ function habit(id: string): Habit {
 describe('useMobileHabitStore', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        useMobileHabitStore.setState({ habits: [], records: [], rewardEligibleDates: [], hasHydrated: true });
+        useMobileHabitStore.setState({ habits: [], records: [], restDays: [], rewardEligibleDates: [], hasHydrated: true });
         useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, lastLevelUp: null });
     });
 
@@ -36,7 +36,7 @@ describe('useMobileHabitStore', () => {
         expect(useMobileHabitStore.getState().habits).toHaveLength(1);
         expect(useMobileHabitStore.getState().habits[0]).toMatchObject({
             name: '朝の散歩',
-            categoryId: 'general',
+            categoryId: 'other',
         });
     });
 
@@ -132,6 +132,63 @@ describe('useMobileHabitStore', () => {
         it('習慣が1つも無い状態ではボーナスが付与されない', () => {
             useMobileHabitStore.getState().toggleToday('ghost', DATE);
             expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+        });
+    });
+
+    describe('カテゴリ・メモ・お休み日', () => {
+        it('addHabit はカテゴリを保存し、不明なカテゴリは「その他」へ', () => {
+            useMobileHabitStore.getState().addHabit('運動', 'health');
+            useMobileHabitStore.getState().addHabit('謎', 'plutonium');
+
+            const habits = useMobileHabitStore.getState().habits;
+            expect(habits[0].categoryId).toBe('health');
+            expect(habits[1].categoryId).toBe('other');
+        });
+
+        it('setHabitMemo は既存レコードを更新し、無ければ未完了レコードを作る', () => {
+            useMobileHabitStore.setState({ habits: [habit('h1')] });
+
+            useMobileHabitStore.getState().setHabitMemo('h1', '2026-07-05', '朝やった');
+            expect(useMobileHabitStore.getState().records).toEqual([
+                { habitId: 'h1', date: '2026-07-05', completed: false, memo: '朝やった' },
+            ]);
+
+            useMobileHabitStore.getState().toggleToday('h1', '2026-07-05');
+            useMobileHabitStore.getState().setHabitMemo('h1', '2026-07-05', '更新後');
+            const record = useMobileHabitStore.getState().records.find(
+                (candidate) => candidate.habitId === 'h1' && candidate.date === '2026-07-05',
+            );
+            expect(record).toMatchObject({ completed: true, memo: '更新後' });
+        });
+
+        it('setHabitMemo はメモを500文字でclampし、不正日付・不明習慣を拒否する', () => {
+            useMobileHabitStore.setState({ habits: [habit('h1')] });
+
+            useMobileHabitStore.getState().setHabitMemo('h1', '2026-07-05', 'あ'.repeat(600));
+            expect(useMobileHabitStore.getState().records[0].memo).toHaveLength(500);
+
+            useMobileHabitStore.getState().setHabitMemo('h1', 'not-a-date', 'x');
+            useMobileHabitStore.getState().setHabitMemo('ghost', '2026-07-05', 'x');
+            expect(useMobileHabitStore.getState().records).toHaveLength(1);
+        });
+
+        it('markRestDay がお休み日を保存し、永続化される', async () => {
+            useMobileHabitStore.getState().markRestDay('2026-07-05');
+            expect(useMobileHabitStore.getState().restDays).toEqual([{ date: '2026-07-05', isRest: true }]);
+
+            await vi.waitFor(() => expect(storage.setItem).toHaveBeenCalled());
+            const [, serialized] = storage.setItem.mock.calls.at(-1) ?? [];
+            const envelope = JSON.parse(serialized as string) as { state: { restDays: unknown } };
+            expect(envelope.state.restDays).toEqual([{ date: '2026-07-05', isRest: true }]);
+        });
+
+        it('壊れたrestDaysはmergeでsanitizeされる', () => {
+            const persistOptions = useMobileHabitStore.persist.getOptions();
+            const merged = persistOptions.merge?.(
+                { habits: [], records: [], restDays: [{ date: 'bad' }, { date: '2026-07-01', isRest: true }, 42] },
+                useMobileHabitStore.getState(),
+            );
+            expect(merged?.restDays).toEqual([{ date: '2026-07-01', isRest: true }]);
         });
     });
 });
