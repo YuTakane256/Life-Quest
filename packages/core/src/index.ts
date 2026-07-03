@@ -55,6 +55,13 @@ export {
     type RestDay,
 } from './habits';
 export {
+    DARK_THEME,
+    FONT_SANS,
+    LIGHT_THEME,
+    themeToCssVariables,
+    type ThemePalette,
+} from './designTokens';
+export {
     LEGACY_STORAGE_KEYS,
     migrateLegacyQuestBoardData,
     MIGRATION_JOURNAL_KEY,

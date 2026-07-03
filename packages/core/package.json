@@ -12,6 +12,10 @@
       "types": "./src/battleSkills.ts",
       "import": "./src/battleSkills.ts"
     },
+    "./designTokens": {
+      "types": "./src/designTokens.ts",
+      "import": "./src/designTokens.ts"
+    },
     "./hp": {
       "types": "./src/hp.ts",
       "import": "./src/hp.ts"
