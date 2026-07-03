@@ -55,6 +55,11 @@ export {
     type RestDay,
 } from './habits';
 export {
+    writeCanonicalSnapshot,
+    type CanonicalWriteResult,
+    type CanonicalWriteStatus,
+} from './canonicalSync';
+export {
     DARK_THEME,
     FONT_SANS,
     LIGHT_THEME,

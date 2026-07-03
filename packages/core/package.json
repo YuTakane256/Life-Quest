@@ -12,6 +12,10 @@
       "types": "./src/battleSkills.ts",
       "import": "./src/battleSkills.ts"
     },
+    "./canonicalSync": {
+      "types": "./src/canonicalSync.ts",
+      "import": "./src/canonicalSync.ts"
+    },
     "./designTokens": {
       "types": "./src/designTokens.ts",
       "import": "./src/designTokens.ts"
