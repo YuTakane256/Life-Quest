@@ -1,8 +1,15 @@
 import { useState, useMemo } from 'react';
+import {
+    generateDateRange as generateDateRangeCore,
+    getHabitHeatmapLevel,
+    getMonthLabels as getMonthLabelsCore,
+    getTaskHeatmapLevel,
+    groupDatesByWeeks,
+} from '@life-quest/core/stats';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useGameStore } from '../stores/useGameStore';
 import { useTitleStore } from '../stores/useTitleStore';
-import { shiftDate, toIsoDatePart } from '../utils/dateUtils';
+import { getTodayJST, shiftDate } from '../utils/dateUtils';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
 
 /** 日付セットから最長連続日数とその開始/終了日を返す */
@@ -54,66 +61,20 @@ function getWeekdayName(date: string): string {
     return WEEKDAY_NAMES[new Date(date + 'T00:00:00+09:00').getDay()];
 }
 
-function getTaskLevel(xp: number): number {
-    if (xp === 0) return 0;
-    if (xp <= 15) return 1;
-    if (xp <= 30) return 2;
-    if (xp <= 50) return 3;
-    return 4;
-}
+// 濃淡しきい値は @life-quest/core/stats に移動し、Mobileと共有する
+const getTaskLevel = getTaskHeatmapLevel;
+const getHabitLevel = getHabitHeatmapLevel;
 
-function getHabitLevel(count: number, allComplete: boolean): number {
-    if (allComplete) return 4;
-    if (count === 0) return 0;
-    if (count === 1) return 1;
-    if (count <= 3) return 2;
-    return 3;
-}
-
-/** 過去N日分の日付配列を生成 (YYYY-MM-DD) */
+/** 過去N日分の日付配列を生成 (YYYY-MM-DD)。実体はcoreと共有。 */
 function generateDateRange(days: number): string[] {
-    const dates: string[] = [];
-    const now = new Date();
-    const jstOffset = 9 * 60 * 60 * 1000;
-    for (let i = days - 1; i >= 0; i--) {
-        const d = new Date(now.getTime() + jstOffset - i * 86400000);
-        dates.push(toIsoDatePart(d.toISOString()));
-    }
-    return dates;
+    return generateDateRangeCore(days, getTodayJST());
 }
 
-/** 日付を週ごとにグループ化 */
-function groupByWeeks(dates: string[]): string[][] {
-    const weeks: string[][] = [];
-    const firstDate = new Date(dates[0] + 'T00:00:00+09:00');
-    const firstDay = firstDate.getDay();
-    const paddedDates = [...Array(firstDay).fill(''), ...dates];
+/** 日付を週ごとにグループ化。実体はcoreと共有（TZ非依存のUTC計算）。 */
+const groupByWeeks = groupDatesByWeeks;
 
-    for (let i = 0; i < paddedDates.length; i += 7) {
-        weeks.push(paddedDates.slice(i, i + 7));
-    }
-    const lastWeek = weeks[weeks.length - 1];
-    while (lastWeek.length < 7) lastWeek.push('');
-    return weeks;
-}
-
-/** 月ラベル位置を計算 */
-function getMonthLabels(weeks: string[][]): { label: string; weekIndex: number }[] {
-    const labels: { label: string; weekIndex: number }[] = [];
-    let lastMonth = '';
-    const MONTH_NAMES = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
-
-    weeks.forEach((week, weekIndex) => {
-        const validDate = week.find((d) => d !== '');
-        if (!validDate) return;
-        const month = validDate.substring(5, 7);
-        if (month !== lastMonth) {
-            labels.push({ label: MONTH_NAMES[parseInt(month, 10) - 1], weekIndex });
-            lastMonth = month;
-        }
-    });
-    return labels;
-}
+/** 月ラベル位置を計算。実体はcoreと共有。 */
+const getMonthLabels = getMonthLabelsCore;
 
 type TabMode = 'tasks' | 'habits';
 

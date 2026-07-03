@@ -93,6 +93,11 @@ describe('addRecurrenceInterval', () => {
     it('none は変化しない', () => {
         expect(addRecurrenceInterval('2026-07-03', 'none')).toBe('2026-07-03');
     });
+
+    it('不正な日付は例外にする（Webのユーティリティ契約と同一）', () => {
+        expect(() => addRecurrenceInterval('2025-02-29', 'daily')).toThrow(RangeError);
+        expect(() => addRecurrenceInterval('not-a-date', 'monthly')).toThrow(RangeError);
+    });
 });
 
 function recurringTask(overrides: Partial<Task> = {}): Task {
@@ -127,6 +132,11 @@ describe('buildNextRecurringTask', () => {
 
     it('期限なしのタスクは今日を起点にする', () => {
         const next = buildNextRecurringTask({ ...input, task: recurringTask({ dueDate: null }) });
+        expect(next?.dueDate).toBe('2026-07-04');
+    });
+
+    it('不正な期限のタスクも今日を起点にして落とさない', () => {
+        const next = buildNextRecurringTask({ ...input, task: recurringTask({ dueDate: 'garbage' }) });
         expect(next?.dueDate).toBe('2026-07-04');
     });
 
