@@ -63,6 +63,7 @@ function seedSectionData(section: CanonicalSyncSection, data: unknown): void {
         useMobileHabitStore.setState({
             habits: snapshot.habits,
             records: snapshot.dailyRecords,
+            restDays: snapshot.restDays,
             rewardEligibleDates: snapshot.allCompleteDates,
         });
         return;
@@ -133,6 +134,7 @@ export function startMobileCanonicalSync(
             ? {
                 habits: habitState.habits,
                 records: habitState.records,
+                restDays: habitState.restDays,
                 rewardEligibleDates: habitState.rewardEligibleDates,
             }
             : undefined;

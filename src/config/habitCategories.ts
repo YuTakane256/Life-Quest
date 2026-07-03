@@ -1,39 +1,32 @@
 /**
- * 習慣カテゴリの定義
- * 各カテゴリに名前、アイコン（絵文字）、カラーを設定
+ * 習慣カテゴリの定義。
+ * 実体は @life-quest/core/habits に移動し、Mobileと共有する。
+ * 既存のimportパスとAPI名を維持するためここから再エクスポートする。
  */
+import {
+    DEFAULT_HABIT_CATEGORY_ID,
+    getHabitCategoryById,
+    getHabitCategoryByIdOrDefault,
+    HABIT_CATEGORIES as CORE_HABIT_CATEGORIES,
+    type HabitCategory,
+} from '@life-quest/core/habits';
 
-export interface HabitCategory {
-    id: string;
-    name: string;
-    icon: string;   // 絵文字アイコン
-    color: string;   // HEX カラーコード
-}
+export type { HabitCategory } from '@life-quest/core/habits';
 
-export const HABIT_CATEGORIES: HabitCategory[] = [
-    { id: 'health',    name: '健康',     icon: '💪', color: '#10b981' },
-    { id: 'study',     name: '勉強',     icon: '📚', color: '#3b82f6' },
-    { id: 'work',      name: '仕事',     icon: '💼', color: '#8b5cf6' },
-    { id: 'lifestyle', name: '生活',     icon: '🏠', color: '#f59e0b' },
-    { id: 'mindset',   name: 'マインド', icon: '🧘', color: '#ec4899' },
-    { id: 'creative',  name: 'クリエイティブ', icon: '🎨', color: '#f97316' },
-    { id: 'social',    name: '社交',     icon: '🤝', color: '#06b6d4' },
-    { id: 'other',     name: 'その他',   icon: '📌', color: '#64748b' },
-];
+export const HABIT_CATEGORIES: HabitCategory[] = [...CORE_HABIT_CATEGORIES];
 
 /** カテゴリIDからカテゴリオブジェクトを取得 */
 export function getCategoryById(id: string): HabitCategory | undefined {
-    return HABIT_CATEGORIES.find((c) => c.id === id);
+    return getHabitCategoryById(id);
 }
 
 /** デフォルトカテゴリ（その他） */
-export const DEFAULT_CATEGORY_ID = 'other';
+export const DEFAULT_CATEGORY_ID = DEFAULT_HABIT_CATEGORY_ID;
 
 export function getDefaultCategory(): HabitCategory {
-    return getCategoryById(DEFAULT_CATEGORY_ID) ?? HABIT_CATEGORIES[0];
+    return getHabitCategoryByIdOrDefault(DEFAULT_HABIT_CATEGORY_ID);
 }
 
 export function getCategoryByIdOrDefault(id: unknown): HabitCategory {
-    if (typeof id !== 'string') return getDefaultCategory();
-    return getCategoryById(id) ?? getDefaultCategory();
+    return getHabitCategoryByIdOrDefault(id);
 }
