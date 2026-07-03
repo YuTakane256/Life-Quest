@@ -179,6 +179,16 @@ export {
     type GachaMilestone,
 } from './rewards';
 export {
+    buildHabitActivityByDate,
+    buildTaskXpByDate,
+    generateDateRange,
+    getHabitHeatmapLevel,
+    getMonthLabels,
+    getTaskHeatmapLevel,
+    groupDatesByWeeks,
+    type HabitDayActivity,
+} from './stats';
+export {
     applyCharacterXp,
     calculateLevel,
     calculateNextLevelXp,

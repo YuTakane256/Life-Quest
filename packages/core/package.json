@@ -56,6 +56,10 @@
       "types": "./src/rewards.ts",
       "import": "./src/rewards.ts"
     },
+    "./stats": {
+      "types": "./src/stats.ts",
+      "import": "./src/stats.ts"
+    },
     "./tasks": {
       "types": "./src/tasks.ts",
       "import": "./src/tasks.ts"
