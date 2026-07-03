@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Text } from 'react-native';
+import { theme } from '../../src/theme/colors';
 
 const tabIcons = { index: '✓', habits: '↻', character: '⚔' } as const;
 
@@ -7,9 +8,9 @@ export default function TabLayout() {
     return (
         <Tabs screenOptions={{
             headerShown: false,
-            tabBarActiveTintColor: '#43d6a2',
-            tabBarInactiveTintColor: '#747d8e',
-            tabBarStyle: { backgroundColor: '#151821', borderTopColor: '#303746', height: 64, paddingTop: 7 },
+            tabBarActiveTintColor: theme.accent.primary,
+            tabBarInactiveTintColor: theme.text.muted,
+            tabBarStyle: { backgroundColor: theme.bg.secondary, borderTopColor: theme.border.default, height: 64, paddingTop: 7 },
             tabBarLabelStyle: { fontSize: 11, fontWeight: '700', paddingBottom: 7 },
         }}>
             <Tabs.Screen name="index" options={{ title: 'タスク', tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>{tabIcons.index}</Text> }} />
