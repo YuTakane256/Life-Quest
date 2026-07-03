@@ -3,6 +3,7 @@ import { TASK_LIMITS, createTask, type Task } from '@life-quest/core/tasks';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { XP_CONFIG } from '@life-quest/core/progression';
+import { getSubtaskRewardXp } from '@life-quest/core/tasks';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileTaskStore } from './useMobileTaskStore';
 
@@ -137,6 +138,107 @@ describe('useMobileTaskStore', () => {
             const xpAfterComplete = useMobileGameStore.getState().character.totalXp;
             useMobileTaskStore.getState().toggleTask(id); // 取り消し
             expect(useMobileGameStore.getState().character.totalXp).toBe(xpAfterComplete);
+        });
+    });
+
+    describe('期限・タグ・繰り返し付きの作成', () => {
+        it('addTask がオプションを反映する', () => {
+            useMobileTaskStore.getState().addTask('詳細付き', 'high', {
+                dueDate: '2026-07-10',
+                tags: ['家事', '重要'],
+                recurrence: 'weekly',
+            });
+            expect(useMobileTaskStore.getState().tasks[0]).toMatchObject({
+                dueDate: '2026-07-10',
+                tags: ['家事', '重要'],
+                recurrence: 'weekly',
+                priority: 'high',
+            });
+        });
+    });
+
+    describe('繰り返しタスク', () => {
+        it('完了で次回分が生成され、重複しては生成されない', () => {
+            useMobileTaskStore.getState().addTask('毎日の運動', 'medium', { dueDate: '2026-07-03', recurrence: 'daily' });
+            const id = useMobileTaskStore.getState().tasks[0].id;
+
+            useMobileTaskStore.getState().toggleTask(id);
+
+            const tasks = useMobileTaskStore.getState().tasks;
+            expect(tasks).toHaveLength(2);
+            const next = tasks.find((task) => task.id !== id)!;
+            expect(next).toMatchObject({ name: '毎日の運動', dueDate: '2026-07-04', recurrence: 'daily', completed: false });
+
+            // 取り消して再完了しても同じ次回分は増えない（報酬も台帳が防止）
+            useMobileTaskStore.getState().toggleTask(id);
+            useMobileTaskStore.getState().toggleTask(id);
+            expect(useMobileTaskStore.getState().tasks).toHaveLength(2);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
+        });
+    });
+
+    describe('サブタスク', () => {
+        it('追加すると親が未完了へ戻る', () => {
+            useMobileTaskStore.getState().addTask('親タスク');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            useMobileTaskStore.getState().toggleTask(id); // 完了
+
+            expect(useMobileTaskStore.getState().addSubtask(id, 'サブ1')).toBe(true);
+
+            const task = useMobileTaskStore.getState().tasks[0];
+            expect(task.completed).toBe(false);
+            expect(task.subtasks).toHaveLength(1);
+        });
+
+        it('サブタスク完了で半分のXP、全完了で親の報酬も付与される', () => {
+            useMobileTaskStore.getState().addTask('親タスク', 'high');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            useMobileTaskStore.getState().addSubtask(id, 'サブ1');
+            useMobileTaskStore.getState().addSubtask(id, 'サブ2');
+            const [s1, s2] = useMobileTaskStore.getState().tasks[0].subtasks;
+
+            useMobileTaskStore.getState().toggleSubtaskComplete(id, s1.id);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(getSubtaskRewardXp('high'));
+            expect(useMobileTaskStore.getState().tasks[0].completed).toBe(false);
+
+            useMobileTaskStore.getState().toggleSubtaskComplete(id, s2.id);
+            const task = useMobileTaskStore.getState().tasks[0];
+            expect(task.completed).toBe(true);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(
+                getSubtaskRewardXp('high') * 2 + XP_CONFIG.REWARD_BY_PRIORITY.high,
+            );
+        });
+
+        it('サブタスクの完了→解除→再完了で報酬は再付与されない', () => {
+            useMobileTaskStore.getState().addTask('親タスク', 'low');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            useMobileTaskStore.getState().addSubtask(id, 'サブ1');
+            useMobileTaskStore.getState().addSubtask(id, 'サブ2');
+            const s1 = useMobileTaskStore.getState().tasks[0].subtasks[0];
+
+            useMobileTaskStore.getState().toggleSubtaskComplete(id, s1.id);
+            useMobileTaskStore.getState().toggleSubtaskComplete(id, s1.id);
+            useMobileTaskStore.getState().toggleSubtaskComplete(id, s1.id);
+
+            expect(useMobileGameStore.getState().character.totalXp).toBe(getSubtaskRewardXp('low'));
+        });
+
+        it('未完了サブタスクの削除で残りが全完了なら親の報酬が付与される', () => {
+            useMobileTaskStore.getState().addTask('親タスク', 'medium');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            useMobileTaskStore.getState().addSubtask(id, '完了する方');
+            useMobileTaskStore.getState().addSubtask(id, '削除する方');
+            const [done, removed] = useMobileTaskStore.getState().tasks[0].subtasks;
+            useMobileTaskStore.getState().toggleSubtaskComplete(id, done.id);
+            const xpBefore = useMobileGameStore.getState().character.totalXp;
+
+            useMobileTaskStore.getState().deleteSubtask(id, removed.id);
+
+            const task = useMobileTaskStore.getState().tasks[0];
+            expect(task.completed).toBe(true);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(
+                xpBefore + XP_CONFIG.REWARD_BY_PRIORITY.medium,
+            );
         });
     });
 });

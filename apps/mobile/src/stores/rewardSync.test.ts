@@ -79,6 +79,23 @@ describe('reconcileRewards（再照合による報酬回復）', () => {
         expect(useMobileGameStore.getState().gachaCount).toBe(1);
     });
 
+    it('完了済みサブタスクも再照合して付与する（重複なし）', () => {
+        const task = completedTask('t1', 'high');
+        task.subtasks = [
+            { id: 's1', name: 'サブ完了', completed: true, completedAt: '2026-07-02T00:30:00.000Z', createdAt: '2026-07-02T00:00:00.000Z' },
+            { id: 's2', name: 'サブ未完', completed: false, completedAt: null, createdAt: '2026-07-02T00:00:00.000Z' },
+        ];
+        useMobileTaskStore.setState({ tasks: [task] });
+
+        reconcileRewards(TODAY);
+        reconcileRewards(TODAY);
+
+        const game = useMobileGameStore.getState();
+        expect(game.rewardLedger.rewardedSubtaskIds).toEqual(['s1']);
+        // タスク30 + サブタスク15
+        expect(game.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.high + 15);
+    });
+
     it('未完了タスクには付与しない', () => {
         const task = { ...completedTask('t1'), completed: false, completedAt: null };
         useMobileTaskStore.setState({ tasks: [task] });

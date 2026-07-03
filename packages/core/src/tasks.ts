@@ -1,3 +1,4 @@
+import { XP_CONFIG } from './progression';
 import { clampString } from './validation';
 
 export type Priority = 'low' | 'medium' | 'high';
@@ -144,4 +145,213 @@ export function sanitizeTaskCollection(value: unknown): Task[] {
             return true;
         })
         .slice(-TASK_LIMITS.maxTasks);
+}
+
+// ─── 報酬ルール ───────────────────────────────────────────────
+
+/** サブタスク完了のXP。優先度XPの半分（切り捨て）、最低1（Webと同一ルール）。 */
+export function getSubtaskRewardXp(priority: Priority): number {
+    return Math.max(1, Math.floor(XP_CONFIG.REWARD_BY_PRIORITY[priority] * XP_CONFIG.SUBTASK_REWARD_RATIO));
+}
+
+// ─── 繰り返しタスク ───────────────────────────────────────────
+
+function daysInUtcMonth(year: number, month: number): number {
+    return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+function parseYmdUtc(value: string): Date {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatYmdUtc(date: Date): string {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
+ * YYYY-MM-DD を繰り返し周期ぶん進める。毎月は「翌月の同日」で、
+ * 存在しない日（1/31→2月など）は月末に丸める（Webと同一ルール）。
+ */
+export function addRecurrenceInterval(dateStr: string, recurrence: Recurrence): string {
+    const date = parseYmdUtc(dateStr);
+
+    if (recurrence === 'daily') {
+        date.setUTCDate(date.getUTCDate() + 1);
+    } else if (recurrence === 'weekly') {
+        date.setUTCDate(date.getUTCDate() + 7);
+    } else if (recurrence === 'monthly') {
+        const targetFirst = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+        const targetYear = targetFirst.getUTCFullYear();
+        const targetMonth = targetFirst.getUTCMonth();
+        const targetDay = Math.min(date.getUTCDate(), daysInUtcMonth(targetYear, targetMonth));
+        return formatYmdUtc(new Date(Date.UTC(targetYear, targetMonth, targetDay)));
+    }
+
+    return formatYmdUtc(date);
+}
+
+export interface NextRecurringTaskInput {
+    task: Task;
+    /** 次回タスクのID */
+    taskId: string;
+    /** サブタスクごとのID生成器 */
+    subtaskIdFor: () => string;
+    /** 現在時刻 (ISO 8601) */
+    now: string;
+    /** 今日 (YYYY-MM-DD)。期限なしタスクの繰り返し起点に使う */
+    today: string;
+}
+
+/**
+ * 繰り返しタスクの次回分を生成する。recurrence が none なら null。
+ * 期限は元タスクの期限（無ければ今日）を1周期分進める。
+ * サブタスクは未完了状態で引き継ぐ（Webと同一ルール）。
+ */
+export function buildNextRecurringTask(input: NextRecurringTaskInput): Task | null {
+    const { task } = input;
+    if (!task.recurrence || task.recurrence === 'none') return null;
+    const base = task.dueDate ?? input.today;
+    return {
+        id: input.taskId,
+        name: task.name,
+        dueDate: addRecurrenceInterval(base, task.recurrence),
+        priority: task.priority,
+        tags: [...task.tags],
+        subtasks: task.subtasks.map((subtask) => ({
+            id: input.subtaskIdFor(),
+            name: subtask.name,
+            completed: false,
+            completedAt: null,
+            createdAt: input.now,
+        })),
+        recurrence: task.recurrence,
+        completed: false,
+        completedAt: null,
+        createdAt: input.now,
+    };
+}
+
+/** 同内容の未完了繰り返しタスクが既にあるか（次回分の重複生成ガード）。 */
+export function hasOpenRecurringDuplicate(tasks: readonly Task[], next: Task): boolean {
+    return tasks.some((task) =>
+        !task.completed
+        && task.recurrence === next.recurrence
+        && task.name === next.name
+        && task.dueDate === next.dueDate
+    );
+}
+
+// ─── サブタスク操作 ───────────────────────────────────────────
+
+/**
+ * サブタスクを追加する。親タスクは未完了へ戻す（新しい作業が増えたため）。
+ * タスクが見つからない・名前が空・上限超過なら null。
+ */
+export function addSubtaskToTask(
+    tasks: readonly Task[],
+    taskId: string,
+    subtask: { id: string; name: string; now: string },
+): Task[] | null {
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    const name = clampString(subtask.name.trim(), TASK_LIMITS.maxSubtaskNameLength);
+    if (!task || !name || task.subtasks.length >= TASK_LIMITS.maxSubtasks) return null;
+
+    return tasks.map((candidate) => candidate.id === taskId
+        ? {
+            ...candidate,
+            completed: false,
+            completedAt: null,
+            subtasks: [
+                ...candidate.subtasks,
+                { id: subtask.id, name, completed: false, completedAt: null, createdAt: subtask.now },
+            ],
+        }
+        : candidate
+    );
+}
+
+export interface RemoveSubtaskResult {
+    tasks: Task[];
+    /** 残りのサブタスクが全完了になり、親タスクがこの操作で完了したか */
+    parentCompleted: boolean;
+}
+
+/**
+ * サブタスクを削除する。残りが1件以上あり全完了なら親タスクを自動完了する。
+ * タスク・サブタスクが見つからなければ null。
+ */
+export function removeSubtaskFromTask(
+    tasks: readonly Task[],
+    taskId: string,
+    subtaskId: string,
+    now: string,
+): RemoveSubtaskResult | null {
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    if (!task) return null;
+    const nextSubtasks = task.subtasks.filter((subtask) => subtask.id !== subtaskId);
+    if (nextSubtasks.length === task.subtasks.length) return null;
+
+    const shouldAutoComplete = nextSubtasks.length > 0 && nextSubtasks.every((subtask) => subtask.completed);
+    const parentCompleted = shouldAutoComplete && !task.completed;
+
+    return {
+        tasks: tasks.map((candidate) => candidate.id === taskId
+            ? {
+                ...candidate,
+                subtasks: nextSubtasks,
+                completed: shouldAutoComplete ? true : candidate.completed && nextSubtasks.length === 0,
+                completedAt: shouldAutoComplete ? (candidate.completedAt ?? now) : candidate.completedAt,
+            }
+            : candidate
+        ),
+        parentCompleted,
+    };
+}
+
+export interface ToggleSubtaskResult {
+    tasks: Task[];
+    /** この操作でサブタスクが未完了→完了になったか（サブタスク報酬の対象） */
+    completedSubtask: boolean;
+    /** この操作で全サブタスク完了となり、親タスクが完了したか（タスク報酬の対象） */
+    parentCompleted: boolean;
+}
+
+/**
+ * サブタスクの完了をトグルする。全サブタスク完了で親タスクを自動完了し、
+ * 1件でも未完了に戻せば親タスクも未完了へ戻す（Webと同一ルール）。
+ */
+export function toggleSubtask(
+    tasks: readonly Task[],
+    taskId: string,
+    subtaskId: string,
+    now: string,
+): ToggleSubtaskResult | null {
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    const subtask = task?.subtasks.find((candidate) => candidate.id === subtaskId);
+    if (!task || !subtask) return null;
+
+    const isCompleting = !subtask.completed;
+    const nextSubtasks = task.subtasks.map((candidate) => candidate.id === subtaskId
+        ? { ...candidate, completed: isCompleting, completedAt: isCompleting ? now : null }
+        : candidate
+    );
+    const allComplete = nextSubtasks.length > 0 && nextSubtasks.every((candidate) => candidate.completed);
+
+    return {
+        tasks: tasks.map((candidate) => candidate.id === taskId
+            ? {
+                ...candidate,
+                subtasks: nextSubtasks,
+                completed: allComplete,
+                completedAt: allComplete ? (candidate.completedAt ?? now) : null,
+            }
+            : candidate
+        ),
+        completedSubtask: isCompleting,
+        parentCompleted: allComplete && !task.completed,
+    };
 }

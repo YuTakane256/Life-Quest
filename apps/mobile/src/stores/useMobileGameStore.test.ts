@@ -374,3 +374,26 @@ describe('hydration前の操作ガード', () => {
         expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.low);
     });
 });
+
+describe('grantSubtaskCompletionReward', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        resetStore();
+    });
+
+    it('サブタスクXPとガチャ進行を付与し、同じIDには二度と付与しない', () => {
+        expect(useMobileGameStore.getState().grantSubtaskCompletionReward('s1', 'high')).toBe(true);
+        expect(useMobileGameStore.getState().grantSubtaskCompletionReward('s1', 'high')).toBe(false);
+
+        const state = useMobileGameStore.getState();
+        expect(state.character.totalXp).toBe(15); // high 30 の半分
+        expect(state.gachaCount).toBe(1);
+        expect(state.rewardLedger.rewardedSubtaskIds).toEqual(['s1']);
+    });
+
+    it('hydration前はno-op', () => {
+        useMobileGameStore.setState({ hasHydrated: false });
+        expect(useMobileGameStore.getState().grantSubtaskCompletionReward('s1', 'low')).toBe(false);
+        expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+    });
+});

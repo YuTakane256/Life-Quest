@@ -32,6 +32,11 @@ export function reconcileRewards(today: string = getTodayJst()): void {
             if (task.completed) {
                 game.grantTaskCompletionReward(task.id, task.priority);
             }
+            for (const subtask of task.subtasks) {
+                if (subtask.completed) {
+                    game.grantSubtaskCompletionReward(subtask.id, task.priority);
+                }
+            }
         }
     }
 

@@ -19,6 +19,7 @@ import {
 } from '@life-quest/core/equipment';
 import {
     claimHabitAllCompleteBonus,
+    claimSubtaskReward,
     claimTaskReward,
     createInitialGameStateSnapshot,
     sanitizeGameStateSnapshot,
@@ -31,7 +32,7 @@ import {
     type RewardLedger,
 } from '@life-quest/core/gameState';
 import { applyCharacterXp, XP_CONFIG, type ApplyCharacterXpResult } from '@life-quest/core/progression';
-import type { Priority } from '@life-quest/core/tasks';
+import { getSubtaskRewardXp, type Priority } from '@life-quest/core/tasks';
 import {
     getMilestoneAtCount,
     rollEquipmentTemplate,
@@ -86,6 +87,11 @@ interface MobileGameStore extends GameStateSnapshot {
      * 同じ日付 (YYYY-MM-DD) には一度しか付与しない。付与したら true。
      */
     grantHabitAllCompleteBonus: (date: string) => boolean;
+    /**
+     * サブタスク完了報酬（優先度XPの半分 + ガチャ進行）を付与する。
+     * 同じサブタスクIDには一度しか付与しない。付与したら true。
+     */
+    grantSubtaskCompletionReward: (subtaskId: string, priority: Priority) => boolean;
 }
 
 /** 永続化スキーマのバージョン。フィールド構成を変えるときに上げ、migrate で吸収する。 */
@@ -323,6 +329,14 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 const claim = claimHabitAllCompleteBonus(get().rewardLedger, date);
                 if (!claim.granted) return false;
                 applyRewardGrant(claim.ledger, XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
+                return true;
+            },
+
+            grantSubtaskCompletionReward: (subtaskId, priority) => {
+                if (!get().hasHydrated) return false;
+                const claim = claimSubtaskReward(get().rewardLedger, subtaskId);
+                if (!claim.granted) return false;
+                applyRewardGrant(claim.ledger, getSubtaskRewardXp(priority));
                 return true;
             },
             };
