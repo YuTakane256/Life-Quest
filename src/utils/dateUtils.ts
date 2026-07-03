@@ -3,7 +3,6 @@
  */
 
 import { TIME_CONFIG } from '../config/gameConfig';
-import type { Recurrence } from '../types';
 
 /**
  * YYYY-MM-DD 形式の文字列を UTC ベースの Date にパースする（内部利用）。
@@ -184,23 +183,7 @@ export function shiftDate(dateStr: string, days: number): string {
 }
 
 /**
- * 繰り返し周期に応じて日付を1周期分進める (YYYY-MM-DD)
- * monthly で日付が翌月に存在しない場合（例: 1/31 → 2月）は対象月の末日に丸める
+ * 繰り返し周期に応じて日付を1周期分進める (YYYY-MM-DD)。
+ * 実体は @life-quest/core/tasks に移動し、Mobileと共有する（月末丸めルール込み）。
  */
-export function addRecurrenceInterval(dateStr: string, recurrence: Recurrence): string {
-    const date = parseYmd(dateStr);
-
-    if (recurrence === 'daily') {
-        date.setUTCDate(date.getUTCDate() + 1);
-    } else if (recurrence === 'weekly') {
-        date.setUTCDate(date.getUTCDate() + 7);
-    } else if (recurrence === 'monthly') {
-        const targetFirst = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
-        const targetYear = targetFirst.getUTCFullYear();
-        const targetMonth = targetFirst.getUTCMonth();
-        const targetDay = Math.min(date.getUTCDate(), daysInUtcMonth(targetYear, targetMonth));
-        return formatYmd(new Date(Date.UTC(targetYear, targetMonth, targetDay)));
-    }
-
-    return formatYmd(date);
-}
+export { addRecurrenceInterval } from '@life-quest/core/tasks';

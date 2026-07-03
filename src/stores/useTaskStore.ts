@@ -4,7 +4,12 @@ import { createWebPersistStorage } from '../platform/storage';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { PRIORITIES, RECURRENCES } from '../config/taskLabels';
-import { generateId, getTodayJST, addRecurrenceInterval, toIsoDatePart } from '../utils/dateUtils';
+import { generateId, getTodayJST, toIsoDatePart } from '../utils/dateUtils';
+import {
+    buildNextRecurringTask as buildNextRecurringTaskCore,
+    getSubtaskRewardXp,
+    hasOpenRecurringDuplicate,
+} from '@life-quest/core/tasks';
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 
@@ -33,7 +38,7 @@ async function awardTaskXp(priority: Priority, completedAt: string, xpReward: nu
 }
 
 function getSubtaskXp(priority: Priority) {
-    return Math.max(1, Math.floor(XP_CONFIG.REWARD_BY_PRIORITY[priority] * XP_CONFIG.SUBTASK_REWARD_RATIO));
+    return getSubtaskRewardXp(priority);
 }
 
 function clearPendingCompletionTimer(pending: PendingCompletion | undefined) {
@@ -109,27 +114,13 @@ export function sanitizeTaskStoreState(persisted: unknown): TaskStorePersisted {
  * 期限は元タスクの期限（無ければ今日）を1周期分進める。サブタスクは未完了状態で引き継ぐ。
  */
 function buildNextRecurringTask(task: Task): Task | null {
-    if (!task.recurrence || task.recurrence === 'none') return null;
-    const base = task.dueDate ?? getTodayJST();
-    const now = new Date().toISOString();
-    return {
-        id: generateId(),
-        name: task.name,
-        dueDate: addRecurrenceInterval(base, task.recurrence),
-        priority: task.priority,
-        tags: [...(task.tags || [])],
-        subtasks: (task.subtasks || []).map((s) => ({
-            id: generateId(),
-            name: s.name,
-            completed: false,
-            completedAt: null,
-            createdAt: now,
-        })),
-        recurrence: task.recurrence,
-        completed: false,
-        completedAt: null,
-        createdAt: now,
-    };
+    return buildNextRecurringTaskCore({
+        task: { ...task, tags: task.tags || [], subtasks: task.subtasks || [] },
+        taskId: generateId(),
+        subtaskIdFor: generateId,
+        now: new Date().toISOString(),
+        today: getTodayJST(),
+    });
 }
 
 export const useTaskStore = create<TaskStoreState>()(
@@ -301,9 +292,7 @@ export const useTaskStore = create<TaskStoreState>()(
                     // 繰り返しタスクなら次回分を自動生成する
                     const next = buildNextRecurringTask(pendingTask);
                     if (next) {
-                        const exists = get().tasks.some(
-                            (t) => !t.completed && t.recurrence === next.recurrence && t.name === next.name && t.dueDate === next.dueDate
-                        );
+                        const exists = hasOpenRecurringDuplicate(get().tasks, next);
                         if (!exists && get().tasks.length < MAX_PERSISTED_TASKS) {
                             set((state) => ({ tasks: [...state.tasks, next] }));
                         }
@@ -426,9 +415,7 @@ export const useTaskStore = create<TaskStoreState>()(
                 if (isCompleting && allSubtasksComplete && !task.completed) {
                     const next = buildNextRecurringTask(task);
                     if (next) {
-                        const exists = get().tasks.some(
-                            (t) => !t.completed && t.recurrence === next.recurrence && t.name === next.name && t.dueDate === next.dueDate
-                        );
+                        const exists = hasOpenRecurringDuplicate(get().tasks, next);
                         if (!exists && get().tasks.length < MAX_PERSISTED_TASKS) {
                             set((state) => ({ tasks: [...state.tasks, next] }));
                         }

@@ -4,7 +4,14 @@ import { createWebPersistStorage } from '../platform/storage';
 import type { Habit, HabitDailyRecord, HabitStoreState, RestDay } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID, HABIT_CATEGORIES } from '../config/habitCategories';
-import { generateId, getTodayJST, isValidYmd, shiftDate, toIsoDatePart } from '../utils/dateUtils';
+import { generateId, getTodayJST, isValidYmd, shiftDate } from '../utils/dateUtils';
+import {
+    areAllHabitsComplete as areAllHabitsCompleteCore,
+    getHabitCompletionRate as getHabitCompletionRateCore,
+    getHabitStreak as getHabitStreakCore,
+    isRestDayOn,
+    markRestDay,
+} from '@life-quest/core/habits';
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 
@@ -239,22 +246,11 @@ export const useHabitStore = create<HabitStoreState>()(
 
             setRestDay: (date: string) => {
                 if (!isValidYmd(date)) return;
-                const existing = get().restDays.find((r) => r.date === date);
-                if (existing) {
-                    set((state) => ({
-                        restDays: state.restDays.map((r) =>
-                            r.date === date ? { ...r, isRest: true } : r
-                        ),
-                    }));
-                } else {
-                    set((state) => ({
-                        restDays: [...state.restDays, { date, isRest: true }].slice(-MAX_HABIT_REST_DAYS),
-                    }));
-                }
+                set((state) => ({ restDays: markRestDay(state.restDays, date, MAX_HABIT_REST_DAYS) }));
             },
 
             isRestDay: (date: string) => {
-                return isValidYmd(date) && get().restDays.some((r) => r.date === date && r.isRest);
+                return isValidYmd(date) && isRestDayOn(get().restDays, date);
             },
 
             getTodayRecords: () => {
@@ -265,77 +261,23 @@ export const useHabitStore = create<HabitStoreState>()(
             areAllHabitsComplete: (date: string) => {
                 if (!isValidYmd(date)) return false;
                 const { habits, dailyRecords } = get();
-                if (habits.length === 0) return false;
-                return habits.every((habit) => {
-                    // 指定日より後に作成された習慣は達成の必要なしとみなす
-                    const createdDate = toIsoDatePart(habit.createdAt);
-                    if (date < createdDate) return true;
-
-                    return dailyRecords.some(
-                        (r) => r.habitId === habit.id && r.date === date && r.completed
-                    );
-                });
+                return areAllHabitsCompleteCore(habits, dailyRecords, date);
             },
 
             getHabitStreak: (habitId: string) => {
-                const { dailyRecords, restDays } = get();
-                const today = getTodayJST();
-                let streak = 0;
-                let cursor = today;
-
-                const habit = get().habits.find((h) => h.id === habitId);
+                const { habits, dailyRecords, restDays } = get();
+                const habit = habits.find((h) => h.id === habitId);
                 if (!habit) return 0;
-                const createdDate = toIsoDatePart(habit.createdAt);
-
-                // 今日から、個別ヒートマップと同じ保持期間まで遡る。
-                for (let i = 0; i <= HABIT_HISTORY_RETENTION_DAYS; i++) {
-                    if (cursor < createdDate) break;
-
-                    const isRest = restDays.some((r) => r.date === cursor && r.isRest);
-                    if (isRest) {
-                        // お休み日はストリークを途切れさせず、カウントもしない
-                        cursor = shiftDate(cursor, -1);
-                        continue;
-                    }
-
-                    const completed = dailyRecords.some(
-                        (r) => r.habitId === habitId && r.date === cursor && r.completed
-                    );
-                    if (completed) {
-                        streak++;
-                    } else if (cursor === today) {
-                        // 今日はまだ未完了でも連続を途切れさせない（過去分のストリークを表示）
-                    } else {
-                        break;
-                    }
-                    cursor = shiftDate(cursor, -1);
-                }
-                return streak;
+                // 遡り上限はcore側の定数（HABIT_STREAK_LOOKBACK_DAYS = 180日）で、
+                // Webのヒートマップ保持期間 HABIT_HISTORY_RETENTION_DAYS と同値。
+                return getHabitStreakCore({ habit, records: dailyRecords, restDays, today: getTodayJST() });
             },
 
             getHabitCompletionRate: (habitId: string) => {
                 const { habits, dailyRecords, restDays } = get();
                 const habit = habits.find((h) => h.id === habitId);
                 if (!habit) return null;
-
-                const createdDate = toIsoDatePart(habit.createdAt);
-                const today = getTodayJST();
-                let total = 0;
-                let completed = 0;
-
-                // 今日から過去30日を遡る。習慣の作成前とお休み日は分母に含めない。
-                for (let i = 0; i < 30; i++) {
-                    const date = shiftDate(today, -i);
-                    if (date < createdDate) break;
-                    if (restDays.some((r) => r.date === date && r.isRest)) continue;
-                    total++;
-                    if (dailyRecords.some((r) => r.habitId === habitId && r.date === date && r.completed)) {
-                        completed++;
-                    }
-                }
-
-                if (total === 0) return null;
-                return Math.round((completed / total) * 100);
+                return getHabitCompletionRateCore({ habit, records: dailyRecords, restDays, today: getTodayJST() });
             },
 
             checkAndResetHabits: () => {
