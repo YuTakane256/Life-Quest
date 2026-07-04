@@ -4,22 +4,22 @@ export {
     registerAuthLifecycleHooks,
     resetAuthLifecycleHooks,
     type AuthLifecycleHooks,
-} from './authLifecycle';
+} from './authLifecycle.ts';
 export {
     createEdgeFunctionInvoker,
     EdgeFunctionError,
     type EdgeFunctionDeps,
     type EdgeFunctionInvoker,
     type EdgeSession,
-} from './edgeFunctions';
+} from './edgeFunctions.ts';
 export {
     clamp,
     nonNegativeInteger,
     nonNegativeRatio,
     positiveInteger,
-} from './numeric';
-export { getHpDisplayState, type HpDisplayState } from './hp';
-export { clampString } from './validation';
+} from './numeric.ts';
+export { getHpDisplayState, type HpDisplayState } from './hp.ts';
+export { clampString } from './validation.ts';
 export {
     BATTLE_SKILL_CONFIG,
     BATTLE_SKILLS,
@@ -30,7 +30,7 @@ export {
     type BattleSkillDefinition,
     type BattleSkillResolution,
     type BattleSkillType,
-} from './battleSkills';
+} from './battleSkills.ts';
 export {
     createPersistStorageEnvelope,
     createSafePersistMerge,
@@ -43,7 +43,7 @@ export {
     type NormalizedPersistStorageEnvelope,
     type PersistedStateRecord,
     type PersistStorageEnvelope,
-} from './persist';
+} from './persist.ts';
 export {
     addRecurrenceInterval,
     addSubtaskToTask,
@@ -65,7 +65,7 @@ export {
     type Recurrence,
     type Subtask,
     type Task,
-} from './tasks';
+} from './tasks.ts';
 export {
     areAllHabitsComplete,
     createHabit,
@@ -89,7 +89,15 @@ export {
     type HabitDailyRecord,
     type HabitStatsInput,
     type RestDay,
-} from './habits';
+} from './habits.ts';
+export {
+    cloudCursorKey,
+    cloudOutboxKey,
+    createCloudPullRunner,
+    type CloudPullDeps,
+    type CloudPullRunner,
+    type PullBatch,
+} from './cloudPull.ts';
 export {
     createSyncCursor,
     SYNC_CURSOR_KEY,
@@ -97,14 +105,14 @@ export {
     type CanonicalWriteResult,
     type CanonicalWriteStatus,
     type SyncCursor,
-} from './canonicalSync';
+} from './canonicalSync.ts';
 export {
     DARK_THEME,
     FONT_SANS,
     LIGHT_THEME,
     themeToCssVariables,
     type ThemePalette,
-} from './designTokens';
+} from './designTokens.ts';
 export {
     LEGACY_STORAGE_KEYS,
     migrateLegacyQuestBoardData,
@@ -117,7 +125,7 @@ export {
     type MigrationSection,
     type MigrationSectionResult,
     type MigrationSectionStatus,
-} from './legacyMigration';
+} from './legacyMigration.ts';
 export {
     convertLegacyHabitSnapshot,
     convertLegacyGameSnapshot,
@@ -133,7 +141,7 @@ export {
     type CanonicalGameSnapshot,
     type CanonicalTaskSnapshot,
     type LegacyGameSnapshotSources,
-} from './syncSnapshots';
+} from './syncSnapshots.ts';
 export {
     CANONICAL_STORAGE_KEYS,
     createCanonicalSnapshotRepositories,
@@ -150,7 +158,7 @@ export {
     type SnapshotRepositoryEnvelope,
     type SnapshotRepositoryOptions,
     type VersionedSnapshot,
-} from './syncRepository';
+} from './syncRepository.ts';
 export {
     calculateEffectiveEquipmentStats,
     createEquipmentFromTemplate,
@@ -169,7 +177,7 @@ export {
     type EquipmentTemplate,
     type Rarity,
     type SynthesisSelection,
-} from './equipment';
+} from './equipment.ts';
 export {
     capChestQueue,
     capEquipmentCollection,
@@ -192,7 +200,7 @@ export {
     type GameStateSnapshot,
     type RewardClaim,
     type RewardLedger,
-} from './gameState';
+} from './gameState.ts';
 export {
     EQUIPMENT_POOL,
     GACHA_CONFIG,
@@ -203,7 +211,7 @@ export {
     type ChestReward,
     type ChestType,
     type GachaMilestone,
-} from './rewards';
+} from './rewards.ts';
 export {
     buildHabitActivityByDate,
     buildTaskXpByDate,
@@ -213,7 +221,7 @@ export {
     getTaskHeatmapLevel,
     groupDatesByWeeks,
     type HabitDayActivity,
-} from './stats';
+} from './stats.ts';
 export {
     applyCharacterXp,
     calculateLevel,
@@ -225,4 +233,4 @@ export {
     type ApplyCharacterXpResult,
     type CharacterProgressionState,
     type CharacterStatGains,
-} from './progression';
+} from './progression.ts';

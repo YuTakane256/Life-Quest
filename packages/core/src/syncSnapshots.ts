@@ -1,15 +1,15 @@
-import { HABIT_LIMITS, sanitizeHabitCollection, sanitizeHabitRecords, type Habit, type HabitDailyRecord, type RestDay } from './habits';
+import { HABIT_LIMITS, sanitizeHabitCollection, sanitizeHabitRecords, type Habit, type HabitDailyRecord, type RestDay } from './habits.ts';
 import {
     GAME_STATE_LIMITS,
     sanitizeGameStateSnapshot,
     sanitizeRewardLedger,
     type CharacterState,
     type RewardLedger,
-} from './gameState';
-import type { Equipment } from './equipment';
-import type { ChestReward } from './rewards';
-import { sanitizeTaskCollection, type Task } from './tasks';
-import { clampString } from './validation';
+} from './gameState.ts';
+import type { Equipment } from './equipment.ts';
+import type { ChestReward } from './rewards.ts';
+import { sanitizeTaskCollection, type Task } from './tasks.ts';
+import { clampString } from './validation.ts';
 
 export const SYNC_SNAPSHOT_VERSION = 1 as const;
 

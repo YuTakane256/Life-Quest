@@ -6,8 +6,8 @@ import {
     rollEquipmentTemplate,
     SELL_XP_BY_RARITY,
     type ChestType,
-} from './rewards';
-import { EQUIPMENT_RARITIES } from './equipment';
+} from './rewards.ts';
+import { EQUIPMENT_RARITIES } from './equipment.ts';
 
 describe('getMilestoneAtCount', () => {
     it('サイクル内のマイルストーンで宝箱を返す', () => {

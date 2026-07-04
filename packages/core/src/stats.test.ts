@@ -7,9 +7,9 @@ import {
     getMonthLabels,
     getTaskHeatmapLevel,
     groupDatesByWeeks,
-} from './stats';
-import { createHabit } from './habits';
-import type { Task } from './tasks';
+} from './stats.ts';
+import { createHabit } from './habits.ts';
+import type { Task } from './tasks.ts';
 
 describe('ヒートマップ濃淡レベル', () => {
     it.each([

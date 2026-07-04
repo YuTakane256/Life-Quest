@@ -12,9 +12,9 @@ import {
     sanitizeEquipmentCollection,
     sanitizeGameStateSnapshot,
     sanitizeRewardLedger,
-} from './gameState';
-import { CHARACTER_CONFIG } from './progression';
-import type { Equipment } from './equipment';
+} from './gameState.ts';
+import { CHARACTER_CONFIG } from './progression.ts';
+import type { Equipment } from './equipment.ts';
 
 function equipment(id: string, overrides: Partial<Equipment> = {}): Record<string, unknown> {
     return { id, templateId: 'wooden_sword', equipped: false, ...overrides };

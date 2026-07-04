@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createSyncCursor, SYNC_CURSOR_KEY, writeCanonicalSnapshot } from './canonicalSync';
+import { createSyncCursor, SYNC_CURSOR_KEY, writeCanonicalSnapshot } from './canonicalSync.ts';
 import {
     CANONICAL_STORAGE_KEYS,
     createCanonicalSnapshotRepositories,
     type RepositoryStorage,
-} from './syncRepository';
-import { convertLegacyTaskSnapshot } from './syncSnapshots';
+} from './syncRepository.ts';
+import { convertLegacyTaskSnapshot } from './syncSnapshots.ts';
 
 function createMemoryStorage() {
     const map = new Map<string, string>();

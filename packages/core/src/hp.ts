@@ -1,4 +1,4 @@
-import { nonNegativeInteger } from './numeric';
+import { nonNegativeInteger } from './numeric.ts';
 
 export interface HpDisplayState {
     current: number;

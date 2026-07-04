@@ -5,7 +5,7 @@ import {
     notifyLogout,
     registerAuthLifecycleHooks,
     resetAuthLifecycleHooks,
-} from './authLifecycle';
+} from './authLifecycle.ts';
 
 afterEach(() => {
     resetAuthLifecycleHooks();

@@ -5,8 +5,8 @@ import {
     createSnapshotRepository,
     SNAPSHOT_REPOSITORY_VERSION,
     type RepositoryStorage,
-} from './syncRepository';
-import { sanitizeCanonicalTaskSnapshot, SYNC_SNAPSHOT_VERSION } from './syncSnapshots';
+} from './syncRepository.ts';
+import { sanitizeCanonicalTaskSnapshot, SYNC_SNAPSHOT_VERSION } from './syncSnapshots.ts';
 
 class MemoryStorage implements RepositoryStorage {
     readonly values = new Map<string, string>();

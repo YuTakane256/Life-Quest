@@ -8,7 +8,7 @@ import {
     readPersistedStateRecord,
     readPersistStorageEnvelope,
     serializePersistStorageEnvelope,
-} from './persist';
+} from './persist.ts';
 
 describe('shared persist helpers', () => {
     it('reads only plain object state records', () => {

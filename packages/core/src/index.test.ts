@@ -5,7 +5,7 @@ import {
     clampString,
     getHpDisplayState,
     resolveBattleSkill,
-} from './index';
+} from './index.ts';
 
 describe('platform-neutral core public API', () => {
     it('単一エントリポイントから共有候補の純粋関数を利用できる', () => {

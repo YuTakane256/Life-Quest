@@ -13,7 +13,7 @@ import {
     sanitizeHabitCollection,
     sanitizeHabitRecords,
     toggleHabitDailyRecord,
-} from './habits';
+} from './habits.ts';
 
 describe('habit domain', () => {
     it('creates a normalized habit', () => {

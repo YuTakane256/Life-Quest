@@ -8,8 +8,8 @@ import {
     sanitizeCanonicalTaskSnapshot,
     SYNC_SNAPSHOT_LIMITS,
     SYNC_SNAPSHOT_VERSION,
-} from './syncSnapshots';
-import { TASK_LIMITS } from './tasks';
+} from './syncSnapshots.ts';
+import { TASK_LIMITS } from './tasks.ts';
 
 const fullTask = {
     id: 'task-1',

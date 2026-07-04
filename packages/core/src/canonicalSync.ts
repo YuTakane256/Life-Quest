@@ -11,7 +11,7 @@
  * - canonical 側が corrupt / unsupported / storage-error のときは書き戻さない
  *   （#482 の移行サービスと同じ保護方針）。
  */
-import type { RepositoryStorage, SnapshotRepository, VersionedSnapshot } from './syncRepository';
+import type { RepositoryStorage, SnapshotRepository, VersionedSnapshot } from './syncRepository.ts';
 
 export type CanonicalWriteStatus =
     /** canonical が空だったので新規作成した */
