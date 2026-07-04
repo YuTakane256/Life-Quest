@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { startAuthSessionListener } from '../src/platform/auth';
+import { registerMobileAuthStoreHooks } from '../src/platform/authStores';
 import { startMobileCanonicalSync } from '../src/platform/canonicalSync';
 import { startRewardSync } from '../src/stores/rewardSync';
 import { theme } from '../src/theme/colors';
@@ -16,11 +18,17 @@ export default function RootLayout() {
         return sync.stop;
     }, []);
 
+    // 認証ライフサイクル: ログアウト時のストア即時クリア（ADR-009、クラウドシード後のみ作動）と
+    // 保存済みセッションの復元通知。Supabase未設定なら双方とも何もしない。
+    useEffect(() => registerMobileAuthStoreHooks(), []);
+    useEffect(() => startAuthSessionListener(), []);
+
     return (
         <>
             <StatusBar style="light" />
             <Stack screenOptions={{ contentStyle: { backgroundColor: theme.bg.primary } }}>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="settings" options={{ headerShown: false }} />
             </Stack>
         </>
     );
