@@ -25,3 +25,10 @@ pnpm-debug.log*
 
 # Claude Code のローカル設定
 .claude/
+
+# Supabase ローカル開発の一時ファイル
+supabase/.temp/
+supabase/.branches/
+
+# Expo ローカル状態
+apps/mobile/.expo/

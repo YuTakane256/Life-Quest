@@ -14,6 +14,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:core": "npm run typecheck --workspace @life-quest/core",
+    "check:secrets": "node scripts/check-service-role.mjs",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:types": "supabase gen types typescript --local > packages/core/src/db.types.ts",
+    "db:test": "supabase test db",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "typecheck": "tsc -b --noEmit",
@@ -29,6 +35,7 @@
   },
   "dependencies": {
     "@life-quest/core": "file:packages/core",
+    "@supabase/supabase-js": "^2.110.0",
     "lucide-react": "^1.23.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -36,8 +43,8 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.2",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
@@ -48,6 +55,7 @@
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
+    "supabase": "^2.109.0",
     "tailwindcss": "^4.0.12",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.62.1",
