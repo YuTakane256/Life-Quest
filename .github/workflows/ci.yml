@@ -89,18 +89,32 @@ jobs:
       - name: Serve Edge Functions in background
         run: |
           nohup npx supabase functions serve > functions-serve.log 2>&1 &
-          # edge runtimeの起動完了までポーリング。未認証POSTが401を返せばworkerが正常起動している
-          #（503=イメージpull中/未起動、502=worker boot失敗、000=接続不可）
+          # KongはJWT検証をedge-runtime本体を待たずに行うため、認証系ステータスコードは
+          # readinessの合図にならない（実際にedge-runtimeが起動する前から401が返る）。
+          # edge-runtimeプロセス自身が出す "Serving functions on" ログ行を待つ。
           for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:55321/functions/v1/complete_task || true)
-            if [ "$code" = "401" ]; then
-              echo "edge runtime ready (status $code)"; exit 0
+            if grep -q "Serving functions on" functions-serve.log 2>/dev/null; then
+              echo "edge runtime ready"; cat functions-serve.log; exit 0
             fi
-            echo "waiting... (status $code)"
             sleep 2
           done
           echo "edge runtime did not become ready"
-          curl -si -X POST http://127.0.0.1:55321/functions/v1/complete_task || true
+          cat functions-serve.log
+          exit 1
+
+      - name: Warm up complete_task function
+        run: |
+          # 初回呼び出しはworkerのisolate起動を伴うため502になりうる。
+          # 502が消えるまでウォームアップ呼び出しを繰り返す（本テストの前に完了させる）。
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:55321/functions/v1/complete_task || true)
+            if [ "$code" != "502" ] && [ "$code" != "000" ]; then
+              echo "function warm (status $code)"; exit 0
+            fi
+            echo "warming up... (status $code)"
+            sleep 1
+          done
+          echo "function did not warm up"
           cat functions-serve.log
           exit 1
 
