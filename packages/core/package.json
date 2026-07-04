@@ -16,6 +16,10 @@
       "types": "./src/edgeFunctions.ts",
       "import": "./src/edgeFunctions.ts"
     },
+    "./battle": {
+      "types": "./src/battle.ts",
+      "import": "./src/battle.ts"
+    },
     "./battleSkills": {
       "types": "./src/battleSkills.ts",
       "import": "./src/battleSkills.ts"
