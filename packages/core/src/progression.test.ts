@@ -8,7 +8,7 @@ import {
     MAX_TOTAL_XP,
     XP_CONFIG,
     type CharacterProgressionState,
-} from './progression';
+} from './progression.ts';
 
 function character(overrides: Partial<CharacterProgressionState> = {}): CharacterProgressionState {
     return {

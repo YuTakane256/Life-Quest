@@ -1,4 +1,4 @@
-import { clampString } from './validation';
+import { clampString } from './validation.ts';
 
 export interface Habit {
     id: string;

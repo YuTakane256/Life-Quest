@@ -9,9 +9,9 @@
  * Webの統計ページはstatsStoreのイベントログを使っており、統合は
  * canonical統計契約の後続課題（Epic #473）。
  */
-import { areAllHabitsComplete, type Habit, type HabitDailyRecord } from './habits';
-import { XP_CONFIG } from './progression';
-import { getSubtaskRewardXp, type Task } from './tasks';
+import { areAllHabitsComplete, type Habit, type HabitDailyRecord } from './habits.ts';
+import { XP_CONFIG } from './progression.ts';
+import { getSubtaskRewardXp, type Task } from './tasks.ts';
 
 // ─── ヒートマップ濃淡レベル ───────────────────────────────────
 

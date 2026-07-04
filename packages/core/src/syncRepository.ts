@@ -6,7 +6,7 @@ import {
     type CanonicalGameSnapshot,
     type CanonicalHabitSnapshot,
     type CanonicalTaskSnapshot,
-} from './syncSnapshots';
+} from './syncSnapshots.ts';
 
 export const SNAPSHOT_REPOSITORY_VERSION = 1 as const;
 

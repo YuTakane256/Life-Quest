@@ -5,7 +5,7 @@
  * このモジュールは純粋TSのみで構成し、React / Zustand / ブラウザAPIに依存しない。
  * 乱数が必要な関数は `random: () => number` を注入可能にして決定的にテストできる。
  */
-import type { Equipment, EquipmentTemplate, Rarity } from './equipment';
+import type { Equipment, EquipmentTemplate, Rarity } from './equipment.ts';
 
 // ─── ガチャ (宝箱) 設定 ───────────────────────────────────────
 export type ChestType = 'blue' | 'wood' | 'silver' | 'gold' | 'red_gold' | 'rainbow';

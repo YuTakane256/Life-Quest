@@ -10,7 +10,7 @@ import {
     type Equipment,
     type EquipmentSlot,
     type EquipmentTemplate,
-} from './equipment';
+} from './equipment.ts';
 
 function equipment(id: string, slot: EquipmentSlot, overrides: Partial<Equipment> = {}): Equipment {
     return {

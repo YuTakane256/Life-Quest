@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { describe, expect, it, vi } from 'vitest';
-import { createEdgeFunctionInvoker, EdgeFunctionError } from './edgeFunctions';
+import { createEdgeFunctionInvoker, EdgeFunctionError } from './edgeFunctions.ts';
 
 function jsonResponse(status: number, body: unknown): Response {
     return new Response(JSON.stringify(body), {

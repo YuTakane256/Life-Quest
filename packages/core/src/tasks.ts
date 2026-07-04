@@ -1,5 +1,5 @@
-import { XP_CONFIG } from './progression';
-import { clampString } from './validation';
+import { XP_CONFIG } from './progression.ts';
+import { clampString } from './validation.ts';
 
 export type Priority = 'low' | 'medium' | 'high';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';

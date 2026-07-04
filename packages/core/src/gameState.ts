@@ -5,12 +5,12 @@
  *
  * 純粋TSのみで構成し、React / Zustand / ストレージAPIに依存しない。
  */
-import { clamp } from './numeric';
-import { isPersistedStateRecord } from './persist';
-import { clampString } from './validation';
-import { calculateLevel, CHARACTER_CONFIG, MAX_TOTAL_XP } from './progression';
-import { EQUIPMENT_POOL, type ChestReward, type ChestType } from './rewards';
-import type { Equipment, EquipmentSlot } from './equipment';
+import { clamp } from './numeric.ts';
+import { isPersistedStateRecord } from './persist.ts';
+import { clampString } from './validation.ts';
+import { calculateLevel, CHARACTER_CONFIG, MAX_TOTAL_XP } from './progression.ts';
+import { EQUIPMENT_POOL, type ChestReward, type ChestType } from './rewards.ts';
+import type { Equipment, EquipmentSlot } from './equipment.ts';
 
 export const GAME_STATE_LIMITS = {
     /** インベントリに保持できる装備数の上限 */

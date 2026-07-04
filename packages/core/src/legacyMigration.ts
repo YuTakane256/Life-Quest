@@ -23,13 +23,13 @@ import {
     convertLegacyGameSnapshot,
     convertLegacyHabitSnapshot,
     convertLegacyTaskSnapshot,
-} from './syncSnapshots';
+} from './syncSnapshots.ts';
 import type {
     CanonicalSnapshotRepositories,
     RepositoryStorage,
     SnapshotRepository,
     VersionedSnapshot,
-} from './syncRepository';
+} from './syncRepository.ts';
 
 export const LEGACY_STORAGE_KEYS = {
     tasks: 'quest-board-tasks',

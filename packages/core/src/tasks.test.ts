@@ -13,7 +13,7 @@ import {
     toggleSubtask,
     toggleTaskCompletion,
     type Task,
-} from './tasks';
+} from './tasks.ts';
 
 const now = '2026-07-01T00:00:00.000Z';
 

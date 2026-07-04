@@ -85,6 +85,29 @@ jobs:
       - name: Run database smoke tests (pgTAP)
         run: npm run db:test
 
+      - name: Serve Edge Functions in background
+        run: |
+          nohup npx supabase functions serve > functions-serve.log 2>&1 &
+          # edge runtimeイメージのpull完了までポーリング（503/接続不可の間は待つ）
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:55321/functions/v1/complete_task || true)
+            if [ "$code" != "503" ] && [ "$code" != "000" ]; then
+              echo "edge runtime ready (status $code)"; exit 0
+            fi
+            sleep 2
+          done
+          echo "edge runtime did not become ready"; cat functions-serve.log; exit 1
+
+      - name: Run sync integration tests
+        run: |
+          eval "$(npx supabase status -o env)"
+          export SUPABASE_DB_URL="$DB_URL"
+          export SUPABASE_URL="$API_URL"
+          export SUPABASE_ANON_KEY="$ANON_KEY"
+          export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+          export SUPABASE_FUNCTIONS_URL="$API_URL/functions/v1"
+          npm run test:integration
+
       - name: Generate database types
         run: npm run db:types
 

@@ -4,14 +4,14 @@ import {
     migrateLegacyQuestBoardData,
     MIGRATION_JOURNAL_KEY,
     type MigrationJournal,
-} from './legacyMigration';
+} from './legacyMigration.ts';
 import {
     CANONICAL_STORAGE_KEYS,
     createCanonicalSnapshotRepositories,
     type RepositoryStorage,
     type SnapshotRepositoryEnvelope,
-} from './syncRepository';
-import type { CanonicalGameSnapshot, CanonicalTaskSnapshot } from './syncSnapshots';
+} from './syncRepository.ts';
+import type { CanonicalGameSnapshot, CanonicalTaskSnapshot } from './syncSnapshots.ts';
 
 // ─── テスト用ストレージ ───────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import { clamp, nonNegativeInteger, nonNegativeRatio } from './numeric';
+import { clamp, nonNegativeInteger, nonNegativeRatio } from './numeric.ts';
 
 export type BattleSkillType = 'damage' | 'heal' | 'guard';
 
