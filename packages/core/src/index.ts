@@ -1,4 +1,18 @@
 export {
+    notifyLogin,
+    notifyLogout,
+    registerAuthLifecycleHooks,
+    resetAuthLifecycleHooks,
+    type AuthLifecycleHooks,
+} from './authLifecycle';
+export {
+    createEdgeFunctionInvoker,
+    EdgeFunctionError,
+    type EdgeFunctionDeps,
+    type EdgeFunctionInvoker,
+    type EdgeSession,
+} from './edgeFunctions';
+export {
     clamp,
     nonNegativeInteger,
     nonNegativeRatio,
