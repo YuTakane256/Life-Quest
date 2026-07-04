@@ -3,8 +3,8 @@ name: CI
 on:
   push:
     branches: [ main ]
+  # スタックPR（baseがmain以外）でもフルCIを走らせる
   pull_request:
-    branches: [ main ]
 
 permissions:
   contents: read
