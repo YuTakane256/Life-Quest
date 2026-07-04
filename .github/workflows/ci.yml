@@ -89,15 +89,20 @@ jobs:
       - name: Serve Edge Functions in background
         run: |
           nohup npx supabase functions serve > functions-serve.log 2>&1 &
-          # edge runtimeイメージのpull完了までポーリング（503/接続不可の間は待つ）
+          # edge runtimeの起動完了までポーリング。未認証POSTが401を返せばworkerが正常起動している
+          #（503=イメージpull中/未起動、502=worker boot失敗、000=接続不可）
           for i in $(seq 1 60); do
             code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:55321/functions/v1/complete_task || true)
-            if [ "$code" != "503" ] && [ "$code" != "000" ]; then
+            if [ "$code" = "401" ]; then
               echo "edge runtime ready (status $code)"; exit 0
             fi
+            echo "waiting... (status $code)"
             sleep 2
           done
-          echo "edge runtime did not become ready"; cat functions-serve.log; exit 1
+          echo "edge runtime did not become ready"
+          curl -si -X POST http://127.0.0.1:55321/functions/v1/complete_task || true
+          cat functions-serve.log
+          exit 1
 
       - name: Run sync integration tests
         run: |
@@ -108,6 +113,10 @@ jobs:
           export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
           export SUPABASE_FUNCTIONS_URL="$API_URL/functions/v1"
           npm run test:integration
+
+      - name: Show Edge Functions log on failure
+        if: failure()
+        run: cat functions-serve.log
 
       - name: Generate database types
         run: npm run db:types
