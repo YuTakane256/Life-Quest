@@ -88,17 +88,34 @@ jobs:
 
       - name: Serve Edge Functions in background
         run: |
-          nohup npx supabase functions serve > functions-serve.log 2>&1 &
           # KongはJWT検証をedge-runtime本体を待たずに行うため、認証系ステータスコードは
           # readinessの合図にならない（実際にedge-runtimeが起動する前から401が返る）。
           # edge-runtimeプロセス自身が出す "Serving functions on" ログ行を待つ。
-          for i in $(seq 1 60); do
-            if grep -q "Serving functions on" functions-serve.log 2>/dev/null; then
-              echo "edge runtime ready"; cat functions-serve.log; exit 0
+          # ECRのイメージpullがrate limit（toomanyrequests）で落ちることがあるため、
+          # その場合はバックオフして再試行する。
+          for attempt in 1 2 3 4 5; do
+            nohup npx supabase functions serve > functions-serve.log 2>&1 &
+            serve_pid=$!
+            for i in $(seq 1 60); do
+              if grep -q "Serving functions on" functions-serve.log 2>/dev/null; then
+                echo "edge runtime ready (attempt $attempt)"; cat functions-serve.log; exit 0
+              fi
+              if ! kill -0 $serve_pid 2>/dev/null && grep -q "toomanyrequests" functions-serve.log 2>/dev/null; then
+                break
+              fi
+              sleep 2
+            done
+            if grep -q "toomanyrequests" functions-serve.log 2>/dev/null; then
+              echo "image pull rate limited (attempt $attempt), retrying..."
+              kill $serve_pid 2>/dev/null || true
+              sleep $((attempt * 30))
+              continue
             fi
-            sleep 2
+            echo "edge runtime did not become ready"
+            cat functions-serve.log
+            exit 1
           done
-          echo "edge runtime did not become ready"
+          echo "edge runtime failed after retries"
           cat functions-serve.log
           exit 1
 
