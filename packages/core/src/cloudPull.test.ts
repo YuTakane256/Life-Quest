@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cloudCursorKey, cloudOutboxKey, createCloudPullRunner, type PullBatch } from './cloudPull.ts';
+import {
+    cloudCursorKey,
+    cloudOutboxKey,
+    createCloudPullRunner,
+    createInsurancePullScheduler,
+    type PullBatch,
+} from './cloudPull.ts';
 
 function makeDeps(batches: PullBatch[]) {
     let cursor = 0;
@@ -76,5 +82,75 @@ describe('createCloudPullRunner', () => {
         expect(cloudCursorKey('user-a')).toBe('life-quest:cloud:user-a:cursor:v1');
         expect(cloudOutboxKey('user-b')).toBe('life-quest:cloud:user-b:outbox:v1');
         expect(cloudCursorKey('user-a')).not.toBe(cloudCursorKey('user-b'));
+    });
+});
+
+describe('createInsurancePullScheduler（#504 保険プル4トリガ）', () => {
+    it('デバウンス窓内の重複トリガは1回にまとめられる', () => {
+        let now = 0;
+        const requestPull = vi.fn();
+        const scheduler = createInsurancePullScheduler({
+            requestPull,
+            debounceMs: 3000,
+            now: () => now,
+            setIntervalFn: () => 0,
+            clearIntervalFn: () => {},
+        });
+
+        scheduler.trigger('startup');
+        now = 1000;
+        scheduler.trigger('foreground'); // 窓内 → 無視
+        now = 4000;
+        scheduler.trigger('online');     // 窓外 → 発火
+
+        expect(requestPull).toHaveBeenCalledTimes(2);
+    });
+
+    it('startで定期タイマーが張られ、stopで解除される。startは冪等', () => {
+        const requestPull = vi.fn();
+        const handlers: (() => void)[] = [];
+        let cleared = 0;
+        const scheduler = createInsurancePullScheduler({
+            requestPull,
+            intervalMs: 300_000,
+            debounceMs: 0,
+            setIntervalFn: (handler) => { handlers.push(handler); return handlers.length; },
+            clearIntervalFn: () => { cleared++; },
+        });
+
+        scheduler.start();
+        scheduler.start(); // 冪等
+        expect(handlers).toHaveLength(1);
+
+        handlers[0]?.(); // 定期発火 → プル
+        expect(requestPull).toHaveBeenCalledTimes(1);
+
+        scheduler.stop();
+        scheduler.stop();
+        expect(cleared).toBe(1);
+    });
+
+    it('起動・フォアグラウンド復帰・再接続・定期の4トリガが独立してプルを発火させる', () => {
+        let now = 0;
+        const requestPull = vi.fn();
+        const handlers: (() => void)[] = [];
+        const scheduler = createInsurancePullScheduler({
+            requestPull,
+            debounceMs: 3000,
+            now: () => now,
+            setIntervalFn: (handler) => { handlers.push(handler); return 1; },
+            clearIntervalFn: () => {},
+        });
+        scheduler.start();
+
+        scheduler.trigger('startup');
+        now += 10_000;
+        scheduler.trigger('foreground');
+        now += 10_000;
+        scheduler.trigger('online');
+        now += 10_000;
+        handlers[0]?.(); // 定期
+
+        expect(requestPull).toHaveBeenCalledTimes(4);
     });
 });
