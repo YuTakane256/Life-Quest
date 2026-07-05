@@ -670,6 +670,10 @@ export type Database = {
         }
         Returns: Json
       }
+      upsert_subtask: {
+        Args: { p_id: string; p_key: string; p_name: string; p_task_id: string }
+        Returns: Json
+      }
       upsert_task: {
         Args: { p_id: string; p_key: string; p_name: string }
         Returns: Json

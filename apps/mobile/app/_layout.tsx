@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { startAuthSessionListener } from '../src/platform/auth';
 import { registerMobileAuthStoreHooks } from '../src/platform/authStores';
 import { registerMobileCloudSyncHooks } from '../src/platform/cloudSync';
+import { registerMobileOutboxHooks } from '../src/platform/cloudOutbox';
 import { startMobileCanonicalSync } from '../src/platform/canonicalSync';
 import { startRewardSync } from '../src/stores/rewardSync';
 import { theme } from '../src/theme/colors';
@@ -23,6 +24,7 @@ export default function RootLayout() {
     // 保存済みセッションの復元通知。Supabase未設定なら双方とも何もしない。
     useEffect(() => registerMobileAuthStoreHooks(), []);
     useEffect(() => registerMobileCloudSyncHooks(), []);
+    useEffect(() => registerMobileOutboxHooks(), []);
     useEffect(() => startAuthSessionListener(), []);
 
     return (

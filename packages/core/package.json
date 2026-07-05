@@ -88,6 +88,10 @@
       "types": "./src/syncSnapshots.ts",
       "import": "./src/syncSnapshots.ts"
     },
+    "./syncOutbox": {
+      "types": "./src/syncOutbox.ts",
+      "import": "./src/syncOutbox.ts"
+    },
     "./syncRepository": {
       "types": "./src/syncRepository.ts",
       "import": "./src/syncRepository.ts"

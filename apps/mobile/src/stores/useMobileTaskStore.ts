@@ -19,6 +19,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
 import { getTodayJst } from '../utils/date';
 import { useMobileGameStore } from './useMobileGameStore';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 
 export interface AddTaskOptions {
     dueDate?: string | null;
@@ -76,6 +77,8 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     });
                     if (!task) return false;
                     set((state) => ({ tasks: [...state.tasks, task] }));
+                    // ログイン中はクラウドへも書き込む（オフラインならoutboxが再送する）
+                    void enqueueCloudOperation('upsert_task', { p_id: task.id, p_name: task.name }, { trackTaskId: task.id });
                     return true;
                 },
 
@@ -96,6 +99,8 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 deleteTask: (taskId) => {
                     if (!get().hasHydrated) return;
                     set((state) => ({ tasks: removeTask(state.tasks, taskId) }));
+                    // 作成がまだ未送信ならその後に削除が送られる（dependsOnで順序保証）
+                    void enqueueCloudOperation('delete_task', { p_id: taskId }, { dependsOnTaskId: taskId });
                 },
 
                 addSubtask: (taskId, name) => {
@@ -107,6 +112,15 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     });
                     if (!next) return false;
                     set({ tasks: next });
+                    const added = next.find((candidate) => candidate.id === taskId)?.subtasks.at(-1);
+                    if (added) {
+                        // 親タスクの作成が未送信でも、dependsOnにより必ず親→子の順で送られる
+                        void enqueueCloudOperation(
+                            'upsert_subtask',
+                            { p_id: added.id, p_task_id: taskId, p_name: added.name },
+                            { dependsOnTaskId: taskId },
+                        );
+                    }
                     return true;
                 },
 
