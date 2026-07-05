@@ -4,7 +4,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(54);
+select plan(56);
 
 -- 1. テーブル存在
 select has_table('public', 'sync_versions',  'sync_versions exists');
@@ -18,6 +18,10 @@ select has_table('public', 'user_settings',  'user_settings exists');
 select has_table('public', 'stats_daily',    'stats_daily exists');
 select has_table('public', 'idempotency_keys',     'idempotency_keys exists');
 select has_table('public', 'reward_transactions',  'reward_transactions exists');
+
+-- 1b. stats_daily: Web統計が使う列（レビュー指摘対応）
+select has_column('public', 'stats_daily', 'task_xp',     'stats_daily.task_xp exists');
+select has_column('public', 'stats_daily', 'habit_count', 'stats_daily.habit_count exists');
 
 -- 2. RLS有効化（全コンテンツテーブル＋sync_versions）
 select ok(relrowsecurity, 'RLS enabled: ' || relname)

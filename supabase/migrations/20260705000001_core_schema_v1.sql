@@ -157,6 +157,8 @@ create table public.stats_daily (
     user_id uuid not null references auth.users (id) on delete cascade,
     date date not null,
     all_habits_complete boolean not null default false,
+    task_xp integer not null default 0 check (task_xp >= 0),
+    habit_count integer not null default 0 check (habit_count >= 0),
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     deleted_at timestamptz,
@@ -370,6 +372,21 @@ begin
     return new;
 end;
 $$;
+
+-- 13b. 既存ユーザーへのバックフィル
+--     handle_new_userの生成対象行（profiles / sync_versions / user_settings）が
+--     このマイグレーション以前に作成されたユーザーに欠けている場合に補完する。
+insert into public.profiles (user_id)
+select id from auth.users u
+ where not exists (select 1 from public.profiles p where p.user_id = u.id);
+
+insert into public.sync_versions (user_id, current_version)
+select id, 0 from auth.users u
+ where not exists (select 1 from public.sync_versions s where s.user_id = u.id);
+
+insert into public.user_settings (user_id)
+select id from auth.users u
+ where not exists (select 1 from public.user_settings s where s.user_id = u.id);
 
 -- 14. Realtime通知をsync_versions 1テーブルに集約（ADR-008: 通知専用）
 --     全ての書き込み操作はnext_sync_versionでsync_versionsをUPDATEするため、

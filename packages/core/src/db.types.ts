@@ -231,6 +231,8 @@ export type Database = {
           created_at: string
           date: string
           deleted_at: string | null
+          habit_count: number
+          task_xp: number
           updated_at: string
           user_id: string
           version: number
@@ -240,6 +242,8 @@ export type Database = {
           created_at?: string
           date: string
           deleted_at?: string | null
+          habit_count?: number
+          task_xp?: number
           updated_at?: string
           user_id: string
           version: number
@@ -249,6 +253,8 @@ export type Database = {
           created_at?: string
           date?: string
           deleted_at?: string | null
+          habit_count?: number
+          task_xp?: number
           updated_at?: string
           user_id?: string
           version?: number
