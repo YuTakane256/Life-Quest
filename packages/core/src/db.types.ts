@@ -573,6 +573,8 @@ export type Database = {
         Args: {
           p_chest: Json
           p_key: string
+          p_parent_chest: Json
+          p_parent_xp: number
           p_subtask_id: string
           p_user_id: string
           p_xp: number
@@ -595,6 +597,7 @@ export type Database = {
         Args: { p_key: string; p_result: Json; p_user_id: string }
         Returns: undefined
       }
+      lock_user_sync: { Args: { p_user_id: string }; Returns: undefined }
       next_sync_version: { Args: { p_user_id: string }; Returns: number }
       open_chest_apply: {
         Args: {
