@@ -198,12 +198,12 @@ describe.skipIf(!enabled)('#511 同期スパイク（ローカルSupabase統合�
         expect(cursorStore).toBeGreaterThan(0);
     });
 
-    it('complete_task_authoritative: 冪等・ADR-003ゲート・所有者検証・1操作1version', async () => {
+    it('complete_task_apply: 冪等・ADR-003ゲート・所有者検証・1操作1version', async () => {
         const taskId = uuid();
         await userA.client.rpc('upsert_task', { p_id: taskId, p_name: '完了対象', p_key: uuid() });
 
         const call = (key: string, uid = userA.id, xp = 10) =>
-            pg.query('select complete_task_authoritative($1,$2,$3,$4) as r', [uid, taskId, xp, key]);
+            pg.query('select complete_task_apply($1,$2,$3,null,null,$4) as r', [uid, taskId, xp, key]);
 
         // 初回: granted=true
         const key1 = uuid();
