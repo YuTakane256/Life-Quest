@@ -34,6 +34,138 @@ export type Database = {
   }
   public: {
     Tables: {
+      battle_attempts: {
+        Row: {
+          created_at: string
+          enemy_snapshot: Json
+          id: string
+          outcome: string | null
+          player_snapshot: Json
+          resolved_at: string | null
+          stage: number
+          status: string
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          enemy_snapshot: Json
+          id?: string
+          outcome?: string | null
+          player_snapshot: Json
+          resolved_at?: string | null
+          stage: number
+          status?: string
+          updated_at?: string
+          user_id: string
+          version: number
+        }
+        Update: {
+          created_at?: string
+          enemy_snapshot?: Json
+          id?: string
+          outcome?: string | null
+          player_snapshot?: Json
+          resolved_at?: string | null
+          stage?: number
+          status?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      characters: {
+        Row: {
+          avatar: string
+          battle_unlocked: boolean
+          created_at: string
+          current_stage: number
+          debuff_active: boolean
+          debuff_expires_at: string | null
+          gacha_count: number
+          max_cleared_stage: number
+          name: string
+          total_xp: number
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          avatar?: string
+          battle_unlocked?: boolean
+          created_at?: string
+          current_stage?: number
+          debuff_active?: boolean
+          debuff_expires_at?: string | null
+          gacha_count?: number
+          max_cleared_stage?: number
+          name?: string
+          total_xp?: number
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          avatar?: string
+          battle_unlocked?: boolean
+          created_at?: string
+          current_stage?: number
+          debuff_active?: boolean
+          debuff_expires_at?: string | null
+          gacha_count?: number
+          max_cleared_stage?: number
+          name?: string
+          total_xp?: number
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      chests: {
+        Row: {
+          chest_type: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_starter_character: boolean
+          label: string
+          opened: boolean
+          opened_item_id: string | null
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          chest_type: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_starter_character?: boolean
+          label?: string
+          opened?: boolean
+          opened_item_id?: string | null
+          updated_at?: string
+          user_id: string
+          version: number
+        }
+        Update: {
+          chest_type?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_starter_character?: boolean
+          label?: string
+          opened?: boolean
+          opened_item_id?: string | null
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
       habit_logs: {
         Row: {
           completed: boolean
@@ -135,6 +267,39 @@ export type Database = {
           result?: Json | null
           status?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      inventory_items: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          equipped: boolean
+          id: string
+          template_id: string
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          equipped?: boolean
+          id?: string
+          template_id: string
+          updated_at?: string
+          user_id: string
+          version: number
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          equipped?: boolean
+          id?: string
+          template_id?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
         }
         Relationships: []
       }
@@ -400,9 +565,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      complete_task_authoritative: {
+      claim_habit_bonus_apply: {
+        Args: { p_date: string; p_key: string; p_user_id: string; p_xp: number }
+        Returns: Json
+      }
+      complete_subtask_apply: {
         Args: {
+          p_chest: Json
           p_key: string
+          p_subtask_id: string
+          p_user_id: string
+          p_xp: number
+        }
+        Returns: Json
+      }
+      complete_task_apply: {
+        Args: {
+          p_chest: Json
+          p_key: string
+          p_next_task: Json
           p_task_id: string
           p_user_id: string
           p_xp: number
@@ -410,11 +591,72 @@ export type Database = {
         Returns: Json
       }
       delete_task: { Args: { p_id: string; p_key: string }; Returns: Json }
+      finish_idempotency_key: {
+        Args: { p_key: string; p_result: Json; p_user_id: string }
+        Returns: undefined
+      }
       next_sync_version: { Args: { p_user_id: string }; Returns: number }
+      open_chest_apply: {
+        Args: {
+          p_chest_id: string
+          p_item: Json
+          p_key: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       pull_sync_batch: {
         Args: { p_after_version: number; p_max_versions: number }
         Returns: Json
       }
+      reserve_idempotency_key: {
+        Args: { p_key: string; p_operation: string; p_user_id: string }
+        Returns: Json
+      }
+      resolve_battle_attempt_apply: {
+        Args: {
+          p_attempt_id: string
+          p_key: string
+          p_outcome: string
+          p_user_id: string
+          p_xp: number
+        }
+        Returns: Json
+      }
+      sell_item_apply: {
+        Args: {
+          p_item_id: string
+          p_key: string
+          p_user_id: string
+          p_xp: number
+        }
+        Returns: Json
+      }
+      start_battle_attempt_apply: {
+        Args: {
+          p_attempt_id: string
+          p_enemy: Json
+          p_key: string
+          p_player: Json
+          p_stage: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      synthesize_items_apply: {
+        Args: {
+          p_ingredient_ids: string[]
+          p_key: string
+          p_result_item: Json
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      uncomplete_subtask: {
+        Args: { p_id: string; p_key: string }
+        Returns: Json
+      }
+      uncomplete_task: { Args: { p_id: string; p_key: string }; Returns: Json }
       upsert_profile: {
         Args: {
           p_active_title: string

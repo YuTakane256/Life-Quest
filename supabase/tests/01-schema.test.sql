@@ -72,10 +72,10 @@ select ok(has_function_privilege('authenticated', 'public.pull_sync_batch(bigint
     'authenticated can execute pull_sync_batch');
 select ok(not has_function_privilege('authenticated', 'public.next_sync_version(uuid)', 'execute'),
     'authenticated cannot execute next_sync_version');
-select ok(not has_function_privilege('authenticated', 'public.complete_task_authoritative(uuid, uuid, integer, text)', 'execute'),
-    'authenticated cannot execute complete_task_authoritative');
-select ok(has_function_privilege('service_role', 'public.complete_task_authoritative(uuid, uuid, integer, text)', 'execute'),
-    'service_role can execute complete_task_authoritative');
+select ok(not has_function_privilege('authenticated', 'public.complete_task_apply(uuid, uuid, integer, jsonb, jsonb, text)', 'execute'),
+    'authenticated cannot execute complete_task_apply');
+select ok(has_function_privilege('service_role', 'public.complete_task_apply(uuid, uuid, integer, jsonb, jsonb, text)', 'execute'),
+    'service_role can execute complete_task_apply');
 
 -- 6. 複合FK違反の拒否（親と異なるユーザーの子行は作れない）
 --    2ユーザーと親行をsuperuserとして直接用意する。
