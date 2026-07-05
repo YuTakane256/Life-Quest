@@ -316,24 +316,41 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         expect(gone[0].count).toBe('0');
     });
 
-    it('complete_subtask: 親優先度の半分のXPで、同一サブタスクは生涯1回', async () => {
+    it('complete_subtask: 半分XP・生涯1回、全サブタスク完了で親が自動完了し親報酬も連鎖する', async () => {
         const taskId = await createTask('サブタスク親');
-        const subtaskId = uuid();
+        const sub1 = uuid();
+        const sub2 = uuid();
         await insertWithVersion(async (v) => {
             await pg.query(
-                'insert into subtasks (id, task_id, user_id, name, version) values ($1, $2, $3, $4, $5)',
-                [subtaskId, taskId, user.id, '子', v],
+                'insert into subtasks (id, task_id, user_id, name, version) values ($1, $3, $4, $5, $6), ($2, $3, $4, $5, $6)',
+                [sub1, sub2, taskId, user.id, '子', v],
             );
         });
 
+        // 1つ目: サブタスク報酬のみ。親はまだ完了しない
         const xpBefore = Number((await getCharacter()).total_xp);
-        const first = await callFn('complete_subtask', { subtaskId, idempotencyKey: uuid() });
+        const first = await callFn('complete_subtask', { subtaskId: sub1, idempotencyKey: uuid() });
         expect(first.status).toBe(200);
-        expect(((await first.json()) as { granted: boolean }).granted).toBe(true);
+        const firstBody = (await first.json()) as { granted: boolean; parent_completed: boolean };
+        expect(firstBody.granted).toBe(true);
+        expect(firstBody.parent_completed).toBe(false);
         expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 10); // medium 20 の半分
 
-        const again = await callFn('complete_subtask', { subtaskId, idempotencyKey: uuid() });
-        expect(((await again.json()) as { granted: boolean }).granted).toBe(false);
+        // 2つ目: 全サブタスク完了 → 親が自動完了し、親報酬（+20）も同一トランザクションで連鎖
+        const second = await callFn('complete_subtask', { subtaskId: sub2, idempotencyKey: uuid() });
+        const secondBody = (await second.json()) as { granted: boolean; parent_completed: boolean; parent_granted: boolean };
+        expect(secondBody.granted).toBe(true);
+        expect(secondBody.parent_completed).toBe(true);
+        expect(secondBody.parent_granted).toBe(true);
+        expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 10 + 10 + 20);
+        const { rows: parent } = await pg.query('select completed from tasks where id=$1', [taskId]);
+        expect(parent[0].completed).toBe(true);
+
+        // 再送は生涯1回ゲートで報酬なし
+        const again = await callFn('complete_subtask', { subtaskId: sub1, idempotencyKey: uuid() });
+        const againBody = (await again.json()) as { granted: boolean; parent_granted: boolean };
+        expect(againBody.granted).toBe(false);
+        expect(againBody.parent_granted).toBe(false);
     });
 
     it('claim_habit_bonus: 未達成は拒否、全達成は日付単位で生涯1回付与', async () => {
@@ -402,5 +419,103 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
             [user.id],
         );
         expect(after[0].count).toBe('1');
+    });
+
+    it('並行実行: 同じ宝箱を2本の別キーで同時に開いてもアイテムは1個だけ', async () => {
+        const chestId = uuid();
+        await insertWithVersion(async (v) => {
+            await pg.query(
+                `insert into chests (id, user_id, chest_type, label, version) values ($1, $2, 'wood', '木の宝箱', $3)`,
+                [chestId, user.id, v],
+            );
+        });
+        const itemsBefore = await pg.query(
+            'select count(*) from inventory_items where user_id=$1 and deleted_at is null', [user.id]);
+
+        const [a, b] = await Promise.all([
+            callFn('open_chest', { chestId, idempotencyKey: uuid() }),
+            callFn('open_chest', { chestId, idempotencyKey: uuid() }),
+        ]);
+        expect([a.status, b.status].sort()).toEqual([200, 409]); // 片方だけ成功
+
+        const itemsAfter = await pg.query(
+            'select count(*) from inventory_items where user_id=$1 and deleted_at is null', [user.id]);
+        expect(Number(itemsAfter.rows[0].count)).toBe(Number(itemsBefore.rows[0].count) + 1);
+    });
+
+    it('並行実行: 同じ素材で合成を同時実行しても結果アイテムは1個だけ', async () => {
+        const ingredients = [uuid(), uuid(), uuid()];
+        await insertWithVersion(async (v) => {
+            for (const id of ingredients) {
+                await pg.query(
+                    `insert into inventory_items (id, user_id, template_id, version) values ($1, $2, 'wooden_ring', $3)`,
+                    [id, user.id, v],
+                );
+            }
+        });
+        const itemsBefore = await pg.query(
+            'select count(*) from inventory_items where user_id=$1 and deleted_at is null', [user.id]);
+
+        const [a, b] = await Promise.all([
+            callFn('synthesize_items', { itemIds: ingredients, idempotencyKey: uuid() }),
+            callFn('synthesize_items', { itemIds: ingredients, idempotencyKey: uuid() }),
+        ]);
+        expect([a.status, b.status].sort()).toEqual([200, 404]); // 後発は素材消滅でnot_found
+
+        // 素材3消滅・結果1生成が1回分だけ（複製されない）
+        const itemsAfter = await pg.query(
+            'select count(*) from inventory_items where user_id=$1 and deleted_at is null', [user.id]);
+        expect(Number(itemsAfter.rows[0].count)).toBe(Number(itemsBefore.rows[0].count) - 3 + 1);
+    });
+
+    it('並行実行: 同一タスクを2本の別キーで同時完了しても報酬は1回分', async () => {
+        const taskId = await createTask('並行別キー完了');
+        const xpBefore = Number((await getCharacter()).total_xp);
+
+        const [a, b] = await Promise.all([
+            callFn('complete_task', { taskId, idempotencyKey: uuid() }),
+            callFn('complete_task', { taskId, idempotencyKey: uuid() }),
+        ]);
+        const bodies = await Promise.all([a.json(), b.json()]) as { granted: boolean }[];
+        expect(bodies.filter((body) => body.granted)).toHaveLength(1);
+        expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 20);
+    });
+
+    it('並行実行: 同一battle_attemptを2本の別キーで同時resolveしてもXPは1回分', async () => {
+        const winActions = Array.from({ length: 12 }, () => ({ type: 'attack' }));
+        const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid() });
+        const attempt = (await start.json()) as { battle_attempt_id: string };
+        const xpBefore = Number((await getCharacter()).total_xp);
+
+        const [a, b] = await Promise.all([
+            callFn('resolve_battle_attempt', {
+                battleAttemptId: attempt.battle_attempt_id, actions: winActions, idempotencyKey: uuid(),
+            }),
+            callFn('resolve_battle_attempt', {
+                battleAttemptId: attempt.battle_attempt_id, actions: winActions, idempotencyKey: uuid(),
+            }),
+        ]);
+        const bodies = await Promise.all([a.json(), b.json()]) as { granted: boolean }[];
+        expect(bodies.filter((body) => body.granted)).toHaveLength(1);
+        expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 5);
+    });
+
+    it('冪等キーを別操作へ再利用すると拒否される', async () => {
+        const key = uuid();
+        const taskId = await createTask('キー再利用元');
+        const first = await callFn('complete_task', { taskId, idempotencyKey: key });
+        expect(first.status).toBe(200);
+
+        // 同じキーで別操作（sell_item）を呼ぶ → 操作不一致で拒否
+        const itemId = uuid();
+        await insertWithVersion(async (v) => {
+            await pg.query(
+                `insert into inventory_items (id, user_id, template_id, version) values ($1, $2, 'wooden_sword', $3)`,
+                [itemId, user.id, v],
+            );
+        });
+        const reuse = await callFn('sell_item', { itemId, idempotencyKey: key });
+        expect(reuse.status).toBe(500);
+        expect(((await reuse.json()) as { error: string }).error).toContain('idempotency_key_operation_mismatch');
     });
 });

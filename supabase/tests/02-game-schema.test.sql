@@ -34,7 +34,7 @@ select ok(
 -- 4. apply系関数はservice_role専用、uncompleteはauthenticated可
 select ok(not has_function_privilege('authenticated', fn, 'execute'), 'authenticated cannot execute ' || fn)
   from unnest(array[
-    'public.complete_subtask_apply(uuid, uuid, integer, jsonb, text)',
+    'public.complete_subtask_apply(uuid, uuid, integer, jsonb, integer, jsonb, text)',
     'public.claim_habit_bonus_apply(uuid, date, integer, text)',
     'public.sell_item_apply(uuid, uuid, integer, text)',
     'public.synthesize_items_apply(uuid, uuid[], jsonb, text)',
@@ -43,7 +43,7 @@ select ok(not has_function_privilege('authenticated', fn, 'execute'), 'authentic
     'public.resolve_battle_attempt_apply(uuid, uuid, text, integer, text)'
   ]) as fn;
 
-select ok(has_function_privilege('service_role', 'public.complete_subtask_apply(uuid, uuid, integer, jsonb, text)', 'execute'),
+select ok(has_function_privilege('service_role', 'public.complete_subtask_apply(uuid, uuid, integer, jsonb, integer, jsonb, text)', 'execute'),
     'service_role can execute complete_subtask_apply');
 select ok(has_function_privilege('authenticated', 'public.uncomplete_task(uuid, text)', 'execute'),
     'authenticated can execute uncomplete_task');

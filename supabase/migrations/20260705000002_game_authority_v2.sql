@@ -246,7 +246,7 @@ set search_path = ''
 as $$
 declare
     v_reserved integer;
-    v_existing jsonb;
+    v_existing public.idempotency_keys;
 begin
     insert into public.idempotency_keys (user_id, key, operation)
     values (p_user_id, p_key, p_operation)
@@ -255,9 +255,13 @@ begin
     if v_reserved = 1 then
         return null;
     end if;
-    select result into v_existing from public.idempotency_keys
+    select * into v_existing from public.idempotency_keys
      where user_id = p_user_id and key = p_key;
-    return coalesce(v_existing, jsonb_build_object('replayed', true));
+    -- 同一キーの別操作への再利用は拒否する（結果の取り違え防止）
+    if v_existing.operation is distinct from p_operation then
+        raise exception 'idempotency_key_operation_mismatch';
+    end if;
+    return coalesce(v_existing.result, jsonb_build_object('replayed', true));
 end;
 $$;
 
@@ -277,6 +281,26 @@ end;
 $$;
 
 revoke all on function public.finish_idempotency_key(uuid, text, jsonb) from public, anon, authenticated;
+
+-- 8b. ユーザー直列化ロック（versionを消費せずに取得する）
+--     next_sync_versionと同じsync_versions行ロックを先に取ることで、
+--     「状態検証 → 更新」の間に他トランザクションが割り込む競合を防ぐ。
+--     呼び出し規約: 冪等キー予約の直後・状態検証の前に必ず呼ぶ。
+--     早期return（already_resolved等）でもversionを浪費しない。
+create function public.lock_user_sync(p_user_id uuid) returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+    perform 1 from public.sync_versions where user_id = p_user_id for update;
+    if not found then
+        raise exception 'sync_versions row missing for user %', p_user_id;
+    end if;
+end;
+$$;
+
+revoke all on function public.lock_user_sync(uuid) from public, anon, authenticated;
 
 -- 9. 旧スパイク関数を撤去（complete_task_applyへ置き換え）
 drop function public.complete_task_authoritative(uuid, uuid, integer, text);
@@ -312,6 +336,9 @@ begin
 
     v_replay := public.reserve_idempotency_key(p_user_id, p_key, 'complete_task');
     if v_replay is not null then return v_replay; end if;
+
+    -- 直列化: 状態検証の前にユーザーロックを取得（lock → 再検証 → 条件付き更新）
+    perform public.lock_user_sync(p_user_id);
 
     perform 1 from public.tasks where id = p_task_id and user_id = p_user_id and deleted_at is null;
     if not found then raise exception 'not_found_or_forbidden'; end if;
@@ -381,11 +408,17 @@ revoke all on function public.complete_task_apply(uuid, uuid, integer, jsonb, js
 grant execute on function public.complete_task_apply(uuid, uuid, integer, jsonb, jsonb, text) to service_role;
 
 -- 11. complete_subtask_apply（サブタスクもgacha_count加算・マイルストーン対象。Web現行と同一）
+--     全サブタスク完了で親タスクを自動完了し、親の報酬（p_parent_xp）も
+--     同一トランザクション・同一version・ADR-003ゲートで連鎖させる。
+--     p_chest はサブタスク分（gacha+1）、p_parent_chest は親分（gacha+2）の
+--     マイルストーン候補。いずれも「加算後のgacha_count一致」でDBが最終判定する。
 create function public.complete_subtask_apply(
     p_user_id uuid,
     p_subtask_id uuid,
     p_xp integer,
     p_chest jsonb,
+    p_parent_xp integer,
+    p_parent_chest jsonb,
     p_key text
 ) returns jsonb
 language plpgsql
@@ -396,16 +429,27 @@ declare
     v_replay jsonb;
     v_version bigint;
     v_granted integer;
+    v_parent_granted integer := 0;
     v_gacha_count bigint;
+    v_task_id uuid;
+    v_parent_completed boolean;
+    v_all_done boolean;
     v_result jsonb;
 begin
     if p_user_id is null then raise exception 'missing user'; end if;
     if p_xp is null or p_xp < 0 or p_xp > 1000 then raise exception 'invalid xp'; end if;
+    if p_parent_xp is not null and (p_parent_xp < 0 or p_parent_xp > 1000) then
+        raise exception 'invalid parent xp';
+    end if;
 
     v_replay := public.reserve_idempotency_key(p_user_id, p_key, 'complete_subtask');
     if v_replay is not null then return v_replay; end if;
 
-    perform 1 from public.subtasks where id = p_subtask_id and user_id = p_user_id and deleted_at is null;
+    -- 直列化: 状態検証の前にユーザーロックを取得（lock → 再検証 → 条件付き更新）
+    perform public.lock_user_sync(p_user_id);
+
+    select task_id into v_task_id from public.subtasks
+     where id = p_subtask_id and user_id = p_user_id and deleted_at is null;
     if not found then raise exception 'not_found_or_forbidden'; end if;
 
     v_version := public.next_sync_version(p_user_id);
@@ -440,14 +484,66 @@ begin
         end if;
     end if;
 
-    v_result := jsonb_build_object('granted', v_granted = 1, 'version', v_version);
+    -- 親タスク自動完了: 未削除の全サブタスクが完了していれば親も完了させる
+    select completed into v_parent_completed from public.tasks
+     where id = v_task_id and user_id = p_user_id and deleted_at is null;
+    if found and not v_parent_completed then
+        select not exists (
+            select 1 from public.subtasks
+             where task_id = v_task_id and user_id = p_user_id
+               and deleted_at is null and completed = false
+        ) into v_all_done;
+
+        if v_all_done then
+            update public.tasks
+               set completed = true, completed_at = now(), version = v_version
+             where id = v_task_id;
+
+            -- 親タスクの報酬も連鎖（ADR-003: 親のsource_idで生涯1回）
+            if p_parent_xp is not null then
+                insert into public.reward_transactions (user_id, kind, source_id, xp_delta)
+                values (p_user_id, 'task_complete', v_task_id::text, p_parent_xp)
+                on conflict (user_id, kind, source_id) do nothing;
+                get diagnostics v_parent_granted = row_count;
+
+                if v_parent_granted = 1 then
+                    update public.characters
+                       set total_xp = total_xp + p_parent_xp,
+                           gacha_count = gacha_count + 1,
+                           version = v_version
+                     where user_id = p_user_id
+                    returning gacha_count into v_gacha_count;
+
+                    if p_parent_chest is not null
+                       and v_gacha_count = (p_parent_chest->>'milestone_count')::bigint then
+                        insert into public.chests (id, user_id, chest_type, label, is_starter_character, version)
+                        values (
+                            (p_parent_chest->>'id')::uuid,
+                            p_user_id,
+                            p_parent_chest->>'chest_type',
+                            coalesce(p_parent_chest->>'label', ''),
+                            coalesce((p_parent_chest->>'is_starter_character')::boolean, false),
+                            v_version
+                        );
+                    end if;
+                end if;
+            end if;
+        end if;
+    end if;
+
+    v_result := jsonb_build_object(
+        'granted', v_granted = 1,
+        'parent_completed', coalesce(v_all_done, false),
+        'parent_granted', v_parent_granted = 1,
+        'version', v_version
+    );
     perform public.finish_idempotency_key(p_user_id, p_key, v_result);
     return v_result;
 end;
 $$;
 
-revoke all on function public.complete_subtask_apply(uuid, uuid, integer, jsonb, text) from public, anon, authenticated;
-grant execute on function public.complete_subtask_apply(uuid, uuid, integer, jsonb, text) to service_role;
+revoke all on function public.complete_subtask_apply(uuid, uuid, integer, jsonb, integer, jsonb, text) from public, anon, authenticated;
+grant execute on function public.complete_subtask_apply(uuid, uuid, integer, jsonb, integer, jsonb, text) to service_role;
 
 -- 12. claim_habit_bonus_apply（習慣全達成ボーナス。日付単位で生涯1回）
 create function public.claim_habit_bonus_apply(
@@ -472,6 +568,9 @@ begin
 
     v_replay := public.reserve_idempotency_key(p_user_id, p_key, 'claim_habit_bonus');
     if v_replay is not null then return v_replay; end if;
+
+    -- 直列化: 状態検証の前にユーザーロックを取得（lock → 再検証 → 条件付き更新）
+    perform public.lock_user_sync(p_user_id);
 
     v_version := public.next_sync_version(p_user_id);
 
@@ -590,6 +689,9 @@ begin
     v_replay := public.reserve_idempotency_key(p_user_id, p_key, 'sell_item');
     if v_replay is not null then return v_replay; end if;
 
+    -- 直列化: 状態検証の前にユーザーロックを取得（lock → 再検証 → 条件付き更新）
+    perform public.lock_user_sync(p_user_id);
+
     select equipped into v_equipped from public.inventory_items
      where id = p_item_id and user_id = p_user_id and deleted_at is null;
     if not found then raise exception 'not_found_or_forbidden'; end if;
@@ -656,6 +758,9 @@ begin
     v_replay := public.reserve_idempotency_key(p_user_id, p_key, 'synthesize_items');
     if v_replay is not null then return v_replay; end if;
 
+    -- 直列化: 状態検証の前にユーザーロックを取得（lock → 再検証 → 条件付き更新）
+    perform public.lock_user_sync(p_user_id);
+
     select count(*) into v_valid_count from public.inventory_items
      where id = any(p_ingredient_ids) and user_id = p_user_id
        and deleted_at is null and equipped = false;
@@ -705,6 +810,9 @@ begin
 
     v_replay := public.reserve_idempotency_key(p_user_id, p_key, 'open_chest');
     if v_replay is not null then return v_replay; end if;
+
+    -- 直列化: 状態検証の前にユーザーロックを取得（lock → 再検証 → 条件付き更新）
+    perform public.lock_user_sync(p_user_id);
 
     select is_starter_character, opened into v_starter, v_opened from public.chests
      where id = p_chest_id and user_id = p_user_id and deleted_at is null;
@@ -762,6 +870,9 @@ begin
     v_replay := public.reserve_idempotency_key(p_user_id, p_key, 'start_battle_attempt');
     if v_replay is not null then return v_replay; end if;
 
+    -- 直列化: 状態検証の前にユーザーロックを取得（lock → 再検証 → 条件付き更新）
+    perform public.lock_user_sync(p_user_id);
+
     select * into v_character from public.characters where user_id = p_user_id;
     if not found then raise exception 'character row missing'; end if;
     if not v_character.battle_unlocked then raise exception 'battle_locked'; end if;
@@ -815,6 +926,9 @@ begin
 
     v_replay := public.reserve_idempotency_key(p_user_id, p_key, 'resolve_battle_attempt');
     if v_replay is not null then return v_replay; end if;
+
+    -- 直列化: 状態検証の前にユーザーロックを取得（lock → 再検証 → 条件付き更新）
+    perform public.lock_user_sync(p_user_id);
 
     select * into v_attempt from public.battle_attempts
      where id = p_attempt_id and user_id = p_user_id;
@@ -873,3 +987,62 @@ grant execute on function public.resolve_battle_attempt_apply(uuid, uuid, text, 
 grant usage on schema public to service_role;
 grant select, insert, update, delete on all tables in schema public to service_role;
 alter default privileges in schema public grant select, insert, update, delete on tables to service_role;
+
+-- 20. 既存ユーザーへのcharactersバックフィル
+insert into public.characters (user_id)
+select id from auth.users u
+ where not exists (select 1 from public.characters c where c.user_id = u.id);
+
+-- 21. upsert_profile: lock → 再検証 → 条件付き更新 の順へ修正（#501関数の差し替え）
+--     旧実装は base_version 検証がロック取得前だったため、検証と更新の間に
+--     並行更新が割り込む余地があった。
+create or replace function public.upsert_profile(
+    p_display_name text,
+    p_avatar text,
+    p_active_title text,
+    p_base_version bigint,
+    p_key text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    v_user_id uuid := (select auth.uid());
+    v_version bigint;
+    v_replay jsonb;
+    v_current public.profiles;
+begin
+    if v_user_id is null then
+        raise exception 'unauthenticated';
+    end if;
+
+    v_replay := public.reserve_idempotency_key(v_user_id, p_key, 'upsert_profile');
+    if v_replay is not null then return v_replay; end if;
+
+    perform public.lock_user_sync(v_user_id);
+
+    select * into v_current from public.profiles where user_id = v_user_id;
+    if not found then
+        raise exception 'profile row missing for user %', v_user_id;
+    end if;
+
+    if p_base_version is not null and v_current.version <> p_base_version then
+        v_replay := jsonb_build_object('conflict', true, 'current', to_jsonb(v_current));
+        perform public.finish_idempotency_key(v_user_id, p_key, v_replay);
+        return v_replay;
+    end if;
+
+    v_version := public.next_sync_version(v_user_id);
+
+    update public.profiles
+       set display_name = p_display_name,
+           avatar = p_avatar,
+           active_title = p_active_title,
+           version = v_version
+     where user_id = v_user_id;
+
+    perform public.finish_idempotency_key(v_user_id, p_key, jsonb_build_object('version', v_version));
+    return jsonb_build_object('version', v_version);
+end;
+$$;
