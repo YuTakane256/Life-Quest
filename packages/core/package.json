@@ -32,6 +32,10 @@
       "types": "./src/cloudCache.ts",
       "import": "./src/cloudCache.ts"
     },
+    "./cloudImport": {
+      "types": "./src/cloudImport.ts",
+      "import": "./src/cloudImport.ts"
+    },
     "./cloudPull": {
       "types": "./src/cloudPull.ts",
       "import": "./src/cloudPull.ts"
