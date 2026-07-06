@@ -38,7 +38,8 @@ describe('ensurePreMigrationBackup', () => {
 
     it('初回のみバックアップを保存し、既存バックアップは上書きしない', async () => {
         useMobileTaskStore.setState({ tasks: [localTask('m-1', '端末のタスク')], hasHydrated: true });
-        useMobileGameStore.setState((state) => ({ character: { ...state.character, totalXp: 777 } }));
+        useMobileHabitStore.setState({ hasHydrated: true });
+        useMobileGameStore.setState((state) => ({ character: { ...state.character, totalXp: 777 }, hasHydrated: true }));
 
         await ensurePreMigrationBackup('user-1');
         const first = memory.get(preMigrationBackupKey('user-1'))!;
@@ -53,9 +54,70 @@ describe('ensurePreMigrationBackup', () => {
     });
 
     it('user_idごとに独立したバックアップキーを使う', async () => {
+        useMobileTaskStore.setState({ hasHydrated: true });
+        useMobileHabitStore.setState({ hasHydrated: true });
+        useMobileGameStore.setState({ hasHydrated: true });
         await ensurePreMigrationBackup('user-a');
         expect(memory.has(preMigrationBackupKey('user-a'))).toBe(true);
         expect(memory.has(preMigrationBackupKey('user-b'))).toBe(false);
+    });
+
+    it('hydration完了前は保存を待機し、空データを確定保存しない（競合の再現）', async () => {
+        // hydration前の状態を再現: 空のtasks/habits・初期game状態、hasHydrated=false
+        useMobileTaskStore.setState({ tasks: [], hasHydrated: false });
+        useMobileHabitStore.setState({ habits: [], records: [], hasHydrated: false });
+        useMobileGameStore.setState((state) => ({ character: { ...state.character, totalXp: 0 }, hasHydrated: false }));
+
+        const backupPromise = ensurePreMigrationBackup('user-race');
+
+        // hydration未完了の間はまだ保存されていないこと
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(memory.has(preMigrationBackupKey('user-race'))).toBe(false);
+
+        // 実際のhydration完了を再現: 本来のローカルデータが遅れて到着する
+        useMobileTaskStore.setState({
+            tasks: [localTask('mobile-real-task', '本来退避すべきタスク')],
+            hasHydrated: true,
+        });
+        useMobileHabitStore.setState({
+            habits: [{ id: 'real-habit', name: '本来の習慣', categoryId: 'general', createdAt: '2026-07-01T00:00:00.000Z' }],
+            hasHydrated: true,
+        });
+        useMobileGameStore.setState((state) => ({ character: { ...state.character, totalXp: 999 }, hasHydrated: true }));
+
+        await backupPromise;
+
+        const saved = memory.get(preMigrationBackupKey('user-race'))!;
+        const parsed = JSON.parse(saved) as {
+            game: { character: { totalXp: number } };
+            tasks: { id: string }[];
+            habits: { id: string }[];
+        };
+        // hydration前の空データではなく、hydration後の本来のローカルデータが保存されている
+        expect(parsed.tasks.map((task) => task.id)).toEqual(['mobile-real-task']);
+        expect(parsed.habits.map((habit) => habit.id)).toEqual(['real-habit']);
+        expect(parsed.game.character.totalXp).toBe(999);
+    });
+
+    it('hydrationがタイムアウトした場合は保存をスキップし、次回再試行できる状態を保つ', async () => {
+        useMobileTaskStore.setState({ tasks: [], hasHydrated: false });
+        useMobileHabitStore.setState({ habits: [], records: [], hasHydrated: false });
+        useMobileGameStore.setState((state) => ({ hasHydrated: false }));
+
+        await ensurePreMigrationBackup('user-timeout', 20); // 短いタイムアウトで即座にスキップさせる
+
+        // 保存されていない = バックアップキー未作成 = 次回ログインで再試行対象のまま
+        expect(memory.has(preMigrationBackupKey('user-timeout'))).toBe(false);
+
+        // hydrationが遅れて完了しても、今回の呼び出し結果には影響しない
+        useMobileTaskStore.setState({ hasHydrated: true });
+        useMobileHabitStore.setState({ hasHydrated: true });
+        useMobileGameStore.setState((state) => ({ hasHydrated: true }));
+
+        // 次回ログイン相当の再試行では正しく保存される
+        await ensurePreMigrationBackup('user-timeout');
+        expect(memory.has(preMigrationBackupKey('user-timeout'))).toBe(true);
     });
 });
 

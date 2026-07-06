@@ -11,6 +11,7 @@
  * 自動統合はしない。未承認の項目はバックアップに残り続ける。
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { StoreApi, UseBoundStore } from 'zustand';
 import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { preMigrationBackupKey } from '@life-quest/core/cloudImport';
 import { loadCloudCache, type CloudCache } from '@life-quest/core/cloudCache';
@@ -21,11 +22,60 @@ import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 
-/** ローカル全状態のバックアップを（未保存の場合のみ）保存する。 */
-export async function ensurePreMigrationBackup(userId: string): Promise<void> {
+/**
+ * hydration完了まで待ってから解決する。zustand persistのonRehydrateStorageが
+ * hasHydrated=true を立てる前に読むと、空のtasks/habitsや初期game状態を
+ * バックアップとして確定させてしまい（以後上書きしないため）本来のローカル
+ * データを永久に失う。安全側として上限（既定10秒）を設け、それでも
+ * hydrateしなければ警告を出して次回ログイン時の再試行に委ねる（保存しない）。
+ */
+function waitForHydration(
+    store: UseBoundStore<StoreApi<{ hasHydrated: boolean }>>,
+    timeoutMs = 10_000,
+): Promise<boolean> {
+    if (store.getState().hasHydrated) return Promise.resolve(true);
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+            unsubscribe();
+            resolve(false);
+        }, timeoutMs);
+        const unsubscribe = store.subscribe((state) => {
+            if (!state.hasHydrated) return;
+            clearTimeout(timer);
+            unsubscribe();
+            resolve(true);
+        });
+    });
+}
+
+/** 3ストア全てのhydration完了を待つ。いずれかがタイムアウトしたらfalse。 */
+async function waitForAllStoresHydrated(timeoutMs?: number): Promise<boolean> {
+    const results = await Promise.all([
+        waitForHydration(useMobileTaskStore, timeoutMs),
+        waitForHydration(useMobileHabitStore, timeoutMs),
+        waitForHydration(useMobileGameStore, timeoutMs),
+    ]);
+    return results.every(Boolean);
+}
+
+/**
+ * ローカル全状態のバックアップを（未保存の場合のみ）保存する。
+ * 3ストア全てのhydration完了を待ってから読む（未hydrate状態の空データを
+ * 確定保存しないため）。hydrateしないままタイムアウトした場合は保存を
+ * スキップし、次回ログイン時に再試行する（バックアップキーが未作成のため
+ * 「初回のみ」の判定に引っかからない）。
+ * timeoutMsはテスト用（既定10秒）。
+ */
+export async function ensurePreMigrationBackup(userId: string, timeoutMs?: number): Promise<void> {
     const key = preMigrationBackupKey(userId);
     const existing = await AsyncStorage.getItem(key);
     if (existing !== null) return; // 初回のみ。既存バックアップは上書きしない
+
+    const hydrated = await waitForAllStoresHydrated(timeoutMs);
+    if (!hydrated) {
+        console.warn('pre-migration backup skipped: stores did not hydrate in time (will retry next login)');
+        return;
+    }
 
     const game = useMobileGameStore.getState();
     const tasks = useMobileTaskStore.getState();
