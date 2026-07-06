@@ -28,6 +28,10 @@
       "types": "./src/canonicalSync.ts",
       "import": "./src/canonicalSync.ts"
     },
+    "./cloudCache": {
+      "types": "./src/cloudCache.ts",
+      "import": "./src/cloudCache.ts"
+    },
     "./cloudPull": {
       "types": "./src/cloudPull.ts",
       "import": "./src/cloudPull.ts"

@@ -49,13 +49,13 @@ export interface CanonicalSyncHandle {
     stop: () => void;
 }
 
-/** canonical のタスクスナップショットをストアへ反映する */
-function seedTasks(snapshot: CanonicalTaskSnapshot): void {
+/** canonical のタスクスナップショットをストアへ反映する（クラウド同期 #504 も同じ経路を使う） */
+export function seedTasks(snapshot: CanonicalTaskSnapshot): void {
     useTaskStore.setState({ tasks: snapshot.tasks });
 }
 
 /** canonical の習慣スナップショットをストアへ反映する */
-function seedHabits(snapshot: CanonicalHabitSnapshot): void {
+export function seedHabits(snapshot: CanonicalHabitSnapshot): void {
     useHabitStore.setState({
         habits: snapshot.habits,
         dailyRecords: snapshot.dailyRecords,
@@ -69,7 +69,7 @@ function seedHabits(snapshot: CanonicalHabitSnapshot): void {
  * バトルは進行度（unlocked / currentStage / maxClearedStage）のみ上書きし、
  * 戦闘中の一時状態（敵HP・ログ・クールダウン）は canonical 契約に無いため保持する。
  */
-function seedGame(snapshot: CanonicalGameSnapshot): void {
+export function seedGame(snapshot: CanonicalGameSnapshot): void {
     useGameStore.setState((state) => ({
         character: snapshot.character,
         debuff: {

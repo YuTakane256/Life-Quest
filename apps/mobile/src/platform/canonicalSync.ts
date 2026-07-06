@@ -52,7 +52,7 @@ function isSectionHydrated(section: CanonicalSyncSection): boolean {
     return useMobileGameStore.getState().hasHydrated;
 }
 
-function seedSectionData(section: CanonicalSyncSection, data: unknown): void {
+export function seedSectionData(section: CanonicalSyncSection, data: unknown): void {
     if (section === 'tasks') {
         const snapshot = data as CanonicalTaskSnapshot;
         useMobileTaskStore.setState({ tasks: snapshot.tasks });

@@ -4,6 +4,7 @@ import './index.css';
 import App from './App';
 import { startAuthSessionListener } from './platform/auth';
 import { registerWebAuthStoreHooks } from './platform/authStores';
+import { registerWebCloudSyncHooks } from './platform/cloudSync';
 import { startWebCanonicalSync } from './platform/canonicalSync';
 
 // 旧quest-board-*データのcanonical移行と、以降のストア変更の書き戻しを開始する。
@@ -13,6 +14,7 @@ startWebCanonicalSync();
 // 認証ライフサイクル: ログアウト時のストア即時クリア（ADR-009、クラウドシード後のみ作動）と
 // 保存済みセッションの復元通知。Supabase未設定なら双方とも何もしない。
 registerWebAuthStoreHooks();
+registerWebCloudSyncHooks();
 startAuthSessionListener();
 
 createRoot(document.getElementById('root')!).render(

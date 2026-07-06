@@ -75,6 +75,63 @@ export function createCloudPullRunner(deps: CloudPullDeps): CloudPullRunner {
     };
 }
 
+export interface InsurancePullScheduler {
+    /** 定期タイマーを開始する（既に開始済みなら何もしない） */
+    start: () => void;
+    /** 定期タイマーを停止する（バックグラウンド移行時など） */
+    stop: () => void;
+    /** トリガ発火（起動・フォアグラウンド復帰・再接続・定期）。短時間の重複は1回にまとめる */
+    trigger: (reason: string) => void;
+}
+
+export interface InsurancePullOptions {
+    requestPull: () => void;
+    /** 定期間隔（既定5分） */
+    intervalMs?: number;
+    /** この時間内の重複トリガは無視する（既定3秒） */
+    debounceMs?: number;
+    now?: () => number;
+    setIntervalFn?: (handler: () => void, ms: number) => unknown;
+    clearIntervalFn?: (handle: unknown) => void;
+}
+
+/**
+ * 保険プルの発火管理（#504、レビュー指摘#10）。
+ * Realtime通知だけに依存せず、起動・フォアグラウンド復帰・再接続・定期の
+ * 4トリガでプルを起動する。トリガの購読（イベント登録）はプラットフォーム側が行い、
+ * ここはデバウンスと定期タイマーだけを持つ。
+ */
+export function createInsurancePullScheduler(options: InsurancePullOptions): InsurancePullScheduler {
+    const intervalMs = options.intervalMs ?? 5 * 60_000;
+    const debounceMs = options.debounceMs ?? 3_000;
+    const now = options.now ?? (() => Date.now());
+    const setIntervalFn = options.setIntervalFn ?? ((handler, ms) => setInterval(handler, ms));
+    const clearIntervalFn = options.clearIntervalFn ?? ((handle) => clearInterval(handle as ReturnType<typeof setInterval>));
+
+    let timer: unknown = null;
+    let lastFiredAt = -Infinity;
+
+    const trigger = (): void => {
+        const at = now();
+        if (at - lastFiredAt < debounceMs) return;
+        lastFiredAt = at;
+        options.requestPull();
+    };
+
+    return {
+        start: () => {
+            if (timer !== null) return;
+            timer = setIntervalFn(trigger, intervalMs);
+        },
+        stop: () => {
+            if (timer === null) return;
+            clearIntervalFn(timer);
+            timer = null;
+        },
+        trigger,
+    };
+}
+
 /** user_id別namespaceのキー（ADR-009） */
 export function cloudCursorKey(userId: string): string {
     return `life-quest:cloud:${userId}:cursor:v1`;
