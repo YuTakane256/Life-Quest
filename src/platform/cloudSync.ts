@@ -10,8 +10,8 @@
  *   authStores のフックが行う）
  *
  * #506（ローカルデータのクラウド取り込み）が入るまでの保護:
- * クラウドが空（コンテンツ行ゼロ）の間はストアへシードしない。
- * 空クラウドでローカルデータを消さないため。
+ * セクション単位で「クラウドが正か」を判定し（getSeedableSections）、
+ * 初期行しか無いクラウド状態で既存ローカルデータを消さない。
  */
 import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
@@ -19,8 +19,8 @@ import {
     buildCanonicalGameSnapshot,
     buildCanonicalHabitSnapshot,
     buildCanonicalTaskSnapshot,
-    countCloudContentRows,
     createEmptyCloudCache,
+    getSeedableSections,
     loadCloudCache,
     persistCloudCache,
     type CloudCache,
@@ -43,6 +43,34 @@ export interface CloudSyncHandle {
     stop: () => void;
 }
 
+/**
+ * クラウドキャッシュを「クラウドが正と言えるセクションだけ」ストアへ反映する。
+ * #506の移行前は初期行（characters version=1等）しか無いため、その状態で
+ * 空のtasks/habitsや初期値のゲーム状態をシードして既存ローカルデータを
+ * 消さないよう、セクション単位で判定する（core getSeedableSections）。
+ * 1つ以上シードした場合のみtrueを返す。
+ */
+export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
+    const seedable = getSeedableSections(cache);
+    let seeded = false;
+    if (seedable.tasks) {
+        seedTasks(buildCanonicalTaskSnapshot(cache));
+        seeded = true;
+    }
+    if (seedable.habits) {
+        seedHabits(buildCanonicalHabitSnapshot(cache));
+        seeded = true;
+    }
+    if (seedable.game) {
+        const game = buildCanonicalGameSnapshot(cache);
+        if (game) {
+            seedGame(game);
+            seeded = true;
+        }
+    }
+    return seeded;
+}
+
 /** ログイン中ユーザーのクラウド同期を開始する。環境未設定なら null。 */
 export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     const client = getWebSupabaseClient();
@@ -53,14 +81,9 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     let stopped = false;
 
     const seedStores = (): void => {
-        // #506の移行が走るまでクラウドは空でありうる。空のままシードすると
-        // 未移行のローカルデータを消してしまうため、行が届くまで待つ。
-        if (countCloudContentRows(cache) === 0) return;
-        seedTasks(buildCanonicalTaskSnapshot(cache));
-        seedHabits(buildCanonicalHabitSnapshot(cache));
-        const game = buildCanonicalGameSnapshot(cache);
-        if (game) seedGame(game);
-        markCloudSessionSeeded();
+        if (applyCloudCacheToWebStores(cache)) {
+            markCloudSessionSeeded();
+        }
     };
 
     const runner = createCloudPullRunner({

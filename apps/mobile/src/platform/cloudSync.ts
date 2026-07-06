@@ -10,10 +10,6 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
     applyPullBatchToCache,
-    buildCanonicalGameSnapshot,
-    buildCanonicalHabitSnapshot,
-    buildCanonicalTaskSnapshot,
-    countCloudContentRows,
     createEmptyCloudCache,
     loadCloudCache,
     persistCloudCache,
@@ -26,7 +22,7 @@ import {
     type PullBatch,
 } from '@life-quest/core/cloudPull';
 import { markCloudSessionSeeded } from './authStores';
-import { seedSectionData } from './canonicalSync';
+import { applyCloudCacheToMobileStores } from './cloudSeed';
 import { getMobileSupabaseClient } from './supabase';
 
 export interface CloudSyncHandle {
@@ -43,14 +39,9 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     let stopped = false;
 
     const seedStores = (): void => {
-        // #506の移行が走るまでクラウドは空でありうる。空のままシードすると
-        // 未移行のローカルデータを消してしまうため、行が届くまで待つ。
-        if (countCloudContentRows(cache) === 0) return;
-        seedSectionData('tasks', buildCanonicalTaskSnapshot(cache));
-        seedSectionData('habits', buildCanonicalHabitSnapshot(cache));
-        const game = buildCanonicalGameSnapshot(cache);
-        if (game) seedSectionData('game', game);
-        markCloudSessionSeeded();
+        if (applyCloudCacheToMobileStores(cache)) {
+            markCloudSessionSeeded();
+        }
     };
 
     const runner = createCloudPullRunner({
