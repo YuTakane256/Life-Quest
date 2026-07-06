@@ -150,7 +150,14 @@ jobs:
         run: cat functions-serve.log
 
       - name: Generate database types
-        run: npm run db:types
+        run: |
+          # postgres-metaイメージのpullがECRのrate limitで落ちることがあるためリトライする
+          for attempt in 1 2 3 4 5; do
+            if npm run db:types; then exit 0; fi
+            echo "db:types failed (attempt $attempt), retrying..."
+            sleep $((attempt * 30))
+          done
+          exit 1
 
       - name: Type check with generated types
         run: npm run typecheck:core
