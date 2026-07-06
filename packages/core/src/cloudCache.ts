@@ -89,6 +89,41 @@ export function countCloudContentRows(cache: CloudCache): number {
         .reduce((sum, table) => sum + Object.keys(cache[table]).length, 0);
 }
 
+export interface CloudSectionSeedability {
+    tasks: boolean;
+    habits: boolean;
+    game: boolean;
+}
+
+/**
+ * セクション単位で「クラウドを正としてストアへシードしてよいか」を判定する（#504）。
+ *
+ * アカウント作成直後のクラウドには初期行（profiles / user_settings /
+ * characters version=1）だけが存在する。この状態で空のtasks/habitsや
+ * 初期値のcharactersをシードすると、#506の移行前に存在する既存ローカルの
+ * タスク・習慣・ゲーム状態を消してしまう。そこで:
+ * - tasks / habits: そのセクションに1行でも届いていればシード可
+ *   （墓標もクラウドに履歴がある証拠なので数える）
+ * - game: charactersが初期行のまま（version 1以下）で、装備・宝箱・
+ *   バトル履歴も無い場合はシードしない。ゲーム系の実操作があれば
+ *   charactersのversionが進むか行が生まれる
+ */
+export function getSeedableSections(cache: CloudCache): CloudSectionSeedability {
+    const character = Object.values(cache.characters)[0];
+    const characterTouched = character !== undefined && Number(character.version) > 1;
+    return {
+        tasks: Object.keys(cache.tasks).length + Object.keys(cache.subtasks).length > 0,
+        habits: Object.keys(cache.habits).length
+            + Object.keys(cache.habit_logs).length
+            + Object.keys(cache.rest_days).length
+            + Object.keys(cache.stats_daily).length > 0,
+        game: characterTouched
+            || Object.keys(cache.inventory_items).length > 0
+            || Object.keys(cache.chests).length > 0
+            || Object.keys(cache.battle_attempts).length > 0,
+    };
+}
+
 const notDeleted = (row: CloudRow): boolean => row.deleted_at == null;
 
 function asString(value: unknown, fallback = ''): string {

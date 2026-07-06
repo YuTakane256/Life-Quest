@@ -7,6 +7,7 @@ import {
     cloudCacheKey,
     countCloudContentRows,
     createEmptyCloudCache,
+    getSeedableSections,
     loadCloudCache,
     persistCloudCache,
 } from './cloudCache.ts';
@@ -183,5 +184,49 @@ describe('persistCloudCache / loadCloudCache（ADR-009 namespace分離）', () =
         const reloaded = await loadCloudCache(storage, 'u');
         expect(Object.keys(reloaded.tasks)).toHaveLength(0);
         expect(Object.keys(reloaded.habits)).toHaveLength(1);
+    });
+});
+
+describe('getSeedableSections（#506移行前のローカルデータ保護）', () => {
+    it('初期行（characters v1 / profiles / user_settings）だけでは全セクションseed不可', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            profiles: [{ user_id: 'u1', version: 1 }],
+            user_settings: [{ user_id: 'u1', version: 1 }],
+            characters: [{ user_id: 'u1', total_xp: 0, version: 1 }],
+        }));
+        expect(getSeedableSections(cache)).toEqual({ tasks: false, habits: false, game: false });
+    });
+
+    it('tasksに1行届けばtasksのみseed可（habitsとgameは対象外のまま）', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            characters: [{ user_id: 'u1', version: 1 }],
+            tasks: [{ id: 't1', version: 2 }],
+        }));
+        expect(getSeedableSections(cache)).toEqual({ tasks: true, habits: false, game: false });
+    });
+
+    it('墓標だけでもクラウドに履歴がある証拠としてseed可', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            tasks: [{ id: 't1', deleted_at: '2026-07-06T00:00:00Z', version: 2 }],
+        }));
+        expect(getSeedableSections(cache).tasks).toBe(true);
+    });
+
+    it('gameはcharactersのversionが進む（実操作がある）か装備・宝箱・バトル行があればseed可', () => {
+        const untouched = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            characters: [{ user_id: 'u1', version: 1 }],
+        }));
+        expect(getSeedableSections(untouched).game).toBe(false);
+
+        const touched = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            characters: [{ user_id: 'u1', version: 5 }],
+        }));
+        expect(getSeedableSections(touched).game).toBe(true);
+
+        const withChest = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            characters: [{ user_id: 'u1', version: 1 }],
+            chests: [{ id: 'c1', chest_type: 'wood', version: 3 }],
+        }));
+        expect(getSeedableSections(withChest).game).toBe(true);
     });
 });
