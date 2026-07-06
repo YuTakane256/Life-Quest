@@ -27,13 +27,13 @@ import { createSyncOutbox, type OutboxOp, type OutboxSendResult, type SyncOutbox
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 
 /** DB RPCとして送る操作（payloadに p_key として opId を注入する） */
-const RPC_OPERATIONS = new Set([
-    'upsert_task', 'delete_task', 'upsert_subtask',
+export const RPC_OPERATIONS: ReadonlySet<string> = new Set([
+    'upsert_task', 'delete_task', 'upsert_subtask', 'delete_subtask',
     'uncomplete_task', 'uncomplete_subtask', 'upsert_profile',
 ]);
 
 /** Edge Functionとして送る操作（bodyに idempotencyKey として opId を注入する） */
-const EDGE_OPERATIONS = new Set([
+export const EDGE_OPERATIONS: ReadonlySet<string> = new Set([
     'complete_task', 'complete_subtask', 'claim_habit_bonus',
     'sell_item', 'synthesize_items', 'open_chest',
     'start_battle_attempt', 'resolve_battle_attempt',
@@ -44,7 +44,8 @@ function isPermanentStatus(status: number): boolean {
     return status >= 400 && status < 500;
 }
 
-async function sendOperation(op: OutboxOp): Promise<OutboxSendResult> {
+/** 1opを送信先（DB RPC / Edge Function）へルーティングする。テストから直接検証できるようexport。 */
+export async function sendOperation(op: OutboxOp): Promise<OutboxSendResult> {
     // supabase/edgeFunctionsはexpo-secure-store経由でreact-nativeへ届くため、
     // ストアのユニットテスト（node/jsdom）をFlow構文のparse失敗から守るべく
     // 送信時にのみ遅延importする。
