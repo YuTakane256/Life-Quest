@@ -460,7 +460,11 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
             callFn('synthesize_items', { itemIds: ingredients, idempotencyKey: uuid() }),
             callFn('synthesize_items', { itemIds: ingredients, idempotencyKey: uuid() }),
         ]);
-        expect([a.status, b.status].sort()).toEqual([200, 404]); // 後発は素材消滅でnot_found
+        // 敗者はタイミングにより2通りの正しい拒否になる:
+        // DB側の再検証（素材消滅）なら404、EF側のcore検証（読み取りが勝者コミット後）なら409
+        const statuses = [a.status, b.status].sort((x, y) => x - y);
+        expect(statuses[0]).toBe(200);
+        expect([404, 409]).toContain(statuses[1]);
 
         // 素材3消滅・結果1生成が1回分だけ（複製されない）
         const itemsAfter = await pg.query(
