@@ -592,6 +592,7 @@ export type Database = {
         }
         Returns: Json
       }
+      delete_subtask: { Args: { p_id: string; p_key: string }; Returns: Json }
       delete_task: { Args: { p_id: string; p_key: string }; Returns: Json }
       finish_idempotency_key: {
         Args: { p_key: string; p_result: Json; p_user_id: string }
@@ -675,7 +676,15 @@ export type Database = {
         Returns: Json
       }
       upsert_task: {
-        Args: { p_id: string; p_key: string; p_name: string }
+        Args: {
+          p_due_date?: string
+          p_id: string
+          p_key: string
+          p_name: string
+          p_priority?: string
+          p_recurrence?: string
+          p_tags?: string[]
+        }
         Returns: Json
       }
     }

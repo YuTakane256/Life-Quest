@@ -8,6 +8,17 @@
  * - ログアウト時はdrainを中断（進行中opはpendingへ戻る）し、キューはディスクに残す
  * - 恒久失敗opの楽観更新の巻き戻しは、次のプル（#504）がサーバー正で
  *   ストアを上書きすることで収束させる（v1方針）
+ *
+ * ## 現時点でクラウドへ同期されるMobile操作（#505）
+ * - タスク: 作成/削除（upsert_task 全項目 / delete_task）、
+ *   完了/取消（complete_task EF / uncomplete_task）
+ * - サブタスク: 追加/削除（upsert_subtask / delete_subtask）、
+ *   完了/取消（complete_subtask EF / uncomplete_subtask）
+ * ## まだ同期しない操作（後続Issueで拡張）
+ * - 習慣・休息日・設定（#512等のMobileパリティで配線）
+ * - ゲーム操作（宝箱開封・売却・合成・バトルは画面実装 #509/#514 で配線）
+ * - 既知の限界: サブタスク完了連鎖による親タスク完了時、サーバーは
+ *   親の報酬までは連鎖するが繰り返し次回分は生成しない（complete_task経由のみ）
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
@@ -71,8 +82,8 @@ async function sendOperation(op: OutboxOp): Promise<OutboxSendResult> {
 
 let activeOutbox: SyncOutbox | null = null;
 let activeUserId: string | null = null;
-/** キュー内で未送信のタスクupsertの opId（サブタスクの依存先解決に使う） */
-const pendingTaskOps = new Map<string, string>();
+/** キュー内で未送信の作成系opの opId（エンティティID→opId。依存先解決に使う） */
+const pendingEntityOps = new Map<string, string>();
 
 /** テスト用: 現在アクティブなoutbox。 */
 export function getActiveMobileOutbox(): SyncOutbox | null {
@@ -80,23 +91,33 @@ export function getActiveMobileOutbox(): SyncOutbox | null {
 }
 
 /**
+ * クラウド同期が有効（ログイン済みでoutboxが動作中）かの同期判定。
+ * ストアはこれで「サーバー権威に任せる処理」と「ローカル処理」を分岐する
+ * （例: 繰り返し次回生成はクラウド有効時はサーバーが行う）。
+ */
+export function isCloudOutboxActive(): boolean {
+    return activeOutbox !== null;
+}
+
+/**
  * クラウド操作をキューへ積む。未ログイン（outbox非アクティブ）なら false。
- * taskIdを渡すと、そのタスクのupsertがまだキューにある場合に依存関係を張る。
+ * dependsOnEntityIds のエンティティの作成opがまだキューにある場合、依存関係を張る。
+ * trackEntityId を渡すと、このopをそのエンティティの作成opとして記録する。
  */
 export async function enqueueCloudOperation(
     operation: string,
     payload: Record<string, unknown>,
-    options: { dependsOnTaskId?: string; trackTaskId?: string } = {},
+    options: { dependsOnEntityIds?: string[]; trackEntityId?: string } = {},
 ): Promise<boolean> {
     if (!activeOutbox) return false;
     const dependsOn: string[] = [];
-    if (options.dependsOnTaskId) {
-        const parentOpId = pendingTaskOps.get(options.dependsOnTaskId);
+    for (const entityId of options.dependsOnEntityIds ?? []) {
+        const parentOpId = pendingEntityOps.get(entityId);
         if (parentOpId) dependsOn.push(parentOpId);
     }
     const op = await activeOutbox.enqueue({ operation, payload, dependsOn });
-    if (op && options.trackTaskId) {
-        pendingTaskOps.set(options.trackTaskId, op.opId);
+    if (op && options.trackEntityId) {
+        pendingEntityOps.set(options.trackEntityId, op.opId);
     }
     return op !== null;
 }
@@ -129,7 +150,7 @@ export function registerMobileOutboxHooks(): () => void {
             if (activeUserId === userId && activeOutbox) return;
             void (async () => {
                 await activeOutbox?.stop();
-                pendingTaskOps.clear();
+                pendingEntityOps.clear();
                 await startOutbox(userId);
             })();
         },
@@ -138,14 +159,14 @@ export function registerMobileOutboxHooks(): () => void {
             await activeOutbox?.stop();
             activeOutbox = null;
             activeUserId = null;
-            pendingTaskOps.clear();
+            pendingEntityOps.clear();
         },
     });
     return () => {
         void activeOutbox?.stop();
         activeOutbox = null;
         activeUserId = null;
-        pendingTaskOps.clear();
+        pendingEntityOps.clear();
         unregister();
     };
 }

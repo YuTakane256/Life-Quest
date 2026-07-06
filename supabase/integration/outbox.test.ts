@@ -83,7 +83,14 @@ describe.skipIf(!enabled)('#505 オフラインキュー（ローカルSupabase�
         const subtaskId = uuid();
         const parentOp = await outbox.enqueue({
             operation: 'upsert_task',
-            payload: { p_id: taskId, p_name: 'オフライン作成' },
+            payload: {
+                p_id: taskId,
+                p_name: 'オフライン作成',
+                p_due_date: '2026-07-10',
+                p_priority: 'high',
+                p_recurrence: 'weekly',
+                p_tags: ['家事', '重要'],
+            },
         });
         await outbox.enqueue({
             operation: 'upsert_subtask',
@@ -106,6 +113,17 @@ describe.skipIf(!enabled)('#505 オフラインキュー（ローカルSupabase�
             'select task_id from subtasks where id=$1 and user_id=$2', [subtaskId, user.id]);
         expect(subtask).toHaveLength(1);
         expect(subtask[0].task_id).toBe(taskId);
+
+        // Web仕様と同じ情報量が失われず永続化されている（#525マージブロッカー対応）
+        const { rows: taskRow } = await pg.query(
+            'select name, due_date::text, priority, recurrence, tags from tasks where id=$1', [taskId]);
+        expect(taskRow[0]).toEqual({
+            name: 'オフライン作成',
+            due_date: '2026-07-10',
+            priority: 'high',
+            recurrence: 'weekly',
+            tags: ['家事', '重要'],
+        });
     });
 
     it('強制終了→復元の二重再送でも報酬は1回分（opId=冪等キー）', async () => {
