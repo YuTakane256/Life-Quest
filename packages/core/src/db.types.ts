@@ -213,6 +213,7 @@ export type Database = {
       habits: {
         Row: {
           category_id: string
+          client_id: string | null
           created_at: string
           deleted_at: string | null
           id: string
@@ -223,6 +224,7 @@ export type Database = {
         }
         Insert: {
           category_id?: string
+          client_id?: string | null
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -233,6 +235,7 @@ export type Database = {
         }
         Update: {
           category_id?: string
+          client_id?: string | null
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -309,6 +312,8 @@ export type Database = {
           avatar: string | null
           created_at: string
           display_name: string | null
+          imported_at: string | null
+          migrated_from: string | null
           updated_at: string
           user_id: string
           version: number
@@ -318,6 +323,8 @@ export type Database = {
           avatar?: string | null
           created_at?: string
           display_name?: string | null
+          imported_at?: string | null
+          migrated_from?: string | null
           updated_at?: string
           user_id: string
           version?: number
@@ -327,6 +334,8 @@ export type Database = {
           avatar?: string | null
           created_at?: string
           display_name?: string | null
+          imported_at?: string | null
+          migrated_from?: string | null
           updated_at?: string
           user_id?: string
           version?: number
@@ -428,6 +437,7 @@ export type Database = {
       }
       subtasks: {
         Row: {
+          client_id: string | null
           completed: boolean
           completed_at: string | null
           created_at: string
@@ -440,6 +450,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          client_id?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
@@ -452,6 +463,7 @@ export type Database = {
           version: number
         }
         Update: {
+          client_id?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
@@ -490,6 +502,7 @@ export type Database = {
       }
       tasks: {
         Row: {
+          client_id: string | null
           completed: boolean
           completed_at: string | null
           created_at: string
@@ -505,6 +518,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          client_id?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
@@ -520,6 +534,7 @@ export type Database = {
           version: number
         }
         Update: {
+          client_id?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
@@ -565,6 +580,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assert_import_payload_size: {
+        Args: { p_payload: Json }
+        Returns: undefined
+      }
       claim_habit_bonus_apply: {
         Args: { p_date: string; p_key: string; p_user_id: string; p_xp: number }
         Returns: Json
@@ -597,6 +616,23 @@ export type Database = {
       finish_idempotency_key: {
         Args: { p_key: string; p_result: Json; p_user_id: string }
         Returns: undefined
+      }
+      import_collections: {
+        Args: { p_payload: Json; p_user_id: string; p_version: number }
+        Returns: undefined
+      }
+      import_mobile_content_apply: {
+        Args: { p_key: string; p_payload: Json; p_user_id: string }
+        Returns: Json
+      }
+      import_snapshot_apply: {
+        Args: {
+          p_key: string
+          p_payload: Json
+          p_platform: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       lock_user_sync: { Args: { p_user_id: string }; Returns: undefined }
       next_sync_version: { Args: { p_user_id: string }; Returns: number }

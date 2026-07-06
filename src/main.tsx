@@ -4,6 +4,7 @@ import './index.css';
 import App from './App';
 import { startAuthSessionListener } from './platform/auth';
 import { registerWebAuthStoreHooks } from './platform/authStores';
+import { registerWebCloudMigrationHooks } from './platform/cloudMigration';
 import { registerWebCloudSyncHooks } from './platform/cloudSync';
 import { startWebCanonicalSync } from './platform/canonicalSync';
 
@@ -14,6 +15,7 @@ startWebCanonicalSync();
 // 認証ライフサイクル: ログアウト時のストア即時クリア（ADR-009、クラウドシード後のみ作動）と
 // 保存済みセッションの復元通知。Supabase未設定なら双方とも何もしない。
 registerWebAuthStoreHooks();
+registerWebCloudMigrationHooks(); // 初回移行はプル開始より先（#506）
 registerWebCloudSyncHooks();
 startAuthSessionListener();
 

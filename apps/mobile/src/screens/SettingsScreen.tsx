@@ -3,6 +3,11 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../platform/auth';
+import {
+    approveMobileContentImport,
+    getPendingMobileContent,
+    type PendingMobileContent,
+} from '../platform/cloudMigration';
 import { readMobileSupabaseEnv } from '../platform/supabase';
 import { theme } from '../theme/colors';
 
@@ -21,14 +26,40 @@ export default function SettingsScreen() {
     const [currentEmail, setCurrentEmail] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [pendingContent, setPendingContent] = useState<PendingMobileContent | null>(null);
+    const [importMessage, setImportMessage] = useState<string | null>(null);
 
     useEffect(() => {
         let cancelled = false;
-        void getCurrentUser().then((user) => {
-            if (!cancelled) setCurrentEmail(user?.email ?? null);
+        void getCurrentUser().then(async (user) => {
+            if (cancelled) return;
+            setCurrentEmail(user?.email ?? null);
+            if (user) {
+                // クラウドに存在しないこの端末のタスク・習慣を検出する（#506 フローB）
+                const pending = await getPendingMobileContent(user.userId);
+                if (!cancelled && (pending.tasks.length > 0 || pending.habits.length > 0)) {
+                    setPendingContent(pending);
+                }
+            }
         });
         return () => { cancelled = true; };
     }, []);
+
+    const handleImportContent = async () => {
+        if (!pendingContent) return;
+        setBusy(true);
+        setImportMessage(null);
+        const result = await approveMobileContentImport(pendingContent);
+        if (result.status === 'imported') {
+            setPendingContent(null);
+            setImportMessage('この端末のデータをクラウドへ統合しました');
+        } else if (result.status === 'web_migration_required') {
+            setImportMessage('先にWeb版でログインして初回設定を完了してください');
+        } else {
+            setImportMessage(result.message);
+        }
+        setBusy(false);
+    };
 
     const handleSubmit = async () => {
         setBusy(true);
@@ -73,6 +104,39 @@ export default function SettingsScreen() {
                     </Pressable>
                     <Text style={styles.title}>設定</Text>
                 </View>
+
+                {currentEmail && pendingContent && (
+                    <View style={styles.card}>
+                        <Text style={styles.sectionTitle}>クラウド統合の確認</Text>
+                        <Text style={styles.hint}>
+                            この端末にはクラウドに無いデータがあります（タスク{pendingContent.tasks.length}件・習慣{pendingContent.habits.length}件）。
+                            統合するとWebと共有されます。統合しない場合もこの端末のバックアップには残ります。
+                        </Text>
+                        <View style={styles.formActions}>
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="この端末のデータをクラウドへ統合する"
+                                disabled={busy}
+                                onPress={handleImportContent}
+                                style={({ pressed }) => [styles.primaryButton, (busy || pressed) && styles.muted]}
+                            >
+                                <Text style={styles.primaryButtonText}>統合する</Text>
+                            </Pressable>
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="統合を後で行う"
+                                disabled={busy}
+                                onPress={() => setPendingContent(null)}
+                                style={({ pressed }) => [styles.secondaryButton, (busy || pressed) && styles.muted]}
+                            >
+                                <Text style={styles.secondaryButtonText}>後で</Text>
+                            </Pressable>
+                        </View>
+                        {importMessage && <Text style={styles.bodyText}>{importMessage}</Text>}
+                    </View>
+                )}
+
+                {!currentEmail && importMessage && null}
 
                 <View style={styles.card}>
                     <Text style={styles.sectionTitle}>アカウント</Text>

@@ -22,6 +22,8 @@ export class NotFoundError extends Error {
 const ERROR_STATUS_BY_MESSAGE: [pattern: RegExp, status: number][] = [
     [/not_found_or_forbidden/, 404],
     [/stage_locked|battle_locked|cannot_sell_equipped_item|chest_already_opened|invalid ingredients/, 409],
+    [/web_migration_required/, 409],
+    [/payload too large/, 400],
 ];
 
 export interface HandlerContext {
