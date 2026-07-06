@@ -22,6 +22,7 @@ import {
     type PullBatch,
 } from '@life-quest/core/cloudPull';
 import { markCloudSessionSeeded } from './authStores';
+import { requestOutboxDrain } from './cloudOutbox';
 import { applyCloudCacheToMobileStores } from './cloudSeed';
 import { getMobileSupabaseClient } from './supabase';
 
@@ -85,6 +86,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         if (state === 'active') {
             scheduler.start();
             scheduler.trigger('foreground');
+            requestOutboxDrain(); // 復帰時はoutboxの再送も要求（#505）
         } else {
             scheduler.stop(); // バックグラウンドでは定期プルを止める
         }

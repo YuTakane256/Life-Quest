@@ -19,6 +19,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
 import { getTodayJst } from '../utils/date';
 import { useMobileGameStore } from './useMobileGameStore';
+import { enqueueCloudOperation, isCloudOutboxActive } from '../platform/cloudOutbox';
 
 export interface AddTaskOptions {
     dueDate?: string | null;
@@ -46,6 +47,9 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
              * 同内容の未完了分が既にある場合と上限到達時は生成しない（Webと同一ルール）。
              */
             const spawnRecurringNext = (task: Task): void => {
+                // クラウド同期中は complete_task EF がサーバー側で次回分を生成する。
+                // ローカルでも生成すると別IDの重複タスクが二重にできるためスキップする。
+                if (isCloudOutboxActive()) return;
                 const next = buildNextRecurringTask({
                     task,
                     taskId: createMobileId(),
@@ -76,6 +80,16 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     });
                     if (!task) return false;
                     set((state) => ({ tasks: [...state.tasks, task] }));
+                    // ログイン中はクラウドへも書き込む（オフラインならoutboxが再送する）。
+                    // Web仕様と同じ情報量（priority / dueDate / tags / recurrence）を送る。
+                    void enqueueCloudOperation('upsert_task', {
+                        p_id: task.id,
+                        p_name: task.name,
+                        p_due_date: task.dueDate,
+                        p_priority: task.priority,
+                        p_recurrence: task.recurrence,
+                        p_tags: task.tags,
+                    }, { trackEntityId: task.id });
                     return true;
                 },
 
@@ -86,16 +100,22 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                         tasks: toggleTaskCompletion(state.tasks, taskId, new Date().toISOString()),
                     }));
                     // 未完了→完了への遷移でのみ報酬を付与する。
-                    // 二重付与防止はゲームストア側の報酬台帳が保証する。
+                    // ローカル付与は楽観表示で、正はサーバー（complete_task EF、ADR-003）。
+                    // 二重付与防止はローカルは報酬台帳、サーバーはreward_transactionsが保証する。
                     if (before && !before.completed) {
                         useMobileGameStore.getState().grantTaskCompletionReward(taskId, before.priority);
                         spawnRecurringNext(before);
+                        void enqueueCloudOperation('complete_task', { taskId }, { dependsOnEntityIds: [taskId] });
+                    } else if (before && before.completed) {
+                        void enqueueCloudOperation('uncomplete_task', { p_id: taskId }, { dependsOnEntityIds: [taskId] });
                     }
                 },
 
                 deleteTask: (taskId) => {
                     if (!get().hasHydrated) return;
                     set((state) => ({ tasks: removeTask(state.tasks, taskId) }));
+                    // 作成がまだ未送信ならその後に削除が送られる（dependsOnで順序保証）
+                    void enqueueCloudOperation('delete_task', { p_id: taskId }, { dependsOnEntityIds: [taskId] });
                 },
 
                 addSubtask: (taskId, name) => {
@@ -107,6 +127,15 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     });
                     if (!next) return false;
                     set({ tasks: next });
+                    const added = next.find((candidate) => candidate.id === taskId)?.subtasks.at(-1);
+                    if (added) {
+                        // 親タスクの作成が未送信でも、dependsOnにより必ず親→子の順で送られる
+                        void enqueueCloudOperation(
+                            'upsert_subtask',
+                            { p_id: added.id, p_task_id: taskId, p_name: added.name },
+                            { dependsOnEntityIds: [taskId], trackEntityId: added.id },
+                        );
+                    }
                     return true;
                 },
 
@@ -116,10 +145,14 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     const result = removeSubtaskFromTask(get().tasks, taskId, subtaskId, new Date().toISOString());
                     if (!result || !task) return;
                     set({ tasks: result.tasks });
+                    void enqueueCloudOperation('delete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
                     // 残りのサブタスク全完了で親が完了した場合はタスク報酬と繰り返し生成
                     if (result.parentCompleted) {
                         useMobileGameStore.getState().grantTaskCompletionReward(taskId, task.priority);
                         spawnRecurringNext(task);
+                        // サーバーのdelete_subtaskは親完了まで連鎖しないため、明示的に完了を送る
+                        //（報酬の重複はサーバーのreward_transactionsが防ぐ）
+                        void enqueueCloudOperation('complete_task', { taskId }, { dependsOnEntityIds: [taskId, subtaskId] });
                     }
                 },
 
@@ -133,6 +166,10 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     const game = useMobileGameStore.getState();
                     if (result.completedSubtask) {
                         game.grantSubtaskCompletionReward(subtaskId, task.priority);
+                        // サーバー側は complete_subtask が親完了・親報酬まで連鎖する（#502）
+                        void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
+                    } else {
+                        void enqueueCloudOperation('uncomplete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
                     }
                     if (result.parentCompleted) {
                         game.grantTaskCompletionReward(taskId, task.priority);

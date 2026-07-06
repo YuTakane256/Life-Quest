@@ -62,7 +62,7 @@ select ok(
 );
 
 -- 5. EXECUTE権限
-select ok(has_function_privilege('authenticated', 'public.upsert_task(uuid, text, text)', 'execute'),
+select ok(has_function_privilege('authenticated', 'public.upsert_task(uuid, text, text, date, text, text, text[])', 'execute'),
     'authenticated can execute upsert_task');
 select ok(has_function_privilege('authenticated', 'public.delete_task(uuid, text)', 'execute'),
     'authenticated can execute delete_task');
