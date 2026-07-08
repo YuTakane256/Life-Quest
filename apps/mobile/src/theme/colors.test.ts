@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DARK_THEME } from '@life-quest/core/designTokens';
-import { theme } from './colors';
+import { DARK_THEME, LIGHT_THEME } from '@life-quest/core/designTokens';
+import { getMobileThemePalette, resolveMobileThemeMode, theme } from './colors';
 
 describe('mobile theme', () => {
     it('coreのダークテーマトークンをそのまま使う（Web準拠）', () => {
@@ -22,5 +22,18 @@ describe('mobile theme', () => {
         for (const value of flat) {
             expect(value).toMatch(hexPattern);
         }
+    });
+
+    it('設定とシステム設定から表示テーマを解決する', () => {
+        expect(resolveMobileThemeMode('light', 'dark')).toBe('light');
+        expect(resolveMobileThemeMode('dark', 'light')).toBe('dark');
+        expect(resolveMobileThemeMode('system', 'light')).toBe('light');
+        expect(resolveMobileThemeMode('system', 'dark')).toBe('dark');
+        expect(resolveMobileThemeMode('system', null)).toBe('dark');
+    });
+
+    it('解決済みテーマに対応する共通トークンを返す', () => {
+        expect(getMobileThemePalette('light')).toBe(LIGHT_THEME);
+        expect(getMobileThemePalette('dark')).toBe(DARK_THEME);
     });
 });
