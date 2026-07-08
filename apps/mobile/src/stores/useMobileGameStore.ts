@@ -34,6 +34,15 @@ import {
 import { applyCharacterXp, XP_CONFIG, type ApplyCharacterXpResult } from '@life-quest/core/progression';
 import { getSubtaskRewardXp, type Priority } from '@life-quest/core/tasks';
 import {
+    applyBattleAction,
+    createBattleEngineState,
+    getStageDefinition,
+    type BattleAction,
+    type BattleActors,
+    type BattleEngineState,
+    type BattleOutcome,
+} from '@life-quest/core/battle';
+import {
     getMilestoneAtCount,
     rollEquipmentTemplate,
     EQUIPMENT_POOL,
@@ -54,8 +63,23 @@ export interface LevelUpSummary {
     hpGain: number;
 }
 
+export interface MobileBattleProgress {
+    battleUnlocked: boolean;
+    currentStage: number;
+    maxClearedStage: number;
+}
+
+export interface ActiveMobileBattle {
+    stage: number;
+    actors: BattleActors;
+    state: BattleEngineState;
+    actions: BattleAction[];
+}
+
 interface MobileGameStore extends GameStateSnapshot {
+    battleProgress: MobileBattleProgress;
     hasHydrated: boolean;
+    activeBattle: ActiveMobileBattle | null;
     /** 直近のレベルアップ演出用データ（永続化しない） */
     lastLevelUp: LevelUpSummary | null;
     setHasHydrated: (value: boolean) => void;
@@ -77,6 +101,11 @@ interface MobileGameStore extends GameStateSnapshot {
     /** 同レアリティ3個を消費して上位レアリティ装備を生成する。 */
     synthesizeItems: (equipmentIds: string[]) => Equipment | null;
     getEffectiveStats: () => EffectiveStats;
+    unlockBattle: () => void;
+    setBattleProgress: (progress: Partial<MobileBattleProgress>) => void;
+    startBattle: (stage: number) => boolean;
+    performBattleAction: (action: BattleAction) => BattleOutcome | null;
+    clearActiveBattle: () => void;
     /**
      * タスク完了報酬（優先度別XP + ガチャ進行）を付与する。
      * 同じタスクIDには一度しか付与しない。付与したら true。
@@ -95,9 +124,30 @@ interface MobileGameStore extends GameStateSnapshot {
 }
 
 /** 永続化スキーマのバージョン。フィールド構成を変えるときに上げ、migrate で吸収する。 */
-export const GAME_STORE_VERSION = 1;
+export const GAME_STORE_VERSION = 2;
 
 const initialSnapshot = createInitialGameStateSnapshot();
+const initialBattleProgress: MobileBattleProgress = {
+    battleUnlocked: false,
+    currentStage: 1,
+    maxClearedStage: 0,
+};
+
+function sanitizeBattleProgress(value: unknown): MobileBattleProgress {
+    if (typeof value !== 'object' || value === null) return initialBattleProgress;
+    const raw = value as Record<string, unknown>;
+    const maxClearedStage = typeof raw.maxClearedStage === 'number' && Number.isFinite(raw.maxClearedStage)
+        ? Math.max(0, Math.floor(raw.maxClearedStage))
+        : 0;
+    const currentStage = typeof raw.currentStage === 'number' && Number.isFinite(raw.currentStage)
+        ? Math.max(1, Math.floor(raw.currentStage))
+        : Math.max(1, maxClearedStage + 1);
+    return {
+        battleUnlocked: raw.battleUnlocked === true,
+        currentStage,
+        maxClearedStage,
+    };
+}
 
 function toLevelUpSummary(fromLevel: number, result: ApplyCharacterXpResult): LevelUpSummary | null {
     if (result.levelGain <= 0) return null;
@@ -146,7 +196,9 @@ export const useMobileGameStore = create<MobileGameStore>()(
 
             return {
             ...initialSnapshot,
+            battleProgress: initialBattleProgress,
             hasHydrated: false,
+            activeBattle: null,
             lastLevelUp: null,
 
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
@@ -217,6 +269,9 @@ export const useMobileGameStore = create<MobileGameStore>()(
                     equipment: equipment
                         ? capEquipmentCollection([...state.equipment, equipment])
                         : state.equipment,
+                    battleProgress: chest.isStarterCharacter
+                        ? { ...state.battleProgress, battleUnlocked: true }
+                        : state.battleProgress,
                 }));
                 return equipment;
             },
@@ -313,6 +368,91 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 return calculateEffectiveEquipmentStats(character, equipment);
             },
 
+            unlockBattle: () => {
+                if (!get().hasHydrated) return;
+                set((state) => ({
+                    battleProgress: { ...state.battleProgress, battleUnlocked: true },
+                }));
+            },
+
+            setBattleProgress: (progress) => {
+                set((state) => ({
+                    battleProgress: sanitizeBattleProgress({ ...state.battleProgress, ...progress }),
+                }));
+            },
+
+            startBattle: (stage) => {
+                const state = get();
+                if (!state.hasHydrated || !state.battleProgress.battleUnlocked) return false;
+                const normalizedStage = Math.floor(stage);
+                const definition = getStageDefinition(normalizedStage);
+                if (!definition) return false;
+                if (normalizedStage > state.battleProgress.maxClearedStage + 1) return false;
+
+                const stats = state.getEffectiveStats();
+                const actors: BattleActors = {
+                    player: {
+                        attack: stats.attack,
+                        defense: stats.defense,
+                        maxHp: stats.maxHp,
+                    },
+                    enemy: {
+                        stage: definition.stage,
+                        name: definition.name,
+                        maxHp: definition.hp,
+                        attack: definition.attack,
+                        defense: definition.defense,
+                        xpReward: definition.xpReward,
+                    },
+                    playerLevel: state.character.level,
+                    playerName: state.character.name,
+                };
+                set((current) => ({
+                    battleProgress: { ...current.battleProgress, currentStage: normalizedStage },
+                    activeBattle: {
+                        stage: normalizedStage,
+                        actors,
+                        state: createBattleEngineState(actors),
+                        actions: [],
+                    },
+                }));
+                return true;
+            },
+
+            performBattleAction: (action) => {
+                const battle = get().activeBattle;
+                if (!battle || battle.state.outcome !== 'ongoing') return null;
+                const result = applyBattleAction(battle.state, action, battle.actors);
+                if (!result.valid) return battle.state.outcome;
+
+                set((state) => {
+                    const nextActions = [...battle.actions, action];
+                    const nextBattle: ActiveMobileBattle = {
+                        ...battle,
+                        state: result.state,
+                        actions: nextActions,
+                    };
+                    const nextState: Partial<MobileGameStore> = { activeBattle: nextBattle };
+
+                    if (result.state.outcome === 'victory') {
+                        const xpResult = applyCharacterXp(state.character, battle.actors.enemy.xpReward);
+                        const levelUp = toLevelUpSummary(state.character.level, xpResult);
+                        nextState.character = { ...state.character, ...xpResult.character };
+                        nextState.battleProgress = {
+                            ...state.battleProgress,
+                            currentStage: battle.stage,
+                            maxClearedStage: Math.max(state.battleProgress.maxClearedStage, battle.stage),
+                        };
+                        if (levelUp) nextState.lastLevelUp = levelUp;
+                    }
+
+                    return nextState;
+                });
+                return result.state.outcome;
+            },
+
+            clearActiveBattle: () => set({ activeBattle: null }),
+
             grantTaskCompletionReward: (taskId, priority) => {
                 // hydration完了前は付与しない。永続化済みの台帳を読み込む前に付与すると、
                 // rehydrationのmergeで上書きされて消失・重複する。復元後は rewardSync の
@@ -352,12 +492,19 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 chestQueue: state.chestQueue,
                 gachaCount: state.gachaCount,
                 rewardLedger: state.rewardLedger,
+                battleProgress: state.battleProgress,
             }),
             // 旧バージョンのデータも sanitize が既定値へ吸収するので、そのまま merge へ渡す
             migrate: (persisted) => persisted as GameStateSnapshot,
             merge: (persisted, current) => ({
                 ...current,
                 ...sanitizeGameStateSnapshot(persisted),
+                battleProgress: sanitizeBattleProgress(
+                    typeof persisted === 'object' && persisted !== null
+                        ? (persisted as Record<string, unknown>).battleProgress
+                        : undefined,
+                ),
+                activeBattle: null,
                 lastLevelUp: null,
             }),
             onRehydrateStorage: () => (state) => state?.setHasHydrated(true),

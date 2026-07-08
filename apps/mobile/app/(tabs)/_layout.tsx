@@ -3,7 +3,7 @@ import { Text, useColorScheme } from 'react-native';
 import { useMobileSettingsStore } from '../../src/stores/useMobileSettingsStore';
 import { getMobileThemePalette, resolveMobileThemeMode } from '../../src/theme/colors';
 
-const tabIcons = { index: '✓', habits: '↻', stats: '▦', character: '⚔' } as const;
+const tabIcons = { index: '✓', habits: '↻', stats: '▦', character: '⚔', map: '◇' } as const;
 
 export default function TabLayout() {
     const systemScheme = useColorScheme();
@@ -22,6 +22,7 @@ export default function TabLayout() {
             <Tabs.Screen name="habits" options={{ title: '習慣', tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>{tabIcons.habits}</Text> }} />
             <Tabs.Screen name="stats" options={{ title: '統計', tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>{tabIcons.stats}</Text> }} />
             <Tabs.Screen name="character" options={{ title: 'キャラクター', tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>{tabIcons.character}</Text> }} />
+            <Tabs.Screen name="map" options={{ title: 'マップ', tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>{tabIcons.map}</Text> }} />
         </Tabs>
     );
 }
