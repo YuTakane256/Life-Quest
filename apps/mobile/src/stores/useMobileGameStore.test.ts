@@ -3,8 +3,9 @@ import { createEquipmentFromTemplate, type Equipment } from '@life-quest/core/eq
 import { createInitialGameStateSnapshot, GAME_STATE_LIMITS } from '@life-quest/core/gameState';
 import { CHARACTER_CONFIG, XP_CONFIG } from '@life-quest/core/progression';
 import { EQUIPMENT_POOL, SELL_XP_BY_RARITY } from '@life-quest/core/rewards';
+import { BATTLE_CONFIG } from '@life-quest/core/battle';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useMobileGameStore } from './useMobileGameStore';
+import { GAME_STORE_VERSION, useMobileGameStore } from './useMobileGameStore';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -29,6 +30,8 @@ function item(id: string, templateId: string, equipped = false): Equipment {
 function resetStore() {
     useMobileGameStore.setState({
         ...createInitialGameStateSnapshot(),
+        battleProgress: { battleUnlocked: false, currentStage: 1, maxClearedStage: 0 },
+        activeBattle: null,
         hasHydrated: true,
         lastLevelUp: null,
     });
@@ -117,6 +120,42 @@ describe('useMobileGameStore', () => {
             });
             expect(useMobileGameStore.getState().openChest('chest-1')).toBeNull();
             expect(useMobileGameStore.getState().chestQueue[0].opened).toBe(true);
+            expect(useMobileGameStore.getState().battleProgress.battleUnlocked).toBe(true);
+        });
+    });
+
+    describe('バトル', () => {
+        function winActiveBattle() {
+            for (let i = 0; i < 30; i++) {
+                const battle = useMobileGameStore.getState().activeBattle;
+                if (!battle || battle.state.outcome !== 'ongoing') break;
+                useMobileGameStore.getState().performBattleAction({ type: 'attack' });
+            }
+            return useMobileGameStore.getState().activeBattle?.state.outcome;
+        }
+
+        it('未解放・未到達ステージは開始できない', () => {
+            expect(useMobileGameStore.getState().startBattle(1)).toBe(false);
+
+            useMobileGameStore.getState().unlockBattle();
+            expect(useMobileGameStore.getState().startBattle(2)).toBe(false);
+            expect(useMobileGameStore.getState().activeBattle).toBeNull();
+        });
+
+        it('勝利すると進行度を更新し、同じステージの周回でも毎回XPを得る', () => {
+            const stage = BATTLE_CONFIG.STAGES[0];
+            useMobileGameStore.getState().unlockBattle();
+
+            expect(useMobileGameStore.getState().startBattle(stage.stage)).toBe(true);
+            expect(winActiveBattle()).toBe('victory');
+            expect(useMobileGameStore.getState().battleProgress.maxClearedStage).toBe(stage.stage);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(stage.xpReward);
+
+            useMobileGameStore.getState().clearActiveBattle();
+            expect(useMobileGameStore.getState().startBattle(stage.stage)).toBe(true);
+            expect(winActiveBattle()).toBe('victory');
+            expect(useMobileGameStore.getState().battleProgress.maxClearedStage).toBe(stage.stage);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(stage.xpReward * 2);
         });
     });
 
@@ -219,7 +258,7 @@ describe('useMobileGameStore', () => {
             await vi.waitFor(() => expect(storage.setItem).toHaveBeenCalled());
             const [, serialized] = storage.setItem.mock.calls.at(-1) ?? [];
             const envelope = JSON.parse(serialized as string) as { state: Record<string, unknown>; version: number };
-            expect(envelope.version).toBe(1);
+            expect(envelope.version).toBe(GAME_STORE_VERSION);
             expect(envelope.state).not.toHaveProperty('hasHydrated');
             expect(envelope.state).not.toHaveProperty('lastLevelUp');
             expect(envelope.state).toHaveProperty('rewardLedger');

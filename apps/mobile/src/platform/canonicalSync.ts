@@ -78,6 +78,7 @@ export function seedSectionData(section: CanonicalSyncSection, data: unknown): v
         equipment: snapshot.equipment,
         chestQueue: snapshot.chestQueue,
         gachaCount: snapshot.gachaCount,
+        battleProgress: snapshot.battleProgress,
         rewardLedger: sanitizeRewardLedger({
             rewardedTaskIds: [...snapshot.rewardLedger.rewardedTaskIds, ...localLedger.rewardedTaskIds],
             rewardedSubtaskIds: [...snapshot.rewardLedger.rewardedSubtaskIds, ...localLedger.rewardedSubtaskIds],
@@ -172,13 +173,13 @@ export function startMobileCanonicalSync(
                     equipment: gameState.equipment,
                     chestQueue: gameState.chestQueue,
                     gachaCount: gameState.gachaCount,
-                    // Mobileが管理しないWeb由来フィールド（称号・デバフ・バトル進行）は
+                    battleProgress: gameState.battleProgress,
+                    // Mobileが管理しないWeb由来フィールド（称号・デバフ）は
                     // canonicalの現在値をパススルーして既定値で潰さない
                     ...(currentGame.status === 'ready'
                         ? {
                             activeTitle: currentGame.value.data.activeTitle,
                             debuff: currentGame.value.data.debuff,
-                            battleProgress: currentGame.value.data.battleProgress,
                         }
                         : {}),
                     rewardLedger: {
