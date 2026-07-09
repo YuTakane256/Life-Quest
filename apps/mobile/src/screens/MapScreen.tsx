@@ -9,6 +9,7 @@ import {
     type StageDefinition,
 } from '@life-quest/core/battle';
 import { getUnlockedBattleSkills } from '@life-quest/core/battleSkills';
+import { resolveCloudBattleAttempt, startCloudBattleAttempt } from '../platform/battleCloud';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { theme } from '../theme/colors';
 
@@ -28,12 +29,15 @@ export default function MapScreen() {
     const activeBattle = useMobileGameStore((state) => state.activeBattle);
     const hasHydrated = useMobileGameStore((state) => state.hasHydrated);
     const startBattle = useMobileGameStore((state) => state.startBattle);
+    const startCloudBattle = useMobileGameStore((state) => state.startCloudBattle);
     const performBattleAction = useMobileGameStore((state) => state.performBattleAction);
+    const applyResolvedCloudBattle = useMobileGameStore((state) => state.applyResolvedCloudBattle);
     const clearActiveBattle = useMobileGameStore((state) => state.clearActiveBattle);
     const getEffectiveStats = useMobileGameStore((state) => state.getEffectiveStats);
 
     const [selectedStage, setSelectedStage] = useState(() => Math.max(1, battleProgress.currentStage));
     const [notice, setNotice] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
     const stats = getEffectiveStats();
     const selectedArea = getAreaForStage(selectedStage);
     const unlockedSkills = useMemo(() => getUnlockedBattleSkills(character.level), [character.level]);
@@ -43,23 +47,91 @@ export default function MapScreen() {
         && selectedDefinition !== undefined
         && selectedStage <= battleProgress.maxClearedStage + 1;
 
-    const handleStart = () => {
+    const handleStart = async () => {
         setNotice(null);
         if (!battleProgress.battleUnlocked) {
             setNotice('青色の宝箱を開封するとマップバトルが解放されます');
             return;
         }
-        if (!startBattle(selectedStage)) {
-            setNotice('このステージはまだ解放されていません');
+        setBusy(true);
+        try {
+            const cloudAttempt = await startCloudBattleAttempt(selectedStage);
+            if (cloudAttempt) {
+                startCloudBattle(selectedStage, cloudAttempt.battleAttemptId, cloudAttempt.actors);
+                setNotice('クラウド同期されたバトルを開始しました');
+                return;
+            }
+            if (!startBattle(selectedStage)) {
+                setNotice('このステージはまだ解放されていません');
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'クラウドバトルを開始できませんでした';
+            setNotice(`${message}。端末内バトルへ切り替えます`);
+            if (!startBattle(selectedStage)) {
+                setNotice('このステージはまだ解放されていません');
+            }
+        } finally {
+            setBusy(false);
         }
     };
 
-    const handleAction = (action: BattleAction) => {
-        const beforeOutcome = activeBattle?.state.outcome;
+    const handleAction = async (action: BattleAction) => {
+        const battleBeforeAction = activeBattle;
+        const beforeOutcome = battleBeforeAction?.state.outcome;
         const outcome = performBattleAction(action);
         if (outcome === 'victory' && beforeOutcome !== 'victory') {
-            setNotice(`${activeBattle?.actors.enemy.name ?? '敵'}を倒して ${activeBattle?.actors.enemy.xpReward ?? 0} XP 獲得`);
+            if (battleBeforeAction?.rewardMode === 'cloud' && battleBeforeAction.battleAttemptId) {
+                setBusy(true);
+                try {
+                    const resolution = await resolveCloudBattleAttempt(
+                        battleBeforeAction.battleAttemptId,
+                        [...battleBeforeAction.actions, action],
+                    );
+                    applyResolvedCloudBattle(
+                        battleBeforeAction.battleAttemptId,
+                        resolution.outcome,
+                        resolution.granted,
+                    );
+                    if (resolution.outcome === 'victory') {
+                        setNotice(
+                            resolution.granted
+                                ? `${battleBeforeAction.actors.enemy.name}を倒して ${battleBeforeAction.actors.enemy.xpReward} XP 獲得`
+                                : `${battleBeforeAction.actors.enemy.name}の戦闘結果を同期しました`,
+                        );
+                    } else {
+                        setNotice('敗北としてクラウド同期しました');
+                    }
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : 'バトル結果を同期できませんでした';
+                    setNotice(message);
+                } finally {
+                    setBusy(false);
+                }
+                return;
+            }
+            setNotice(`${battleBeforeAction?.actors.enemy.name ?? '敵'}を倒して ${battleBeforeAction?.actors.enemy.xpReward ?? 0} XP 獲得`);
         } else if (outcome === 'defeat') {
+            if (battleBeforeAction?.rewardMode === 'cloud' && battleBeforeAction.battleAttemptId) {
+                setBusy(true);
+                try {
+                    const resolution = await resolveCloudBattleAttempt(
+                        battleBeforeAction.battleAttemptId,
+                        [...battleBeforeAction.actions, action],
+                    );
+                    applyResolvedCloudBattle(
+                        battleBeforeAction.battleAttemptId,
+                        resolution.outcome,
+                        resolution.granted,
+                    );
+                    setNotice('敗北としてクラウド同期しました');
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : 'バトル結果を同期できませんでした';
+                    setNotice(message);
+                } finally {
+                    setBusy(false);
+                }
+                return;
+            }
             setNotice('敗北しました。装備やレベルを整えて再挑戦しましょう');
         }
     };
@@ -95,7 +167,7 @@ export default function MapScreen() {
                                 </View>
                                 <View style={styles.statusPill}>
                                     <Text style={styles.statusPillText}>
-                                        {battleProgress.battleUnlocked ? '解放済み' : '未解放'}
+                                        {busy ? '同期中' : battleProgress.battleUnlocked ? '解放済み' : '未解放'}
                                     </Text>
                                 </View>
                             </View>
@@ -160,25 +232,25 @@ export default function MapScreen() {
                                     <Pressable
                                         accessibilityRole="button"
                                         accessibilityLabel="通常攻撃"
-                                        disabled={activeBattle.state.outcome !== 'ongoing'}
-                                        onPress={() => handleAction({ type: 'attack' })}
+                                        disabled={busy || activeBattle.state.outcome !== 'ongoing'}
+                                        onPress={() => { void handleAction({ type: 'attack' }); }}
                                         style={({ pressed }) => [
                                             styles.primaryButton,
-                                            (pressed || activeBattle.state.outcome !== 'ongoing') && styles.muted,
+                                            (pressed || busy || activeBattle.state.outcome !== 'ongoing') && styles.muted,
                                         ]}
                                     >
                                         <Text style={styles.primaryButtonText}>攻撃</Text>
                                     </Pressable>
                                     {unlockedSkills.map((skill) => {
                                         const cooldown = activeBattle.state.skillCooldowns[skill.id] ?? 0;
-                                        const disabled = activeBattle.state.outcome !== 'ongoing' || cooldown > 0;
+                                        const disabled = busy || activeBattle.state.outcome !== 'ongoing' || cooldown > 0;
                                         return (
                                             <Pressable
                                                 key={skill.id}
                                                 accessibilityRole="button"
                                                 accessibilityLabel={`${skill.name}${cooldown > 0 ? ` クールダウン${cooldown}` : ''}`}
                                                 disabled={disabled}
-                                                onPress={() => handleAction({ type: 'skill', skillId: skill.id })}
+                                                onPress={() => { void handleAction({ type: 'skill', skillId: skill.id }); }}
                                                 style={({ pressed }) => [styles.secondaryButton, (pressed || disabled) && styles.muted]}
                                             >
                                                 <Text style={styles.secondaryButtonText}>

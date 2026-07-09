@@ -74,6 +74,8 @@ export interface ActiveMobileBattle {
     actors: BattleActors;
     state: BattleEngineState;
     actions: BattleAction[];
+    battleAttemptId: string | null;
+    rewardMode: 'local' | 'cloud';
 }
 
 interface MobileGameStore extends GameStateSnapshot {
@@ -104,7 +106,9 @@ interface MobileGameStore extends GameStateSnapshot {
     unlockBattle: () => void;
     setBattleProgress: (progress: Partial<MobileBattleProgress>) => void;
     startBattle: (stage: number) => boolean;
+    startCloudBattle: (stage: number, battleAttemptId: string, actors: BattleActors) => void;
     performBattleAction: (action: BattleAction) => BattleOutcome | null;
+    applyResolvedCloudBattle: (battleAttemptId: string, outcome: 'victory' | 'defeat', granted: boolean) => void;
     clearActiveBattle: () => void;
     /**
      * タスク完了報酬（優先度別XP + ガチャ進行）を付与する。
@@ -414,9 +418,26 @@ export const useMobileGameStore = create<MobileGameStore>()(
                         actors,
                         state: createBattleEngineState(actors),
                         actions: [],
+                        battleAttemptId: null,
+                        rewardMode: 'local',
                     },
                 }));
                 return true;
+            },
+
+            startCloudBattle: (stage, battleAttemptId, actors) => {
+                if (!get().hasHydrated) return;
+                set((current) => ({
+                    battleProgress: { ...current.battleProgress, currentStage: stage },
+                    activeBattle: {
+                        stage,
+                        actors,
+                        state: createBattleEngineState(actors),
+                        actions: [],
+                        battleAttemptId,
+                        rewardMode: 'cloud',
+                    },
+                }));
             },
 
             performBattleAction: (action) => {
@@ -434,7 +455,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
                     };
                     const nextState: Partial<MobileGameStore> = { activeBattle: nextBattle };
 
-                    if (result.state.outcome === 'victory') {
+                    if (result.state.outcome === 'victory' && battle.rewardMode === 'local') {
                         const xpResult = applyCharacterXp(state.character, battle.actors.enemy.xpReward);
                         const levelUp = toLevelUpSummary(state.character.level, xpResult);
                         nextState.character = { ...state.character, ...xpResult.character };
@@ -449,6 +470,28 @@ export const useMobileGameStore = create<MobileGameStore>()(
                     return nextState;
                 });
                 return result.state.outcome;
+            },
+
+            applyResolvedCloudBattle: (battleAttemptId, outcome, granted) => {
+                const battle = get().activeBattle;
+                if (!battle || battle.battleAttemptId !== battleAttemptId) return;
+                set((state) => {
+                    const nextState: Partial<MobileGameStore> = {};
+                    if (outcome === 'victory') {
+                        nextState.battleProgress = {
+                            ...state.battleProgress,
+                            currentStage: battle.stage,
+                            maxClearedStage: Math.max(state.battleProgress.maxClearedStage, battle.stage),
+                        };
+                        if (granted) {
+                            const xpResult = applyCharacterXp(state.character, battle.actors.enemy.xpReward);
+                            const levelUp = toLevelUpSummary(state.character.level, xpResult);
+                            nextState.character = { ...state.character, ...xpResult.character };
+                            if (levelUp) nextState.lastLevelUp = levelUp;
+                        }
+                    }
+                    return nextState;
+                });
             },
 
             clearActiveBattle: () => set({ activeBattle: null }),

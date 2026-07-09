@@ -157,6 +157,32 @@ describe('useMobileGameStore', () => {
             expect(useMobileGameStore.getState().battleProgress.maxClearedStage).toBe(stage.stage);
             expect(useMobileGameStore.getState().character.totalXp).toBe(stage.xpReward * 2);
         });
+
+        it('クラウドバトルはresolve成功後だけXPと進行度を反映する', () => {
+            const stage = BATTLE_CONFIG.STAGES[0];
+            useMobileGameStore.getState().unlockBattle();
+            useMobileGameStore.getState().startCloudBattle(stage.stage, 'attempt-1', {
+                player: { attack: 999, defense: 999, maxHp: 100 },
+                enemy: {
+                    stage: stage.stage,
+                    name: stage.name,
+                    maxHp: stage.hp,
+                    attack: stage.attack,
+                    defense: stage.defense,
+                    xpReward: stage.xpReward,
+                },
+                playerLevel: 1,
+                playerName: 'テスター',
+            });
+
+            expect(useMobileGameStore.getState().performBattleAction({ type: 'attack' })).toBe('victory');
+            expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+            expect(useMobileGameStore.getState().battleProgress.maxClearedStage).toBe(0);
+
+            useMobileGameStore.getState().applyResolvedCloudBattle('attempt-1', 'victory', true);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(stage.xpReward);
+            expect(useMobileGameStore.getState().battleProgress.maxClearedStage).toBe(stage.stage);
+        });
     });
 
     describe('装備管理', () => {
