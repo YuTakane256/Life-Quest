@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { EQUIPMENT_SLOTS, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { calculateNextLevelXp, calculateXpProgress } from '@life-quest/core/progression';
 import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
-import { useRouter } from 'expo-router';
 import { AVATAR_IMAGES, getChestImage, getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { theme } from '../theme/colors';
@@ -31,7 +30,6 @@ const AVATAR_OPTIONS = [
 ] as const;
 
 export default function CharacterScreen() {
-    const router = useRouter();
     const character = useMobileGameStore((state) => state.character);
     const equipment = useMobileGameStore((state) => state.equipment);
     const chestQueue = useMobileGameStore((state) => state.chestQueue);
@@ -141,15 +139,6 @@ export default function CharacterScreen() {
         <View style={styles.headerContent}>
             <View style={styles.titleRow}>
                 <Text style={styles.title}>キャラクター</Text>
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="設定を開く"
-                    onPress={() => router.push('/settings')}
-                    hitSlop={8}
-                    style={styles.settingsButton}
-                >
-                    <Text style={styles.settingsSymbol}>⚙</Text>
-                </Pressable>
             </View>
 
             {lastLevelUp && (
@@ -429,8 +418,6 @@ const styles = StyleSheet.create({
     headerContent: { gap: 14, marginBottom: 6 },
     title: { color: theme.text.primary, fontSize: 28, fontWeight: '800' },
     titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20 },
-    settingsButton: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default },
-    settingsSymbol: { color: theme.text.secondary, fontSize: 18 },
     banner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: theme.bg.tertiary, borderColor: theme.accent.emerald, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
     bannerText: { flex: 1, color: theme.text.primary, fontSize: 13, fontWeight: '600', lineHeight: 19 },
     bannerClose: { color: theme.text.secondary, fontSize: 21, lineHeight: 23 },

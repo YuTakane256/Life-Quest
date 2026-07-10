@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { ThemePalette } from '@life-quest/core/designTokens';
-import { useRouter } from 'expo-router';
 import { getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../platform/auth';
 import {
     approveMobileContentImport,
@@ -61,7 +60,6 @@ async function readStorageSummary(): Promise<StorageSummary> {
 }
 
 export default function SettingsScreen() {
-    const router = useRouter();
     const systemScheme = useColorScheme();
     const configured = readMobileSupabaseEnv() !== null;
     const themeMode = useMobileSettingsStore((state) => state.themeMode);
@@ -166,15 +164,6 @@ export default function SettingsScreen() {
         <SafeAreaView style={styles.safeArea}>
             <ScrollView contentContainerStyle={styles.scroll}>
                 <View style={styles.header}>
-                    <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="戻る"
-                        onPress={() => router.back()}
-                        style={styles.backButton}
-                        hitSlop={8}
-                    >
-                        <Text style={styles.backSymbol}>←</Text>
-                    </Pressable>
                     <Text style={styles.title}>設定</Text>
                 </View>
 

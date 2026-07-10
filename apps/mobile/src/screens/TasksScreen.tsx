@@ -242,8 +242,8 @@ export default function TasksScreen() {
                     keyboardShouldPersistTaps="handled"
                     ListEmptyComponent={hasHydrated ? (
                         <EmptyState
-                            title={filter === 'done' ? '完了したタスクはありません' : 'タスクはありません'}
-                            body="上の入力欄から今日の一歩を追加できます。"
+                            title={filter === 'done' ? '完了したタスクはありません' : 'タスクがありません'}
+                            body="上の入力欄から追加しましょう！"
                         />
                     ) : null}
                 />
