@@ -19,6 +19,15 @@ export {
     positiveInteger,
 } from './numeric.ts';
 export { getHpDisplayState, type HpDisplayState } from './hp.ts';
+export {
+    ACHIEVEMENTS,
+    getAchievementProgress,
+    getUnlockedTitles,
+    type AchievementDefinition,
+    type AchievementMetric,
+    type AchievementProgress,
+    type AchievementSnapshot,
+} from './achievements.ts';
 export { clampString } from './validation.ts';
 export {
     BATTLE_SKILL_CONFIG,

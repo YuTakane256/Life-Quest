@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getAchievementProgress, getUnlockedTitles, type AchievementSnapshot } from './achievements';
-import type { AchievementDefinition } from '../config/achievements';
+import { getAchievementProgress, getUnlockedTitles, type AchievementDefinition, type AchievementSnapshot } from './achievements.ts';
 
 const definitions: AchievementDefinition[] = [
     {
