@@ -11,8 +11,8 @@ import type { BattleHistoryEntry } from '../types';
 import type { BattleSkillDefinition } from '../config/battleSkills';
 import { getUnlockedBattleSkills } from '../utils/battleSkills';
 import { getBattleBackground, getMapBackground } from '../config/mapAssets';
-import heroImg from '../assets/images/hero.png';
-import heroMaleImg from '../assets/images/hero_male.png';
+import heroImg from '@life-quest/assets/images/hero.png';
+import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { getEnemyImageSrc } from '../config/enemyImages';
 
 

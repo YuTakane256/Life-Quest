@@ -4,8 +4,8 @@ import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stor
 import { GACHA_CONFIG } from '../config/gameConfig';
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS } from '../config/equipmentAssets';
 import type { Equipment, EquipmentSlot } from '../types';
-import heroImg from '../assets/images/hero.png';
-import heroMaleImg from '../assets/images/hero_male.png';
+import heroImg from '@life-quest/assets/images/hero.png';
+import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { useModalEscape } from '../hooks/useModalEscape';
 import { useTitleStore } from '../stores/useTitleStore';
 import { InventorySection } from '../components/character/InventorySection';
