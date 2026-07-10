@@ -7,8 +7,11 @@ import { PRIORITIES, RECURRENCES } from '../config/taskLabels';
 import { generateId, getTodayJST, toIsoDatePart } from '../utils/dateUtils';
 import {
     buildNextRecurringTask as buildNextRecurringTaskCore,
+    duplicateTask as duplicateTaskCore,
     getSubtaskRewardXp,
     hasOpenRecurringDuplicate,
+    removeCompletedTasks,
+    updateTaskFields,
 } from '@life-quest/core/tasks';
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
@@ -157,70 +160,39 @@ export const useTaskStore = create<TaskStoreState>()(
             },
 
             updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>) => {
-                // サブタスクが更新対象に含まれない場合は単純マージ
+                const now = new Date().toISOString();
+
+                // サブタスクが更新対象に含まれない場合は単純マージ（core側で分岐）
                 if (updates.subtasks === undefined) {
-                    set((state) => ({
-                        tasks: state.tasks.map((t) =>
-                            t.id === id ? { ...t, ...updates } : t
-                        ),
-                    }));
+                    set((state) => ({ tasks: updateTaskFields(state.tasks, id, updates, { now }) }));
                     return;
                 }
-
-                // サブタスク更新時は親タスクの完了状態を再計算する
-                const nextSubtasks = updates.subtasks.slice(0, MAX_SUBTASKS_PER_TASK);
-                const now = new Date().toISOString();
-                const allComplete = nextSubtasks.length > 0 && nextSubtasks.every((s) => s.completed);
 
                 // 5秒Undoタイマーとの競合を防ぐため、保留中の完了をキャンセル
                 const pending = get().pendingCompletions.find((p) => p.taskId === id);
                 clearPendingCompletionTimer(pending);
 
                 set((state) => ({
-                    tasks: state.tasks.map((t) => {
-                        if (t.id !== id) return t;
-                        let completed = t.completed;
-                        let completedAt = t.completedAt;
-                        if (nextSubtasks.length > 0) {
-                            completed = allComplete;
-                            completedAt = allComplete ? (t.completedAt || now) : null;
-                        } else if (pending) {
-                            completed = false;
-                            completedAt = null;
-                        }
-                        return { ...t, ...updates, subtasks: nextSubtasks, completed, completedAt };
+                    tasks: updateTaskFields(state.tasks, id, updates, {
+                        now,
+                        hadPendingCompletion: pending !== undefined,
                     }),
                     pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== id),
                 }));
             },
 
             duplicateTask: (id: string) => {
-                if (get().tasks.length >= MAX_PERSISTED_TASKS) return null;
-                const source = get().tasks.find((t) => t.id === id);
-                if (!source) return null;
-                const now = new Date().toISOString();
-                const newId = generateId();
-                const duplicate: Task = {
-                    id: newId,
-                    name: source.name,
-                    // 元タスクが期限なしならそのまま、設定済みなら今日に
-                    dueDate: source.dueDate === null ? null : getTodayJST(),
-                    priority: source.priority,
-                    tags: [...(source.tags || [])],
-                    subtasks: (source.subtasks || []).map((s) => ({
-                        id: generateId(),
-                        name: s.name,
-                        completed: false,
-                        completedAt: null,
-                        createdAt: now,
-                    })),
-                    recurrence: source.recurrence,
-                    completed: false,
-                    completedAt: null,
-                    createdAt: now,
-                };
+                const duplicate = duplicateTaskCore({
+                    tasks: get().tasks,
+                    sourceId: id,
+                    newId: generateId(),
+                    subtaskIdFor: generateId,
+                    now: new Date().toISOString(),
+                    today: getTodayJST(),
+                });
+                if (!duplicate) return null;
                 set((state) => ({ tasks: [...state.tasks, duplicate] }));
-                return newId;
+                return duplicate.id;
             },
 
             deleteTask: (id: string) => {
@@ -237,9 +209,7 @@ export const useTaskStore = create<TaskStoreState>()(
                 const { tasks, pendingCompletions } = get();
                 // 保留中（5秒Undo待ち）のタスクは削除対象から除外する
                 const pendingIds = new Set(pendingCompletions.map((p) => p.taskId));
-                set({
-                    tasks: tasks.filter((t) => !t.completed || pendingIds.has(t.id)),
-                });
+                set({ tasks: removeCompletedTasks(tasks, pendingIds) });
             },
 
             toggleComplete: (id: string) => {
