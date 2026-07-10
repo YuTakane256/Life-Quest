@@ -40,6 +40,10 @@
       "types": "./src/cloudPull.ts",
       "import": "./src/cloudPull.ts"
     },
+    "./achievements": {
+      "types": "./src/achievements.ts",
+      "import": "./src/achievements.ts"
+    },
     "./designTokens": {
       "types": "./src/designTokens.ts",
       "import": "./src/designTokens.ts"
