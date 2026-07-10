@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EQUIPMENT_SLOTS, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { calculateNextLevelXp, calculateXpProgress } from '@life-quest/core/progression';
 import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
 import { useRouter } from 'expo-router';
+import { AVATAR_IMAGES, getChestImage, getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { theme } from '../theme/colors';
 
@@ -25,8 +26,8 @@ const SLOT_LABELS: Record<EquipmentSlot, string> = {
 };
 
 const AVATAR_OPTIONS = [
-    { id: 'female', label: '女性', symbol: '👩' },
-    { id: 'male', label: '男性', symbol: '👨' },
+    { id: 'female', label: '女性' },
+    { id: 'male', label: '男性' },
 ] as const;
 
 export default function CharacterScreen() {
@@ -175,9 +176,11 @@ export default function CharacterScreen() {
             <View style={styles.card}>
                 <View style={styles.profileRow}>
                     <View style={styles.avatarCircle}>
-                        <Text style={styles.avatarSymbol}>
-                            {AVATAR_OPTIONS.find((option) => option.id === character.avatar)?.symbol ?? '👩'}
-                        </Text>
+                        <Image
+                            source={AVATAR_IMAGES[character.avatar === 'male' ? 'male' : 'female']}
+                            style={styles.avatarImage}
+                            accessibilityLabel="キャラクターのアバター画像"
+                        />
                     </View>
                     <View style={styles.flex}>
                         <TextInput
@@ -203,8 +206,9 @@ export default function CharacterScreen() {
                             onPress={() => updateCharacter({ avatar: option.id })}
                             style={[styles.segment, character.avatar === option.id && styles.segmentActive]}
                         >
+                            <Image source={AVATAR_IMAGES[option.id]} style={styles.segmentAvatar} />
                             <Text style={[styles.segmentText, character.avatar === option.id && styles.segmentTextActive]}>
-                                {option.symbol} {option.label}
+                                {option.label}
                             </Text>
                         </Pressable>
                     ))}
@@ -234,7 +238,14 @@ export default function CharacterScreen() {
                     <Text style={styles.sectionTitle}>宝箱（{unopenedChests.length}）</Text>
                     {unopenedChests.map((chest) => (
                         <View key={chest.id} style={styles.chestRow}>
-                            <Text style={styles.chestLabel}>🎁 {chest.label}</Text>
+                            {getChestImage(chest.chestType) ? (
+                                <Image source={getChestImage(chest.chestType)!} style={styles.chestImage} />
+                            ) : (
+                                <View style={[styles.chestImage, styles.imageFallback]}>
+                                    <Text style={styles.imageFallbackText}>?</Text>
+                                </View>
+                            )}
+                            <Text style={styles.chestLabel}>{chest.label}</Text>
                             <Pressable
                                 accessibilityRole="button"
                                 accessibilityLabel={`${chest.label}を開封する`}
@@ -267,9 +278,12 @@ export default function CharacterScreen() {
                         <View key={slot} style={styles.slotRow}>
                             <Text style={styles.slotLabel}>{SLOT_LABELS[slot]}</Text>
                             {item ? (
-                                <Text style={[styles.slotItemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
-                                    {item.name}
-                                </Text>
+                                <>
+                                    <ItemIcon templateId={item.templateId} rarity={item.rarity} />
+                                    <Text style={[styles.slotItemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
+                                        {item.name}
+                                    </Text>
+                                </>
                             ) : (
                                 <Text style={styles.slotEmpty}>なし</Text>
                             )}
@@ -321,6 +335,19 @@ export default function CharacterScreen() {
     );
 }
 
+/** 装備アイコン（レアリティ色の枠）。未知のtemplate_idはプレースホルダー。 */
+function ItemIcon({ templateId, rarity }: { templateId: string; rarity: Rarity }) {
+    const source = getItemImage(templateId);
+    if (!source) {
+        return (
+            <View style={[styles.itemIcon, styles.imageFallback, { borderColor: RARITY_COLORS[rarity] }]}>
+                <Text style={styles.imageFallbackText}>?</Text>
+            </View>
+        );
+    }
+    return <Image source={source} style={[styles.itemIcon, { borderColor: RARITY_COLORS[rarity] }]} />;
+}
+
 function InventoryRow({
     item,
     selected,
@@ -347,6 +374,7 @@ function InventoryRow({
             >
                 {selected && <Text style={styles.selectMark}>✓</Text>}
             </Pressable>
+            <ItemIcon templateId={item.templateId} rarity={item.rarity} />
             <View style={styles.flex}>
                 <Text style={[styles.itemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
                     {item.name}{item.equipped ? '（装備中）' : ''}
@@ -409,11 +437,16 @@ const styles = StyleSheet.create({
     card: { backgroundColor: theme.bg.card, borderColor: theme.border.default, borderWidth: 1, borderRadius: 10, padding: 16, gap: 10 },
     profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     avatarCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: theme.bg.cardHover, alignItems: 'center', justifyContent: 'center' },
-    avatarSymbol: { fontSize: 30 },
+    avatarImage: { width: 56, height: 56, borderRadius: 28 },
+    segmentAvatar: { width: 20, height: 20, borderRadius: 10, marginRight: 6 },
+    chestImage: { width: 36, height: 36, borderRadius: 6 },
+    itemIcon: { width: 34, height: 34, borderRadius: 6, borderWidth: 2, backgroundColor: theme.bg.cardHover },
+    imageFallback: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.border.default, backgroundColor: theme.bg.cardHover },
+    imageFallbackText: { color: theme.text.muted, fontSize: 15, fontWeight: '800' },
     nameInput: { color: theme.text.primary, fontSize: 18, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: theme.border.default, paddingVertical: 4, paddingHorizontal: 0 },
     levelText: { color: theme.accent.gold, fontSize: 13, fontWeight: '800', marginTop: 4 },
     avatarSwitch: { flexDirection: 'row', backgroundColor: theme.bg.secondary, borderRadius: 8, padding: 3 },
-    segment: { flex: 1, height: 34, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+    segment: { flex: 1, height: 34, borderRadius: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
     segmentActive: { backgroundColor: theme.border.default },
     segmentText: { color: theme.text.muted, fontSize: 12, fontWeight: '700' },
     segmentTextActive: { color: theme.text.primary },
