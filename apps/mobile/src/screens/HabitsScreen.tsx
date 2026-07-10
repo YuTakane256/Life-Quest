@@ -135,8 +135,8 @@ export default function HabitsScreen() {
                     keyboardShouldPersistTaps="handled"
                     ListEmptyComponent={ready ? (
                         <View style={styles.empty}>
-                            <Text style={styles.emptyTitle}>習慣はまだありません</Text>
-                            <Text style={styles.emptyBody}>小さく続けたいことを追加しましょう。</Text>
+                            <Text style={styles.emptyTitle}>習慣がありません</Text>
+                            <Text style={styles.emptyBody}>上の入力欄から追加しましょう！</Text>
                         </View>
                     ) : null}
                 />
