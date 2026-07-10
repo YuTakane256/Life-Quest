@@ -10,8 +10,11 @@ import {
     getTaskHeatmapLevel,
     groupDatesByWeeks,
 } from '@life-quest/core/stats';
+import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '@life-quest/core/achievements';
+import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { buildAchievementSnapshot } from '../utils/achievementSnapshot';
 import { getTodayJst } from '../utils/date';
 import { theme } from '../theme/colors';
 
@@ -29,6 +32,9 @@ export default function StatsScreen() {
     const tasks = useMobileTaskStore((state) => state.tasks);
     const habits = useMobileHabitStore((state) => state.habits);
     const records = useMobileHabitStore((state) => state.records);
+    const totalXp = useMobileGameStore((state) => state.character.totalXp);
+    const maxStage = useMobileGameStore((state) => state.battleProgress.maxClearedStage);
+    const equipmentCount = useMobileGameStore((state) => state.equipment.length);
     const [mode, setMode] = useState<HeatmapMode>('tasks');
 
     const today = getTodayJst();
@@ -50,6 +56,14 @@ export default function StatsScreen() {
         : getHabitHeatmapLevel(habitActivity[date]?.count ?? 0, habitActivity[date]?.allComplete ?? false);
     const colors = mode === 'tasks' ? TASK_COLORS : HABIT_COLORS;
 
+    // 実績・称号（Web StatsPage.tsx と同一のsnapshotセマンティクス。称号の選択UIは#514スコープ）
+    const achievementProgress = useMemo(
+        () => getAchievementProgress(buildAchievementSnapshot({ tasks, habits, records, totalXp, maxStage, equipmentCount })),
+        [tasks, habits, records, totalXp, maxStage, equipmentCount],
+    );
+    const unlockedTitles = useMemo(() => getUnlockedTitles(achievementProgress), [achievementProgress]);
+    const unlockedCount = achievementProgress.filter((achievement) => achievement.unlocked).length;
+
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView contentContainerStyle={styles.scroll}>
@@ -64,6 +78,24 @@ export default function StatsScreen() {
                     <View style={styles.summaryRow}>
                         <SummaryCard label="今日の習慣" value={`${todayHabitCount}/${habits.length}`} />
                         <SummaryCard label="30日全達成" value={`${allCompleteCount}日`} />
+                    </View>
+
+                    {/* 実績（Web StatsPage.tsxの情報順序: サマリー→実績→ヒートマップ） */}
+                    <View style={styles.card}>
+                        <View style={styles.cardHeader}>
+                            <Text style={styles.sectionTitle}>🏅 実績</Text>
+                            <Text style={styles.achievementCount}>{unlockedCount}/{achievementProgress.length}</Text>
+                        </View>
+                        <View style={styles.achievementList}>
+                            {achievementProgress.map((achievement) => (
+                                <AchievementRow key={achievement.id} achievement={achievement} />
+                            ))}
+                        </View>
+                        {unlockedTitles.length > 0 && (
+                            <Text style={styles.titlesText}>
+                                獲得称号: <Text style={styles.titlesValue}>{unlockedTitles.join(' / ')}</Text>
+                            </Text>
+                        )}
                     </View>
 
                     {/* ヒートマップ */}
@@ -150,6 +182,38 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
     );
 }
 
+/** Web StatsPage.tsx の AchievementRow と同一の情報構造（アイコン・タイトル・説明・進捗バー）。 */
+function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
+    const percent = Math.round(achievement.progress * 100);
+    return (
+        <View style={[styles.achievementRow, !achievement.unlocked && styles.achievementRowLocked]}>
+            <View style={styles.achievementHeader}>
+                <View style={styles.achievementLabel}>
+                    <Text style={styles.achievementIcon} accessibilityElementsHidden>{achievement.icon}</Text>
+                    <View style={styles.flex}>
+                        <Text style={styles.achievementTitle} numberOfLines={1}>{achievement.title}</Text>
+                        <Text style={styles.achievementDescription} numberOfLines={1}>{achievement.description}</Text>
+                    </View>
+                </View>
+                <View style={[styles.achievementBadge, achievement.unlocked && styles.achievementBadgeUnlocked]}>
+                    <Text style={[styles.achievementBadgeText, achievement.unlocked && styles.achievementBadgeTextUnlocked]}>
+                        {achievement.unlocked ? achievement.rewardTitle : `${achievement.current}/${achievement.target}`}
+                    </Text>
+                </View>
+            </View>
+            <View style={styles.achievementTrack}>
+                <View
+                    style={[
+                        styles.achievementFill,
+                        { width: `${percent}%` },
+                        achievement.unlocked && styles.achievementFillUnlocked,
+                    ]}
+                />
+            </View>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: theme.bg.primary },
     scroll: { paddingBottom: 32 },
@@ -178,4 +242,23 @@ const styles = StyleSheet.create({
     legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'flex-end' },
     legendText: { color: theme.text.muted, fontSize: 10 },
     note: { color: theme.text.muted, fontSize: 11, lineHeight: 16 },
+    flex: { flex: 1 },
+    achievementCount: { color: theme.accent.gold, fontSize: 12, fontWeight: '800' },
+    achievementList: { gap: 8 },
+    achievementRow: { backgroundColor: theme.bg.secondary, borderRadius: 8, padding: 10, gap: 6 },
+    achievementRowLocked: { opacity: 0.78 },
+    achievementHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+    achievementLabel: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, flex: 1 },
+    achievementIcon: { fontSize: 16 },
+    achievementTitle: { color: theme.text.primary, fontSize: 12, fontWeight: '700' },
+    achievementDescription: { color: theme.text.muted, fontSize: 10 },
+    achievementBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 999, backgroundColor: theme.bg.card, borderColor: theme.border.default, borderWidth: 1 },
+    achievementBadgeUnlocked: { backgroundColor: 'rgba(245, 158, 11, 0.18)' },
+    achievementBadgeText: { color: theme.text.muted, fontSize: 10 },
+    achievementBadgeTextUnlocked: { color: theme.accent.gold },
+    achievementTrack: { height: 6, borderRadius: 3, backgroundColor: theme.bg.card, overflow: 'hidden' },
+    achievementFill: { height: '100%', borderRadius: 3, backgroundColor: theme.accent.primary },
+    achievementFillUnlocked: { backgroundColor: theme.accent.gold },
+    titlesText: { color: theme.text.muted, fontSize: 11, lineHeight: 16 },
+    titlesValue: { color: theme.accent.gold },
 });
