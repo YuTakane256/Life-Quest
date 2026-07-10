@@ -1,11 +1,11 @@
-import bgGrassland from '../assets/images/bg_grassland.png';
-import bgCastle from '../assets/images/bg_castle.png';
-import bgBattleGrassland from '../assets/images/bg_battle_grassland.png';
-import bgBattleCastle from '../assets/images/bg_battle_castle.png';
-import bgHeaven from '../assets/images/bg_heaven.png';
-import bgBattleHeaven from '../assets/images/bg_battle_heaven.png';
-import bgDeepSea from '../assets/images/bg_deep_sea.png';
-import bgBattleDeepSea from '../assets/images/bg_battle_deep_sea.png';
+import bgGrassland from '@life-quest/assets/images/bg_grassland.png';
+import bgCastle from '@life-quest/assets/images/bg_castle.png';
+import bgBattleGrassland from '@life-quest/assets/images/bg_battle_grassland.png';
+import bgBattleCastle from '@life-quest/assets/images/bg_battle_castle.png';
+import bgHeaven from '@life-quest/assets/images/bg_heaven.png';
+import bgBattleHeaven from '@life-quest/assets/images/bg_battle_heaven.png';
+import bgDeepSea from '@life-quest/assets/images/bg_deep_sea.png';
+import bgBattleDeepSea from '@life-quest/assets/images/bg_battle_deep_sea.png';
 
 const FALLBACK_THEME = 'grassland';
 

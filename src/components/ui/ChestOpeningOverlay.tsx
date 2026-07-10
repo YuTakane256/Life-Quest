@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/useGameStore';
 import { CHEST_IMAGES, CHEST_FALLBACK_IMAGE, ITEM_IMAGES, RARITY_COLORS, RARITY_LABELS } from '../../config/equipmentAssets';
 import type { Rarity, EquipmentSlot } from '../../types';
-import heroImg from '../../assets/images/hero.png';
-import heroMaleImg from '../../assets/images/hero_male.png';
+import heroImg from '@life-quest/assets/images/hero.png';
+import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { useModalEscape } from '../../hooks/useModalEscape';
 
 type Phase = 'idle' | 'revealing' | 'revealed';

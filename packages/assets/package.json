@@ -1,0 +1,13 @@
+{
+  "name": "@life-quest/assets",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./manifest": {
+      "types": "./manifest.ts",
+      "import": "./manifest.ts"
+    },
+    "./images/*": "./images/*"
+  }
+}
