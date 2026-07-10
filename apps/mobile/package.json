@@ -11,10 +11,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
     "@life-quest/core": "*",
     "@react-native-async-storage/async-storage": "3.1.1",
     "@supabase/supabase-js": "^2.110.0",
     "expo": "~57.0.2",
+    "expo-font": "~57.0.0",
     "expo-router": "~57.0.3",
     "expo-secure-store": "^57.0.0",
     "expo-status-bar": "~57.0.0",
