@@ -4,14 +4,17 @@ import {
     addSubtaskToTask,
     buildNextRecurringTask,
     createTask,
+    duplicateTask,
     getSubtaskRewardXp,
     hasOpenRecurringDuplicate,
     removeSubtaskFromTask,
     removeTask,
+    removeCompletedTasks,
     sanitizeTaskCollection,
     TASK_LIMITS,
     toggleSubtask,
     toggleTaskCompletion,
+    updateTaskFields,
     type Task,
 } from './tasks.ts';
 
@@ -221,5 +224,99 @@ describe('サブタスク操作', () => {
     it('removeSubtaskFromTask は不明サブタスクで null', () => {
         const parent = parentWith([]);
         expect(removeSubtaskFromTask([parent], 'p1', 'nope', NOW)).toBeNull();
+    });
+});
+
+describe('updateTaskFields（#512）', () => {
+    const base = (overrides: Partial<Task> = {}): Task => ({
+        id: 't1', name: 'タスク', dueDate: null, priority: 'medium', tags: [],
+        subtasks: [], recurrence: 'none', completed: false, completedAt: null,
+        createdAt: '2026-07-01T00:00:00.000Z', ...overrides,
+    });
+    const sub = (id: string, completed: boolean) => ({
+        id, name: `子${id}`, completed, completedAt: completed ? '2026-07-02T00:00:00.000Z' : null,
+        createdAt: '2026-07-01T00:00:00.000Z',
+    });
+
+    it('subtasksを含まない更新は単純マージ（完了状態を触らない）', () => {
+        const tasks = [base({ completed: true, completedAt: '2026-07-02T00:00:00.000Z' })];
+        const next = updateTaskFields(tasks, 't1', { name: '改名', priority: 'high' }, { now: '2026-07-03T00:00:00.000Z' });
+        expect(next[0]).toMatchObject({ name: '改名', priority: 'high', completed: true, completedAt: '2026-07-02T00:00:00.000Z' });
+    });
+
+    it('サブタスク全完了なら親を完了にし、completedAtは既存値を優先する', () => {
+        const tasks = [base()];
+        const next = updateTaskFields(tasks, 't1', { subtasks: [sub('s1', true), sub('s2', true)] }, { now: '2026-07-03T00:00:00.000Z' });
+        expect(next[0].completed).toBe(true);
+        expect(next[0].completedAt).toBe('2026-07-03T00:00:00.000Z');
+    });
+
+    it('未完了サブタスクが残るなら親は未完了へ戻る', () => {
+        const tasks = [base({ completed: true, completedAt: '2026-07-02T00:00:00.000Z' })];
+        const next = updateTaskFields(tasks, 't1', { subtasks: [sub('s1', true), sub('s2', false)] }, { now: '2026-07-03T00:00:00.000Z' });
+        expect(next[0].completed).toBe(false);
+        expect(next[0].completedAt).toBeNull();
+    });
+
+    it('サブタスクを空にする更新は、Undo待機中なら未完了へ戻す', () => {
+        const tasks = [base({ completed: true, completedAt: '2026-07-02T00:00:00.000Z' })];
+        const withPending = updateTaskFields(tasks, 't1', { subtasks: [] }, { now: 'x', hadPendingCompletion: true });
+        expect(withPending[0].completed).toBe(false);
+        const withoutPending = updateTaskFields(tasks, 't1', { subtasks: [] }, { now: 'x' });
+        expect(withoutPending[0].completed).toBe(true); // 待機中でなければ維持
+    });
+
+    it('サブタスクは上限（maxSubtasks）で丸められる', () => {
+        const many = Array.from({ length: TASK_LIMITS.maxSubtasks + 5 }, (_, index) => sub(`s${index}`, false));
+        const next = updateTaskFields([base()], 't1', { subtasks: many }, { now: 'x' });
+        expect(next[0].subtasks).toHaveLength(TASK_LIMITS.maxSubtasks);
+    });
+});
+
+describe('duplicateTask（#512）', () => {
+    const source: Task = {
+        id: 'src', name: '元タスク', dueDate: '2026-07-01', priority: 'high', tags: ['a'],
+        subtasks: [{ id: 'old-sub', name: '子', completed: true, completedAt: '2026-07-02T00:00:00.000Z', createdAt: '2026-07-01T00:00:00.000Z' }],
+        recurrence: 'weekly', completed: true, completedAt: '2026-07-02T00:00:00.000Z',
+        createdAt: '2026-07-01T00:00:00.000Z',
+    };
+    const input = {
+        tasks: [source], sourceId: 'src', newId: 'dup',
+        subtaskIdFor: () => 'new-sub', now: '2026-07-10T00:00:00.000Z', today: '2026-07-10',
+    };
+
+    it('期限設定済みなら今日へ、サブタスクは未完了・新IDでリセット、本体も未完了', () => {
+        const duplicate = duplicateTask(input);
+        expect(duplicate).toMatchObject({
+            id: 'dup', name: '元タスク', dueDate: '2026-07-10', priority: 'high',
+            recurrence: 'weekly', completed: false, completedAt: null,
+        });
+        expect(duplicate!.subtasks[0]).toMatchObject({ id: 'new-sub', name: '子', completed: false, completedAt: null });
+        expect(duplicate!.tags).not.toBe(source.tags); // 参照を共有しない
+    });
+
+    it('期限なしのタスクは期限なしのまま複製される', () => {
+        const noDue = { ...source, dueDate: null };
+        const duplicate = duplicateTask({ ...input, tasks: [noDue] });
+        expect(duplicate!.dueDate).toBeNull();
+    });
+
+    it('上限到達・元タスクなしはnull', () => {
+        const full = Array.from({ length: TASK_LIMITS.maxTasks }, (_, index) => ({ ...source, id: `t${index}` }));
+        expect(duplicateTask({ ...input, tasks: full })).toBeNull();
+        expect(duplicateTask({ ...input, sourceId: 'missing' })).toBeNull();
+    });
+});
+
+describe('removeCompletedTasks（#512）', () => {
+    it('完了済みだけを削除し、除外ID（Undo待機中）は完了済みでも残す', () => {
+        const make = (id: string, completed: boolean): Task => ({
+            id, name: id, dueDate: null, priority: 'medium', tags: [], subtasks: [],
+            recurrence: 'none', completed, completedAt: completed ? 'x' : null,
+            createdAt: '2026-07-01T00:00:00.000Z',
+        });
+        const tasks = [make('open', false), make('done', true), make('pending-done', true)];
+        const next = removeCompletedTasks(tasks, new Set(['pending-done']));
+        expect(next.map((task) => task.id)).toEqual(['open', 'pending-done']);
     });
 });

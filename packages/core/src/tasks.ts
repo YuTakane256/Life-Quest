@@ -370,3 +370,106 @@ export function toggleSubtask(
         parentCompleted: allComplete && !task.completed,
     };
 }
+
+// ─── 編集・複製・一括削除（#512。Web useTaskStore から移設した共有ルール） ───
+
+export type TaskFieldUpdates = Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>;
+
+export interface UpdateTaskFieldsOptions {
+    /** 現在時刻 (ISO 8601)。サブタスク全完了時の completedAt に使う */
+    now: string;
+    /**
+     * このタスクが5秒Undo待機中（保留完了）だったか。
+     * サブタスクを空にする更新では保留完了を取り消して未完了へ戻す（Webと同一ルール）。
+     * タイマーの解除自体は呼び出し側（ストア）の責務。
+     */
+    hadPendingCompletion?: boolean;
+}
+
+/**
+ * タスクのフィールドを更新する。
+ * サブタスクが更新対象に含まれる場合は上限までに丸め、親タスクの完了状態を再計算する。
+ */
+export function updateTaskFields(
+    tasks: readonly Task[],
+    taskId: string,
+    updates: TaskFieldUpdates,
+    options: UpdateTaskFieldsOptions,
+): Task[] {
+    // サブタスクが更新対象に含まれない場合は単純マージ
+    if (updates.subtasks === undefined) {
+        return tasks.map((task) => (task.id === taskId ? { ...task, ...updates } : task));
+    }
+
+    const nextSubtasks = updates.subtasks.slice(0, TASK_LIMITS.maxSubtasks);
+    const allComplete = nextSubtasks.length > 0 && nextSubtasks.every((subtask) => subtask.completed);
+
+    return tasks.map((task) => {
+        if (task.id !== taskId) return task;
+        let completed = task.completed;
+        let completedAt = task.completedAt;
+        if (nextSubtasks.length > 0) {
+            completed = allComplete;
+            completedAt = allComplete ? (task.completedAt || options.now) : null;
+        } else if (options.hadPendingCompletion) {
+            completed = false;
+            completedAt = null;
+        }
+        return { ...task, ...updates, subtasks: nextSubtasks, completed, completedAt };
+    });
+}
+
+export interface DuplicateTaskInput {
+    tasks: readonly Task[];
+    sourceId: string;
+    /** 複製タスクのID */
+    newId: string;
+    /** サブタスクごとのID生成器 */
+    subtaskIdFor: () => string;
+    /** 現在時刻 (ISO 8601) */
+    now: string;
+    /** 今日 (YYYY-MM-DD)。期限が設定済みのタスクの複製は期限を今日にする */
+    today: string;
+}
+
+/**
+ * タスクを複製する。上限到達・元タスクなしは null。
+ * 期限は「元がnullならnull、設定済みなら今日」、サブタスクは未完了状態・新IDで引き継ぐ
+ * （Webと同一ルール）。呼び出し側が返り値をコレクションへ追加する。
+ */
+export function duplicateTask(input: DuplicateTaskInput): Task | null {
+    if (input.tasks.length >= TASK_LIMITS.maxTasks) return null;
+    const source = input.tasks.find((task) => task.id === input.sourceId);
+    if (!source) return null;
+
+    return {
+        id: input.newId,
+        name: source.name,
+        // 元タスクが期限なしならそのまま、設定済みなら今日に
+        dueDate: source.dueDate === null ? null : input.today,
+        priority: source.priority,
+        tags: [...(source.tags || [])],
+        subtasks: (source.subtasks || []).map((subtask) => ({
+            id: input.subtaskIdFor(),
+            name: subtask.name,
+            completed: false,
+            completedAt: null,
+            createdAt: input.now,
+        })),
+        recurrence: source.recurrence,
+        completed: false,
+        completedAt: null,
+        createdAt: input.now,
+    };
+}
+
+/**
+ * 完了済みタスクをまとめて削除する。
+ * excludedTaskIds（5秒Undo待機中のタスク等）は完了済みでも残す（Webと同一ルール）。
+ */
+export function removeCompletedTasks(
+    tasks: readonly Task[],
+    excludedTaskIds: ReadonlySet<string> = new Set(),
+): Task[] {
+    return tasks.filter((task) => !task.completed || excludedTaskIds.has(task.id));
+}
