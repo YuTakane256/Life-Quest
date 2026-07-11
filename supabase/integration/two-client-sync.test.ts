@@ -252,4 +252,34 @@ describe.skipIf(!enabled)('#507 2クライアント同期E2E（ローカルSupab
         );
         expect(rows[0].count).toBe('0');
     });
+
+    it('同時更新のLWW収束: 同一タスクを両クライアントで別名に変更→後発の書き込みが両側のプルで反映される', async () => {
+        const webDevice = createDevice(user);
+        const mobileDevice = createDevice(user);
+        await webDevice.runner.flush();
+        await mobileDevice.runner.flush();
+
+        const taskId = webDevice.taskSnapshot().tasks[0].id;
+        expect(taskId).toBeTruthy();
+
+        // 「同時」はサーバー側で next_sync_version が直列化するため、
+        // 収束先は必ず後発コミットの内容になる（LWW=最後にコミットしたRPCが勝つ）。
+        const first = await user.client.rpc('upsert_task', {
+            p_id: taskId, p_name: 'Web側が変更した名前', p_key: uuid(),
+        });
+        expect(first.error).toBeNull();
+        const second = await user.client.rpc('upsert_task', {
+            p_id: taskId, p_name: 'Mobile側が変更した名前', p_key: uuid(),
+        });
+        expect(second.error).toBeNull();
+        expect(second.data.version).toBeGreaterThan(first.data.version);
+
+        await webDevice.runner.flush();
+        await mobileDevice.runner.flush();
+
+        const webTask = webDevice.taskSnapshot().tasks.find((task) => task.id === taskId);
+        const mobileTask = mobileDevice.taskSnapshot().tasks.find((task) => task.id === taskId);
+        expect(webTask?.name).toBe('Mobile側が変更した名前');
+        expect(mobileTask?.name).toBe('Mobile側が変更した名前');
+    });
 });
