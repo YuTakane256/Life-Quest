@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { ThemePalette } from '@life-quest/core/designTokens';
 import { EQUIPMENT_SLOTS, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
 import { calculateNextLevelXp, calculateXpProgress } from '@life-quest/core/progression';
@@ -8,7 +9,7 @@ import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
 import { AVATAR_IMAGES, getChestImage, getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
-import { theme } from '../theme/colors';
+import { usePalette } from '../theme/usePalette';
 
 const RARITY_LABELS: Record<Rarity, string> = {
     common: 'コモン',
@@ -17,8 +18,6 @@ const RARITY_LABELS: Record<Rarity, string> = {
     epic: 'エピック',
     legendary: 'レジェンダリー',
 };
-
-const RARITY_COLORS: Record<Rarity, string> = theme.rarity;
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = {
     weapon: '武器',
@@ -47,6 +46,10 @@ export default function CharacterScreen() {
     const synthesizeItems = useMobileGameStore((state) => state.synthesizeItems);
     const getEffectiveStats = useMobileGameStore((state) => state.getEffectiveStats);
     const activeTitle = useMobileTitleStore((state) => state.activeTitle);
+
+    const { palette } = usePalette();
+    const styles = useMemo(() => createStyles(palette), [palette]);
+    const rarityColors = palette.rarity;
 
     const [nameDraft, setNameDraft] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
@@ -222,9 +225,9 @@ export default function CharacterScreen() {
 
                 {/* ステータス */}
                 <View style={styles.statsRow}>
-                    <StatCell label="攻撃" base={character.baseAttack} effective={stats.attack} />
-                    <StatCell label="防御" base={character.baseDefense} effective={stats.defense} />
-                    <StatCell label="HP" base={character.baseMaxHp} effective={stats.maxHp} />
+                    <StatCell label="攻撃" base={character.baseAttack} effective={stats.attack} styles={styles} />
+                    <StatCell label="防御" base={character.baseDefense} effective={stats.defense} styles={styles} />
+                    <StatCell label="HP" base={character.baseMaxHp} effective={stats.maxHp} styles={styles} />
                 </View>
             </View>
 
@@ -275,8 +278,8 @@ export default function CharacterScreen() {
                             <Text style={styles.slotLabel}>{SLOT_LABELS[slot]}</Text>
                             {item ? (
                                 <>
-                                    <ItemIcon templateId={item.templateId} rarity={item.rarity} />
-                                    <Text style={[styles.slotItemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
+                                    <ItemIcon templateId={item.templateId} rarity={item.rarity} styles={styles} palette={palette} />
+                                    <Text style={[styles.slotItemName, { color: rarityColors[item.rarity] }]} numberOfLines={1}>
                                         {item.name}
                                     </Text>
                                 </>
@@ -295,18 +298,21 @@ export default function CharacterScreen() {
                     value={slotFilter}
                     options={[['all', 'すべて'], ['weapon', '武器'], ['armor', '防具'], ['accessory', '装飾']]}
                     onChange={(value) => setSlotFilter(value as InventorySlotFilter)}
+                    styles={styles}
                 />
                 <FilterSelect
                     label="レア"
                     value={rarityFilter}
                     options={[['all', 'すべて'], ...Object.entries(RARITY_LABELS) as [string, string][]]}
                     onChange={(value) => setRarityFilter(value as InventoryRarityFilter)}
+                    styles={styles}
                 />
                 <FilterSelect
                     label="並び"
                     value={sortMode}
                     options={[['rarity', 'レア順'], ['slot', '種類順'], ['name', '名前順']]}
                     onChange={(value) => setSortMode(value as InventorySortMode)}
+                    styles={styles}
                 />
             </View>
 
@@ -344,6 +350,8 @@ export default function CharacterScreen() {
                         onToggleSelect={toggleSelect}
                         onEquipToggle={(target) => target.equipped ? unequipItem(target.id) : equipItem(target.id)}
                         onSell={handleSell}
+                        styles={styles}
+                        palette={palette}
                     />
                 )}
                 contentContainerStyle={styles.listContent}
@@ -354,16 +362,16 @@ export default function CharacterScreen() {
 }
 
 /** 装備アイコン（レアリティ色の枠）。未知のtemplate_idはプレースホルダー。 */
-function ItemIcon({ templateId, rarity }: { templateId: string; rarity: Rarity }) {
+function ItemIcon({ templateId, rarity, styles, palette }: { templateId: string; rarity: Rarity; styles: Styles; palette: ThemePalette }) {
     const source = getItemImage(templateId);
     if (!source) {
         return (
-            <View style={[styles.itemIcon, styles.imageFallback, { borderColor: RARITY_COLORS[rarity] }]}>
+            <View style={[styles.itemIcon, styles.imageFallback, { borderColor: palette.rarity[rarity] }]}>
                 <Text style={styles.imageFallbackText}>?</Text>
             </View>
         );
     }
-    return <Image source={source} style={[styles.itemIcon, { borderColor: RARITY_COLORS[rarity] }]} />;
+    return <Image source={source} style={[styles.itemIcon, { borderColor: palette.rarity[rarity] }]} />;
 }
 
 function InventoryRow({
@@ -372,12 +380,16 @@ function InventoryRow({
     onToggleSelect,
     onEquipToggle,
     onSell,
+    styles,
+    palette,
 }: {
     item: Equipment;
     selected: boolean;
     onToggleSelect: (item: Equipment) => void;
     onEquipToggle: (item: Equipment) => void;
     onSell: (item: Equipment) => void;
+    styles: Styles;
+    palette: ThemePalette;
 }) {
     return (
         <View style={[styles.itemRow, selected && styles.itemRowSelected]}>
@@ -392,9 +404,9 @@ function InventoryRow({
             >
                 {selected && <Text style={styles.selectMark}>✓</Text>}
             </Pressable>
-            <ItemIcon templateId={item.templateId} rarity={item.rarity} />
+            <ItemIcon templateId={item.templateId} rarity={item.rarity} styles={styles} palette={palette} />
             <View style={styles.flex}>
-                <Text style={[styles.itemName, { color: RARITY_COLORS[item.rarity] }]} numberOfLines={1}>
+                <Text style={[styles.itemName, { color: palette.rarity[item.rarity] }]} numberOfLines={1}>
                     {item.name}{item.equipped ? '（装備中）' : ''}
                 </Text>
                 <Text style={styles.itemMeta}>
@@ -426,11 +438,12 @@ function InventoryRow({
     );
 }
 
-function FilterSelect({ label, value, options, onChange }: {
+function FilterSelect({ label, value, options, onChange, styles }: {
     label: string;
     value: string;
     options: [string, string][];
     onChange: (value: string) => void;
+    styles: Styles;
 }) {
     return (
         <View style={styles.filterGroup}>
@@ -457,7 +470,7 @@ function FilterSelect({ label, value, options, onChange }: {
     );
 }
 
-function StatCell({ label, base, effective }: { label: string; base: number; effective: number }) {
+function StatCell({ label, base, effective, styles }: { label: string; base: number; effective: number; styles: Styles }) {
     const bonus = effective - base;
     return (
         <View style={styles.statCell}>
@@ -468,74 +481,78 @@ function StatCell({ label, base, effective }: { label: string; base: number; eff
     );
 }
 
-const styles = StyleSheet.create({
+type Styles = ReturnType<typeof createStyles>;
+
+function createStyles(palette: ThemePalette) {
+    return StyleSheet.create({
     flex: { flex: 1 },
-    safeArea: { flex: 1, backgroundColor: theme.bg.primary },
+    safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    loadingText: { color: theme.text.muted, fontSize: 14, fontWeight: '600' },
+    loadingText: { color: palette.text.muted, fontSize: 14, fontWeight: '600' },
     // タブレット幅でも読みやすいよう本文幅を制限して中央寄せする
     listContent: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 32, gap: 8 },
     headerContent: { gap: 14, marginBottom: 6 },
-    title: { color: theme.text.primary, fontSize: 28, fontWeight: '800' },
+    title: { color: palette.text.primary, fontSize: 28, fontWeight: '800' },
     titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20 },
-    banner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: theme.bg.tertiary, borderColor: theme.accent.emerald, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
-    bannerText: { flex: 1, color: theme.text.primary, fontSize: 13, fontWeight: '600', lineHeight: 19 },
-    bannerClose: { color: theme.text.secondary, fontSize: 21, lineHeight: 23 },
-    card: { backgroundColor: theme.bg.card, borderColor: theme.border.default, borderWidth: 1, borderRadius: 10, padding: 16, gap: 10 },
+    banner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.bg.tertiary, borderColor: palette.accent.emerald, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
+    bannerText: { flex: 1, color: palette.text.primary, fontSize: 13, fontWeight: '600', lineHeight: 19 },
+    bannerClose: { color: palette.text.secondary, fontSize: 21, lineHeight: 23 },
+    card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 16, gap: 10 },
     profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    avatarCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: theme.bg.cardHover, alignItems: 'center', justifyContent: 'center' },
+    avatarCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: palette.bg.cardHover, alignItems: 'center', justifyContent: 'center' },
     avatarImage: { width: 56, height: 56, borderRadius: 28 },
     segmentAvatar: { width: 20, height: 20, borderRadius: 10, marginRight: 6 },
     chestImage: { width: 36, height: 36, borderRadius: 6 },
-    itemIcon: { width: 34, height: 34, borderRadius: 6, borderWidth: 2, backgroundColor: theme.bg.cardHover },
-    imageFallback: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.border.default, backgroundColor: theme.bg.cardHover },
-    imageFallbackText: { color: theme.text.muted, fontSize: 15, fontWeight: '800' },
-    nameInput: { color: theme.text.primary, fontSize: 18, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: theme.border.default, paddingVertical: 4, paddingHorizontal: 0 },
-    levelText: { color: theme.accent.gold, fontSize: 13, fontWeight: '800', marginTop: 4 },
-    activeTitleText: { color: theme.accent.gold, fontSize: 11, fontWeight: '700', marginTop: 2 },
-    avatarSwitch: { flexDirection: 'row', backgroundColor: theme.bg.secondary, borderRadius: 8, padding: 3 },
+    itemIcon: { width: 34, height: 34, borderRadius: 6, borderWidth: 2, backgroundColor: palette.bg.cardHover },
+    imageFallback: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: palette.border.default, backgroundColor: palette.bg.cardHover },
+    imageFallbackText: { color: palette.text.muted, fontSize: 15, fontWeight: '800' },
+    nameInput: { color: palette.text.primary, fontSize: 18, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: palette.border.default, paddingVertical: 4, paddingHorizontal: 0 },
+    levelText: { color: palette.accent.gold, fontSize: 13, fontWeight: '800', marginTop: 4 },
+    activeTitleText: { color: palette.accent.gold, fontSize: 11, fontWeight: '700', marginTop: 2 },
+    avatarSwitch: { flexDirection: 'row', backgroundColor: palette.bg.secondary, borderRadius: 8, padding: 3 },
     segment: { flex: 1, height: 34, borderRadius: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-    segmentActive: { backgroundColor: theme.border.default },
-    segmentText: { color: theme.text.muted, fontSize: 12, fontWeight: '700' },
-    segmentTextActive: { color: theme.text.primary },
-    progressTrack: { height: 10, borderRadius: 5, backgroundColor: theme.bg.cardHover, overflow: 'hidden' },
-    progressFill: { height: '100%', borderRadius: 5, backgroundColor: theme.accent.emerald },
-    progressText: { color: theme.text.secondary, fontSize: 12 },
+    segmentActive: { backgroundColor: palette.border.default },
+    segmentText: { color: palette.text.muted, fontSize: 12, fontWeight: '700' },
+    segmentTextActive: { color: palette.text.primary },
+    progressTrack: { height: 10, borderRadius: 5, backgroundColor: palette.bg.cardHover, overflow: 'hidden' },
+    progressFill: { height: '100%', borderRadius: 5, backgroundColor: palette.accent.emerald },
+    progressText: { color: palette.text.secondary, fontSize: 12 },
     statsRow: { flexDirection: 'row', gap: 8 },
-    statCell: { flex: 1, backgroundColor: theme.bg.secondary, borderRadius: 8, paddingVertical: 10, alignItems: 'center', gap: 2 },
-    statLabel: { color: theme.text.muted, fontSize: 11, fontWeight: '700' },
-    statValue: { color: theme.text.primary, fontSize: 18, fontWeight: '800' },
-    statBonus: { color: theme.accent.emerald, fontSize: 11, fontWeight: '700' },
+    statCell: { flex: 1, backgroundColor: palette.bg.secondary, borderRadius: 8, paddingVertical: 10, alignItems: 'center', gap: 2 },
+    statLabel: { color: palette.text.muted, fontSize: 11, fontWeight: '700' },
+    statValue: { color: palette.text.primary, fontSize: 18, fontWeight: '800' },
+    statBonus: { color: palette.accent.emerald, fontSize: 11, fontWeight: '700' },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     filterRow: { flexDirection: 'row', gap: 10 },
     filterGroup: { flex: 1, gap: 4 },
-    filterLabel: { color: theme.text.muted, fontSize: 10, fontWeight: '700' },
+    filterLabel: { color: palette.text.muted, fontSize: 10, fontWeight: '700' },
     filterOptions: { flexDirection: 'row', gap: 4 },
-    filterChip: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: theme.bg.secondary, borderColor: theme.border.default, borderWidth: 1 },
-    filterChipActive: { backgroundColor: theme.accent.primary, borderColor: theme.accent.primary },
-    filterChipText: { color: theme.text.muted, fontSize: 11, fontWeight: '700' },
+    filterChip: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1 },
+    filterChipActive: { backgroundColor: palette.accent.primary, borderColor: palette.accent.primary },
+    filterChipText: { color: palette.text.muted, fontSize: 11, fontWeight: '700' },
     filterChipTextActive: { color: 'white' },
-    sectionTitle: { color: theme.text.primary, fontSize: 16, fontWeight: '800' },
-    hint: { color: theme.text.muted, fontSize: 11, lineHeight: 16 },
-    emptyText: { color: theme.text.muted, fontSize: 13, paddingVertical: 8 },
+    sectionTitle: { color: palette.text.primary, fontSize: 16, fontWeight: '800' },
+    hint: { color: palette.text.muted, fontSize: 11, lineHeight: 16 },
+    emptyText: { color: palette.text.muted, fontSize: 13, paddingVertical: 8 },
     chestRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-    chestLabel: { flex: 1, color: theme.text.primary, fontSize: 14, fontWeight: '600' },
+    chestLabel: { flex: 1, color: palette.text.primary, fontSize: 14, fontWeight: '600' },
     slotRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    slotLabel: { width: 44, color: theme.text.muted, fontSize: 12, fontWeight: '700' },
+    slotLabel: { width: 44, color: palette.text.muted, fontSize: 12, fontWeight: '700' },
     slotItemName: { flex: 1, fontSize: 14, fontWeight: '700' },
-    slotEmpty: { flex: 1, color: theme.text.muted, fontSize: 14 },
-    itemRow: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: theme.bg.secondary, borderColor: theme.border.default, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9 },
-    itemRowSelected: { borderColor: theme.accent.emerald },
-    selectBox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: theme.text.muted, alignItems: 'center', justifyContent: 'center' },
-    selectBoxActive: { backgroundColor: theme.accent.emerald, borderColor: theme.accent.emerald },
-    selectMark: { color: theme.bg.primary, fontSize: 13, fontWeight: '900' },
+    slotEmpty: { flex: 1, color: palette.text.muted, fontSize: 14 },
+    itemRow: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9 },
+    itemRowSelected: { borderColor: palette.accent.emerald },
+    selectBox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: palette.text.muted, alignItems: 'center', justifyContent: 'center' },
+    selectBoxActive: { backgroundColor: palette.accent.emerald, borderColor: palette.accent.emerald },
+    selectMark: { color: palette.bg.primary, fontSize: 13, fontWeight: '900' },
     itemName: { fontSize: 14, fontWeight: '700' },
-    itemMeta: { color: theme.text.muted, fontSize: 11, marginTop: 2 },
-    primaryButton: { height: 34, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent.emerald },
-    primaryButtonText: { color: theme.bg.primary, fontSize: 13, fontWeight: '800' },
-    secondaryButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.border.default },
-    secondaryButtonText: { color: theme.text.primary, fontSize: 12, fontWeight: '700' },
-    dangerButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg.tertiary, borderWidth: 1, borderColor: theme.text.danger },
-    dangerButtonText: { color: theme.text.danger, fontSize: 12, fontWeight: '700' },
+    itemMeta: { color: palette.text.muted, fontSize: 11, marginTop: 2 },
+    primaryButton: { height: 34, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.emerald },
+    primaryButtonText: { color: palette.bg.primary, fontSize: 13, fontWeight: '800' },
+    secondaryButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.border.default },
+    secondaryButtonText: { color: palette.text.primary, fontSize: 12, fontWeight: '700' },
+    dangerButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.tertiary, borderWidth: 1, borderColor: palette.text.danger },
+    dangerButtonText: { color: palette.text.danger, fontSize: 12, fontWeight: '700' },
     muted: { opacity: 0.45 },
-});
+    });
+}

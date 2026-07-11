@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { ThemePalette } from '@life-quest/core/designTokens';
 import {
     getHabitCategoryByIdOrDefault,
     getHabitCompletionRate,
@@ -11,7 +12,7 @@ import {
 } from '@life-quest/core/habits';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { getTodayJst } from '../utils/date';
-import { theme } from '../theme/colors';
+import { usePalette } from '../theme/usePalette';
 
 export default function HabitsScreen() {
     const habits = useMobileHabitStore((state) => state.habits);
@@ -22,6 +23,9 @@ export default function HabitsScreen() {
     const toggleToday = useMobileHabitStore((state) => state.toggleToday);
     const deleteHabit = useMobileHabitStore((state) => state.deleteHabit);
     const markRestDay = useMobileHabitStore((state) => state.markRestDay);
+
+    const { palette } = usePalette();
+    const styles = useMemo(() => createStyles(palette), [palette]);
 
     const [draft, setDraft] = useState('');
     const [categoryId, setCategoryId] = useState<string>('other');
@@ -79,7 +83,7 @@ export default function HabitsScreen() {
                         onChangeText={setDraft}
                         onSubmitEditing={handleAdd}
                         placeholder="続けたい習慣"
-                        placeholderTextColor={theme.text.muted}
+                        placeholderTextColor={palette.text.muted}
                         returnKeyType="done"
                         style={styles.input}
                         maxLength={200}
@@ -109,7 +113,7 @@ export default function HabitsScreen() {
                             accessibilityState={{ selected: categoryId === item.id }}
                             accessibilityLabel={`カテゴリを${item.name}にする`}
                             onPress={() => setCategoryId(item.id)}
-                            style={[styles.categoryChip, categoryId === item.id && { borderColor: item.color, backgroundColor: theme.bg.cardHover }]}
+                            style={[styles.categoryChip, categoryId === item.id && { borderColor: item.color, backgroundColor: palette.bg.cardHover }]}
                         >
                             <Text style={styles.categoryChipText}>{item.icon} {item.name}</Text>
                         </Pressable>
@@ -129,6 +133,8 @@ export default function HabitsScreen() {
                             onToggle={() => toggleToday(item.id, today)}
                             onDelete={() => deleteHabit(item.id)}
                             onExpand={() => setExpandedHabitId((current) => current === item.id ? null : item.id)}
+                            styles={styles}
+                            palette={palette}
                         />
                     )}
                     contentContainerStyle={[styles.list, habits.length === 0 && styles.emptyList]}
@@ -145,7 +151,7 @@ export default function HabitsScreen() {
     );
 }
 
-function HabitRow({ habit, completed, expanded, today, onToggle, onDelete, onExpand }: {
+function HabitRow({ habit, completed, expanded, today, onToggle, onDelete, onExpand, styles, palette }: {
     habit: Habit;
     completed: boolean;
     expanded: boolean;
@@ -153,6 +159,8 @@ function HabitRow({ habit, completed, expanded, today, onToggle, onDelete, onExp
     onToggle: () => void;
     onDelete: () => void;
     onExpand: () => void;
+    styles: Styles;
+    palette: ThemePalette;
 }) {
     const records = useMobileHabitStore((state) => state.records);
     const restDays = useMobileHabitStore((state) => state.restDays);
@@ -196,12 +204,12 @@ function HabitRow({ habit, completed, expanded, today, onToggle, onDelete, onExp
                     <Text style={styles.deleteSymbol}>×</Text>
                 </Pressable>
             </View>
-            {expanded && <MemoPanel habitId={habit.id} today={today} />}
+            {expanded && <MemoPanel habitId={habit.id} today={today} styles={styles} palette={palette} />}
         </View>
     );
 }
 
-function MemoPanel({ habitId, today }: { habitId: string; today: string }) {
+function MemoPanel({ habitId, today, styles, palette }: { habitId: string; today: string; styles: Styles; palette: ThemePalette }) {
     const records = useMobileHabitStore((state) => state.records);
     const setHabitMemo = useMobileHabitStore((state) => state.setHabitMemo);
     const savedMemo = records.find((record) => record.habitId === habitId && record.date === today)?.memo ?? '';
@@ -215,7 +223,7 @@ function MemoPanel({ habitId, today }: { habitId: string; today: string }) {
                 onBlur={() => setHabitMemo(habitId, today, memoDraft)}
                 onSubmitEditing={() => setHabitMemo(habitId, today, memoDraft)}
                 placeholder="今日のメモ"
-                placeholderTextColor={theme.text.muted}
+                placeholderTextColor={palette.text.muted}
                 accessibilityLabel="今日のメモ"
                 style={styles.memoInput}
                 maxLength={500}
@@ -225,42 +233,46 @@ function MemoPanel({ habitId, today }: { habitId: string; today: string }) {
     );
 }
 
-const styles = StyleSheet.create({
+type Styles = ReturnType<typeof createStyles>;
+
+function createStyles(palette: ThemePalette) {
+    return StyleSheet.create({
     flex: { flex: 1 },
-    safeArea: { flex: 1, backgroundColor: theme.bg.primary },
+    safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    title: { color: theme.text.primary, fontSize: 28, fontWeight: '800' },
-    summary: { color: theme.accent.gold, fontSize: 13, fontWeight: '700', marginTop: 3 },
-    restButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default },
-    restButtonText: { color: theme.text.secondary, fontSize: 12, fontWeight: '700' },
-    restBadge: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg.cardHover, borderWidth: 1, borderColor: theme.accent.sky },
-    restBadgeText: { color: theme.accent.sky, fontSize: 12, fontWeight: '800' },
+    title: { color: palette.text.primary, fontSize: 28, fontWeight: '800' },
+    summary: { color: palette.accent.gold, fontSize: 13, fontWeight: '700', marginTop: 3 },
+    restButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
+    restButtonText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
+    restBadge: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.cardHover, borderWidth: 1, borderColor: palette.accent.sky },
+    restBadgeText: { color: palette.accent.sky, fontSize: 12, fontWeight: '800' },
     composer: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 10 },
-    input: { flex: 1, height: 46, borderRadius: 8, paddingHorizontal: 14, color: theme.text.primary, backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default, fontSize: 15 },
-    addButton: { width: 46, height: 46, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent.gold },
-    addSymbol: { color: theme.bg.primary, fontSize: 25, fontWeight: '700' },
+    input: { flex: 1, height: 46, borderRadius: 8, paddingHorizontal: 14, color: palette.text.primary, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, fontSize: 15 },
+    addButton: { width: 46, height: 46, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.gold },
+    addSymbol: { color: palette.bg.primary, fontSize: 25, fontWeight: '700' },
     muted: { opacity: 0.45 },
     categoryList: { flexGrow: 0, marginBottom: 12 },
     categoryListContent: { paddingHorizontal: 20, gap: 8 },
-    categoryChip: { height: 32, paddingHorizontal: 12, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg.secondary, borderWidth: 1, borderColor: theme.border.default },
-    categoryChipText: { color: theme.text.secondary, fontSize: 12, fontWeight: '700' },
+    categoryChip: { height: 32, paddingHorizontal: 12, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
+    categoryChipText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
     list: { paddingHorizontal: 20, paddingBottom: 28, gap: 8 },
     emptyList: { flexGrow: 1 },
-    rowContainer: { borderRadius: 8, backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default },
+    rowContainer: { borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
     row: { minHeight: 66, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
-    check: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg.cardHover },
-    checkDone: { backgroundColor: theme.accent.gold },
-    checkSymbol: { color: theme.text.secondary, fontSize: 19, fontWeight: '800' },
-    checkSymbolDone: { color: theme.bg.primary },
+    check: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.cardHover },
+    checkDone: { backgroundColor: palette.accent.gold },
+    checkSymbol: { color: palette.text.secondary, fontSize: 19, fontWeight: '800' },
+    checkSymbolDone: { color: palette.bg.primary },
     rowBody: { flex: 1 },
-    rowName: { color: theme.text.primary, fontSize: 15, fontWeight: '600' },
-    rowNameDone: { color: theme.accent.gold },
-    rowMeta: { color: theme.text.muted, fontSize: 11, marginTop: 3 },
+    rowName: { color: palette.text.primary, fontSize: 15, fontWeight: '600' },
+    rowNameDone: { color: palette.accent.gold },
+    rowMeta: { color: palette.text.muted, fontSize: 11, marginTop: 3 },
     deleteButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-    deleteSymbol: { color: theme.text.danger, fontSize: 23 },
-    memoPanel: { borderTopWidth: 1, borderTopColor: theme.border.default, paddingHorizontal: 12, paddingVertical: 8 },
-    memoInput: { minHeight: 60, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, color: theme.text.primary, backgroundColor: theme.bg.secondary, borderWidth: 1, borderColor: theme.border.default, fontSize: 13, textAlignVertical: 'top' },
+    deleteSymbol: { color: palette.text.danger, fontSize: 23 },
+    memoPanel: { borderTopWidth: 1, borderTopColor: palette.border.default, paddingHorizontal: 12, paddingVertical: 8 },
+    memoInput: { minHeight: 60, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 13, textAlignVertical: 'top' },
     empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
-    emptyTitle: { color: theme.text.secondary, fontSize: 16, fontWeight: '700' },
-    emptyBody: { color: theme.text.muted, fontSize: 13, marginTop: 7 },
-});
+    emptyTitle: { color: palette.text.secondary, fontSize: 16, fontWeight: '700' },
+    emptyBody: { color: palette.text.muted, fontSize: 13, marginTop: 7 },
+    });
+}

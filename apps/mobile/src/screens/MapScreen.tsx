@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { ThemePalette } from '@life-quest/core/designTokens';
 import {
     BATTLE_CONFIG,
     MAP_CONFIG,
@@ -11,7 +12,7 @@ import {
 import { getUnlockedBattleSkills } from '@life-quest/core/battleSkills';
 import { resolveCloudBattleAttempt, startCloudBattleAttempt } from '../platform/battleCloud';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
-import { theme } from '../theme/colors';
+import { usePalette } from '../theme/usePalette';
 
 const OUTCOME_LABELS: Record<BattleOutcome, string> = {
     ongoing: '戦闘中',
@@ -34,6 +35,9 @@ export default function MapScreen() {
     const applyResolvedCloudBattle = useMobileGameStore((state) => state.applyResolvedCloudBattle);
     const clearActiveBattle = useMobileGameStore((state) => state.clearActiveBattle);
     const getEffectiveStats = useMobileGameStore((state) => state.getEffectiveStats);
+
+    const { palette } = usePalette();
+    const styles = useMemo(() => createStyles(palette), [palette]);
 
     const [selectedStage, setSelectedStage] = useState(() => Math.max(1, battleProgress.currentStage));
     const [notice, setNotice] = useState<string | null>(null);
@@ -172,10 +176,10 @@ export default function MapScreen() {
                                 </View>
                             </View>
                             <View style={styles.statsRow}>
-                                <Stat label="攻撃" value={stats.attack} />
-                                <Stat label="防御" value={stats.defense} />
-                                <Stat label="HP" value={stats.maxHp} />
-                                <Stat label="Lv" value={character.level} />
+                                <Stat label="攻撃" value={stats.attack} styles={styles} />
+                                <Stat label="防御" value={stats.defense} styles={styles} />
+                                <Stat label="HP" value={stats.maxHp} styles={styles} />
+                                <Stat label="Lv" value={character.level} styles={styles} />
                             </View>
                             <Text style={styles.hint}>
                                 バトルXPは再攻略ごとに獲得できます。同じ戦闘結果の二重送信だけを防ぐ方針です。
@@ -187,6 +191,7 @@ export default function MapScreen() {
                                 stage={selectedDefinition}
                                 locked={!canChallenge}
                                 onStart={handleStart}
+                                styles={styles}
                             />
                         )}
 
@@ -220,11 +225,13 @@ export default function MapScreen() {
                                         label={character.name}
                                         current={activeBattle.state.playerHp}
                                         max={activeBattle.actors.player.maxHp}
+                                        styles={styles}
                                     />
                                     <HpBar
                                         label={activeBattle.actors.enemy.name}
                                         current={activeBattle.state.enemyHp}
                                         max={activeBattle.actors.enemy.maxHp}
+                                        styles={styles}
                                     />
                                 </View>
 
@@ -281,6 +288,7 @@ export default function MapScreen() {
                         locked={!battleProgress.battleUnlocked || item.stage > battleProgress.maxClearedStage + 1}
                         cleared={item.stage <= battleProgress.maxClearedStage}
                         onPress={() => setSelectedStage(item.stage)}
+                        styles={styles}
                     />
                 )}
                 contentContainerStyle={styles.listContent}
@@ -289,7 +297,7 @@ export default function MapScreen() {
     );
 }
 
-function StageDetail({ stage, locked, onStart }: { stage: StageDefinition; locked: boolean; onStart: () => void }) {
+function StageDetail({ stage, locked, onStart, styles }: { stage: StageDefinition; locked: boolean; onStart: () => void; styles: Styles }) {
     return (
         <View style={styles.card}>
             <View style={styles.stageDetailTop}>
@@ -308,9 +316,9 @@ function StageDetail({ stage, locked, onStart }: { stage: StageDefinition; locke
                 </Pressable>
             </View>
             <View style={styles.statsRow}>
-                <Stat label="HP" value={stage.hp} />
-                <Stat label="攻撃" value={stage.attack} />
-                <Stat label="防御" value={stage.defense} />
+                <Stat label="HP" value={stage.hp} styles={styles} />
+                <Stat label="攻撃" value={stage.attack} styles={styles} />
+                <Stat label="防御" value={stage.defense} styles={styles} />
             </View>
         </View>
     );
@@ -322,12 +330,14 @@ function StageTile({
     locked,
     cleared,
     onPress,
+    styles,
 }: {
     stage: StageDefinition;
     selected: boolean;
     locked: boolean;
     cleared: boolean;
     onPress: () => void;
+    styles: Styles;
 }) {
     return (
         <Pressable
@@ -347,7 +357,7 @@ function StageTile({
     );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, styles }: { label: string; value: number; styles: Styles }) {
     return (
         <View style={styles.statCell}>
             <Text style={styles.statLabel}>{label}</Text>
@@ -356,7 +366,7 @@ function Stat({ label, value }: { label: string; value: number }) {
     );
 }
 
-function HpBar({ label, current, max }: { label: string; current: number; max: number }) {
+function HpBar({ label, current, max, styles }: { label: string; current: number; max: number; styles: Styles }) {
     const ratio = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
     return (
         <View style={styles.hpBlock}>
@@ -371,53 +381,57 @@ function HpBar({ label, current, max }: { label: string; current: number; max: n
     );
 }
 
-const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: theme.bg.primary },
+type Styles = ReturnType<typeof createStyles>;
+
+function createStyles(palette: ThemePalette) {
+    return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    loadingText: { color: theme.text.secondary, fontSize: 14 },
+    loadingText: { color: palette.text.secondary, fontSize: 14 },
     listContent: { paddingBottom: 36 },
     headerContent: { padding: 20, gap: 12 },
-    title: { color: theme.text.primary, fontSize: 26, fontWeight: '800' },
-    heroCard: { backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default, borderRadius: 10, padding: 16, gap: 12 },
+    title: { color: palette.text.primary, fontSize: 26, fontWeight: '800' },
+    heroCard: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: 10, padding: 16, gap: 12 },
     heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-    areaName: { color: theme.text.primary, fontSize: 18, fontWeight: '800' },
-    statusPill: { borderRadius: 999, borderWidth: 1, borderColor: theme.border.active, paddingHorizontal: 10, paddingVertical: 5 },
-    statusPillText: { color: theme.text.primary, fontSize: 11, fontWeight: '800' },
-    hint: { color: theme.text.muted, fontSize: 12, lineHeight: 17 },
-    mutedText: { color: theme.text.muted, fontSize: 12, lineHeight: 17 },
-    sectionTitle: { color: theme.text.primary, fontSize: 15, fontWeight: '800' },
-    card: { backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default, borderRadius: 10, padding: 16, gap: 12 },
+    areaName: { color: palette.text.primary, fontSize: 18, fontWeight: '800' },
+    statusPill: { borderRadius: 999, borderWidth: 1, borderColor: palette.border.active, paddingHorizontal: 10, paddingVertical: 5 },
+    statusPillText: { color: palette.text.primary, fontSize: 11, fontWeight: '800' },
+    hint: { color: palette.text.muted, fontSize: 12, lineHeight: 17 },
+    mutedText: { color: palette.text.muted, fontSize: 12, lineHeight: 17 },
+    sectionTitle: { color: palette.text.primary, fontSize: 15, fontWeight: '800' },
+    card: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: 10, padding: 16, gap: 12 },
     stageDetailTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
     statsRow: { flexDirection: 'row', gap: 8 },
-    statCell: { flex: 1, minHeight: 58, borderRadius: 8, backgroundColor: theme.bg.secondary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-    statLabel: { color: theme.text.muted, fontSize: 10, fontWeight: '700' },
-    statValue: { color: theme.text.primary, fontSize: 15, fontWeight: '800', marginTop: 4 },
-    primaryButton: { minHeight: 40, paddingHorizontal: 18, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent.primary },
+    statCell: { flex: 1, minHeight: 58, borderRadius: 8, backgroundColor: palette.bg.secondary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+    statLabel: { color: palette.text.muted, fontSize: 10, fontWeight: '700' },
+    statValue: { color: palette.text.primary, fontSize: 15, fontWeight: '800', marginTop: 4 },
+    primaryButton: { minHeight: 40, paddingHorizontal: 18, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.primary },
     primaryButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
-    secondaryButton: { minHeight: 38, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg.secondary, borderWidth: 1, borderColor: theme.border.default },
-    secondaryButtonText: { color: theme.text.primary, fontSize: 12, fontWeight: '800' },
+    secondaryButton: { minHeight: 38, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
+    secondaryButtonText: { color: palette.text.primary, fontSize: 12, fontWeight: '800' },
     muted: { opacity: 0.45 },
-    notice: { borderRadius: 8, borderWidth: 1, borderColor: theme.border.active, backgroundColor: theme.bg.secondary, padding: 12 },
-    noticeText: { color: theme.text.secondary, fontSize: 13, lineHeight: 18 },
-    battleCard: { backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default, borderRadius: 10, padding: 16, gap: 12 },
+    notice: { borderRadius: 8, borderWidth: 1, borderColor: palette.border.active, backgroundColor: palette.bg.secondary, padding: 12 },
+    noticeText: { color: palette.text.secondary, fontSize: 13, lineHeight: 18 },
+    battleCard: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: 10, padding: 16, gap: 12 },
     battleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-    closeButton: { minHeight: 34, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.border.default, justifyContent: 'center' },
-    closeButtonText: { color: theme.text.secondary, fontSize: 12, fontWeight: '700' },
+    closeButton: { minHeight: 34, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: palette.border.default, justifyContent: 'center' },
+    closeButtonText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
     hpGrid: { gap: 10 },
     hpBlock: { gap: 5 },
     hpHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-    hpLabel: { color: theme.text.secondary, fontSize: 12, fontWeight: '700' },
-    hpValue: { color: theme.text.muted, fontSize: 12 },
-    hpTrack: { height: 8, borderRadius: 999, backgroundColor: theme.bg.secondary, overflow: 'hidden' },
-    hpFill: { height: '100%', borderRadius: 999, backgroundColor: theme.accent.primary },
+    hpLabel: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
+    hpValue: { color: palette.text.muted, fontSize: 12 },
+    hpTrack: { height: 8, borderRadius: 999, backgroundColor: palette.bg.secondary, overflow: 'hidden' },
+    hpFill: { height: '100%', borderRadius: 999, backgroundColor: palette.accent.primary },
     actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    logBox: { maxHeight: 150, borderRadius: 8, backgroundColor: theme.bg.secondary, padding: 10 },
-    logText: { color: theme.text.secondary, fontSize: 12, lineHeight: 18, marginBottom: 4 },
+    logBox: { maxHeight: 150, borderRadius: 8, backgroundColor: palette.bg.secondary, padding: 10 },
+    logText: { color: palette.text.secondary, fontSize: 12, lineHeight: 18, marginBottom: 4 },
     stageRow: { paddingHorizontal: 20, gap: 8, marginBottom: 8 },
-    stageTile: { flex: 1, aspectRatio: 1, borderRadius: 8, borderWidth: 1, borderColor: theme.border.default, backgroundColor: theme.bg.card, alignItems: 'center', justifyContent: 'center' },
-    stageTileSelected: { borderColor: theme.border.active, backgroundColor: theme.bg.cardHover },
+    stageTile: { flex: 1, aspectRatio: 1, borderRadius: 8, borderWidth: 1, borderColor: palette.border.default, backgroundColor: palette.bg.card, alignItems: 'center', justifyContent: 'center' },
+    stageTileSelected: { borderColor: palette.border.active, backgroundColor: palette.bg.cardHover },
     stageTileLocked: { opacity: 0.35 },
-    stageTileCleared: { borderColor: theme.accent.primary },
-    stageNumber: { color: theme.text.muted, fontSize: 13, fontWeight: '800' },
-    stageNumberSelected: { color: theme.text.primary },
-});
+    stageTileCleared: { borderColor: palette.accent.primary },
+    stageNumber: { color: palette.text.muted, fontSize: 13, fontWeight: '800' },
+    stageNumberSelected: { color: palette.text.primary },
+    });
+}

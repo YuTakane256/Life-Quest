@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useColorScheme } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import type { ThemePalette } from '@life-quest/core/designTokens';
@@ -16,7 +16,7 @@ import {
     type MobileMotionMode,
     type MobileThemeMode,
 } from '../stores/useMobileSettingsStore';
-import { getMobileThemePalette, resolveMobileThemeMode } from '../theme/colors';
+import { usePalette } from '../theme/usePalette';
 
 type Mode = 'signIn' | 'signUp';
 
@@ -61,7 +61,6 @@ async function readStorageSummary(): Promise<StorageSummary> {
 }
 
 export default function SettingsScreen() {
-    const systemScheme = useColorScheme();
     const configured = readMobileSupabaseEnv() !== null;
     const themeMode = useMobileSettingsStore((state) => state.themeMode);
     const setThemeMode = useMobileSettingsStore((state) => state.setThemeMode);
@@ -72,7 +71,7 @@ export default function SettingsScreen() {
     const habitReminderHour = useMobileSettingsStore((state) => state.habitReminderHour);
     const setHabitReminderHour = useMobileSettingsStore((state) => state.setHabitReminderHour);
 
-    const palette = getMobileThemePalette(resolveMobileThemeMode(themeMode, systemScheme));
+    const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);
 
     const [email, setEmail] = useState('');

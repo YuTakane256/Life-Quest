@@ -1,20 +1,23 @@
 import { useMemo, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { ThemePalette } from '@life-quest/core/designTokens';
 import { addRecurrenceInterval, TASK_LIMITS, type Priority, type Recurrence, type Task } from '@life-quest/core/tasks';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { getTodayJst } from '../utils/date';
-import { theme } from '../theme/colors';
+import { usePalette } from '../theme/usePalette';
 
 type TaskFilter = 'open' | 'all' | 'done';
 type DueChoice = 'none' | 'today' | 'tomorrow' | 'nextWeek';
 
 // 優先度はXP報酬（低10 / 中20 / 高30）に対応する
-const PRIORITY_OPTIONS: readonly { value: Priority; label: string; color: string }[] = [
-    { value: 'low', label: '低', color: theme.priority.low },
-    { value: 'medium', label: '中', color: theme.priority.medium },
-    { value: 'high', label: '高', color: theme.priority.high },
-];
+function getPriorityOptions(palette: ThemePalette): readonly { value: Priority; label: string; color: string }[] {
+    return [
+        { value: 'low', label: '低', color: palette.priority.low },
+        { value: 'medium', label: '中', color: palette.priority.medium },
+        { value: 'high', label: '高', color: palette.priority.high },
+    ];
+}
 
 const DUE_OPTIONS: readonly { value: DueChoice; label: string }[] = [
     { value: 'none', label: 'なし' },
@@ -48,6 +51,10 @@ export default function TasksScreen() {
     const addTask = useMobileTaskStore((state) => state.addTask);
     const toggleTask = useMobileTaskStore((state) => state.toggleTask);
     const deleteTask = useMobileTaskStore((state) => state.deleteTask);
+
+    const { palette } = usePalette();
+    const styles = useMemo(() => createStyles(palette), [palette]);
+    const priorityOptions = useMemo(() => getPriorityOptions(palette), [palette]);
 
     const [draft, setDraft] = useState('');
     const [priority, setPriority] = useState<Priority>('medium');
@@ -95,7 +102,7 @@ export default function TasksScreen() {
                         <Text style={styles.title}>タスク</Text>
                         <Text style={styles.summary}>{openCount}件の未完了タスク</Text>
                     </View>
-                    <StorageBadge ready={hasHydrated} />
+                    <StorageBadge ready={hasHydrated} styles={styles} />
                 </View>
 
                 <View style={styles.composer}>
@@ -104,7 +111,7 @@ export default function TasksScreen() {
                         onChangeText={setDraft}
                         onSubmitEditing={handleAdd}
                         placeholder="新しいタスク"
-                        placeholderTextColor={theme.text.muted}
+                        placeholderTextColor={palette.text.muted}
                         returnKeyType="done"
                         style={styles.input}
                         maxLength={200}
@@ -122,7 +129,7 @@ export default function TasksScreen() {
 
                 <View style={styles.chipRow}>
                     <Text style={styles.rowCaption}>優先度</Text>
-                    {PRIORITY_OPTIONS.map((option) => (
+                    {priorityOptions.map((option) => (
                         <Pressable
                             key={option.value}
                             accessibilityRole="radio"
@@ -184,7 +191,7 @@ export default function TasksScreen() {
                                 onChangeText={setTagDraft}
                                 onSubmitEditing={handleAddTag}
                                 placeholder="タグを追加"
-                                placeholderTextColor={theme.text.muted}
+                                placeholderTextColor={palette.text.muted}
                                 returnKeyType="done"
                                 style={styles.tagInput}
                                 maxLength={50}
@@ -236,6 +243,8 @@ export default function TasksScreen() {
                             onToggle={toggleTask}
                             onDelete={deleteTask}
                             onExpand={() => setExpandedTaskId((current) => current === item.id ? null : item.id)}
+                            styles={styles}
+                            palette={palette}
                         />
                     )}
                     contentContainerStyle={[styles.list, visibleTasks.length === 0 && styles.emptyList]}
@@ -244,6 +253,7 @@ export default function TasksScreen() {
                         <EmptyState
                             title={filter === 'done' ? '完了したタスクはありません' : 'タスクがありません'}
                             body="上の入力欄から追加しましょう！"
+                            styles={styles}
                         />
                     ) : null}
                 />
@@ -252,12 +262,14 @@ export default function TasksScreen() {
     );
 }
 
-function TaskRow({ task, expanded, onToggle, onDelete, onExpand }: {
+function TaskRow({ task, expanded, onToggle, onDelete, onExpand, styles, palette }: {
     task: Task;
     expanded: boolean;
     onToggle: (id: string) => void;
     onDelete: (id: string) => void;
     onExpand: () => void;
+    styles: Styles;
+    palette: ThemePalette;
 }) {
     const today = getTodayJst();
     const overdue = task.dueDate !== null && task.dueDate < today && !task.completed;
@@ -304,12 +316,12 @@ function TaskRow({ task, expanded, onToggle, onDelete, onExpand }: {
                     <Text style={styles.deleteSymbol}>×</Text>
                 </Pressable>
             </View>
-            {expanded && <SubtaskPanel task={task} />}
+            {expanded && <SubtaskPanel task={task} styles={styles} palette={palette} />}
         </View>
     );
 }
 
-function SubtaskPanel({ task }: { task: Task }) {
+function SubtaskPanel({ task, styles, palette }: { task: Task; styles: Styles; palette: ThemePalette }) {
     const addSubtask = useMobileTaskStore((state) => state.addSubtask);
     const deleteSubtask = useMobileTaskStore((state) => state.deleteSubtask);
     const toggleSubtaskComplete = useMobileTaskStore((state) => state.toggleSubtaskComplete);
@@ -350,7 +362,7 @@ function SubtaskPanel({ task }: { task: Task }) {
                     onChangeText={setSubtaskDraft}
                     onSubmitEditing={handleAdd}
                     placeholder="サブタスクを追加"
-                    placeholderTextColor={theme.text.muted}
+                    placeholderTextColor={palette.text.muted}
                     returnKeyType="done"
                     style={styles.subtaskInput}
                     maxLength={200}
@@ -369,7 +381,7 @@ function SubtaskPanel({ task }: { task: Task }) {
     );
 }
 
-function StorageBadge({ ready }: { ready: boolean }) {
+function StorageBadge({ ready, styles }: { ready: boolean; styles: Styles }) {
     return (
         <View style={styles.badge}>
             <View style={[styles.dot, ready && styles.dotReady]} />
@@ -378,7 +390,7 @@ function StorageBadge({ ready }: { ready: boolean }) {
     );
 }
 
-function EmptyState({ title, body }: { title: string; body: string }) {
+function EmptyState({ title, body, styles }: { title: string; body: string; styles: Styles }) {
     return (
         <View style={styles.empty}>
             <Text style={styles.emptyTitle}>{title}</Text>
@@ -387,57 +399,61 @@ function EmptyState({ title, body }: { title: string; body: string }) {
     );
 }
 
-const styles = StyleSheet.create({
+type Styles = ReturnType<typeof createStyles>;
+
+function createStyles(palette: ThemePalette) {
+    return StyleSheet.create({
     flex: { flex: 1 },
-    safeArea: { flex: 1, backgroundColor: theme.bg.primary },
+    safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    title: { color: theme.text.primary, fontSize: 28, fontWeight: '800' },
-    summary: { color: theme.text.secondary, fontSize: 13, marginTop: 3 },
-    badge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, height: 30, borderRadius: 8, backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default },
-    dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: theme.text.muted },
-    dotReady: { backgroundColor: theme.accent.emerald },
-    badgeText: { color: theme.text.secondary, fontSize: 11, fontWeight: '700' },
+    title: { color: palette.text.primary, fontSize: 28, fontWeight: '800' },
+    summary: { color: palette.text.secondary, fontSize: 13, marginTop: 3 },
+    badge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, height: 30, borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
+    dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: palette.text.muted },
+    dotReady: { backgroundColor: palette.accent.emerald },
+    badgeText: { color: palette.text.secondary, fontSize: 11, fontWeight: '700' },
     composer: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 10 },
-    input: { flex: 1, height: 46, borderRadius: 8, paddingHorizontal: 14, color: theme.text.primary, backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default, fontSize: 15 },
-    addButton: { width: 46, height: 46, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent.emerald },
-    addSymbol: { color: theme.bg.primary, fontSize: 25, fontWeight: '700', lineHeight: 28 },
+    input: { flex: 1, height: 46, borderRadius: 8, paddingHorizontal: 14, color: palette.text.primary, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, fontSize: 15 },
+    addButton: { width: 46, height: 46, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.emerald },
+    addSymbol: { color: palette.bg.primary, fontSize: 25, fontWeight: '700', lineHeight: 28 },
     muted: { opacity: 0.45 },
     chipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, marginBottom: 10, flexWrap: 'wrap' },
-    rowCaption: { color: theme.text.muted, fontSize: 12, fontWeight: '700', marginRight: 2 },
-    chip: { height: 30, paddingHorizontal: 14, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg.secondary, borderWidth: 1, borderColor: theme.border.default },
-    chipActive: { backgroundColor: theme.bg.cardHover, borderColor: theme.border.active },
-    chipText: { color: theme.text.muted, fontSize: 12, fontWeight: '800' },
-    chipTextActive: { color: theme.text.primary, fontSize: 12, fontWeight: '800' },
-    detailsPanel: { marginHorizontal: 20, marginBottom: 10, padding: 12, gap: 10, borderRadius: 8, backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default },
+    rowCaption: { color: palette.text.muted, fontSize: 12, fontWeight: '700', marginRight: 2 },
+    chip: { height: 30, paddingHorizontal: 14, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
+    chipActive: { backgroundColor: palette.bg.cardHover, borderColor: palette.border.active },
+    chipText: { color: palette.text.muted, fontSize: 12, fontWeight: '800' },
+    chipTextActive: { color: palette.text.primary, fontSize: 12, fontWeight: '800' },
+    detailsPanel: { marginHorizontal: 20, marginBottom: 10, padding: 12, gap: 10, borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
     detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-    tagInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: theme.text.primary, backgroundColor: theme.bg.secondary, borderWidth: 1, borderColor: theme.border.default, fontSize: 13 },
-    segmented: { marginHorizontal: 20, marginBottom: 12, padding: 3, borderRadius: 8, flexDirection: 'row', backgroundColor: theme.bg.secondary },
+    tagInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 13 },
+    segmented: { marginHorizontal: 20, marginBottom: 12, padding: 3, borderRadius: 8, flexDirection: 'row', backgroundColor: palette.bg.secondary },
     segment: { flex: 1, height: 34, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-    segmentActive: { backgroundColor: theme.bg.cardHover },
-    segmentText: { color: theme.text.muted, fontSize: 12, fontWeight: '700' },
-    segmentTextActive: { color: theme.text.primary },
+    segmentActive: { backgroundColor: palette.bg.cardHover },
+    segmentText: { color: palette.text.muted, fontSize: 12, fontWeight: '700' },
+    segmentTextActive: { color: palette.text.primary },
     list: { paddingHorizontal: 20, paddingBottom: 28, gap: 8 },
     emptyList: { flexGrow: 1 },
-    rowContainer: { borderRadius: 8, backgroundColor: theme.bg.card, borderWidth: 1, borderColor: theme.border.default },
+    rowContainer: { borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
     row: { minHeight: 58, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
-    checkbox: { width: 23, height: 23, borderRadius: 6, borderWidth: 2, borderColor: theme.text.muted, alignItems: 'center', justifyContent: 'center' },
-    checkboxDone: { backgroundColor: theme.accent.emerald, borderColor: theme.accent.emerald },
-    checkmark: { color: theme.bg.primary, fontSize: 14, fontWeight: '900' },
+    checkbox: { width: 23, height: 23, borderRadius: 6, borderWidth: 2, borderColor: palette.text.muted, alignItems: 'center', justifyContent: 'center' },
+    checkboxDone: { backgroundColor: palette.accent.emerald, borderColor: palette.accent.emerald },
+    checkmark: { color: palette.bg.primary, fontSize: 14, fontWeight: '900' },
     rowBody: { flex: 1 },
-    rowName: { color: theme.text.primary, fontSize: 15, lineHeight: 21 },
-    rowNameDone: { color: theme.text.muted, textDecorationLine: 'line-through' },
-    rowMeta: { color: theme.text.muted, fontSize: 11, marginTop: 3 },
-    rowMetaOverdue: { color: theme.text.danger },
+    rowName: { color: palette.text.primary, fontSize: 15, lineHeight: 21 },
+    rowNameDone: { color: palette.text.muted, textDecorationLine: 'line-through' },
+    rowMeta: { color: palette.text.muted, fontSize: 11, marginTop: 3 },
+    rowMetaOverdue: { color: palette.text.danger },
     deleteButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-    deleteSymbol: { color: theme.text.danger, fontSize: 23, lineHeight: 25 },
-    subtaskPanel: { borderTopWidth: 1, borderTopColor: theme.border.default, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+    deleteSymbol: { color: palette.text.danger, fontSize: 23, lineHeight: 25 },
+    subtaskPanel: { borderTopWidth: 1, borderTopColor: palette.border.default, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
     subtaskRow: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 36 },
-    subtaskCheckbox: { width: 19, height: 19, borderRadius: 5, borderWidth: 2, borderColor: theme.text.muted, alignItems: 'center', justifyContent: 'center' },
-    subtaskCheckmark: { color: theme.bg.primary, fontSize: 11, fontWeight: '900' },
-    subtaskName: { flex: 1, color: theme.text.primary, fontSize: 13 },
+    subtaskCheckbox: { width: 19, height: 19, borderRadius: 5, borderWidth: 2, borderColor: palette.text.muted, alignItems: 'center', justifyContent: 'center' },
+    subtaskCheckmark: { color: palette.bg.primary, fontSize: 11, fontWeight: '900' },
+    subtaskName: { flex: 1, color: palette.text.primary, fontSize: 13 },
     subtaskComposer: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
-    subtaskInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: theme.text.primary, backgroundColor: theme.bg.secondary, borderWidth: 1, borderColor: theme.border.default, fontSize: 13 },
+    subtaskInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 13 },
     empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
-    emptyTitle: { color: theme.text.secondary, fontSize: 16, fontWeight: '700' },
-    emptyBody: { color: theme.text.muted, fontSize: 13, marginTop: 7 },
-});
+    emptyTitle: { color: palette.text.secondary, fontSize: 16, fontWeight: '700' },
+    emptyBody: { color: palette.text.muted, fontSize: 13, marginTop: 7 },
+    });
+}

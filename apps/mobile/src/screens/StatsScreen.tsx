@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { ThemePalette } from '@life-quest/core/designTokens';
 import {
     buildHabitActivityByDate,
     buildTaskXpByDate,
@@ -17,7 +18,7 @@ import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { buildAchievementSnapshot } from '../utils/achievementSnapshot';
 import { getTodayJst } from '../utils/date';
-import { theme } from '../theme/colors';
+import { usePalette } from '../theme/usePalette';
 
 type HeatmapMode = 'tasks' | 'habits';
 
@@ -25,8 +26,12 @@ type HeatmapMode = 'tasks' | 'habits';
 const HEATMAP_DAYS = 84;
 
 // 濃淡スケールはWebのStatsPageと同一（level 0 は背景色）
-const TASK_COLORS = [theme.bg.secondary, 'rgba(99, 102, 241, 0.25)', 'rgba(99, 102, 241, 0.45)', 'rgba(99, 102, 241, 0.65)', 'rgba(99, 102, 241, 0.90)'];
-const HABIT_COLORS = [theme.bg.secondary, 'rgba(16, 185, 129, 0.25)', 'rgba(16, 185, 129, 0.45)', 'rgba(16, 185, 129, 0.65)', 'rgba(16, 185, 129, 0.90)'];
+function getHeatmapColors(palette: ThemePalette) {
+    return {
+        tasks: [palette.bg.secondary, 'rgba(99, 102, 241, 0.25)', 'rgba(99, 102, 241, 0.45)', 'rgba(99, 102, 241, 0.65)', 'rgba(99, 102, 241, 0.90)'],
+        habits: [palette.bg.secondary, 'rgba(16, 185, 129, 0.25)', 'rgba(16, 185, 129, 0.45)', 'rgba(16, 185, 129, 0.65)', 'rgba(16, 185, 129, 0.90)'],
+    };
+}
 const WEEKDAY_LABELS = ['', '月', '', '水', '', '金', ''];
 
 export default function StatsScreen() {
@@ -39,6 +44,10 @@ export default function StatsScreen() {
     const [mode, setMode] = useState<HeatmapMode>('tasks');
     const activeTitle = useMobileTitleStore((state) => state.activeTitle);
     const setActiveTitle = useMobileTitleStore((state) => state.setActiveTitle);
+
+    const { palette } = usePalette();
+    const styles = useMemo(() => createStyles(palette), [palette]);
+    const heatmapColors = useMemo(() => getHeatmapColors(palette), [palette]);
 
     const today = getTodayJst();
     const taskXpByDate = useMemo(() => buildTaskXpByDate(tasks), [tasks]);
@@ -57,7 +66,7 @@ export default function StatsScreen() {
     const levelFor = (date: string): number => mode === 'tasks'
         ? getTaskHeatmapLevel(taskXpByDate[date] ?? 0)
         : getHabitHeatmapLevel(habitActivity[date]?.count ?? 0, habitActivity[date]?.allComplete ?? false);
-    const colors = mode === 'tasks' ? TASK_COLORS : HABIT_COLORS;
+    const colors = mode === 'tasks' ? heatmapColors.tasks : heatmapColors.habits;
 
     // 実績・称号（Web StatsPage.tsx と同一のsnapshotセマンティクス。称号の選択UIは#514スコープ）
     const achievementProgress = useMemo(
@@ -76,12 +85,12 @@ export default function StatsScreen() {
 
                     {/* サマリー */}
                     <View style={styles.summaryRow}>
-                        <SummaryCard label="今日のXP" value={`${taskXpByDate[today] ?? 0}`} />
-                        <SummaryCard label="7日間XP" value={`${weekXp}`} />
+                        <SummaryCard label="今日のXP" value={`${taskXpByDate[today] ?? 0}`} styles={styles} />
+                        <SummaryCard label="7日間XP" value={`${weekXp}`} styles={styles} />
                     </View>
                     <View style={styles.summaryRow}>
-                        <SummaryCard label="今日の習慣" value={`${todayHabitCount}/${habits.length}`} />
-                        <SummaryCard label="30日全達成" value={`${allCompleteCount}日`} />
+                        <SummaryCard label="今日の習慣" value={`${todayHabitCount}/${habits.length}`} styles={styles} />
+                        <SummaryCard label="30日全達成" value={`${allCompleteCount}日`} styles={styles} />
                     </View>
 
                     {/* 実績（Web StatsPage.tsxの情報順序: サマリー→実績→ヒートマップ） */}
@@ -92,7 +101,7 @@ export default function StatsScreen() {
                         </View>
                         <View style={styles.achievementList}>
                             {achievementProgress.map((achievement) => (
-                                <AchievementRow key={achievement.id} achievement={achievement} />
+                                <AchievementRow key={achievement.id} achievement={achievement} styles={styles} />
                             ))}
                         </View>
                         {unlockedTitles.length > 0 && (
@@ -206,7 +215,7 @@ export default function StatsScreen() {
     );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({ label, value, styles }: { label: string; value: string; styles: Styles }) {
     return (
         <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>{label}</Text>
@@ -216,7 +225,7 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 }
 
 /** Web StatsPage.tsx の AchievementRow と同一の情報構造（アイコン・タイトル・説明・進捗バー）。 */
-function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
+function AchievementRow({ achievement, styles }: { achievement: AchievementProgress; styles: Styles }) {
     const percent = Math.round(achievement.progress * 100);
     return (
         <View style={[styles.achievementRow, !achievement.unlocked && styles.achievementRowLocked]}>
@@ -247,58 +256,62 @@ function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
     );
 }
 
-const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: theme.bg.primary },
+type Styles = ReturnType<typeof createStyles>;
+
+function createStyles(palette: ThemePalette) {
+    return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     scroll: { paddingBottom: 32 },
     content: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, gap: 12 },
-    title: { color: theme.text.primary, fontSize: 28, fontWeight: '800', paddingTop: 20 },
+    title: { color: palette.text.primary, fontSize: 28, fontWeight: '800', paddingTop: 20 },
     summaryRow: { flexDirection: 'row', gap: 12 },
-    summaryCard: { flex: 1, backgroundColor: theme.bg.card, borderColor: theme.border.default, borderWidth: 1, borderRadius: 10, paddingVertical: 14, alignItems: 'center', gap: 4 },
-    summaryLabel: { color: theme.text.muted, fontSize: 11, fontWeight: '700' },
-    summaryValue: { color: theme.text.primary, fontSize: 20, fontWeight: '800' },
-    card: { backgroundColor: theme.bg.card, borderColor: theme.border.default, borderWidth: 1, borderRadius: 10, padding: 14, gap: 8 },
+    summaryCard: { flex: 1, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, paddingVertical: 14, alignItems: 'center', gap: 4 },
+    summaryLabel: { color: palette.text.muted, fontSize: 11, fontWeight: '700' },
+    summaryValue: { color: palette.text.primary, fontSize: 20, fontWeight: '800' },
+    card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 14, gap: 8 },
     cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    sectionTitle: { color: theme.text.primary, fontSize: 15, fontWeight: '800' },
-    modeSwitch: { flexDirection: 'row', backgroundColor: theme.bg.secondary, borderRadius: 8, padding: 2 },
+    sectionTitle: { color: palette.text.primary, fontSize: 15, fontWeight: '800' },
+    modeSwitch: { flexDirection: 'row', backgroundColor: palette.bg.secondary, borderRadius: 8, padding: 2 },
     modeSegment: { height: 28, paddingHorizontal: 12, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-    modeSegmentActive: { backgroundColor: theme.bg.cardHover },
-    modeText: { color: theme.text.muted, fontSize: 12, fontWeight: '700' },
-    modeTextActive: { color: theme.text.primary },
+    modeSegmentActive: { backgroundColor: palette.bg.cardHover },
+    modeText: { color: palette.text.muted, fontSize: 12, fontWeight: '700' },
+    modeTextActive: { color: palette.text.primary },
     monthRow: { height: 16 },
-    monthLabel: { position: 'absolute', color: theme.text.muted, fontSize: 10, fontWeight: '700' },
+    monthLabel: { position: 'absolute', color: palette.text.muted, fontSize: 10, fontWeight: '700' },
     heatmapRow: { flexDirection: 'row', gap: 4 },
     weekdayColumn: { justifyContent: 'space-between', paddingVertical: 1 },
-    weekdayLabel: { color: theme.text.muted, fontSize: 9, height: 15, width: 16, textAlign: 'center' },
+    weekdayLabel: { color: palette.text.muted, fontSize: 9, height: 15, width: 16, textAlign: 'center' },
     grid: { flexDirection: 'row', gap: 3 },
     weekColumn: { gap: 3 },
     cell: { width: 12, height: 12, borderRadius: 3 },
     legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'flex-end' },
-    legendText: { color: theme.text.muted, fontSize: 10 },
-    note: { color: theme.text.muted, fontSize: 11, lineHeight: 16 },
+    legendText: { color: palette.text.muted, fontSize: 10 },
+    note: { color: palette.text.muted, fontSize: 11, lineHeight: 16 },
     flex: { flex: 1 },
-    achievementCount: { color: theme.accent.gold, fontSize: 12, fontWeight: '800' },
+    achievementCount: { color: palette.accent.gold, fontSize: 12, fontWeight: '800' },
     achievementList: { gap: 8 },
-    achievementRow: { backgroundColor: theme.bg.secondary, borderRadius: 8, padding: 10, gap: 6 },
+    achievementRow: { backgroundColor: palette.bg.secondary, borderRadius: 8, padding: 10, gap: 6 },
     achievementRowLocked: { opacity: 0.78 },
     achievementHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
     achievementLabel: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, flex: 1 },
     achievementIcon: { fontSize: 16 },
-    achievementTitle: { color: theme.text.primary, fontSize: 12, fontWeight: '700' },
-    achievementDescription: { color: theme.text.muted, fontSize: 10 },
-    achievementBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 999, backgroundColor: theme.bg.card, borderColor: theme.border.default, borderWidth: 1 },
+    achievementTitle: { color: palette.text.primary, fontSize: 12, fontWeight: '700' },
+    achievementDescription: { color: palette.text.muted, fontSize: 10 },
+    achievementBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 999, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1 },
     achievementBadgeUnlocked: { backgroundColor: 'rgba(245, 158, 11, 0.18)' },
-    achievementBadgeText: { color: theme.text.muted, fontSize: 10 },
-    achievementBadgeTextUnlocked: { color: theme.accent.gold },
-    achievementTrack: { height: 6, borderRadius: 3, backgroundColor: theme.bg.card, overflow: 'hidden' },
-    achievementFill: { height: '100%', borderRadius: 3, backgroundColor: theme.accent.primary },
-    achievementFillUnlocked: { backgroundColor: theme.accent.gold },
-    titlesText: { color: theme.text.muted, fontSize: 11, lineHeight: 16 },
-    titlesValue: { color: theme.accent.gold },
+    achievementBadgeText: { color: palette.text.muted, fontSize: 10 },
+    achievementBadgeTextUnlocked: { color: palette.accent.gold },
+    achievementTrack: { height: 6, borderRadius: 3, backgroundColor: palette.bg.card, overflow: 'hidden' },
+    achievementFill: { height: '100%', borderRadius: 3, backgroundColor: palette.accent.primary },
+    achievementFillUnlocked: { backgroundColor: palette.accent.gold },
+    titlesText: { color: palette.text.muted, fontSize: 11, lineHeight: 16 },
+    titlesValue: { color: palette.accent.gold },
     titleChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-    titleChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: theme.bg.secondary, borderColor: theme.border.default, borderWidth: 1 },
-    titleChipActive: { backgroundColor: theme.accent.primary },
+    titleChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1 },
+    titleChipActive: { backgroundColor: palette.accent.primary },
     titleChipGold: { backgroundColor: 'rgba(245, 158, 11, 0.85)' },
-    titleChipText: { color: theme.text.muted, fontSize: 10, fontWeight: '700' },
+    titleChipText: { color: palette.text.muted, fontSize: 10, fontWeight: '700' },
     titleChipTextActive: { color: 'white' },
     titleChipTextGold: { color: 'white' },
-});
+    });
+}
