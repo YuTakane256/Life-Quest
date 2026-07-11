@@ -5,8 +5,6 @@
 import { DARK_THEME, LIGHT_THEME, type ThemePalette } from '@life-quest/core/designTokens';
 import type { MobileThemeMode } from '../stores/useMobileSettingsStore';
 
-export const theme: ThemePalette = DARK_THEME;
-
 export type ResolvedMobileTheme = 'light' | 'dark';
 
 export function resolveMobileThemeMode(

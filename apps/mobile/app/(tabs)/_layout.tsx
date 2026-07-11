@@ -1,11 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Tabs } from 'expo-router';
-import { Pressable, useColorScheme, View, type ColorValue } from 'react-native';
+import { Pressable, View, type ColorValue } from 'react-native';
 import { useMobileGameStore } from '../../src/stores/useMobileGameStore';
-import { useMobileSettingsStore } from '../../src/stores/useMobileSettingsStore';
 import { useMobileTaskStore } from '../../src/stores/useMobileTaskStore';
-import { getMobileThemePalette, resolveMobileThemeMode } from '../../src/theme/colors';
+import { usePalette } from '../../src/theme/usePalette';
 
 // 絵文字・テキストグリフを廃止し、ベクターアイコンへ統一（#499）。
 // タブ構成・ラベルはWeb BottomNav（src/components/layout/BottomNav.tsx）と1:1対応させる（#510）。
@@ -19,9 +18,7 @@ const renderIcon = {
 } as const;
 
 export default function TabLayout() {
-    const systemScheme = useColorScheme();
-    const themeMode = useMobileSettingsStore((state) => state.themeMode);
-    const palette = getMobileThemePalette(resolveMobileThemeMode(themeMode, systemScheme));
+    const { palette } = usePalette();
     const battleUnlocked = useMobileGameStore((state) => state.battleProgress.battleUnlocked);
     const pendingTaskCount = useMobileTaskStore((state) => state.tasks.filter((task) => !task.completed).length);
     const taskBadge = pendingTaskCount > 0 ? (pendingTaskCount > 99 ? '99+' : String(pendingTaskCount)) : undefined;
