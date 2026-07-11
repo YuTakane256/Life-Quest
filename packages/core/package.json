@@ -60,6 +60,10 @@
       "types": "./src/habits.ts",
       "import": "./src/habits.ts"
     },
+    "./inventory": {
+      "types": "./src/inventory.ts",
+      "import": "./src/inventory.ts"
+    },
     "./equipment": {
       "types": "./src/equipment.ts",
       "import": "./src/equipment.ts"

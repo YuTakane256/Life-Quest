@@ -14,17 +14,11 @@ import {
 import { RARITY_ORDER, SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '../../config/gameConfig';
 import { ITEM_IMAGES, RARITY_COLORS, RARITY_LABELS } from '../../config/equipmentAssets';
 import { useGameStore } from '../../stores/useGameStore';
-import type { Equipment, EquipmentSlot, Rarity } from '../../types';
+import type { Equipment, Rarity } from '../../types';
 import { SLOT_ICONS, SLOT_LABELS } from './equipmentPresentation';
+import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
-type InventorySlotFilter = 'all' | EquipmentSlot;
-type InventoryRarityFilter = 'all' | Rarity;
-type InventorySortMode = 'rarity' | 'slot' | 'name';
-
-const RARITY_RANK: Record<Rarity, number> = Object.fromEntries(
-    RARITY_ORDER.map((rarity, index) => [rarity, index])
-) as Record<Rarity, number>;
 
 export function InventoryPage() {
     const navigate = useNavigate();
@@ -61,18 +55,10 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
 
     const unequippedItems = useMemo(() => equipment.filter((item) => !item.equipped), [equipment]);
-    const filteredItems = useMemo(() => unequippedItems
-        .filter((item) => slotFilter === 'all' || item.slot === slotFilter)
-        .filter((item) => rarityFilter === 'all' || item.rarity === rarityFilter)
-        .sort((a, b) => {
-            if (sortMode === 'rarity') {
-                return RARITY_RANK[b.rarity] - RARITY_RANK[a.rarity] || a.name.localeCompare(b.name, 'ja');
-            }
-            if (sortMode === 'slot') {
-                return SLOT_LABELS[a.slot].localeCompare(SLOT_LABELS[b.slot], 'ja') || a.name.localeCompare(b.name, 'ja');
-            }
-            return a.name.localeCompare(b.name, 'ja');
-        }), [rarityFilter, slotFilter, sortMode, unequippedItems]);
+    const filteredItems = useMemo(
+        () => filterAndSortInventory(unequippedItems, { slotFilter, rarityFilter, sortMode, slotLabels: SLOT_LABELS }),
+        [rarityFilter, slotFilter, sortMode, unequippedItems]
+    );
     const hasOverflow = showViewAll && visibleLimit !== undefined && filteredItems.length > visibleLimit;
     const visibleItems = useMemo(
         () => hasOverflow ? filteredItems.slice(0, visibleLimit) : filteredItems,
