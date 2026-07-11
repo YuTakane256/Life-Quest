@@ -64,6 +64,10 @@
       "types": "./src/inventory.ts",
       "import": "./src/inventory.ts"
     },
+    "./help": {
+      "types": "./src/help.ts",
+      "import": "./src/help.ts"
+    },
     "./equipment": {
       "types": "./src/equipment.ts",
       "import": "./src/equipment.ts"

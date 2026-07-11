@@ -37,6 +37,11 @@ export {
     type InventorySortMode,
 } from './inventory.ts';
 export {
+    filterHelpSections,
+    HELP_SECTIONS,
+    type HelpSection,
+} from './help.ts';
+export {
     BATTLE_SKILL_CONFIG,
     BATTLE_SKILLS,
     findBattleSkill,
