@@ -42,6 +42,7 @@ export default function RootLayout() {
             <Stack screenOptions={{ contentStyle: { backgroundColor: palette.bg.primary } }}>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="settings" options={{ headerShown: false }} />
+                <Stack.Screen name="help" options={{ headerShown: false }} />
             </Stack>
         </>
     );
