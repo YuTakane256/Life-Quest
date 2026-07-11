@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import type { ThemePalette } from '@life-quest/core/designTokens';
 import { getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../platform/auth';
 import {
@@ -285,6 +286,19 @@ export default function SettingsScreen() {
                         </View>
                     </Card>
 
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="使い方を見る"
+                        onPress={() => router.push('/help')}
+                        style={({ pressed }) => [styles.helpCard, pressed && styles.muted]}
+                    >
+                        <View style={styles.helpCardText}>
+                            <Text style={styles.sectionTitle}>使い方</Text>
+                            <Text style={styles.hint}>タスク、習慣、バトル、通知の説明を確認できます</Text>
+                        </View>
+                        <Text style={styles.helpCardChevron}>›</Text>
+                    </Pressable>
+
                     {currentEmail && pendingContent && (
                         <Card title="クラウド統合の確認" styles={styles}>
                             <Text style={styles.hint}>
@@ -387,6 +401,9 @@ function createStyles(palette: ThemePalette) {
         title: { color: palette.text.primary, fontSize: 24, fontWeight: '800' },
         stack: { width: '100%', maxWidth: 640, alignSelf: 'center', gap: 12 },
         card: { marginHorizontal: 20, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 16, gap: 10 },
+        helpCard: { marginHorizontal: 20, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+        helpCardText: { flex: 1, gap: 4 },
+        helpCardChevron: { color: palette.text.muted, fontSize: 22, lineHeight: 22 },
         sectionTitle: { color: palette.text.primary, fontSize: 15, fontWeight: '800' },
         hint: { color: palette.text.muted, fontSize: 12, lineHeight: 17 },
         mutedText: { color: palette.text.muted, fontSize: 13 },
