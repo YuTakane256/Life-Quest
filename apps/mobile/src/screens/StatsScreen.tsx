@@ -14,6 +14,7 @@ import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } f
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { buildAchievementSnapshot } from '../utils/achievementSnapshot';
 import { getTodayJst } from '../utils/date';
 import { theme } from '../theme/colors';
@@ -36,6 +37,8 @@ export default function StatsScreen() {
     const maxStage = useMobileGameStore((state) => state.battleProgress.maxClearedStage);
     const equipmentCount = useMobileGameStore((state) => state.equipment.length);
     const [mode, setMode] = useState<HeatmapMode>('tasks');
+    const activeTitle = useMobileTitleStore((state) => state.activeTitle);
+    const setActiveTitle = useMobileTitleStore((state) => state.setActiveTitle);
 
     const today = getTodayJst();
     const taskXpByDate = useMemo(() => buildTaskXpByDate(tasks), [tasks]);
@@ -63,6 +66,7 @@ export default function StatsScreen() {
     );
     const unlockedTitles = useMemo(() => getUnlockedTitles(achievementProgress), [achievementProgress]);
     const unlockedCount = achievementProgress.filter((achievement) => achievement.unlocked).length;
+    const selectedTitle = activeTitle && unlockedTitles.includes(activeTitle) ? activeTitle : null;
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -92,9 +96,38 @@ export default function StatsScreen() {
                             ))}
                         </View>
                         {unlockedTitles.length > 0 && (
-                            <Text style={styles.titlesText}>
-                                獲得称号: <Text style={styles.titlesValue}>{unlockedTitles.join(' / ')}</Text>
-                            </Text>
+                            <View>
+                                <Text style={styles.titlesText}>
+                                    獲得称号: <Text style={styles.titlesValue}>{unlockedTitles.join(' / ')}</Text>
+                                </Text>
+                                <View style={styles.titleChipRow}>
+                                    <Pressable
+                                        accessibilityRole="radio"
+                                        accessibilityState={{ selected: selectedTitle === null }}
+                                        accessibilityLabel="称号なしを選択する"
+                                        onPress={() => setActiveTitle(null)}
+                                        style={[styles.titleChip, selectedTitle === null && styles.titleChipActive]}
+                                    >
+                                        <Text style={[styles.titleChipText, selectedTitle === null && styles.titleChipTextActive]}>
+                                            称号なし
+                                        </Text>
+                                    </Pressable>
+                                    {unlockedTitles.map((title) => (
+                                        <Pressable
+                                            key={title}
+                                            accessibilityRole="radio"
+                                            accessibilityState={{ selected: selectedTitle === title }}
+                                            accessibilityLabel={`「${title}」を選択する`}
+                                            onPress={() => setActiveTitle(title)}
+                                            style={[styles.titleChip, selectedTitle === title && styles.titleChipGold]}
+                                        >
+                                            <Text style={[styles.titleChipText, selectedTitle === title && styles.titleChipTextGold]}>
+                                                {title}
+                                            </Text>
+                                        </Pressable>
+                                    ))}
+                                </View>
+                            </View>
                         )}
                     </View>
 
@@ -261,4 +294,11 @@ const styles = StyleSheet.create({
     achievementFillUnlocked: { backgroundColor: theme.accent.gold },
     titlesText: { color: theme.text.muted, fontSize: 11, lineHeight: 16 },
     titlesValue: { color: theme.accent.gold },
+    titleChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+    titleChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: theme.bg.secondary, borderColor: theme.border.default, borderWidth: 1 },
+    titleChipActive: { backgroundColor: theme.accent.primary },
+    titleChipGold: { backgroundColor: 'rgba(245, 158, 11, 0.85)' },
+    titleChipText: { color: theme.text.muted, fontSize: 10, fontWeight: '700' },
+    titleChipTextActive: { color: 'white' },
+    titleChipTextGold: { color: 'white' },
 });

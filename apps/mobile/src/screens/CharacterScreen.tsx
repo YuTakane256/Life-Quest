@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EQUIPMENT_SLOTS, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
+import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
 import { calculateNextLevelXp, calculateXpProgress } from '@life-quest/core/progression';
 import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
 import { AVATAR_IMAGES, getChestImage, getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
+import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { theme } from '../theme/colors';
 
 const RARITY_LABELS: Record<Rarity, string> = {
@@ -44,10 +46,14 @@ export default function CharacterScreen() {
     const sellItem = useMobileGameStore((state) => state.sellItem);
     const synthesizeItems = useMobileGameStore((state) => state.synthesizeItems);
     const getEffectiveStats = useMobileGameStore((state) => state.getEffectiveStats);
+    const activeTitle = useMobileTitleStore((state) => state.activeTitle);
 
     const [nameDraft, setNameDraft] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
     const [lastRevealText, setLastRevealText] = useState<string | null>(null);
+    const [slotFilter, setSlotFilter] = useState<InventorySlotFilter>('all');
+    const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
+    const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
 
     const stats = getEffectiveStats();
     const progress = calculateXpProgress(character.totalXp, character.level);
@@ -62,8 +68,8 @@ export default function CharacterScreen() {
     }, [equipment]);
     // 最大2000件になり得るため FlatList で仮想化して描画する
     const inventory = useMemo(
-        () => [...equipment].sort((a, b) => a.slot.localeCompare(b.slot) || a.name.localeCompare(b.name)),
-        [equipment],
+        () => filterAndSortInventory(equipment, { slotFilter, rarityFilter, sortMode, slotLabels: SLOT_LABELS }),
+        [equipment, slotFilter, rarityFilter, sortMode],
     );
 
     const selectedItems = inventory.filter((item) => selectedIds.includes(item.id));
@@ -183,6 +189,7 @@ export default function CharacterScreen() {
                             placeholderTextColor="#737d90"
                         />
                         <Text style={styles.levelText}>Lv.{character.level}</Text>
+                        {activeTitle && <Text style={styles.activeTitleText} numberOfLines={1}>{activeTitle}</Text>}
                     </View>
                 </View>
                 <View style={styles.avatarSwitch}>
@@ -279,6 +286,28 @@ export default function CharacterScreen() {
                         </View>
                     );
                 })}
+            </View>
+
+            {/* インベントリフィルタ・ソート（Web InventorySectionと同一の選択肢） */}
+            <View style={styles.filterRow}>
+                <FilterSelect
+                    label="種類"
+                    value={slotFilter}
+                    options={[['all', 'すべて'], ['weapon', '武器'], ['armor', '防具'], ['accessory', '装飾']]}
+                    onChange={(value) => setSlotFilter(value as InventorySlotFilter)}
+                />
+                <FilterSelect
+                    label="レア"
+                    value={rarityFilter}
+                    options={[['all', 'すべて'], ...Object.entries(RARITY_LABELS) as [string, string][]]}
+                    onChange={(value) => setRarityFilter(value as InventoryRarityFilter)}
+                />
+                <FilterSelect
+                    label="並び"
+                    value={sortMode}
+                    options={[['rarity', 'レア順'], ['slot', '種類順'], ['name', '名前順']]}
+                    onChange={(value) => setSortMode(value as InventorySortMode)}
+                />
             </View>
 
             {/* インベントリ見出し（行自体はFlatListが仮想化して描画する） */}
@@ -397,6 +426,37 @@ function InventoryRow({
     );
 }
 
+function FilterSelect({ label, value, options, onChange }: {
+    label: string;
+    value: string;
+    options: [string, string][];
+    onChange: (value: string) => void;
+}) {
+    return (
+        <View style={styles.filterGroup}>
+            <Text style={styles.filterLabel}>{label}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.filterOptions}>
+                    {options.map(([optionValue, optionLabel]) => (
+                        <Pressable
+                            key={optionValue}
+                            accessibilityRole="radio"
+                            accessibilityState={{ selected: value === optionValue }}
+                            accessibilityLabel={`${label}を${optionLabel}にする`}
+                            onPress={() => onChange(optionValue)}
+                            style={[styles.filterChip, value === optionValue && styles.filterChipActive]}
+                        >
+                            <Text style={[styles.filterChipText, value === optionValue && styles.filterChipTextActive]}>
+                                {optionLabel}
+                            </Text>
+                        </Pressable>
+                    ))}
+                </View>
+            </ScrollView>
+        </View>
+    );
+}
+
 function StatCell({ label, base, effective }: { label: string; base: number; effective: number }) {
     const bonus = effective - base;
     return (
@@ -432,6 +492,7 @@ const styles = StyleSheet.create({
     imageFallbackText: { color: theme.text.muted, fontSize: 15, fontWeight: '800' },
     nameInput: { color: theme.text.primary, fontSize: 18, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: theme.border.default, paddingVertical: 4, paddingHorizontal: 0 },
     levelText: { color: theme.accent.gold, fontSize: 13, fontWeight: '800', marginTop: 4 },
+    activeTitleText: { color: theme.accent.gold, fontSize: 11, fontWeight: '700', marginTop: 2 },
     avatarSwitch: { flexDirection: 'row', backgroundColor: theme.bg.secondary, borderRadius: 8, padding: 3 },
     segment: { flex: 1, height: 34, borderRadius: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
     segmentActive: { backgroundColor: theme.border.default },
@@ -446,6 +507,14 @@ const styles = StyleSheet.create({
     statValue: { color: theme.text.primary, fontSize: 18, fontWeight: '800' },
     statBonus: { color: theme.accent.emerald, fontSize: 11, fontWeight: '700' },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    filterRow: { flexDirection: 'row', gap: 10 },
+    filterGroup: { flex: 1, gap: 4 },
+    filterLabel: { color: theme.text.muted, fontSize: 10, fontWeight: '700' },
+    filterOptions: { flexDirection: 'row', gap: 4 },
+    filterChip: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: theme.bg.secondary, borderColor: theme.border.default, borderWidth: 1 },
+    filterChipActive: { backgroundColor: theme.accent.primary, borderColor: theme.accent.primary },
+    filterChipText: { color: theme.text.muted, fontSize: 11, fontWeight: '700' },
+    filterChipTextActive: { color: 'white' },
     sectionTitle: { color: theme.text.primary, fontSize: 16, fontWeight: '800' },
     hint: { color: theme.text.muted, fontSize: 11, lineHeight: 16 },
     emptyText: { color: theme.text.muted, fontSize: 13, paddingVertical: 8 },
