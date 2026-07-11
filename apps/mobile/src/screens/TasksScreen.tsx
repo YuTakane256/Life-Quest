@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { ThemePalette } from '@life-quest/core/designTokens';
-import { addRecurrenceInterval, TASK_LIMITS, type Priority, type Recurrence, type Task } from '@life-quest/core/tasks';
+import { addRecurrenceInterval, TASK_LIMITS, TASK_UNDO_DURATION_MS, type Priority, type Recurrence, type Task } from '@life-quest/core/tasks';
+import { UndoToast } from '../components/UndoToast';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { getTodayJst } from '../utils/date';
 import { usePalette } from '../theme/usePalette';
@@ -48,9 +49,13 @@ function resolveDueDate(choice: DueChoice): string | null {
 export default function TasksScreen() {
     const tasks = useMobileTaskStore((state) => state.tasks);
     const hasHydrated = useMobileTaskStore((state) => state.hasHydrated);
+    const pendingCompletions = useMobileTaskStore((state) => state.pendingCompletions);
     const addTask = useMobileTaskStore((state) => state.addTask);
     const toggleTask = useMobileTaskStore((state) => state.toggleTask);
     const deleteTask = useMobileTaskStore((state) => state.deleteTask);
+    const duplicateTask = useMobileTaskStore((state) => state.duplicateTask);
+    const deleteCompletedTasks = useMobileTaskStore((state) => state.deleteCompletedTasks);
+    const cancelPendingCompletion = useMobileTaskStore((state) => state.cancelPendingCompletion);
 
     const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);
@@ -65,12 +70,60 @@ export default function TasksScreen() {
     const [tagDraft, setTagDraft] = useState('');
     const [tags, setTags] = useState<readonly string[]>([]);
     const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+    const [actionTask, setActionTask] = useState<Task | null>(null);
+    const [editTask, setEditTask] = useState<Task | null>(null);
+    const [toast, setToast] = useState<{ message: string; onUndo: () => void } | null>(null);
+    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // 取消トーストはUndo猶予と同じ時間で自動消滅する
+    const showUndoToast = (message: string, onUndo: () => void) => {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        setToast({ message, onUndo });
+        toastTimer.current = setTimeout(() => setToast(null), TASK_UNDO_DURATION_MS);
+    };
+    useEffect(() => () => {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+    }, []);
 
     const visibleTasks = useMemo(
         () => tasks.filter((task) => filter === 'all' || (filter === 'done' ? task.completed : !task.completed)),
         [filter, tasks],
     );
     const openCount = tasks.filter((task) => !task.completed).length;
+    const pendingIds = useMemo(() => new Set(pendingCompletions.map((pending) => pending.taskId)), [pendingCompletions]);
+    // Undo待機中は削除対象から除外する（Webと同一計算）
+    const deletableDoneCount = tasks.filter((task) => task.completed && !pendingIds.has(task.id)).length;
+
+    const handleToggle = (task: Task) => {
+        toggleTask(task.id);
+        if (!task.completed) {
+            showUndoToast(`「${task.name}」を完了しました`, () => {
+                cancelPendingCompletion(task.id);
+                setToast(null);
+            });
+        }
+    };
+
+    const handleDuplicate = (task: Task) => {
+        const newId = duplicateTask(task.id);
+        setActionTask(null);
+        if (!newId) return;
+        showUndoToast(`「${task.name}」を複製しました`, () => {
+            deleteTask(newId);
+            setToast(null);
+        });
+    };
+
+    const handleBulkDelete = () => {
+        Alert.alert(
+            '完了タスクを削除しますか？',
+            `完了済みのタスク${deletableDoneCount}件を削除します。この操作は取り消せません。`,
+            [
+                { text: 'キャンセル', style: 'cancel' },
+                { text: '削除', style: 'destructive', onPress: () => { deleteCompletedTasks(); } },
+            ],
+        );
+    };
 
     const handleAdd = () => {
         if (!hasHydrated) return;
@@ -232,6 +285,17 @@ export default function TasksScreen() {
                     ))}
                 </View>
 
+                {filter === 'done' && deletableDoneCount > 0 && (
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`完了済みのタスク${deletableDoneCount}件をまとめて削除する`}
+                        onPress={handleBulkDelete}
+                        style={({ pressed }) => [styles.bulkDeleteButton, pressed && styles.muted]}
+                    >
+                        <Text style={styles.bulkDeleteText}>完了済みをまとめて削除（{deletableDoneCount}件）</Text>
+                    </Pressable>
+                )}
+
                 <FlatList
                     data={visibleTasks}
                     keyExtractor={(task) => task.id}
@@ -240,9 +304,10 @@ export default function TasksScreen() {
                         <TaskRow
                             task={item}
                             expanded={expandedTaskId === item.id}
-                            onToggle={toggleTask}
+                            onToggle={() => handleToggle(item)}
                             onDelete={deleteTask}
                             onExpand={() => setExpandedTaskId((current) => current === item.id ? null : item.id)}
+                            onLongPress={() => setActionTask(item)}
                             styles={styles}
                             palette={palette}
                         />
@@ -257,17 +322,70 @@ export default function TasksScreen() {
                         />
                     ) : null}
                 />
+
+                {toast && <UndoToast message={toast.message} onAction={toast.onUndo} />}
             </KeyboardAvoidingView>
+
+            {/* 長押しアクションメニュー（編集/複製/削除） */}
+            <Modal visible={actionTask !== null} transparent animationType="fade" onRequestClose={() => setActionTask(null)}>
+                <Pressable style={styles.modalBackdrop} onPress={() => setActionTask(null)}>
+                    <View style={styles.actionSheet}>
+                        <Text style={styles.actionSheetTitle} numberOfLines={1}>{actionTask?.name}</Text>
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="タスクを編集する"
+                            onPress={() => { setEditTask(actionTask); setActionTask(null); }}
+                            style={({ pressed }) => [styles.actionItem, pressed && styles.muted]}
+                        >
+                            <Text style={styles.actionItemText}>編集</Text>
+                        </Pressable>
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="タスクを複製する"
+                            onPress={() => actionTask && handleDuplicate(actionTask)}
+                            style={({ pressed }) => [styles.actionItem, pressed && styles.muted]}
+                        >
+                            <Text style={styles.actionItemText}>複製</Text>
+                        </Pressable>
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="タスクを削除する"
+                            onPress={() => { if (actionTask) deleteTask(actionTask.id); setActionTask(null); }}
+                            style={({ pressed }) => [styles.actionItem, pressed && styles.muted]}
+                        >
+                            <Text style={[styles.actionItemText, styles.actionItemDanger]}>削除</Text>
+                        </Pressable>
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="メニューを閉じる"
+                            onPress={() => setActionTask(null)}
+                            style={({ pressed }) => [styles.actionItem, pressed && styles.muted]}
+                        >
+                            <Text style={styles.actionItemCancel}>キャンセル</Text>
+                        </Pressable>
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {editTask && (
+                <TaskEditModal
+                    task={editTask}
+                    onClose={() => setEditTask(null)}
+                    styles={styles}
+                    palette={palette}
+                />
+            )}
         </SafeAreaView>
     );
 }
 
-function TaskRow({ task, expanded, onToggle, onDelete, onExpand, styles, palette }: {
+function TaskRow({ task, expanded, onToggle, onDelete, onExpand, onLongPress, styles, palette }: {
     task: Task;
     expanded: boolean;
     onToggle: (id: string) => void;
     onDelete: (id: string) => void;
     onExpand: () => void;
+    onLongPress: () => void;
     styles: Styles;
     palette: ThemePalette;
 }) {
@@ -295,8 +413,10 @@ function TaskRow({ task, expanded, onToggle, onDelete, onExpand, styles, palette
                 <Pressable
                     accessibilityRole="button"
                     accessibilityState={{ expanded }}
-                    accessibilityLabel={`${task.name}のサブタスクを開閉する`}
+                    accessibilityLabel={`${task.name}のサブタスクを開閉する。長押しで編集メニュー`}
                     onPress={onExpand}
+                    onLongPress={onLongPress}
+                    delayLongPress={350}
                     style={styles.rowBody}
                 >
                     <Text numberOfLines={2} style={[styles.rowName, task.completed && styles.rowNameDone]}>{task.name}</Text>
@@ -318,6 +438,148 @@ function TaskRow({ task, expanded, onToggle, onDelete, onExpand, styles, palette
             </View>
             {expanded && <SubtaskPanel task={task} styles={styles} palette={palette} />}
         </View>
+    );
+}
+
+type EditDueChoice = 'keep' | DueChoice;
+
+/** タスク編集モーダル（#512）。名前・期限・優先度・繰り返し・タグをWebの編集フォームと同じ項目で更新する。 */
+function TaskEditModal({ task, onClose, styles, palette }: { task: Task; onClose: () => void; styles: Styles; palette: ThemePalette }) {
+    const updateTask = useMobileTaskStore((state) => state.updateTask);
+    const priorityOptions = useMemo(() => getPriorityOptions(palette), [palette]);
+    const [name, setName] = useState(task.name);
+    const [priority, setPriority] = useState<Priority>(task.priority);
+    const [dueChoice, setDueChoice] = useState<EditDueChoice>('keep');
+    const [tags, setTags] = useState<readonly string[]>(task.tags);
+    const [tagDraft, setTagDraft] = useState('');
+
+    const dueOptions: readonly { value: EditDueChoice; label: string }[] = [
+        { value: 'keep', label: task.dueDate ? `現在 ${task.dueDate.slice(5).replace('-', '/')}` : '現在 なし' },
+        ...DUE_OPTIONS,
+    ];
+
+    const handleAddTag = () => {
+        const tag = tagDraft.trim();
+        if (!tag || tags.includes(tag) || tags.length >= TASK_LIMITS.maxTags) return;
+        setTags((current) => [...current, tag]);
+        setTagDraft('');
+    };
+
+    const handleSave = () => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        updateTask(task.id, {
+            name: trimmed.slice(0, TASK_LIMITS.maxNameLength),
+            priority,
+            dueDate: dueChoice === 'keep' ? task.dueDate : resolveDueDate(dueChoice),
+            tags: [...tags],
+        });
+        onClose();
+    };
+
+    return (
+        <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+            <View style={styles.modalBackdrop}>
+                <View style={styles.editSheet}>
+                    <Text style={styles.editTitle}>タスクを編集</Text>
+                    <TextInput
+                        value={name}
+                        onChangeText={setName}
+                        accessibilityLabel="タスク名"
+                        placeholder="タスク名"
+                        placeholderTextColor={palette.text.muted}
+                        style={styles.input}
+                        maxLength={TASK_LIMITS.maxNameLength}
+                    />
+                    <View style={styles.detailRow}>
+                        <Text style={styles.rowCaption}>優先度</Text>
+                        {priorityOptions.map((option) => (
+                            <Pressable
+                                key={option.value}
+                                accessibilityRole="radio"
+                                accessibilityState={{ selected: priority === option.value }}
+                                accessibilityLabel={`優先度を${option.label}にする`}
+                                onPress={() => setPriority(option.value)}
+                                style={[styles.chip, priority === option.value && styles.chipActive]}
+                            >
+                                <Text style={[styles.chipText, priority === option.value && { color: option.color }]}>{option.label}</Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                    <View style={styles.detailRow}>
+                        <Text style={styles.rowCaption}>期限</Text>
+                        {dueOptions.map((option) => (
+                            <Pressable
+                                key={option.value}
+                                accessibilityRole="radio"
+                                accessibilityState={{ selected: dueChoice === option.value }}
+                                accessibilityLabel={`期限を${option.label}にする`}
+                                onPress={() => setDueChoice(option.value)}
+                                style={[styles.chip, dueChoice === option.value && styles.chipActive]}
+                            >
+                                <Text style={[styles.chipText, dueChoice === option.value && styles.chipTextActive]}>{option.label}</Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                    <View style={styles.detailRow}>
+                        <Text style={styles.rowCaption}>タグ</Text>
+                        <TextInput
+                            value={tagDraft}
+                            onChangeText={setTagDraft}
+                            onSubmitEditing={handleAddTag}
+                            placeholder="タグを追加"
+                            placeholderTextColor={palette.text.muted}
+                            returnKeyType="done"
+                            style={styles.tagInput}
+                            maxLength={TASK_LIMITS.maxTagLength}
+                        />
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="タグを追加する"
+                            disabled={!tagDraft.trim()}
+                            onPress={handleAddTag}
+                            style={[styles.chip, !tagDraft.trim() && styles.muted]}
+                        >
+                            <Text style={styles.chipText}>追加</Text>
+                        </Pressable>
+                    </View>
+                    {tags.length > 0 && (
+                        <View style={styles.detailRow}>
+                            {tags.map((tag) => (
+                                <Pressable
+                                    key={tag}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`タグ${tag}を外す`}
+                                    onPress={() => setTags((current) => current.filter((candidate) => candidate !== tag))}
+                                    style={[styles.chip, styles.chipActive]}
+                                >
+                                    <Text style={styles.chipTextActive}>#{tag} ×</Text>
+                                </Pressable>
+                            ))}
+                        </View>
+                    )}
+                    <View style={styles.editActions}>
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="編集をキャンセルする"
+                            onPress={onClose}
+                            style={({ pressed }) => [styles.editCancel, pressed && styles.muted]}
+                        >
+                            <Text style={styles.editCancelText}>キャンセル</Text>
+                        </Pressable>
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="編集を保存する"
+                            disabled={!name.trim()}
+                            onPress={handleSave}
+                            style={({ pressed }) => [styles.editSave, (!name.trim() || pressed) && styles.muted]}
+                        >
+                            <Text style={styles.editSaveText}>保存</Text>
+                        </Pressable>
+                    </View>
+                </View>
+            </View>
+        </Modal>
     );
 }
 
@@ -454,6 +716,22 @@ function createStyles(palette: ThemePalette) {
     subtaskInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 13 },
     empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
     emptyTitle: { color: palette.text.secondary, fontSize: 16, fontWeight: '700' },
+    bulkDeleteButton: { marginHorizontal: 20, marginBottom: 8, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.text.danger },
+    bulkDeleteText: { color: palette.text.danger, fontSize: 13, fontWeight: '700' },
+    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.55)', justifyContent: 'flex-end' },
+    actionSheet: { backgroundColor: palette.bg.card, borderTopLeftRadius: 14, borderTopRightRadius: 14, paddingVertical: 10, paddingHorizontal: 14, paddingBottom: 28, gap: 2 },
+    actionSheetTitle: { color: palette.text.muted, fontSize: 12, fontWeight: '700', paddingVertical: 8, textAlign: 'center' },
+    actionItem: { height: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, marginTop: 6 },
+    actionItemText: { color: palette.text.primary, fontSize: 15, fontWeight: '700' },
+    actionItemDanger: { color: palette.text.danger },
+    actionItemCancel: { color: palette.text.muted, fontSize: 14, fontWeight: '700' },
+    editSheet: { backgroundColor: palette.bg.card, borderTopLeftRadius: 14, borderTopRightRadius: 14, padding: 16, paddingBottom: 30, gap: 10 },
+    editTitle: { color: palette.text.primary, fontSize: 16, fontWeight: '800' },
+    editActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+    editCancel: { flex: 1, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
+    editCancelText: { color: palette.text.secondary, fontSize: 14, fontWeight: '700' },
+    editSave: { flex: 1, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.primary },
+    editSaveText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
     emptyBody: { color: palette.text.muted, fontSize: 13, marginTop: 7 },
     });
 }

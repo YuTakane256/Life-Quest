@@ -371,7 +371,10 @@ export function toggleSubtask(
     };
 }
 
-// ─── 編集・複製・一括削除（#512。Web useTaskStore から移設した共有ルール） ───
+// ─── 編集・複製・一括削除（#512。Web useTaskStore から移設した共有ルール) ───
+
+/** タスク完了のUndo猶予（ミリ秒）。Web UI_CONFIG.UNDO_DURATION_MS と同値 */
+export const TASK_UNDO_DURATION_MS = 5000;
 
 export type TaskFieldUpdates = Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>;
 
