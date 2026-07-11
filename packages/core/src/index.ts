@@ -30,6 +30,13 @@ export {
 } from './achievements.ts';
 export { clampString } from './validation.ts';
 export {
+    filterAndSortInventory,
+    type FilterAndSortInventoryOptions,
+    type InventoryRarityFilter,
+    type InventorySlotFilter,
+    type InventorySortMode,
+} from './inventory.ts';
+export {
     BATTLE_SKILL_CONFIG,
     BATTLE_SKILLS,
     findBattleSkill,
