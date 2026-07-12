@@ -2,20 +2,14 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createWebPersistStorage } from '../platform/storage';
 import type { NotificationStoreState } from '../types';
-import { NOTIFICATION_CONFIG } from '../config/gameConfig';
-import { clamp } from '../utils/numeric';
+import { NOTIFICATION_CONFIG, resolveHabitReminderHour } from '../core/notifications';
 import { isFiniteNumber } from '../utils/persistSanitize';
 import { isValidYmd } from '../utils/dateUtils';
 
-const MIN_REMINDER_HOUR = 0;
-const MAX_REMINDER_HOUR = 23;
 export const MAX_NOTIFICATION_TASK_ID_LENGTH = 128;
 
-/** リマインダー時刻（時）を 0-23 の整数に丸める。 */
-function clampReminderHour(hour: unknown): number {
-    if (!isFiniteNumber(hour)) return NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST;
-    return clamp(Math.floor(hour), MIN_REMINDER_HOUR, MAX_REMINDER_HOUR);
-}
+/** リマインダー時刻（時）を 0-23 の整数に丸める（coreの共有ルール）。 */
+const clampReminderHour = resolveHabitReminderHour;
 
 function sanitizeTaskId(value: unknown): string | null {
     if (typeof value !== 'string') return null;

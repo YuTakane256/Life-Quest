@@ -76,6 +76,10 @@
       "types": "./src/gameState.ts",
       "import": "./src/gameState.ts"
     },
+    "./notifications": {
+      "types": "./src/notifications.ts",
+      "import": "./src/notifications.ts"
+    },
     "./numeric": {
       "types": "./src/numeric.ts",
       "import": "./src/numeric.ts"

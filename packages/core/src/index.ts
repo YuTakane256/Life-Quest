@@ -42,6 +42,17 @@ export {
     type HelpSection,
 } from './help.ts';
 export {
+    buildHabitReminderNotification,
+    buildTaskDeadlineNotification,
+    NOTIFICATION_CONFIG,
+    NOTIFICATION_TEXT_MAX,
+    resolveHabitReminderHour,
+    selectDueSoonTasks,
+    shouldSendHabitReminder,
+    type DueSoonTask,
+    type NotificationContent,
+} from './notifications.ts';
+export {
     BATTLE_SKILL_CONFIG,
     BATTLE_SKILLS,
     findBattleSkill,

@@ -97,16 +97,6 @@ export const TIME_CONFIG = {
 } as const;
 
 // ─── 通知設定 ─────────────────────────────────────────────────
-export const NOTIFICATION_CONFIG = {
-    /** タスク期限の何時間前から通知するか */
-    TASK_DEADLINE_NOTICE_HOURS: 24,
-
-    /** 未完了の習慣をリマインドするJST時刻（時） */
-    HABIT_REMINDER_HOUR_JST: 20,
-
-    /** 通知条件チェックの実行間隔（ミリ秒） */
-    CHECK_INTERVAL_MS: 30 * 60 * 1000, // 30分
-
-    /** 重複通知防止用に保持するタスクID数の上限 */
-    MAX_NOTIFIED_TASK_IDS: 200,
-} as const;
+// 実体は @life-quest/core/notifications に移動し、Mobileと共有する。
+// 既存のimportパスを維持するためここから再エクスポートする。
+export { NOTIFICATION_CONFIG } from '@life-quest/core/notifications';
