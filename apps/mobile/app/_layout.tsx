@@ -5,6 +5,7 @@ import { startAuthSessionListener } from '../src/platform/auth';
 import { registerMobileAuthStoreHooks } from '../src/platform/authStores';
 import { registerMobileCloudMigrationHooks } from '../src/platform/cloudMigration';
 import { registerPendingCompletionFlush } from '../src/platform/pendingCompletionFlush';
+import { registerNotificationChecks } from '../src/platform/notifications';
 import { registerMobileCloudSyncHooks } from '../src/platform/cloudSync';
 import { registerMobileOutboxHooks } from '../src/platform/cloudOutbox';
 import { startMobileCanonicalSync } from '../src/platform/canonicalSync';
@@ -31,6 +32,8 @@ export default function RootLayout() {
     useEffect(() => registerMobileCloudSyncHooks(), []);
     useEffect(() => registerMobileOutboxHooks(), []);
     useEffect(() => registerPendingCompletionFlush(), []);
+    // 通知条件のチェック（起動時・フォアグラウンド復帰時・30分間隔。Webと同一セマンティクス）
+    useEffect(() => registerNotificationChecks(), []);
     useEffect(() => startAuthSessionListener(), []);
 
     return (

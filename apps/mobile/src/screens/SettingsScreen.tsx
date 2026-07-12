@@ -10,6 +10,7 @@ import {
     getPendingMobileContent,
     type PendingMobileContent,
 } from '../platform/cloudMigration';
+import { ensureNotificationPermission } from '../platform/notifications';
 import { readMobileSupabaseEnv } from '../platform/supabase';
 import {
     useMobileSettingsStore,
@@ -88,6 +89,23 @@ export default function SettingsScreen() {
         cloudKeyCount: 0,
         bytes: 0,
     });
+    const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+
+    // ONにする時はOSの通知許可を要求し、拒否されたらトグルを戻す（Web設定画面と同じ挙動）
+    const handleNotificationsToggle = useCallback(async (enabled: boolean) => {
+        setNotificationMessage(null);
+        if (!enabled) {
+            setNotificationsEnabled(false);
+            return;
+        }
+        const granted = await ensureNotificationPermission();
+        if (granted) {
+            setNotificationsEnabled(true);
+        } else {
+            setNotificationsEnabled(false);
+            setNotificationMessage('通知が許可されていません。端末の設定アプリから通知を許可してください。');
+        }
+    }, [setNotificationsEnabled]);
 
     const refreshAccount = useCallback(async (): Promise<void> => {
         const user = await getCurrentUser();
@@ -261,12 +279,15 @@ export default function SettingsScreen() {
                             </View>
                             <Switch
                                 value={notificationsEnabled}
-                                onValueChange={setNotificationsEnabled}
+                                onValueChange={(enabled) => { void handleNotificationsToggle(enabled); }}
                                 trackColor={{ false: palette.bg.tertiary, true: palette.accent.primary }}
                                 thumbColor="#ffffff"
                                 accessibilityLabel="習慣リマインダー通知"
                             />
                         </View>
+                        {notificationMessage && (
+                            <Text accessibilityRole="alert" style={styles.hint}>{notificationMessage}</Text>
+                        )}
                         <View style={styles.chipRow}>
                             {REMINDER_HOURS.map((hour) => (
                                 <Pressable
