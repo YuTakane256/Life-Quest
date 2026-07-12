@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASK_LIMITS, createTask, type Task } from '@life-quest/core/tasks';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { XP_CONFIG } from '@life-quest/core/progression';
 import { getSubtaskRewardXp } from '@life-quest/core/tasks';
@@ -26,9 +26,20 @@ function task(id: string): Task {
 describe('useMobileTaskStore', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        useMobileTaskStore.setState({ tasks: [], hasHydrated: true });
+        vi.useFakeTimers();
+        useMobileTaskStore.setState({ tasks: [], pendingCompletions: [], hasHydrated: true });
         useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, lastLevelUp: null });
     });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    /** 完了トグル後に5秒のUndo猶予を経過させて確定する（#512） */
+    const completeAndConfirm = (id: string) => {
+        useMobileTaskStore.getState().toggleTask(id);
+        vi.advanceTimersByTime(5000);
+    };
 
     it('adds a normalized task and rejects an empty name', () => {
         expect(useMobileTaskStore.getState().addTask('   ')).toBe(false);
@@ -96,11 +107,11 @@ describe('useMobileTaskStore', () => {
     });
 
     describe('ゲーム報酬連携', () => {
-        it('タスク完了で優先度に応じたXPとガチャカウントが付与される', () => {
+        it('タスク完了で優先度に応じたXPとガチャカウントが付与される（Undo猶予後に確定）', () => {
             useMobileTaskStore.getState().addTask('報酬テスト');
             const id = useMobileTaskStore.getState().tasks[0].id;
 
-            useMobileTaskStore.getState().toggleTask(id);
+            completeAndConfirm(id);
 
             const game = useMobileGameStore.getState();
             expect(game.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
@@ -112,9 +123,9 @@ describe('useMobileTaskStore', () => {
             useMobileTaskStore.getState().addTask('往復テスト');
             const id = useMobileTaskStore.getState().tasks[0].id;
 
-            useMobileTaskStore.getState().toggleTask(id); // 完了
+            completeAndConfirm(id);                       // 完了（確定）
             useMobileTaskStore.getState().toggleTask(id); // 取り消し
-            useMobileTaskStore.getState().toggleTask(id); // 再完了
+            completeAndConfirm(id);                       // 再完了（確定）
 
             const game = useMobileGameStore.getState();
             expect(game.character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
@@ -125,7 +136,7 @@ describe('useMobileTaskStore', () => {
             useMobileTaskStore.getState().addTask('高優先', 'high');
             const id = useMobileTaskStore.getState().tasks[0].id;
 
-            useMobileTaskStore.getState().toggleTask(id);
+            completeAndConfirm(id);
 
             expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.high);
         });
@@ -133,7 +144,7 @@ describe('useMobileTaskStore', () => {
         it('完了→未完了への遷移では報酬が付与されない', () => {
             useMobileTaskStore.getState().addTask('遷移テスト');
             const id = useMobileTaskStore.getState().tasks[0].id;
-            useMobileTaskStore.getState().toggleTask(id); // 完了
+            completeAndConfirm(id); // 完了（確定）
 
             const xpAfterComplete = useMobileGameStore.getState().character.totalXp;
             useMobileTaskStore.getState().toggleTask(id); // 取り消し
@@ -162,7 +173,7 @@ describe('useMobileTaskStore', () => {
             useMobileTaskStore.getState().addTask('毎日の運動', 'medium', { dueDate: '2026-07-03', recurrence: 'daily' });
             const id = useMobileTaskStore.getState().tasks[0].id;
 
-            useMobileTaskStore.getState().toggleTask(id);
+            completeAndConfirm(id);
 
             const tasks = useMobileTaskStore.getState().tasks;
             expect(tasks).toHaveLength(2);
@@ -171,7 +182,7 @@ describe('useMobileTaskStore', () => {
 
             // 取り消して再完了しても同じ次回分は増えない（報酬も台帳が防止）
             useMobileTaskStore.getState().toggleTask(id);
-            useMobileTaskStore.getState().toggleTask(id);
+            completeAndConfirm(id);
             expect(useMobileTaskStore.getState().tasks).toHaveLength(2);
             expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
         });

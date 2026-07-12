@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { startAuthSessionListener } from '../src/platform/auth';
 import { registerMobileAuthStoreHooks } from '../src/platform/authStores';
 import { registerMobileCloudMigrationHooks } from '../src/platform/cloudMigration';
+import { registerPendingCompletionFlush } from '../src/platform/pendingCompletionFlush';
 import { registerMobileCloudSyncHooks } from '../src/platform/cloudSync';
 import { registerMobileOutboxHooks } from '../src/platform/cloudOutbox';
 import { startMobileCanonicalSync } from '../src/platform/canonicalSync';
@@ -29,6 +30,7 @@ export default function RootLayout() {
     useEffect(() => registerMobileCloudMigrationHooks(), []); // バックアップはプル置換より先（#506）
     useEffect(() => registerMobileCloudSyncHooks(), []);
     useEffect(() => registerMobileOutboxHooks(), []);
+    useEffect(() => registerPendingCompletionFlush(), []);
     useEffect(() => startAuthSessionListener(), []);
 
     return (

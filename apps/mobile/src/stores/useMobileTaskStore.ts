@@ -3,16 +3,21 @@ import {
     addSubtaskToTask,
     buildNextRecurringTask,
     createTask,
+    duplicateTask as duplicateTaskCore,
     hasOpenRecurringDuplicate,
+    removeCompletedTasks,
     removeSubtaskFromTask,
     removeTask,
     sanitizeTaskCollection,
     TASK_LIMITS,
+    TASK_UNDO_DURATION_MS,
     toggleSubtask,
     toggleTaskCompletion,
+    updateTaskFields,
+    type Task,
+    type TaskFieldUpdates,
     type Priority,
     type Recurrence,
-    type Task,
 } from '@life-quest/core/tasks';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
@@ -27,12 +32,29 @@ export interface AddTaskOptions {
     recurrence?: Recurrence;
 }
 
+export interface MobilePendingCompletion {
+    taskId: string;
+    timeoutId: ReturnType<typeof setTimeout>;
+    completedAt: string;
+}
+
 interface MobileTaskStore {
     tasks: Task[];
     hasHydrated: boolean;
+    /** 5秒Undo待機中の完了（非永続。タイマーは復元不可能なため保存しない） */
+    pendingCompletions: MobilePendingCompletion[];
     addTask: (name: string, priority?: Priority, options?: AddTaskOptions) => boolean;
     toggleTask: (taskId: string) => void;
+    /** Undo待機中の完了を取り消す（UIの「取消」ボタン用）。取り消せたらtrue */
+    cancelPendingCompletion: (taskId: string) => boolean;
+    /** 待機中の完了を全て即時確定する（バックグラウンド遷移時の取りこぼし防止） */
+    flushPendingCompletions: () => void;
+    updateTask: (taskId: string, updates: TaskFieldUpdates) => void;
+    /** タスクを複製し、新IDを返す（上限到達・元なしはnull） */
+    duplicateTask: (taskId: string) => string | null;
     deleteTask: (taskId: string) => void;
+    /** 完了済みタスクをまとめて削除（Undo待機中は除外）。削除件数を返す */
+    deleteCompletedTasks: () => number;
     addSubtask: (taskId: string, name: string) => boolean;
     deleteSubtask: (taskId: string, subtaskId: string) => void;
     toggleSubtaskComplete: (taskId: string, subtaskId: string) => void;
@@ -63,9 +85,33 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 set((state) => ({ tasks: [...state.tasks, next] }));
             };
 
+            /** 待機中の完了を確定する: 報酬付与・繰り返し生成・complete_task送信 */
+            const confirmCompletion = (pending: MobilePendingCompletion): void => {
+                const task = get().tasks.find((candidate) => candidate.id === pending.taskId);
+                set((state) => ({
+                    pendingCompletions: state.pendingCompletions.filter((candidate) => candidate.taskId !== pending.taskId),
+                }));
+                if (!task || !task.completed) return; // 取消・削除済みなら何もしない
+                useMobileGameStore.getState().grantTaskCompletionReward(task.id, task.priority);
+                spawnRecurringNext(task);
+                void enqueueCloudOperation('complete_task', { taskId: task.id }, { dependsOnEntityIds: [task.id] });
+            };
+
+            /** 対象タスクのUndo待機をタイマーごと破棄する（確定処理は行わない） */
+            const discardPending = (taskId: string): MobilePendingCompletion | undefined => {
+                const pending = get().pendingCompletions.find((candidate) => candidate.taskId === taskId);
+                if (!pending) return undefined;
+                clearTimeout(pending.timeoutId);
+                set((state) => ({
+                    pendingCompletions: state.pendingCompletions.filter((candidate) => candidate.taskId !== taskId),
+                }));
+                return pending;
+            };
+
             return {
                 tasks: [],
                 hasHydrated: false,
+                pendingCompletions: [],
 
                 addTask: (name, priority = 'medium', options = {}) => {
                     if (!get().hasHydrated || get().tasks.length >= TASK_LIMITS.maxTasks) return false;
@@ -96,23 +142,126 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 toggleTask: (taskId) => {
                     if (!get().hasHydrated) return;
                     const before = get().tasks.find((task) => task.id === taskId);
-                    set((state) => ({
-                        tasks: toggleTaskCompletion(state.tasks, taskId, new Date().toISOString()),
-                    }));
-                    // 未完了→完了への遷移でのみ報酬を付与する。
-                    // ローカル付与は楽観表示で、正はサーバー（complete_task EF、ADR-003）。
-                    // 二重付与防止はローカルは報酬台帳、サーバーはreward_transactionsが保証する。
-                    if (before && !before.completed) {
-                        useMobileGameStore.getState().grantTaskCompletionReward(taskId, before.priority);
-                        spawnRecurringNext(before);
-                        void enqueueCloudOperation('complete_task', { taskId }, { dependsOnEntityIds: [taskId] });
-                    } else if (before && before.completed) {
-                        void enqueueCloudOperation('uncomplete_task', { p_id: taskId }, { dependsOnEntityIds: [taskId] });
+                    if (!before) return;
+
+                    if (before.completed) {
+                        // 完了→未完了。Undo待機中ならタイマーを止めるだけでよい
+                        //（報酬もRPCもまだ発生していない = 取り消すものがない）。
+                        const wasPending = discardPending(taskId) !== undefined;
+                        set((state) => ({
+                            tasks: toggleTaskCompletion(state.tasks, taskId, new Date().toISOString()),
+                        }));
+                        if (!wasPending) {
+                            void enqueueCloudOperation('uncomplete_task', { p_id: taskId }, { dependsOnEntityIds: [taskId] });
+                        }
+                        return;
                     }
+
+                    // 未完了→完了: 表示は即時に完了へ切り替え、報酬付与・繰り返し生成・
+                    // complete_task送信は5秒のUndo猶予後に確定する（Web toggleCompleteと同一設計）。
+                    if (get().pendingCompletions.some((pending) => pending.taskId === taskId)) return; // 既に待機中
+                    const completedAt = new Date().toISOString();
+                    set((state) => ({
+                        tasks: toggleTaskCompletion(state.tasks, taskId, completedAt),
+                    }));
+                    const timeoutId = setTimeout(() => {
+                        const pending = get().pendingCompletions.find((candidate) =>
+                            candidate.taskId === taskId && candidate.completedAt === completedAt);
+                        if (pending) confirmCompletion(pending);
+                    }, TASK_UNDO_DURATION_MS);
+                    set((state) => ({
+                        pendingCompletions: [...state.pendingCompletions, { taskId, timeoutId, completedAt }],
+                    }));
+                },
+
+                cancelPendingCompletion: (taskId) => {
+                    const pending = discardPending(taskId);
+                    if (!pending) return false;
+                    set((state) => ({
+                        tasks: state.tasks.map((task) => task.id === taskId
+                            ? { ...task, completed: false, completedAt: null }
+                            : task),
+                    }));
+                    return true;
+                },
+
+                flushPendingCompletions: () => {
+                    for (const pending of [...get().pendingCompletions]) {
+                        clearTimeout(pending.timeoutId);
+                        confirmCompletion(pending);
+                    }
+                },
+
+                updateTask: (taskId, updates) => {
+                    if (!get().hasHydrated) return;
+                    const now = new Date().toISOString();
+                    // 5秒Undoタイマーとの競合を防ぐため、保留中の完了をキャンセル（Webと同一）
+                    const hadPending = updates.subtasks !== undefined && discardPending(taskId) !== undefined;
+                    set((state) => ({
+                        tasks: updateTaskFields(state.tasks, taskId, updates, { now, hadPendingCompletion: hadPending }),
+                    }));
+                    const updated = get().tasks.find((task) => task.id === taskId);
+                    if (!updated) return;
+                    void enqueueCloudOperation('upsert_task', {
+                        p_id: updated.id,
+                        p_name: updated.name,
+                        p_due_date: updated.dueDate,
+                        p_priority: updated.priority,
+                        p_recurrence: updated.recurrence,
+                        p_tags: updated.tags,
+                    }, { dependsOnEntityIds: [taskId] });
+                },
+
+                duplicateTask: (taskId) => {
+                    if (!get().hasHydrated) return null;
+                    const duplicate = duplicateTaskCore({
+                        tasks: get().tasks,
+                        sourceId: taskId,
+                        newId: createMobileId(),
+                        subtaskIdFor: createMobileId,
+                        now: new Date().toISOString(),
+                        today: getTodayJst(),
+                    });
+                    if (!duplicate) return null;
+                    set((state) => ({ tasks: [...state.tasks, duplicate] }));
+                    void enqueueCloudOperation('upsert_task', {
+                        p_id: duplicate.id,
+                        p_name: duplicate.name,
+                        p_due_date: duplicate.dueDate,
+                        p_priority: duplicate.priority,
+                        p_recurrence: duplicate.recurrence,
+                        p_tags: duplicate.tags,
+                    }, { trackEntityId: duplicate.id });
+                    for (const subtask of duplicate.subtasks) {
+                        void enqueueCloudOperation(
+                            'upsert_subtask',
+                            { p_id: subtask.id, p_task_id: duplicate.id, p_name: subtask.name },
+                            { dependsOnEntityIds: [duplicate.id], trackEntityId: subtask.id },
+                        );
+                    }
+                    return duplicate.id;
+                },
+
+                deleteCompletedTasks: () => {
+                    if (!get().hasHydrated) return 0;
+                    const { tasks, pendingCompletions } = get();
+                    // 保留中（5秒Undo待ち）のタスクは削除対象から除外する（Webと同一）
+                    const pendingIds = new Set(pendingCompletions.map((pending) => pending.taskId));
+                    const remaining = removeCompletedTasks(tasks, pendingIds);
+                    const removedIds = tasks
+                        .filter((task) => !remaining.includes(task))
+                        .map((task) => task.id);
+                    if (removedIds.length === 0) return 0;
+                    set({ tasks: remaining });
+                    for (const removedId of removedIds) {
+                        void enqueueCloudOperation('delete_task', { p_id: removedId }, { dependsOnEntityIds: [removedId] });
+                    }
+                    return removedIds.length;
                 },
 
                 deleteTask: (taskId) => {
                     if (!get().hasHydrated) return;
+                    discardPending(taskId); // Undo待機中でも削除は即時（確定処理は走らせない）
                     set((state) => ({ tasks: removeTask(state.tasks, taskId) }));
                     // 作成がまだ未送信ならその後に削除が送られる（dependsOnで順序保証）
                     void enqueueCloudOperation('delete_task', { p_id: taskId }, { dependsOnEntityIds: [taskId] });
