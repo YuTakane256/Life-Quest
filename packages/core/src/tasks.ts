@@ -161,7 +161,7 @@ function daysInUtcMonth(year: number, month: number): number {
 }
 
 /** YYYY-MM-DD 形式かつ実在する日付か。 */
-function isValidYmdDate(value: string): boolean {
+export function isValidYmdDate(value: string): boolean {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) return false;
     const year = Number(match[1]);
