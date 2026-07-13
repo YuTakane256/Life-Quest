@@ -12,10 +12,16 @@ describe('dependency automation policy', () => {
     });
 
     it('groups routine updates but leaves major upgrades isolated', () => {
-        expect(dependabotConfig.match(/update-types:/g)).toHaveLength(2);
+        // グループ化ポリシー用2件 + typescriptメジャー更新の除外用1件
+        expect(dependabotConfig.match(/update-types:/g)).toHaveLength(3);
         expect(dependabotConfig.match(/- minor/g)).toHaveLength(2);
         expect(dependabotConfig.match(/- patch/g)).toHaveLength(2);
         expect(dependabotConfig).not.toContain('- major');
+    });
+
+    it('excludes typescript major upgrades until typescript-eslint supports them (#553)', () => {
+        expect(dependabotConfig).toContain('dependency-name: typescript');
+        expect(dependabotConfig).toContain('version-update:semver-major');
     });
 
     it('runs a least-privilege production audit on a schedule and on demand', () => {
