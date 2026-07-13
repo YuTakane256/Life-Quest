@@ -20,6 +20,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
 import { useMobileGameStore } from './useMobileGameStore';
+import { useMobileStatsStore } from './useMobileStatsStore';
 
 /** お休み日の最大保持数（Webと同じ上限） */
 export const MAX_HABIT_REST_DAYS = 3660;
@@ -85,6 +86,15 @@ export const useMobileHabitStore = create<MobileHabitStore>()(
                 if (get().rewardEligibleDates.includes(date)) {
                     useMobileGameStore.getState().grantHabitAllCompleteBonus(date);
                 }
+
+                // 統計ログ記録（Web useHabitStore.ts と同一の計算。報酬の可否に関わらず
+                // その日の状態をそのまま記録する＝上書き。Undo等で戻した場合も直近状態を反映）
+                const after = get();
+                const completedCount = after.records.filter(
+                    (record) => record.date === date && record.completed
+                ).length;
+                const allComplete = areAllHabitsComplete(after.habits, after.records, date);
+                useMobileStatsStore.getState().logHabitActivity(date, completedCount, allComplete);
             },
             setHabitMemo: (habitId, date, memo) => {
                 const state = get();

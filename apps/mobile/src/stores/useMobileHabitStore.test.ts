@@ -5,6 +5,7 @@ import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { XP_CONFIG } from '@life-quest/core/progression';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileHabitStore } from './useMobileHabitStore';
+import { useMobileStatsStore } from './useMobileStatsStore';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -27,6 +28,7 @@ describe('useMobileHabitStore', () => {
         vi.clearAllMocks();
         useMobileHabitStore.setState({ habits: [], records: [], restDays: [], rewardEligibleDates: [], hasHydrated: true });
         useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, lastLevelUp: null });
+        useMobileStatsStore.setState({ taskXpLog: {}, habitLog: {}, seeded: true, hasHydrated: true });
     });
 
     it('adds a normalized habit and rejects an empty name', () => {
@@ -189,6 +191,34 @@ describe('useMobileHabitStore', () => {
                 useMobileHabitStore.getState(),
             );
             expect(merged?.restDays).toEqual([{ date: '2026-07-01', isRest: true }]);
+        });
+    });
+
+    describe('統計ログ連携', () => {
+        it('toggleTodayでhabitLogにその日の達成数・全達成フラグが記録される', () => {
+            // 作成日より前の日付は「達成不要」扱いになる（areAllHabitsComplete）ため、
+            // 対象日は両習慣の作成後にする
+            useMobileHabitStore.getState().addHabit('運動');
+            useMobileHabitStore.getState().addHabit('読書');
+            const [h1, h2] = useMobileHabitStore.getState().habits;
+            const targetDate = '2099-01-01';
+
+            useMobileHabitStore.getState().toggleToday(h1.id, targetDate);
+            expect(useMobileStatsStore.getState().habitLog[targetDate]).toEqual({ count: 1, allComplete: false });
+
+            useMobileHabitStore.getState().toggleToday(h2.id, targetDate);
+            expect(useMobileStatsStore.getState().habitLog[targetDate]).toEqual({ count: 2, allComplete: true });
+        });
+
+        it('習慣を削除してもhabitLogの過去の記録は消えない（Webと同一セマンティクス）', () => {
+            useMobileHabitStore.getState().addHabit('運動');
+            const habitId = useMobileHabitStore.getState().habits[0].id;
+            useMobileHabitStore.getState().toggleToday(habitId, '2026-07-10');
+            expect(useMobileStatsStore.getState().habitLog['2026-07-10']).toEqual({ count: 1, allComplete: true });
+
+            useMobileHabitStore.getState().deleteHabit(habitId);
+
+            expect(useMobileStatsStore.getState().habitLog['2026-07-10']).toEqual({ count: 1, allComplete: true });
         });
     });
 });

@@ -10,6 +10,7 @@ import { registerMobileCloudSyncHooks } from '../src/platform/cloudSync';
 import { registerMobileOutboxHooks } from '../src/platform/cloudOutbox';
 import { startMobileCanonicalSync } from '../src/platform/canonicalSync';
 import { startRewardSync } from '../src/stores/rewardSync';
+import { startStatsLogSeed } from '../src/stores/statsLogSeed';
 import { usePalette } from '../src/theme/usePalette';
 
 export default function RootLayout() {
@@ -18,6 +19,9 @@ export default function RootLayout() {
     // 各ストアのhydration完了後に、完了済みタスク・習慣と報酬台帳を再照合する。
     // 保存失敗やクラッシュで報酬だけ失われた場合もここで回復する。
     useEffect(() => startRewardSync(), []);
+
+    // 統計ログ（実績算出元）の初回シード。旧バージョンからの移行・新規インストール時のみ動く。
+    useEffect(() => startStatsLogSeed(), []);
 
     // 旧quest-board-*データのcanonical移行と、以降のストア変更の書き戻しを開始する。
     useEffect(() => {

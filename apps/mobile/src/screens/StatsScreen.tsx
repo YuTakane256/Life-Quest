@@ -3,8 +3,6 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { ThemePalette } from '@life-quest/core/designTokens';
 import {
-    buildHabitActivityByDate,
-    buildTaskXpByDate,
     generateDateRange,
     getHabitHeatmapLevel,
     getMonthLabels,
@@ -14,7 +12,7 @@ import {
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '@life-quest/core/achievements';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
-import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { useMobileStatsStore } from '../stores/useMobileStatsStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { buildAchievementSnapshot } from '../utils/achievementSnapshot';
 import { getTodayJst } from '../utils/date';
@@ -35,9 +33,9 @@ function getHeatmapColors(palette: ThemePalette) {
 const WEEKDAY_LABELS = ['', '月', '', '水', '', '金', ''];
 
 export default function StatsScreen() {
-    const tasks = useMobileTaskStore((state) => state.tasks);
-    const habits = useMobileHabitStore((state) => state.habits);
-    const records = useMobileHabitStore((state) => state.records);
+    const habitsCount = useMobileHabitStore((state) => state.habits.length);
+    const taskXpLog = useMobileStatsStore((state) => state.taskXpLog);
+    const habitLog = useMobileStatsStore((state) => state.habitLog);
     const totalXp = useMobileGameStore((state) => state.character.totalXp);
     const maxStage = useMobileGameStore((state) => state.battleProgress.maxClearedStage);
     const equipmentCount = useMobileGameStore((state) => state.equipment.length);
@@ -50,8 +48,9 @@ export default function StatsScreen() {
     const heatmapColors = useMemo(() => getHeatmapColors(palette), [palette]);
 
     const today = getTodayJst();
-    const taskXpByDate = useMemo(() => buildTaskXpByDate(tasks), [tasks]);
-    const habitActivity = useMemo(() => buildHabitActivityByDate(habits, records), [habits, records]);
+    // Web StatsPage.tsx と同一: ヒートマップ・実績とも永続ログ（taskXpLog/habitLog）が単一の情報源
+    const taskXpByDate = taskXpLog;
+    const habitActivity = habitLog;
 
     const dates = useMemo(() => generateDateRange(HEATMAP_DAYS, today), [today]);
     const weeks = useMemo(() => groupDatesByWeeks(dates), [dates]);
@@ -70,8 +69,8 @@ export default function StatsScreen() {
 
     // 実績・称号（Web StatsPage.tsx と同一のsnapshotセマンティクス。称号の選択UIは#514スコープ）
     const achievementProgress = useMemo(
-        () => getAchievementProgress(buildAchievementSnapshot({ tasks, habits, records, totalXp, maxStage, equipmentCount })),
-        [tasks, habits, records, totalXp, maxStage, equipmentCount],
+        () => getAchievementProgress(buildAchievementSnapshot({ taskXpLog, habitLog, totalXp, maxStage, equipmentCount })),
+        [taskXpLog, habitLog, totalXp, maxStage, equipmentCount],
     );
     const unlockedTitles = useMemo(() => getUnlockedTitles(achievementProgress), [achievementProgress]);
     const unlockedCount = achievementProgress.filter((achievement) => achievement.unlocked).length;
@@ -89,7 +88,7 @@ export default function StatsScreen() {
                         <SummaryCard label="7日間XP" value={`${weekXp}`} styles={styles} />
                     </View>
                     <View style={styles.summaryRow}>
-                        <SummaryCard label="今日の習慣" value={`${todayHabitCount}/${habits.length}`} styles={styles} />
+                        <SummaryCard label="今日の習慣" value={`${todayHabitCount}/${habitsCount}`} styles={styles} />
                         <SummaryCard label="30日全達成" value={`${allCompleteCount}日`} styles={styles} />
                     </View>
 
