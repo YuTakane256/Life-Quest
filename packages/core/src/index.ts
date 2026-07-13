@@ -65,6 +65,14 @@ export {
     type NotificationContent,
 } from './notifications.ts';
 export {
+    getJstHour,
+    getTodayJst,
+    isOverdue,
+    isValidYmd,
+    shiftDate,
+    toIsoDatePart,
+} from './dates.ts';
+export {
     BATTLE_SKILL_CONFIG,
     BATTLE_SKILLS,
     findBattleSkill,
