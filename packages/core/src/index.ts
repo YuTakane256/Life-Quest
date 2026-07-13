@@ -42,6 +42,18 @@ export {
     type HelpSection,
 } from './help.ts';
 export {
+    appendHabitActivity,
+    appendTaskXp,
+    keepRecentEntries,
+    MAX_STATS_DAILY_VALUE,
+    MAX_STATS_LOG_ENTRIES,
+    sanitizeHabitLog,
+    sanitizeTaskXpLog,
+    seedStatsLogFromCollections,
+    type HabitLog,
+    type TaskXpLog,
+} from './statsLog.ts';
+export {
     buildHabitReminderNotification,
     buildTaskDeadlineNotification,
     NOTIFICATION_CONFIG,

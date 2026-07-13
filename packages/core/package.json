@@ -80,6 +80,10 @@
       "types": "./src/notifications.ts",
       "import": "./src/notifications.ts"
     },
+    "./statsLog": {
+      "types": "./src/statsLog.ts",
+      "import": "./src/statsLog.ts"
+    },
     "./numeric": {
       "types": "./src/numeric.ts",
       "import": "./src/numeric.ts"
