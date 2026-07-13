@@ -19,6 +19,13 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # typescript-eslintがpeer dependencyでtypescript <6.1.0を要求しており、
+      # TypeScript 7系（ネイティブGoコンパイラへの移行を伴うメジャーリリース）への
+      # 単独更新はnpm ci自体が失敗する（#553）。typescript-eslint側がTS7へ
+      # 対応してから、両方を同時に更新する。
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
