@@ -5,6 +5,7 @@ import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { XP_CONFIG } from '@life-quest/core/progression';
 import { getSubtaskRewardXp } from '@life-quest/core/tasks';
 import { useMobileGameStore } from './useMobileGameStore';
+import { useMobileStatsStore } from './useMobileStatsStore';
 import { useMobileTaskStore } from './useMobileTaskStore';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
@@ -29,6 +30,7 @@ describe('useMobileTaskStore', () => {
         vi.useFakeTimers();
         useMobileTaskStore.setState({ tasks: [], pendingCompletions: [], hasHydrated: true });
         useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, lastLevelUp: null });
+        useMobileStatsStore.setState({ taskXpLog: {}, habitLog: {}, seeded: true, hasHydrated: true });
     });
 
     afterEach(() => {
@@ -250,6 +252,66 @@ describe('useMobileTaskStore', () => {
             expect(useMobileGameStore.getState().character.totalXp).toBe(
                 xpBefore + XP_CONFIG.REWARD_BY_PRIORITY.medium,
             );
+        });
+    });
+
+    describe('統計ログ連携（実績のactiveDaysがタスク削除の影響を受けないための土台）', () => {
+        it('タスク完了の確定でtaskXpLogへ記録される', () => {
+            useMobileTaskStore.getState().addTask('統計対象', 'high');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            completeAndConfirm(id);
+
+            const today = useMobileTaskStore.getState().tasks[0].completedAt!.split('T')[0];
+            expect(useMobileStatsStore.getState().taskXpLog[today]).toBe(XP_CONFIG.REWARD_BY_PRIORITY.high);
+        });
+
+        it('タスクを削除してもtaskXpLogの記録は消えない（Webと同一セマンティクス）', () => {
+            useMobileTaskStore.getState().addTask('削除予定', 'medium');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            completeAndConfirm(id);
+            const today = useMobileTaskStore.getState().tasks[0].completedAt!.split('T')[0];
+            const loggedXp = useMobileStatsStore.getState().taskXpLog[today];
+            expect(loggedXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
+
+            useMobileTaskStore.getState().deleteTask(id);
+
+            expect(useMobileStatsStore.getState().taskXpLog[today]).toBe(loggedXp);
+        });
+
+        it('猶予内のUndoでは統計ログに記録されない', () => {
+            useMobileTaskStore.getState().addTask('取消対象', 'high');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            useMobileTaskStore.getState().toggleTask(id);
+            useMobileTaskStore.getState().cancelPendingCompletion(id);
+            vi.advanceTimersByTime(5000);
+
+            expect(useMobileStatsStore.getState().taskXpLog).toEqual({});
+        });
+
+        it('サブタスク完了でもtaskXpLogへ記録される（他に未完了のサブタスクが残るケース）', () => {
+            useMobileTaskStore.getState().addTask('親', 'low');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            useMobileTaskStore.getState().addSubtask(id, '完了させる方');
+            useMobileTaskStore.getState().addSubtask(id, '残す方');
+            const subtaskId = useMobileTaskStore.getState().tasks[0].subtasks[0].id;
+
+            useMobileTaskStore.getState().toggleSubtaskComplete(id, subtaskId);
+
+            // 親は未完了のまま（残り1件が未完了）なので、サブタスク報酬のみ記録される
+            const totalLogged = Object.values(useMobileStatsStore.getState().taskXpLog).reduce((a, b) => a + b, 0);
+            expect(totalLogged).toBe(getSubtaskRewardXp('low'));
+        });
+
+        it('最後のサブタスク完了で親も自動完了した場合、サブタスク報酬と親完了報酬の両方が記録される', () => {
+            useMobileTaskStore.getState().addTask('親', 'low');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            useMobileTaskStore.getState().addSubtask(id, '唯一のサブタスク');
+            const subtaskId = useMobileTaskStore.getState().tasks[0].subtasks[0].id;
+
+            useMobileTaskStore.getState().toggleSubtaskComplete(id, subtaskId);
+
+            const totalLogged = Object.values(useMobileStatsStore.getState().taskXpLog).reduce((a, b) => a + b, 0);
+            expect(totalLogged).toBe(getSubtaskRewardXp('low') + XP_CONFIG.REWARD_BY_PRIORITY.low);
         });
     });
 });

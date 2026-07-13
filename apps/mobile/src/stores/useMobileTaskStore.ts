@@ -4,6 +4,7 @@ import {
     buildNextRecurringTask,
     createTask,
     duplicateTask as duplicateTaskCore,
+    getSubtaskRewardXp,
     hasOpenRecurringDuplicate,
     removeCompletedTasks,
     removeSubtaskFromTask,
@@ -19,12 +20,19 @@ import {
     type Priority,
     type Recurrence,
 } from '@life-quest/core/tasks';
+import { XP_CONFIG } from '@life-quest/core/progression';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
 import { getTodayJst } from '../utils/date';
 import { useMobileGameStore } from './useMobileGameStore';
+import { useMobileStatsStore } from './useMobileStatsStore';
 import { enqueueCloudOperation, isCloudOutboxActive } from '../platform/cloudOutbox';
+
+/** completedAt(ISO)から統計ログ用の日付キーを取り出す。JST変換はしない（Webのlog記録と同一）。 */
+function toStatsLogDate(iso: string): string {
+    return iso.split('T')[0];
+}
 
 export interface AddTaskOptions {
     dueDate?: string | null;
@@ -92,7 +100,14 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     pendingCompletions: state.pendingCompletions.filter((candidate) => candidate.taskId !== pending.taskId),
                 }));
                 if (!task || !task.completed) return; // 取消・削除済みなら何もしない
-                useMobileGameStore.getState().grantTaskCompletionReward(task.id, task.priority);
+                const granted = useMobileGameStore.getState().grantTaskCompletionReward(task.id, task.priority);
+                // 台帳が既付与でgrantedがfalseの場合は統計ログも記録しない（reconcileRewards再実行時の二重加算防止）
+                if (granted) {
+                    useMobileStatsStore.getState().logTaskXp(
+                        toStatsLogDate(pending.completedAt),
+                        XP_CONFIG.REWARD_BY_PRIORITY[task.priority],
+                    );
+                }
                 spawnRecurringNext(task);
                 void enqueueCloudOperation('complete_task', { taskId: task.id }, { dependsOnEntityIds: [task.id] });
             };
@@ -291,13 +306,20 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 deleteSubtask: (taskId, subtaskId) => {
                     if (!get().hasHydrated) return;
                     const task = get().tasks.find((candidate) => candidate.id === taskId);
-                    const result = removeSubtaskFromTask(get().tasks, taskId, subtaskId, new Date().toISOString());
+                    const now = new Date().toISOString();
+                    const result = removeSubtaskFromTask(get().tasks, taskId, subtaskId, now);
                     if (!result || !task) return;
                     set({ tasks: result.tasks });
                     void enqueueCloudOperation('delete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
                     // 残りのサブタスク全完了で親が完了した場合はタスク報酬と繰り返し生成
                     if (result.parentCompleted) {
-                        useMobileGameStore.getState().grantTaskCompletionReward(taskId, task.priority);
+                        const granted = useMobileGameStore.getState().grantTaskCompletionReward(taskId, task.priority);
+                        if (granted) {
+                            useMobileStatsStore.getState().logTaskXp(
+                                toStatsLogDate(now),
+                                XP_CONFIG.REWARD_BY_PRIORITY[task.priority],
+                            );
+                        }
                         spawnRecurringNext(task);
                         // サーバーのdelete_subtaskは親完了まで連鎖しないため、明示的に完了を送る
                         //（報酬の重複はサーバーのreward_transactionsが防ぐ）
@@ -308,20 +330,30 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 toggleSubtaskComplete: (taskId, subtaskId) => {
                     if (!get().hasHydrated) return;
                     const task = get().tasks.find((candidate) => candidate.id === taskId);
-                    const result = toggleSubtask(get().tasks, taskId, subtaskId, new Date().toISOString());
+                    const now = new Date().toISOString();
+                    const result = toggleSubtask(get().tasks, taskId, subtaskId, now);
                     if (!result || !task) return;
                     set({ tasks: result.tasks });
 
                     const game = useMobileGameStore.getState();
                     if (result.completedSubtask) {
-                        game.grantSubtaskCompletionReward(subtaskId, task.priority);
+                        const granted = game.grantSubtaskCompletionReward(subtaskId, task.priority);
+                        if (granted) {
+                            useMobileStatsStore.getState().logTaskXp(toStatsLogDate(now), getSubtaskRewardXp(task.priority));
+                        }
                         // サーバー側は complete_subtask が親完了・親報酬まで連鎖する（#502）
                         void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
                     } else {
                         void enqueueCloudOperation('uncomplete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
                     }
                     if (result.parentCompleted) {
-                        game.grantTaskCompletionReward(taskId, task.priority);
+                        const granted = game.grantTaskCompletionReward(taskId, task.priority);
+                        if (granted) {
+                            useMobileStatsStore.getState().logTaskXp(
+                                toStatsLogDate(now),
+                                XP_CONFIG.REWARD_BY_PRIORITY[task.priority],
+                            );
+                        }
                         spawnRecurringNext(task);
                     }
                 },
