@@ -2,83 +2,24 @@
  * 日付・時刻関連のユーティリティ関数
  */
 
-import { TIME_CONFIG } from '../config/gameConfig';
-
-/**
- * YYYY-MM-DD 形式の文字列を UTC ベースの Date にパースする（内部利用）。
- */
-function parseYmd(dateStr: string): Date {
-    if (!isValidYmd(dateStr)) {
-        throw new RangeError(`Invalid YYYY-MM-DD date: ${dateStr}`);
-    }
-    const [year, month, day] = dateStr.split('-').map(Number);
-    return new Date(Date.UTC(year, month - 1, day));
-}
-
-/**
- * UTC ベースの Date を YYYY-MM-DD 文字列にフォーマットする（内部利用）。
- */
-function formatYmd(date: Date): string {
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(date.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
-function daysInUtcMonth(year: number, monthIndex: number): number {
-    return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-}
-
-/**
- * YYYY-MM-DD 形式かつ実在する日付かどうかを判定する。
- */
-export function isValidYmd(dateStr: string): boolean {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
-    if (!match) return false;
-
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-
-    if (month < 1 || month > 12) return false;
-    return day >= 1 && day <= daysInUtcMonth(year, month - 1);
-}
+// JST依存ロジック（isValidYmd/getTodayJST/getJSTHour/toIsoDatePart/shiftDate/isOverdue）は
+// core/dates.ts へ移設し、Mobileと共有する。既存のimportパス・名前（Web慣習の大文字JST）は
+// 再エクスポートで維持する。
+export {
+    getJstHour as getJSTHour,
+    getTodayJst as getTodayJST,
+    isOverdue,
+    isValidYmd,
+    shiftDate,
+    toIsoDatePart,
+} from '../core/dates';
+import { getTodayJst as getTodayJST, isValidYmd } from '../core/dates';
 
 /**
  * 日時文字列（ISO 8601 等）が Date としてパース可能かを判定する。
  */
 export function isValidTimestamp(value: string): boolean {
     return !Number.isNaN(new Date(value).getTime());
-}
-
-/**
- * ISO 8601 日時文字列から日付部分（YYYY-MM-DD）を取り出す。
- * タイムゾーン変換は行わず、'T' より前をそのまま返す。
- */
-export function toIsoDatePart(iso: string): string {
-    return iso.split('T')[0];
-}
-
-/**
- * 現在時刻に JST オフセットを加えた Date を返す（内部利用）。
- * 返り値の UTC フィールド（getUTC*）を読むと JST のローカル日時に対応する。
- */
-function getJstNow(): Date {
-    return new Date(Date.now() + TIME_CONFIG.JST_OFFSET_HOURS * 60 * 60 * 1000);
-}
-
-/**
- * 現在のJSTの日付文字列を返す (YYYY-MM-DD)
- */
-export function getTodayJST(): string {
-    return formatYmd(getJstNow());
-}
-
-/**
- * 現在のJSTの時（0〜23）を返す
- */
-export function getJSTHour(): number {
-    return getJstNow().getUTCHours();
 }
 
 /**
@@ -122,23 +63,13 @@ function generateRandomIdSegment(): string {
 }
 
 /**
- * 期限が過ぎているか判定
- */
-export function isOverdue(dueDate: string | null): boolean {
-    if (!dueDate) return false;
-    if (!isValidYmd(dueDate)) return false;
-    const today = getTodayJST();
-    return dueDate < today;
-}
-
-/**
  * YYYY-MM-DD の日付を今日基準の相対表示文字列に変換する
  * 例: 今日 / 明日 / 明後日 / 3日後 / 昨日 / 2日前
  */
 export function formatRelativeDate(dateStr: string): string {
     if (!isValidYmd(dateStr)) return '';
-    const todayMs = parseYmd(getTodayJST()).getTime();
-    const dateMs = parseYmd(dateStr).getTime();
+    const todayMs = Date.parse(`${getTodayJST()}T00:00:00Z`);
+    const dateMs = Date.parse(`${dateStr}T00:00:00Z`);
     const diffDays = Math.round((dateMs - todayMs) / (24 * 60 * 60 * 1000));
 
     if (diffDays === 0) return '今日';
@@ -170,16 +101,6 @@ export function formatRelativeTime(iso: string): string {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}/${m}/${day}`;
-}
-
-/**
- * YYYY-MM-DD の日付を指定日数だけずらして返す (YYYY-MM-DD)
- * 負の値で過去方向へずらせる
- */
-export function shiftDate(dateStr: string, days: number): string {
-    const date = parseYmd(dateStr);
-    date.setUTCDate(date.getUTCDate() + days);
-    return formatYmd(date);
 }
 
 /**
