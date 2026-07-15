@@ -9,7 +9,7 @@
 /** JSTはUTC+9固定（夏時間なし）。 */
 const JST_OFFSET_HOURS = 9;
 
-function daysInUtcMonth(year: number, monthIndex: number): number {
+export function daysInUtcMonth(year: number, monthIndex: number): number {
     return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
 }
 
@@ -26,8 +26,8 @@ export function isValidYmd(dateStr: string): boolean {
     return day >= 1 && day <= daysInUtcMonth(year, month - 1);
 }
 
-/** YYYY-MM-DD 形式の文字列を UTC ベースの Date にパースする（内部利用）。 */
-function parseYmd(dateStr: string): Date {
+/** YYYY-MM-DD 形式の文字列を UTC ベースの Date にパースする。 */
+export function parseYmd(dateStr: string): Date {
     if (!isValidYmd(dateStr)) {
         throw new RangeError(`Invalid YYYY-MM-DD date: ${dateStr}`);
     }
@@ -35,8 +35,8 @@ function parseYmd(dateStr: string): Date {
     return new Date(Date.UTC(year, month - 1, day));
 }
 
-/** UTC ベースの Date を YYYY-MM-DD 文字列にフォーマットする（内部利用）。 */
-function formatYmd(date: Date): string {
+/** UTC ベースの Date を YYYY-MM-DD 文字列にフォーマットする。 */
+export function formatYmd(date: Date): string {
     const y = date.getUTCFullYear();
     const m = String(date.getUTCMonth() + 1).padStart(2, '0');
     const d = String(date.getUTCDate()).padStart(2, '0');
