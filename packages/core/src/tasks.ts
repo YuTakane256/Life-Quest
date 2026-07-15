@@ -1,5 +1,9 @@
+import { daysInUtcMonth, formatYmd as formatYmdUtc, isValidYmd, parseYmd as parseYmdUtc } from './dates.ts';
 import { XP_CONFIG } from './progression.ts';
 import { clampString } from './validation.ts';
+
+// 後方互換: isValidYmdDate は従来 tasks.ts で定義・export されていた（現在は dates.ts へ集約）。
+export { isValidYmd as isValidYmdDate } from './dates.ts';
 
 export type Priority = 'low' | 'medium' | 'high';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
@@ -156,36 +160,6 @@ export function getSubtaskRewardXp(priority: Priority): number {
 
 // ─── 繰り返しタスク ───────────────────────────────────────────
 
-function daysInUtcMonth(year: number, month: number): number {
-    return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-}
-
-/** YYYY-MM-DD 形式かつ実在する日付か。 */
-export function isValidYmdDate(value: string): boolean {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (!match) return false;
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    if (month < 1 || month > 12) return false;
-    return day >= 1 && day <= daysInUtcMonth(year, month - 1);
-}
-
-function parseYmdUtc(value: string): Date {
-    if (!isValidYmdDate(value)) {
-        throw new RangeError(`Invalid YYYY-MM-DD date: ${value}`);
-    }
-    const [year, month, day] = value.split('-').map(Number);
-    return new Date(Date.UTC(year, month - 1, day));
-}
-
-function formatYmdUtc(date: Date): string {
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
 /**
  * YYYY-MM-DD を繰り返し周期ぶん進める。毎月は「翌月の同日」で、
  * 存在しない日（1/31→2月など）は月末に丸める（Webと同一ルール）。
@@ -229,7 +203,7 @@ export function buildNextRecurringTask(input: NextRecurringTaskInput): Task | nu
     const { task } = input;
     if (!task.recurrence || task.recurrence === 'none') return null;
     // 期限が不正な形式なら今日を起点にする（永続化データ由来の不正値でも落とさない）
-    const base = task.dueDate !== null && isValidYmdDate(task.dueDate) ? task.dueDate : input.today;
+    const base = task.dueDate !== null && isValidYmd(task.dueDate) ? task.dueDate : input.today;
     return {
         id: input.taskId,
         name: task.name,

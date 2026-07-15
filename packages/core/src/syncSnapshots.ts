@@ -6,6 +6,7 @@ import {
     type CharacterState,
     type RewardLedger,
 } from './gameState.ts';
+import { isValidYmd as isValidYmdString } from './dates.ts';
 import type { Equipment } from './equipment.ts';
 import type { ChestReward } from './rewards.ts';
 import { sanitizeTaskCollection, type Task } from './tasks.ts';
@@ -75,12 +76,7 @@ function unwrapPersistedState(value: unknown): unknown {
 }
 
 function isValidYmd(value: unknown): value is string {
-    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-    const [year, month, day] = value.split('-').map(Number);
-    const date = new Date(Date.UTC(year, month - 1, day));
-    return date.getUTCFullYear() === year
-        && date.getUTCMonth() === month - 1
-        && date.getUTCDate() === day;
+    return typeof value === 'string' && isValidYmdString(value);
 }
 
 function sanitizeDateList(value: unknown, limit: number): string[] {
