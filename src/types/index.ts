@@ -215,6 +215,11 @@ export interface StatsStoreState {
     habitLog: Record<string, { count: number; allComplete: boolean }>; // YYYY-MM-DD => 習慣データ
     logTaskXp: (date: string, xp: number) => void;
     logHabitActivity: (date: string, count: number, allComplete: boolean) => void;
+    // クラウドの stats_daily 由来ログをローカルへ単調マージする（他端末・新規端末での実績復元用）
+    mergeFromCloud: (snapshot: {
+        taskXpLog: Record<string, number>;
+        habitLog: Record<string, { count: number; allComplete: boolean }>;
+    }) => void;
 }
 
 export interface BattleHistoryStoreState {

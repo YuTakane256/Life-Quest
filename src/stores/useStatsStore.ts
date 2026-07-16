@@ -5,6 +5,8 @@ import type { StatsStoreState } from '../types';
 import {
     appendHabitActivity,
     appendTaskXp,
+    mergeHabitLogs,
+    mergeTaskXpLogs,
     sanitizeHabitLog,
     sanitizeTaskXpLog,
 } from '../core/statsLog';
@@ -36,6 +38,13 @@ export const useStatsStore = create<StatsStoreState>()(
 
             logHabitActivity: (date: string, count: number, allComplete: boolean) => {
                 set((state) => ({ habitLog: appendHabitActivity(state.habitLog, date, count, allComplete) }));
+            },
+
+            mergeFromCloud: (snapshot) => {
+                set((state) => ({
+                    taskXpLog: mergeTaskXpLogs(state.taskXpLog, snapshot.taskXpLog),
+                    habitLog: mergeHabitLogs(state.habitLog, snapshot.habitLog),
+                }));
             },
         }),
         {

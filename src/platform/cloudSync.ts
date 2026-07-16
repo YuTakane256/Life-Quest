@@ -19,6 +19,7 @@ import {
     buildCanonicalGameSnapshot,
     buildCanonicalHabitSnapshot,
     buildCanonicalTaskSnapshot,
+    buildStatsLogSnapshot,
     createEmptyCloudCache,
     getSeedableSections,
     loadCloudCache,
@@ -35,6 +36,7 @@ import { markCloudSessionSeeded } from './authStores';
 import { seedGame, seedHabits, seedTasks } from './canonicalSync';
 import { getPlatformStorageAdapter } from './storage';
 import { getWebSupabaseClient } from './supabase';
+import { useStatsStore } from '../stores/useStatsStore';
 
 export interface CloudSyncHandle {
     /** 実行中のプルの完了を待つ（テスト用） */
@@ -67,6 +69,11 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
             seedGame(game);
             seeded = true;
         }
+    }
+    // 統計ログはtasks/habitsのようなクラウド優先シードではなく単調マージ（削除済みデータの
+    // 実績を後退させない）。空のクラウドとのマージは何度呼んでもno-opなので毎回呼んで良い。
+    if (Object.keys(cache.stats_daily).length > 0) {
+        useStatsStore.getState().mergeFromCloud(buildStatsLogSnapshot(cache));
     }
     return seeded;
 }
