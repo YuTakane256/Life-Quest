@@ -1,5 +1,19 @@
 # Web / Mobile parity audit
 
+> **Status (2026-07-17): historical planning document, superseded by implementation.**
+> This audit was written as a pre-implementation plan after PR #472. All five
+> phases described below (canonical contracts, repository interfaces, shared
+> visual language, mobile feature parity, and authenticated cloud sync) have
+> since shipped. Mobile now has feature-parity screens for Tasks, Habits,
+> Character/Inventory, Map/Battle, Statistics, Settings, and Help, all backed
+> by `@life-quest/core` shared logic and Supabase cloud sync (canonical
+> snapshots, offline outbox, RLS, LWW conflict resolution, and reward
+> idempotency ledgers). The "Current application surfaces" and "Executive
+> summary" sections below describe the pre-implementation gap and are kept for
+> historical context; do not treat them as the current feature matrix. Tracking
+> issue #473 remains open for residual follow-up work only (see its issue body
+> for current status).
+
 ## Goal
 
 Treat the Web application as the product reference while providing equivalent
