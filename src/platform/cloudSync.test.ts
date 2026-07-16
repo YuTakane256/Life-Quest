@@ -80,4 +80,41 @@ describe('applyCloudCacheToWebStores（データ消失パターンの回帰テ�
         expect(useHabitStore.getState().habits).toHaveLength(1);      // habitsは保持
         expect(useGameStore.getState().character.totalXp).toBe(999);  // gameは保持
     });
+
+    it('stats_dailyが届いたら、ローカルの統計ログへ単調マージされる（新規端末での実績復元）', async () => {
+        const { applyPullBatchToCache, createEmptyCloudCache } = await import('@life-quest/core/cloudCache');
+        const { applyCloudCacheToWebStores } = await import('./cloudSync');
+        const { useStatsStore } = await import('../stores/useStatsStore');
+
+        useStatsStore.setState({ taskXpLog: {}, habitLog: {} });
+
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 3, has_more: false,
+            stats_daily: [
+                { date: '2026-07-01', task_xp: 30, habit_count: 2, all_habits_complete: true, deleted_at: null, version: 1 },
+            ],
+        });
+
+        applyCloudCacheToWebStores(cache);
+        expect(useStatsStore.getState().taskXpLog).toEqual({ '2026-07-01': 30 });
+        expect(useStatsStore.getState().habitLog).toEqual({ '2026-07-01': { count: 2, allComplete: true } });
+    });
+
+    it('ローカルの統計ログの方が大きい値を持つ日は後退しない', async () => {
+        const { applyPullBatchToCache, createEmptyCloudCache } = await import('@life-quest/core/cloudCache');
+        const { applyCloudCacheToWebStores } = await import('./cloudSync');
+        const { useStatsStore } = await import('../stores/useStatsStore');
+
+        useStatsStore.setState({ taskXpLog: { '2026-07-01': 50 }, habitLog: {} });
+
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 3, has_more: false,
+            stats_daily: [
+                { date: '2026-07-01', task_xp: 30, habit_count: 0, all_habits_complete: false, deleted_at: null, version: 1 },
+            ],
+        });
+
+        applyCloudCacheToWebStores(cache);
+        expect(useStatsStore.getState().taskXpLog['2026-07-01']).toBe(50);
+    });
 });
