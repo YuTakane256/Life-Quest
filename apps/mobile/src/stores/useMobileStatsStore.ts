@@ -9,6 +9,13 @@
  * のみ、現存するtasks/habits/recordsから seedStatsLogFromCollections で
  * 一度だけ復元する。以後はログイベント（logTaskXp/logHabitActivity）で
  * 追記していく。
+ *
+ * 新規端末インストール直後にクラウドログインした場合、他ストアのハイドレーション
+ * より前にこのシードが走るとローカルコレクションが空のため、空ログのまま
+ * seeded: true が永続化されてしまう（以後シードは二度と走らない）。この穴は
+ * mergeFromCloud（cloudSeed.tsのプル適用経路から毎回呼ばれる、stats_daily由来の
+ * 単調マージ）が埋める。seedIfNeededはクラウドに一切データが無いアカウント向けの
+ * フォールバックとして残す。
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
@@ -16,6 +23,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import {
     appendHabitActivity,
     appendTaskXp,
+    mergeHabitLogs,
+    mergeTaskXpLogs,
     sanitizeHabitLog,
     sanitizeTaskXpLog,
     seedStatsLogFromCollections,
@@ -35,6 +44,8 @@ interface MobileStatsState {
     logHabitActivity: (date: string, count: number, allComplete: boolean) => void;
     /** 初回のみ現存コレクションからログを復元する（シード済みなら何もしない） */
     seedIfNeeded: (tasks: readonly Task[], habits: readonly Habit[], records: readonly HabitDailyRecord[]) => void;
+    /** クラウドの stats_daily 由来ログをローカルへ単調マージする（他端末・新規端末での実績復元用） */
+    mergeFromCloud: (snapshot: { taskXpLog: TaskXpLog; habitLog: HabitLog }) => void;
     setHasHydrated: (value: boolean) => void;
 }
 
@@ -74,6 +85,13 @@ export const useMobileStatsStore = create<MobileStatsState>()(
                 if (get().seeded) return;
                 const seed = seedStatsLogFromCollections(tasks, habits, records);
                 set({ taskXpLog: seed.taskXpLog, habitLog: seed.habitLog, seeded: true });
+            },
+
+            mergeFromCloud: (snapshot) => {
+                set((state) => ({
+                    taskXpLog: mergeTaskXpLogs(state.taskXpLog, snapshot.taskXpLog),
+                    habitLog: mergeHabitLogs(state.habitLog, snapshot.habitLog),
+                }));
             },
 
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
