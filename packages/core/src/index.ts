@@ -47,6 +47,8 @@ export {
     keepRecentEntries,
     MAX_STATS_DAILY_VALUE,
     MAX_STATS_LOG_ENTRIES,
+    mergeHabitLogs,
+    mergeTaskXpLogs,
     sanitizeHabitLog,
     sanitizeTaskXpLog,
     seedStatsLogFromCollections,

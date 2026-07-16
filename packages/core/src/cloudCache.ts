@@ -23,6 +23,7 @@ import {
 } from './syncSnapshots.ts';
 import type { RepositoryStorage } from './syncRepository.ts';
 import type { PullBatch } from './cloudPull.ts';
+import { sanitizeHabitLog, sanitizeTaskXpLog, type HabitLog, type TaskXpLog } from './statsLog.ts';
 
 export type CloudRow = Record<string, unknown> & { version: number };
 
@@ -274,6 +275,28 @@ export function buildCanonicalGameSnapshot(cache: CloudCache): CanonicalGameSnap
             maxClearedStage: Number(character.max_cleared_stage ?? 0),
         },
     };
+}
+
+/**
+ * stats_daily行から統計ログ（TaskXpLog/HabitLog）を組み立てる。
+ * 端末ローカルの統計ログとの合成は呼び出し側で mergeTaskXpLogs/mergeHabitLogs を使う
+ * （このキャッシュはWeb/Mobile初回移行時の一括アップロードのみを反映しており、
+ * 以後の継続更新は未対応のため、ローカル側の値を下回ることがあり得る）。
+ */
+export function buildStatsLogSnapshot(cache: CloudCache): { taskXpLog: TaskXpLog; habitLog: HabitLog } {
+    const taskXpLog: TaskXpLog = {};
+    const habitLog: HabitLog = {};
+    for (const row of Object.values(cache.stats_daily)) {
+        if (!notDeleted(row)) continue;
+        const date = asString(row.date);
+        if (!date) continue;
+        taskXpLog[date] = Number(row.task_xp ?? 0);
+        habitLog[date] = {
+            count: Number(row.habit_count ?? 0),
+            allComplete: row.all_habits_complete === true,
+        };
+    }
+    return { taskXpLog: sanitizeTaskXpLog(taskXpLog), habitLog: sanitizeHabitLog(habitLog) };
 }
 
 // ─── user_id別namespaceの永続化（ADR-009） ──────────────────────

@@ -4,6 +4,7 @@ import {
     buildCanonicalGameSnapshot,
     buildCanonicalHabitSnapshot,
     buildCanonicalTaskSnapshot,
+    buildStatsLogSnapshot,
     cloudCacheKey,
     countCloudContentRows,
     createEmptyCloudCache,
@@ -108,6 +109,29 @@ describe('buildCanonicalHabitSnapshot', () => {
         expect(snapshot.dailyRecords[0]).toEqual({ habitId: 'h1', date: '2026-07-01', completed: true, memo: 'メモ' });
         expect(snapshot.restDays).toEqual([{ date: '2026-07-02', isRest: true }]);
         expect(snapshot.allCompleteDates).toEqual(['2026-07-01']);
+    });
+});
+
+describe('buildStatsLogSnapshot', () => {
+    it('stats_dailyからtaskXpLog/habitLogを組み立て、墓標は除外する', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            stats_daily: [
+                { date: '2026-07-01', task_xp: 30, habit_count: 2, all_habits_complete: true, deleted_at: null, version: 1 },
+                { date: '2026-07-02', task_xp: 0, habit_count: 0, all_habits_complete: false, deleted_at: null, version: 1 },
+                { date: '2026-07-03', task_xp: 10, habit_count: 1, all_habits_complete: false, deleted_at: '2026-07-04T00:00:00Z', version: 2 },
+            ],
+        }));
+        expect(buildStatsLogSnapshot(cache)).toEqual({
+            taskXpLog: { '2026-07-01': 30, '2026-07-02': 0 },
+            habitLog: {
+                '2026-07-01': { count: 2, allComplete: true },
+                '2026-07-02': { count: 0, allComplete: false },
+            },
+        });
+    });
+
+    it('stats_dailyが空なら空ログを返す', () => {
+        expect(buildStatsLogSnapshot(createEmptyCloudCache())).toEqual({ taskXpLog: {}, habitLog: {} });
     });
 });
 

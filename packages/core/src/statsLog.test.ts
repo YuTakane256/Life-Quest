@@ -5,6 +5,8 @@ import {
     keepRecentEntries,
     MAX_STATS_DAILY_VALUE,
     MAX_STATS_LOG_ENTRIES,
+    mergeHabitLogs,
+    mergeTaskXpLogs,
     sanitizeHabitLog,
     sanitizeTaskXpLog,
     seedStatsLogFromCollections,
@@ -97,6 +99,54 @@ describe('appendHabitActivity', () => {
     it('不正な日付・countは無視する', () => {
         expect(appendHabitActivity({}, 'bad', 1, true)).toEqual({});
         expect(appendHabitActivity({}, '2026-07-10', -1, true)).toEqual({});
+    });
+});
+
+describe('mergeTaskXpLogs', () => {
+    it('日付ごとに大きい方の値を採用する', () => {
+        const local = { '2026-07-10': 10, '2026-07-11': 30 };
+        const cloud = { '2026-07-10': 20, '2026-07-12': 5 };
+        expect(mergeTaskXpLogs(local, cloud)).toEqual({
+            '2026-07-10': 20,
+            '2026-07-11': 30,
+            '2026-07-12': 5,
+        });
+    });
+
+    it('可換（呼び出し順序に依らず同じ結果になる）', () => {
+        const a = { '2026-07-10': 10, '2026-07-11': 30 };
+        const b = { '2026-07-10': 20, '2026-07-12': 5 };
+        expect(mergeTaskXpLogs(a, b)).toEqual(mergeTaskXpLogs(b, a));
+    });
+
+    it('空ログとのマージは相手をそのまま返す', () => {
+        const log = { '2026-07-10': 10 };
+        expect(mergeTaskXpLogs(log, {})).toEqual(log);
+        expect(mergeTaskXpLogs({}, log)).toEqual(log);
+    });
+});
+
+describe('mergeHabitLogs', () => {
+    it('日付ごとにcountは最大値、allCompleteはORを取る', () => {
+        const local = {
+            '2026-07-10': { count: 1, allComplete: false },
+            '2026-07-11': { count: 3, allComplete: true },
+        };
+        const cloud = {
+            '2026-07-10': { count: 2, allComplete: true },
+            '2026-07-12': { count: 1, allComplete: false },
+        };
+        expect(mergeHabitLogs(local, cloud)).toEqual({
+            '2026-07-10': { count: 2, allComplete: true },
+            '2026-07-11': { count: 3, allComplete: true },
+            '2026-07-12': { count: 1, allComplete: false },
+        });
+    });
+
+    it('可換（呼び出し順序に依らず同じ結果になる）', () => {
+        const a = { '2026-07-10': { count: 1, allComplete: false } };
+        const b = { '2026-07-10': { count: 2, allComplete: true } };
+        expect(mergeHabitLogs(a, b)).toEqual(mergeHabitLogs(b, a));
     });
 });
 
