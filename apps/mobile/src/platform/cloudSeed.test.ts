@@ -13,6 +13,7 @@ import { applyCloudCacheToMobileStores } from './cloudSeed';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
+import { useMobileStatsStore } from '../stores/useMobileStatsStore';
 
 describe('applyCloudCacheToMobileStores（データ消失パターンの回帰テスト）', () => {
     it('初期行だけのクラウド状態では、既存ローカルのタスク・習慣・ゲーム状態を上書きしない', () => {
@@ -60,5 +61,36 @@ describe('applyCloudCacheToMobileStores（データ消失パターンの回帰�
         expect(useMobileTaskStore.getState().tasks.map((task) => task.id)).toEqual(['cloud-1']);
         expect(useMobileHabitStore.getState().habits).toHaveLength(1);
         expect(useMobileGameStore.getState().character.totalXp).toBe(999);
+    });
+
+    it('stats_dailyが届いたら統計ログへ単調マージされる（新規端末での実績復元・fresh-installレース対策）', () => {
+        // 新規インストール直後、ローカルコレクションが空のまま先にseedIfNeededが
+        // 走って空ログを永続化してしまったケースを再現する。
+        useMobileStatsStore.setState({ taskXpLog: {}, habitLog: {}, seeded: true });
+
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 3, has_more: false,
+            stats_daily: [
+                { date: '2026-07-01', task_xp: 30, habit_count: 2, all_habits_complete: true, deleted_at: null, version: 1 },
+            ],
+        });
+
+        applyCloudCacheToMobileStores(cache);
+        expect(useMobileStatsStore.getState().taskXpLog).toEqual({ '2026-07-01': 30 });
+        expect(useMobileStatsStore.getState().habitLog).toEqual({ '2026-07-01': { count: 2, allComplete: true } });
+    });
+
+    it('ローカルの統計ログの方が大きい値を持つ日は後退しない', () => {
+        useMobileStatsStore.setState({ taskXpLog: { '2026-07-01': 50 }, habitLog: {}, seeded: true });
+
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 3, has_more: false,
+            stats_daily: [
+                { date: '2026-07-01', task_xp: 30, habit_count: 0, all_habits_complete: false, deleted_at: null, version: 1 },
+            ],
+        });
+
+        applyCloudCacheToMobileStores(cache);
+        expect(useMobileStatsStore.getState().taskXpLog['2026-07-01']).toBe(50);
     });
 });
