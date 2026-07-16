@@ -6,6 +6,7 @@
  * ADR-003ゲート（全副作用を台帳挿入成否で制御）とともに適用する。
  * ADR-007: user_id はJWTからのみ導出。
  */
+import { getTodayJst } from '../../../packages/core/src/dates.ts';
 import { XP_CONFIG } from '../../../packages/core/src/progression.ts';
 import { buildNextRecurringTask, type Priority, type Recurrence, type Task } from '../../../packages/core/src/tasks.ts';
 import { callApply, NotFoundError, requireString, serveGameFunction } from '../_shared/handler.ts';
@@ -35,6 +36,7 @@ serveGameFunction(async (ctx) => {
 
     const xp = XP_CONFIG.REWARD_BY_PRIORITY[task.priority] ?? XP_CONFIG.REWARD_BY_PRIORITY.medium;
     const chest = await computeNextMilestoneChest(ctx);
+    const today = getTodayJst();
 
     // 繰り返し次回分（coreの共有ルール。重複ガードの最終判定はDB側）
     let nextTaskParam: Record<string, unknown> | null = null;
@@ -57,7 +59,7 @@ serveGameFunction(async (ctx) => {
             taskId: crypto.randomUUID(),
             subtaskIdFor: () => crypto.randomUUID(),
             now,
-            today: now.slice(0, 10),
+            today,
         });
         if (next) {
             nextTaskParam = {
@@ -75,6 +77,7 @@ serveGameFunction(async (ctx) => {
         p_user_id: ctx.userId,
         p_task_id: taskId,
         p_xp: xp,
+        p_date: today,
         p_chest: chest,
         p_next_task: nextTaskParam,
         p_key: idempotencyKey,

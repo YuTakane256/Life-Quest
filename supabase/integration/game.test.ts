@@ -16,6 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client as PgClient } from 'pg';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { getTodayJst } from '../../packages/core/src/dates.ts';
 
 const DB_URL = process.env.SUPABASE_DB_URL;
 const API_URL = process.env.SUPABASE_URL;
@@ -328,13 +329,22 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         });
 
         // 1つ目: サブタスク報酬のみ。親はまだ完了しない
+        const today = getTodayJst();
+        const statsBefore = await pg.query(
+            'select task_xp from stats_daily where user_id=$1 and date=$2', [user.id, today],
+        );
         const xpBefore = Number((await getCharacter()).total_xp);
+        const statsXpBefore = Number(statsBefore.rows[0]?.task_xp ?? 0);
         const first = await callFn('complete_subtask', { subtaskId: sub1, idempotencyKey: uuid() });
         expect(first.status).toBe(200);
         const firstBody = (await first.json()) as { granted: boolean; parent_completed: boolean };
         expect(firstBody.granted).toBe(true);
         expect(firstBody.parent_completed).toBe(false);
         expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 10); // medium 20 の半分
+        const statsAfterFirst = await pg.query(
+            'select task_xp from stats_daily where user_id=$1 and date=$2', [user.id, today],
+        );
+        expect(Number(statsAfterFirst.rows[0].task_xp)).toBe(statsXpBefore + 10); // stats_dailyへも継続反映
 
         // 2つ目: 全サブタスク完了 → 親が自動完了し、親報酬（+20）も同一トランザクションで連鎖
         const second = await callFn('complete_subtask', { subtaskId: sub2, idempotencyKey: uuid() });
@@ -345,6 +355,11 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 10 + 10 + 20);
         const { rows: parent } = await pg.query('select completed from tasks where id=$1', [taskId]);
         expect(parent[0].completed).toBe(true);
+        // サブタスク分（+10）と親分（+20）が同一日へ両方加算される
+        const statsAfterSecond = await pg.query(
+            'select task_xp from stats_daily where user_id=$1 and date=$2', [user.id, today],
+        );
+        expect(Number(statsAfterSecond.rows[0].task_xp)).toBe(statsXpBefore + 10 + 10 + 20);
 
         // 再送は生涯1回ゲートで報酬なし
         const again = await callFn('complete_subtask', { subtaskId: sub1, idempotencyKey: uuid() });
@@ -521,5 +536,40 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         const reuse = await callFn('sell_item', { itemId, idempotencyKey: key });
         expect(reuse.status).toBe(500);
         expect(((await reuse.json()) as { error: string }).error).toContain('idempotency_key_operation_mismatch');
+    });
+
+    // gacha_count/total_xp累積を前提にする他テストへ影響しないよう最後に置く
+    it('complete_task: stats_daily.task_xpが当日分へ継続加算される（他端末での実績復元用）', async () => {
+        const today = getTodayJst();
+        const before = await pg.query(
+            'select task_xp from stats_daily where user_id=$1 and date=$2',
+            [user.id, today],
+        );
+        const beforeXp = Number(before.rows[0]?.task_xp ?? 0);
+
+        const taskId = await createTask('stats_daily継続更新テスト');
+        const res = await callFn('complete_task', { taskId, idempotencyKey: uuid() });
+        expect(((await res.json()) as { granted: boolean }).granted).toBe(true);
+
+        const after = await pg.query(
+            'select task_xp from stats_daily where user_id=$1 and date=$2',
+            [user.id, today],
+        );
+        expect(Number(after.rows[0].task_xp)).toBe(beforeXp + 20); // medium = 20 XP
+
+        // 同一キー再送は副作用なし（task_xpも二重加算されない）
+        const replayKey = uuid();
+        const replayTaskId = await createTask('再送テスト');
+        await callFn('complete_task', { taskId: replayTaskId, idempotencyKey: replayKey });
+        const afterFirst = await pg.query(
+            'select task_xp from stats_daily where user_id=$1 and date=$2',
+            [user.id, today],
+        );
+        await callFn('complete_task', { taskId: replayTaskId, idempotencyKey: replayKey });
+        const afterReplay = await pg.query(
+            'select task_xp from stats_daily where user_id=$1 and date=$2',
+            [user.id, today],
+        );
+        expect(Number(afterReplay.rows[0].task_xp)).toBe(Number(afterFirst.rows[0].task_xp));
     });
 });

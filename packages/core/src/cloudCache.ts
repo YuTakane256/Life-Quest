@@ -279,9 +279,11 @@ export function buildCanonicalGameSnapshot(cache: CloudCache): CanonicalGameSnap
 
 /**
  * stats_daily行から統計ログ（TaskXpLog/HabitLog）を組み立てる。
- * 端末ローカルの統計ログとの合成は呼び出し側で mergeTaskXpLogs/mergeHabitLogs を使う
- * （このキャッシュはWeb/Mobile初回移行時の一括アップロードのみを反映しており、
- * 以後の継続更新は未対応のため、ローカル側の値を下回ることがあり得る）。
+ * 端末ローカルの統計ログとの合成は呼び出し側で mergeTaskXpLogs/mergeHabitLogs を使う。
+ * task_xp（complete_task_apply/complete_subtask_apply）とall_habits_complete
+ * （claim_habit_bonus_apply）はサーバー側で継続更新されるが、habit_countは
+ * Web/Mobile初回移行時の一括アップロードのみで以後の継続更新は未対応のため、
+ * ローカル側の値を下回ることがあり得る（単調マージなので実害はない）。
  */
 export function buildStatsLogSnapshot(cache: CloudCache): { taskXpLog: TaskXpLog; habitLog: HabitLog } {
     const taskXpLog: TaskXpLog = {};
