@@ -80,6 +80,34 @@ export function appendHabitActivity(
 }
 
 /**
+ * 端末ローカルの統計ログとクラウド（stats_dailyテーブル）由来の統計ログを合成する。
+ * 日付ごとにtaskXpは最大値、habitLogはcount最大・allCompleteはORを取る単調マージで、
+ * 呼び出し順序やプル回数に依らず結果が一致する（冪等・可換）。値が小さい側を
+ * 「取り消す」ことはしない設計方針は、appendTaskXp/appendHabitActivityの
+ * 追記オンリー運用と同じ（削除で実績を後退させない）。
+ * habitLogのallComplete/countは「その日一度でも到達した最大値」を表すことになる点に注意。
+ */
+export function mergeTaskXpLogs(local: TaskXpLog, cloud: TaskXpLog): TaskXpLog {
+    const merged: TaskXpLog = { ...local };
+    for (const [date, xp] of Object.entries(cloud)) {
+        merged[date] = Math.max(merged[date] ?? 0, xp);
+    }
+    return keepRecentEntries(merged);
+}
+
+export function mergeHabitLogs(local: HabitLog, cloud: HabitLog): HabitLog {
+    const merged: HabitLog = { ...local };
+    for (const [date, entry] of Object.entries(cloud)) {
+        const existing = merged[date];
+        merged[date] = {
+            count: Math.max(existing?.count ?? 0, entry.count),
+            allComplete: (existing?.allComplete ?? false) || entry.allComplete,
+        };
+    }
+    return keepRecentEntries(merged);
+}
+
+/**
  * 永続ログが存在しない端末（初回起動・旧バージョンからの移行）向けに、
  * 現存するtasks/habits/recordsから統計ログを再構築する。
  * 以後は再構築ではなくappendTaskXp/appendHabitActivityで追記していくため、
