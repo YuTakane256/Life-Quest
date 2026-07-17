@@ -15,6 +15,7 @@ import {
 } from '@life-quest/core/tasks';
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
+import { enqueueCloudOperation, isWebCloudOutboxActive } from '../platform/cloudOutbox';
 
 /** pending completions はLocalStorageに保存しない（タイマーは復元不可能） */
 interface TaskStorePersisted {
@@ -157,6 +158,15 @@ export const useTaskStore = create<TaskStoreState>()(
                     createdAt: new Date().toISOString(),
                 };
                 set((state) => ({ tasks: [...state.tasks, newTask] }));
+                // ログイン中はクラウドへも書き込む（オフラインならoutboxが再送する）
+                void enqueueCloudOperation('upsert_task', {
+                    p_id: newTask.id,
+                    p_name: newTask.name,
+                    p_due_date: newTask.dueDate,
+                    p_priority: newTask.priority,
+                    p_recurrence: newTask.recurrence,
+                    p_tags: newTask.tags,
+                }, { trackEntityId: newTask.id });
             },
 
             updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>) => {
@@ -165,6 +175,17 @@ export const useTaskStore = create<TaskStoreState>()(
                 // サブタスクが更新対象に含まれない場合は単純マージ（core側で分岐）
                 if (updates.subtasks === undefined) {
                     set((state) => ({ tasks: updateTaskFields(state.tasks, id, updates, { now }) }));
+                    const updated = get().tasks.find((t) => t.id === id);
+                    if (updated) {
+                        void enqueueCloudOperation('upsert_task', {
+                            p_id: updated.id,
+                            p_name: updated.name,
+                            p_due_date: updated.dueDate,
+                            p_priority: updated.priority,
+                            p_recurrence: updated.recurrence,
+                            p_tags: updated.tags,
+                        }, { dependsOnEntityIds: [id] });
+                    }
                     return;
                 }
 
@@ -179,6 +200,17 @@ export const useTaskStore = create<TaskStoreState>()(
                     }),
                     pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== id),
                 }));
+                const updated = get().tasks.find((t) => t.id === id);
+                if (updated) {
+                    void enqueueCloudOperation('upsert_task', {
+                        p_id: updated.id,
+                        p_name: updated.name,
+                        p_due_date: updated.dueDate,
+                        p_priority: updated.priority,
+                        p_recurrence: updated.recurrence,
+                        p_tags: updated.tags,
+                    }, { dependsOnEntityIds: [id] });
+                }
             },
 
             duplicateTask: (id: string) => {
@@ -192,6 +224,21 @@ export const useTaskStore = create<TaskStoreState>()(
                 });
                 if (!duplicate) return null;
                 set((state) => ({ tasks: [...state.tasks, duplicate] }));
+                void enqueueCloudOperation('upsert_task', {
+                    p_id: duplicate.id,
+                    p_name: duplicate.name,
+                    p_due_date: duplicate.dueDate,
+                    p_priority: duplicate.priority,
+                    p_recurrence: duplicate.recurrence,
+                    p_tags: duplicate.tags,
+                }, { trackEntityId: duplicate.id });
+                for (const subtask of duplicate.subtasks) {
+                    void enqueueCloudOperation(
+                        'upsert_subtask',
+                        { p_id: subtask.id, p_task_id: duplicate.id, p_name: subtask.name },
+                        { dependsOnEntityIds: [duplicate.id], trackEntityId: subtask.id },
+                    );
+                }
                 return duplicate.id;
             },
 
@@ -203,13 +250,22 @@ export const useTaskStore = create<TaskStoreState>()(
                     tasks: state.tasks.filter((t) => t.id !== id),
                     pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== id),
                 }));
+                // 作成がまだ未送信ならその後に削除が送られる（dependsOnで順序保証）
+                void enqueueCloudOperation('delete_task', { p_id: id }, { dependsOnEntityIds: [id] });
             },
 
             deleteCompletedTasks: () => {
                 const { tasks, pendingCompletions } = get();
                 // 保留中（5秒Undo待ち）のタスクは削除対象から除外する
                 const pendingIds = new Set(pendingCompletions.map((p) => p.taskId));
-                set({ tasks: removeCompletedTasks(tasks, pendingIds) });
+                const remaining = removeCompletedTasks(tasks, pendingIds);
+                const removedIds = tasks
+                    .filter((task) => !remaining.includes(task))
+                    .map((task) => task.id);
+                set({ tasks: remaining });
+                for (const removedId of removedIds) {
+                    void enqueueCloudOperation('delete_task', { p_id: removedId }, { dependsOnEntityIds: [removedId] });
+                }
             },
 
             toggleComplete: (id: string) => {
@@ -220,6 +276,7 @@ export const useTaskStore = create<TaskStoreState>()(
                     // Undo待機中ならタイマーも止める。完了フラグだけ戻すと、古い
                     // コールバックが後から報酬を付与して再完了させてしまう。
                     const pending = get().pendingCompletions.find((p) => p.taskId === id);
+                    const wasPending = pending !== undefined;
                     clearPendingCompletionTimer(pending);
                     set((state) => ({
                         tasks: state.tasks.map((t) =>
@@ -227,6 +284,10 @@ export const useTaskStore = create<TaskStoreState>()(
                         ),
                         pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== id),
                     }));
+                    if (!wasPending) {
+                        // Undo待機中ならcomplete_taskがまだ送られていない（報酬もRPCも未発生）
+                        void enqueueCloudOperation('uncomplete_task', { p_id: id }, { dependsOnEntityIds: [id] });
+                    }
                     return;
                 }
 
@@ -259,14 +320,19 @@ export const useTaskStore = create<TaskStoreState>()(
 
                     await awardTaskXp(pendingTask.priority, completedAt);
 
-                    // 繰り返しタスクなら次回分を自動生成する
-                    const next = buildNextRecurringTask(pendingTask);
-                    if (next) {
-                        const exists = hasOpenRecurringDuplicate(get().tasks, next);
-                        if (!exists && get().tasks.length < MAX_PERSISTED_TASKS) {
-                            set((state) => ({ tasks: [...state.tasks, next] }));
+                    // クラウド同期中は complete_task EF がサーバー側で次回分を生成する。
+                    // ローカルでも生成すると別IDの重複タスクが二重にできるためスキップする
+                    // （Mobileのspawn Recurring Nextと同一設計）。
+                    if (!isWebCloudOutboxActive()) {
+                        const next = buildNextRecurringTask(pendingTask);
+                        if (next) {
+                            const exists = hasOpenRecurringDuplicate(get().tasks, next);
+                            if (!exists && get().tasks.length < MAX_PERSISTED_TASKS) {
+                                set((state) => ({ tasks: [...state.tasks, next] }));
+                            }
                         }
                     }
+                    void enqueueCloudOperation('complete_task', { taskId: id }, { dependsOnEntityIds: [id] });
                 }, UI_CONFIG.UNDO_DURATION_MS);
 
                 const pendingCompletion: PendingCompletion = {
@@ -293,6 +359,7 @@ export const useTaskStore = create<TaskStoreState>()(
                 const pending = get().pendingCompletions.find((p) => p.taskId === taskId);
                 clearPendingCompletionTimer(pending);
 
+                const newSubtaskId = generateId();
                 set((state) => ({
                     tasks: state.tasks.map((task) =>
                         task.id === taskId
@@ -303,7 +370,7 @@ export const useTaskStore = create<TaskStoreState>()(
                                 subtasks: [
                                     ...(task.subtasks || []),
                                     {
-                                        id: generateId(),
+                                        id: newSubtaskId,
                                         name: trimmedName,
                                         completed: false,
                                         completedAt: null,
@@ -315,6 +382,12 @@ export const useTaskStore = create<TaskStoreState>()(
                     ),
                     pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== taskId),
                 }));
+                // 親タスクの作成が未送信でも、dependsOnにより必ず親→子の順で送られる
+                void enqueueCloudOperation(
+                    'upsert_subtask',
+                    { p_id: newSubtaskId, p_task_id: taskId, p_name: trimmedName },
+                    { dependsOnEntityIds: [taskId], trackEntityId: newSubtaskId },
+                );
             },
 
             deleteSubtask: (taskId: string, subtaskId: string) => {
@@ -343,6 +416,12 @@ export const useTaskStore = create<TaskStoreState>()(
                     ),
                     pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== taskId),
                 }));
+                void enqueueCloudOperation('delete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
+                if (shouldAutoComplete) {
+                    // サーバーのdelete_subtaskは親完了まで連鎖しないため、明示的に完了を送る
+                    // （報酬の重複はサーバーのreward_transactionsが防ぐ）
+                    void enqueueCloudOperation('complete_task', { taskId }, { dependsOnEntityIds: [taskId, subtaskId] });
+                }
             },
 
             toggleSubtaskComplete: (taskId: string, subtaskId: string) => {
@@ -379,10 +458,15 @@ export const useTaskStore = create<TaskStoreState>()(
 
                 if (isCompleting) {
                     void awardTaskXp(task.priority, completedAt, getSubtaskXp(task.priority));
+                    // サーバー側は complete_subtask が親完了・親報酬まで連鎖する
+                    void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
+                } else {
+                    void enqueueCloudOperation('uncomplete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
                 }
 
                 // サブタスク完了で親タスクが完了したら、繰り返しタスクの次回分を生成
-                if (isCompleting && allSubtasksComplete && !task.completed) {
+                // （クラウド同期中はcomplete_task EFがサーバー側で生成するためスキップ）
+                if (isCompleting && allSubtasksComplete && !task.completed && !isWebCloudOutboxActive()) {
                     const next = buildNextRecurringTask(task);
                     if (next) {
                         const exists = hasOpenRecurringDuplicate(get().tasks, next);
