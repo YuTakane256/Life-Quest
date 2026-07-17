@@ -613,6 +613,7 @@ export type Database = {
         }
         Returns: Json
       }
+      delete_habit: { Args: { p_id: string; p_key: string }; Returns: Json }
       delete_subtask: { Args: { p_id: string; p_key: string }; Returns: Json }
       delete_task: { Args: { p_id: string; p_key: string }; Returns: Json }
       finish_idempotency_key: {
@@ -674,6 +675,20 @@ export type Database = {
         }
         Returns: Json
       }
+      set_habit_log: {
+        Args: {
+          p_completed: boolean
+          p_date: string
+          p_habit_id: string
+          p_key: string
+          p_memo: string
+        }
+        Returns: Json
+      }
+      set_rest_day: {
+        Args: { p_active: boolean; p_date: string; p_key: string }
+        Returns: Json
+      }
       start_battle_attempt_apply: {
         Args: {
           p_attempt_id: string
@@ -699,6 +714,15 @@ export type Database = {
         Returns: Json
       }
       uncomplete_task: { Args: { p_id: string; p_key: string }; Returns: Json }
+      upsert_habit: {
+        Args: {
+          p_category_id?: string
+          p_id: string
+          p_key: string
+          p_name: string
+        }
+        Returns: Json
+      }
       upsert_profile: {
         Args: {
           p_active_title: string
