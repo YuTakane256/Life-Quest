@@ -4,6 +4,7 @@
  * 全サブタスク完了時はDB関数が親タスクを自動完了し、親の報酬も同一トランザクションで
  * 連鎖させる（親XP・親分のマイルストーン候補はここで算出して渡す）。
  */
+import { getTodayJst } from '../../../packages/core/src/dates.ts';
 import { getSubtaskRewardXp, type Priority } from '../../../packages/core/src/tasks.ts';
 import { XP_CONFIG } from '../../../packages/core/src/progression.ts';
 import { getMilestoneAtCount, GACHA_CONFIG } from '../../../packages/core/src/rewards.ts';
@@ -53,6 +54,7 @@ serveGameFunction(async (ctx) => {
         p_user_id: ctx.userId,
         p_subtask_id: subtaskId,
         p_xp: getSubtaskRewardXp(priority),
+        p_date: getTodayJst(),
         // サブタスク分（gacha+1）と、親自動完了が発生した場合の親分（gacha+2）の候補。
         // 実際に挿入するかは「加算後のgacha_count一致」でDBが最終判定する。
         p_chest: milestoneChestAt(gachaCount + 1),

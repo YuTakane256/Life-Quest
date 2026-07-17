@@ -203,7 +203,7 @@ describe.skipIf(!enabled)('#511 同期スパイク（ローカルSupabase統合�
         await userA.client.rpc('upsert_task', { p_id: taskId, p_name: '完了対象', p_key: uuid() });
 
         const call = (key: string, uid = userA.id, xp = 10) =>
-            pg.query('select complete_task_apply($1,$2,$3,null,null,$4) as r', [uid, taskId, xp, key]);
+            pg.query("select complete_task_apply($1,$2,$3,'2026-07-01',null,null,$4) as r", [uid, taskId, xp, key]);
 
         // 初回: granted=true
         const key1 = uuid();
