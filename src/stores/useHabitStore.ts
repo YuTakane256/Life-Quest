@@ -14,6 +14,7 @@ import {
 } from '@life-quest/core/habits';
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 
 interface HabitStorePersisted {
     habits: Habit[];
@@ -143,6 +144,11 @@ export const useHabitStore = create<HabitStoreState>()(
                     createdAt: new Date().toISOString(),
                 };
                 set((state) => ({ habits: [...state.habits, newHabit] }));
+                void enqueueCloudOperation('upsert_habit', {
+                    p_id: newHabit.id,
+                    p_name: newHabit.name,
+                    p_category_id: newHabit.categoryId,
+                }, { trackEntityId: newHabit.id });
             },
 
             deleteHabit: (id: string) => {
@@ -150,6 +156,7 @@ export const useHabitStore = create<HabitStoreState>()(
                     habits: state.habits.filter((h) => h.id !== id),
                     dailyRecords: state.dailyRecords.filter((r) => r.habitId !== id),
                 }));
+                void enqueueCloudOperation('delete_habit', { p_id: id }, { dependsOnEntityIds: [id] });
             },
 
             toggleHabitCompletion: (habitId: string, date: string) => {
@@ -179,6 +186,17 @@ export const useHabitStore = create<HabitStoreState>()(
                         dailyRecords: [...state.dailyRecords, newRecord].slice(-MAX_HABIT_DAILY_RECORDS),
                     }));
                 }
+
+                // クラウドへcompleted/memoの絶対状態を送る（set_habit_logはサーバー側で
+                // stats_daily.habit_countも継続更新する）。失敗時にunhandled rejectionへ
+                // ならないようここでcatchしておき、claim_habit_bonus送信前に完了を待つ。
+                const updatedRecord = get().dailyRecords.find((r) => r.habitId === habitId && r.date === date);
+                const logEnqueued = enqueueCloudOperation('set_habit_log', {
+                    p_habit_id: habitId,
+                    p_date: date,
+                    p_completed: updatedRecord?.completed ?? false,
+                    p_memo: updatedRecord?.memo ?? '',
+                }, { dependsOnEntityIds: [habitId], trackEntityId: habitId }).catch(() => false);
 
                 // 全習慣が完了したか確認して報酬付与
                 // setTimeout で状態更新後に確認
@@ -211,6 +229,11 @@ export const useHabitStore = create<HabitStoreState>()(
                         store.addXp(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
                         store.incrementGachaCount();
                         store.checkGachaMilestones();
+
+                        // サーバーは更新後のhabit_logsで全達成を検証するため、
+                        // set_habit_logの完了（pendingEntityOps登録）を待ってから送る。
+                        await logEnqueued;
+                        void enqueueCloudOperation('claim_habit_bonus', { date }, { dependsOnEntityIds: [habitId] });
                     }
                 }, 0);
             },
@@ -242,11 +265,18 @@ export const useHabitStore = create<HabitStoreState>()(
                         dailyRecords: [...state.dailyRecords, newRecord].slice(-MAX_HABIT_DAILY_RECORDS),
                     }));
                 }
+                void enqueueCloudOperation('set_habit_log', {
+                    p_habit_id: habitId,
+                    p_date: date,
+                    p_completed: existingRecord?.completed ?? false,
+                    p_memo: safeMemo,
+                }, { dependsOnEntityIds: [habitId], trackEntityId: habitId });
             },
 
             setRestDay: (date: string) => {
                 if (!isValidYmd(date)) return;
                 set((state) => ({ restDays: markRestDay(state.restDays, date, MAX_HABIT_REST_DAYS) }));
+                void enqueueCloudOperation('set_rest_day', { p_date: date, p_active: true });
             },
 
             isRestDay: (date: string) => {
