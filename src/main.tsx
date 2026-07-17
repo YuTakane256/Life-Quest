@@ -7,6 +7,7 @@ import { registerWebAuthStoreHooks } from './platform/authStores';
 import { registerWebCloudMigrationHooks } from './platform/cloudMigration';
 import { registerWebCloudSyncHooks } from './platform/cloudSync';
 import { registerWebOutboxHooks } from './platform/cloudOutbox';
+import { registerPendingCompletionFlush } from './platform/pendingCompletionFlush';
 import { startWebCanonicalSync } from './platform/canonicalSync';
 
 // 旧quest-board-*データのcanonical移行と、以降のストア変更の書き戻しを開始する。
@@ -19,6 +20,7 @@ registerWebAuthStoreHooks();
 registerWebCloudMigrationHooks(); // 初回移行はプル開始より先（#506）
 registerWebCloudSyncHooks();
 registerWebOutboxHooks();
+registerPendingCompletionFlush(); // タブ非表示・離脱時の5秒Undo待機を即時確定（#512のMobile対策と対称）
 startAuthSessionListener();
 
 createRoot(document.getElementById('root')!).render(

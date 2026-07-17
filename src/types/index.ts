@@ -109,6 +109,8 @@ export interface TaskStoreState {
     deleteSubtask: (taskId: string, subtaskId: string) => void;
     toggleSubtaskComplete: (taskId: string, subtaskId: string) => void;
     cancelPendingCompletion: (taskId: string) => void;
+    /** 待機中の完了を全て即時確定する（タブ非表示・離脱時の取りこぼし防止） */
+    flushPendingCompletions: () => void;
 }
 
 export interface HabitStoreState {

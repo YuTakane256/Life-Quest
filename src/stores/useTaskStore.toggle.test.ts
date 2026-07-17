@@ -61,6 +61,25 @@ describe('useTaskStore.toggleComplete', () => {
         expect(logTaskXpSpy).toHaveBeenCalled();
     });
 
+    it('flushPendingCompletions: 5秒経過前でも即座に確定処理を走らせる', async () => {
+        const id = seedTask('A', 'high');
+        useTaskStore.getState().toggleComplete(id);
+        expect(addXpSpy).not.toHaveBeenCalled();
+
+        useTaskStore.getState().flushPendingCompletions();
+        expect(useTaskStore.getState().pendingCompletions).toHaveLength(0); // 確定フラグは同期
+        await vi.advanceTimersByTimeAsync(0); // 報酬付与は非同期（動的import経由）
+
+        expect(addXpSpy).toHaveBeenCalledWith(XP_CONFIG.REWARD_BY_PRIORITY.high);
+        const task = useTaskStore.getState().tasks.find((t) => t.id === id);
+        expect(task?.completed).toBe(true);
+    });
+
+    it('flushPendingCompletions: pendingが無ければ何もしない', () => {
+        useTaskStore.getState().flushPendingCompletions();
+        expect(addXpSpy).not.toHaveBeenCalled();
+    });
+
     it('cancelPendingCompletion: pending から消え、確定処理は走らない', async () => {
         const id = seedTask();
         useTaskStore.getState().toggleComplete(id);
