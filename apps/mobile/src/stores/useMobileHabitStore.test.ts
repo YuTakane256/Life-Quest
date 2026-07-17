@@ -6,6 +6,7 @@ import { XP_CONFIG } from '@life-quest/core/progression';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileHabitStore } from './useMobileHabitStore';
 import { useMobileStatsStore } from './useMobileStatsStore';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -15,7 +16,12 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
     },
 }));
 
+vi.mock('../platform/cloudOutbox', () => ({
+    enqueueCloudOperation: vi.fn(async () => true),
+}));
+
 const storage = vi.mocked(AsyncStorage);
+const enqueueMock = vi.mocked(enqueueCloudOperation);
 
 function habit(id: string): Habit {
     const value = createHabit(id, `Habit ${id}`, 'general', '2026-07-02T00:00:00.000Z');
@@ -219,6 +225,81 @@ describe('useMobileHabitStore', () => {
             useMobileHabitStore.getState().deleteHabit(habitId);
 
             expect(useMobileStatsStore.getState().habitLog['2026-07-10']).toEqual({ count: 1, allComplete: true });
+        });
+    });
+
+    describe('クラウド同期の配線', () => {
+        it('addHabitはupsert_habitをenqueueする', () => {
+            useMobileHabitStore.getState().addHabit('運動', 'health');
+            const habitId = useMobileHabitStore.getState().habits[0].id;
+
+            expect(enqueueMock).toHaveBeenCalledWith('upsert_habit', {
+                p_id: habitId,
+                p_name: '運動',
+                p_category_id: 'health',
+            }, { trackEntityId: habitId });
+        });
+
+        it('toggleTodayはset_habit_logをenqueueする（completed/memoの絶対状態）', async () => {
+            useMobileHabitStore.getState().addHabit('運動');
+            const habitId = useMobileHabitStore.getState().habits[0].id;
+            enqueueMock.mockClear();
+
+            useMobileHabitStore.getState().toggleToday(habitId, '2026-07-10');
+            await vi.waitFor(() => expect(enqueueMock).toHaveBeenCalledWith('set_habit_log', {
+                p_habit_id: habitId,
+                p_date: '2026-07-10',
+                p_completed: true,
+                p_memo: '',
+            }, { dependsOnEntityIds: [habitId], trackEntityId: habitId }));
+        });
+
+        it('全達成でclaim_habit_bonusがset_habit_logの後にenqueueされる', async () => {
+            useMobileHabitStore.setState({ habits: [habit('h1')] });
+            const date = '2026-07-10';
+
+            useMobileHabitStore.getState().toggleToday('h1', date);
+
+            await vi.waitFor(() => expect(enqueueMock).toHaveBeenCalledWith(
+                'claim_habit_bonus', { date }, { dependsOnEntityIds: ['h1'] },
+            ));
+            const operations = enqueueMock.mock.calls.map((call) => call[0]);
+            expect(operations.indexOf('set_habit_log')).toBeLessThan(operations.indexOf('claim_habit_bonus'));
+        });
+
+        it('setHabitMemoはset_habit_logをenqueueする', () => {
+            useMobileHabitStore.getState().addHabit('運動');
+            const habitId = useMobileHabitStore.getState().habits[0].id;
+            enqueueMock.mockClear();
+
+            useMobileHabitStore.getState().setHabitMemo(habitId, '2026-07-10', 'メモ');
+
+            expect(enqueueMock).toHaveBeenCalledWith('set_habit_log', {
+                p_habit_id: habitId,
+                p_date: '2026-07-10',
+                p_completed: false,
+                p_memo: 'メモ',
+            }, { dependsOnEntityIds: [habitId], trackEntityId: habitId });
+        });
+
+        it('markRestDayはset_rest_dayをenqueueする', () => {
+            useMobileHabitStore.getState().markRestDay('2026-07-10');
+
+            expect(enqueueMock).toHaveBeenCalledWith(
+                'set_rest_day', { p_date: '2026-07-10', p_active: true },
+            );
+        });
+
+        it('deleteHabitはdelete_habitをenqueueする', () => {
+            useMobileHabitStore.getState().addHabit('運動');
+            const habitId = useMobileHabitStore.getState().habits[0].id;
+            enqueueMock.mockClear();
+
+            useMobileHabitStore.getState().deleteHabit(habitId);
+
+            expect(enqueueMock).toHaveBeenCalledWith(
+                'delete_habit', { p_id: habitId }, { dependsOnEntityIds: [habitId] },
+            );
         });
     });
 });

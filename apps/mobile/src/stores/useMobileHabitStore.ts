@@ -19,6 +19,7 @@ import { clampString } from '@life-quest/core/validation';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileStatsStore } from './useMobileStatsStore';
 
@@ -64,6 +65,11 @@ export const useMobileHabitStore = create<MobileHabitStore>()(
                 const habit = createHabit(createMobileId(), name, category, new Date().toISOString());
                 if (!habit) return false;
                 set((state) => ({ habits: [...state.habits, habit] }));
+                void enqueueCloudOperation('upsert_habit', {
+                    p_id: habit.id,
+                    p_name: habit.name,
+                    p_category_id: habit.categoryId,
+                }, { trackEntityId: habit.id });
                 return true;
             },
             toggleToday: (habitId, date) => {
@@ -83,18 +89,38 @@ export const useMobileHabitStore = create<MobileHabitStore>()(
                 });
 
                 // 受給資格は習慣データと同じ書き込みで保存し、報酬台帳と再照合する。
-                if (get().rewardEligibleDates.includes(date)) {
+                const eligible = get().rewardEligibleDates.includes(date);
+                if (eligible) {
                     useMobileGameStore.getState().grantHabitAllCompleteBonus(date);
                 }
 
                 // 統計ログ記録（Web useHabitStore.ts と同一の計算。報酬の可否に関わらず
                 // その日の状態をそのまま記録する＝上書き。Undo等で戻した場合も直近状態を反映）
                 const after = get();
+                const record = after.records.find((r) => r.habitId === habitId && r.date === date);
                 const completedCount = after.records.filter(
                     (record) => record.date === date && record.completed
                 ).length;
                 const allComplete = areAllHabitsComplete(after.habits, after.records, date);
                 useMobileStatsStore.getState().logHabitActivity(date, completedCount, allComplete);
+
+                // クラウドへcompleted/memoの絶対状態を送る（set_habit_logはサーバー側で
+                // stats_daily.habit_countも継続更新する）。全達成報酬(claim_habit_bonus)は
+                // サーバーが更新後のhabit_logsで検証するため、set_habit_logの後に
+                // 依存させて送る（pendingEntityOpsのhabitIdキーを使い回し、直前opの
+                // 完了を待たせる）。
+                void (async () => {
+                    await enqueueCloudOperation('set_habit_log', {
+                        p_habit_id: habitId,
+                        p_date: date,
+                        p_completed: record?.completed ?? false,
+                        p_memo: record?.memo ?? '',
+                    }, { dependsOnEntityIds: [habitId], trackEntityId: habitId });
+
+                    if (eligible) {
+                        await enqueueCloudOperation('claim_habit_bonus', { date }, { dependsOnEntityIds: [habitId] });
+                    }
+                })();
             },
             setHabitMemo: (habitId, date, memo) => {
                 const state = get();
@@ -114,14 +140,23 @@ export const useMobileHabitStore = create<MobileHabitStore>()(
                         : [...current.records, { habitId, date, completed: false, memo: safeMemo }]
                             .slice(-HABIT_LIMITS.maxRecords),
                 }));
+
+                void enqueueCloudOperation('set_habit_log', {
+                    p_habit_id: habitId,
+                    p_date: date,
+                    p_completed: existing?.completed ?? false,
+                    p_memo: safeMemo,
+                }, { dependsOnEntityIds: [habitId], trackEntityId: habitId });
             },
             markRestDay: (date) => {
                 if (!get().hasHydrated) return;
                 set((state) => ({ restDays: markRestDay(state.restDays, date, MAX_HABIT_REST_DAYS) }));
+                void enqueueCloudOperation('set_rest_day', { p_date: date, p_active: true });
             },
             deleteHabit: (habitId) => {
                 if (!get().hasHydrated) return;
                 set((state) => removeHabitData(state.habits, state.records, habitId));
+                void enqueueCloudOperation('delete_habit', { p_id: habitId }, { dependsOnEntityIds: [habitId] });
             },
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
         }),
