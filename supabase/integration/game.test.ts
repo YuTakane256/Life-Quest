@@ -436,6 +436,86 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         expect(after[0].count).toBe('1');
     });
 
+    it('upsert_habit/set_habit_log/set_rest_day/delete_habit: 冪等・所有者検証・stats_daily.habit_count継続更新', async () => {
+        const habitId = uuid();
+        const upsertRes = await user.client.rpc('upsert_habit', {
+            p_id: habitId, p_name: '朝の散歩', p_category_id: 'health', p_key: uuid(),
+        });
+        expect(upsertRes.error).toBeNull();
+
+        // 同一キー再送は副作用なし（同じ習慣が重複作成されない）
+        const replayKey = uuid();
+        await user.client.rpc('upsert_habit', { p_id: uuid(), p_name: '別ID同キー', p_key: replayKey });
+        await user.client.rpc('upsert_habit', { p_id: uuid(), p_name: '別ID同キー2', p_key: replayKey });
+        const { rows: habitCount } = await pg.query(
+            "select count(*) from habits where user_id=$1 and name like '別ID%'", [user.id],
+        );
+        expect(habitCount[0].count).toBe('1');
+
+        // 他人の習慣idを渡してもRLSではなく明示検証で拒否される（所有権はauth.uid()経由）
+        const otherHabitId = uuid();
+        await other.client.rpc('upsert_habit', { p_id: otherHabitId, p_name: '他人の習慣', p_key: uuid() });
+        const forbidden = await user.client.rpc('set_habit_log', {
+            p_habit_id: otherHabitId, p_date: '2026-07-10', p_completed: true, p_memo: '', p_key: uuid(),
+        });
+        expect(forbidden.error?.message).toContain('not_found_or_forbidden');
+
+        // set_habit_log: 絶対状態upsert。日付ごとにhabit_countを再集計しgreatestで反映する
+        const date = '2026-07-10';
+        const log1 = await user.client.rpc('set_habit_log', {
+            p_habit_id: habitId, p_date: date, p_completed: true, p_memo: 'メモ', p_key: uuid(),
+        });
+        expect(log1.error).toBeNull();
+        const { rows: statsAfterOn } = await pg.query(
+            'select habit_count from stats_daily where user_id=$1 and date=$2', [user.id, date],
+        );
+        expect(statsAfterOn[0].habit_count).toBe(1);
+
+        // トグルoff→on を繰り返してもhabit_countは真の同時達成数（1）を超えてインフレしない
+        await user.client.rpc('set_habit_log', {
+            p_habit_id: habitId, p_date: date, p_completed: false, p_memo: 'メモ', p_key: uuid(),
+        });
+        await user.client.rpc('set_habit_log', {
+            p_habit_id: habitId, p_date: date, p_completed: true, p_memo: 'メモ2', p_key: uuid(),
+        });
+        const { rows: statsAfterToggle } = await pg.query(
+            'select habit_count from stats_daily where user_id=$1 and date=$2', [user.id, date],
+        );
+        expect(statsAfterToggle[0].habit_count).toBe(1);
+        const { rows: logRow } = await pg.query(
+            'select completed, memo from habit_logs where user_id=$1 and habit_id=$2 and date=$3',
+            [user.id, habitId, date],
+        );
+        expect(logRow[0]).toMatchObject({ completed: true, memo: 'メモ2' });
+
+        // set_rest_day
+        const restRes = await user.client.rpc('set_rest_day', { p_date: '2026-07-11', p_active: true, p_key: uuid() });
+        expect(restRes.error).toBeNull();
+        const { rows: restRow } = await pg.query(
+            'select is_rest from rest_days where user_id=$1 and date=$2', [user.id, '2026-07-11'],
+        );
+        expect(restRow[0].is_rest).toBe(true);
+
+        // delete_habit: habitとhabit_logsが同一トランザクションでカスケード墓標化される
+        const delRes = await user.client.rpc('delete_habit', { p_id: habitId, p_key: uuid() });
+        expect(delRes.error).toBeNull();
+        const { rows: deletedHabit } = await pg.query(
+            'select deleted_at from habits where id=$1', [habitId],
+        );
+        expect(deletedHabit[0].deleted_at).not.toBeNull();
+        const { rows: deletedLog } = await pg.query(
+            'select deleted_at from habit_logs where user_id=$1 and habit_id=$2 and date=$3',
+            [user.id, habitId, date],
+        );
+        expect(deletedLog[0].deleted_at).not.toBeNull();
+
+        // 削除済み習慣へのset_habit_logは拒否される
+        const afterDelete = await user.client.rpc('set_habit_log', {
+            p_habit_id: habitId, p_date: date, p_completed: true, p_memo: '', p_key: uuid(),
+        });
+        expect(afterDelete.error?.message).toContain('not_found_or_forbidden');
+    });
+
     it('並行実行: 同じ宝箱を2本の別キーで同時に開いてもアイテムは1個だけ', async () => {
         const chestId = uuid();
         await insertWithVersion(async (v) => {

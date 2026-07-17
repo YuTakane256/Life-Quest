@@ -4,7 +4,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(56);
+select plan(60);
 
 -- 1. テーブル存在
 select has_table('public', 'sync_versions',  'sync_versions exists');
@@ -66,6 +66,14 @@ select ok(has_function_privilege('authenticated', 'public.upsert_task(uuid, text
     'authenticated can execute upsert_task');
 select ok(has_function_privilege('authenticated', 'public.delete_task(uuid, text)', 'execute'),
     'authenticated can execute delete_task');
+select ok(has_function_privilege('authenticated', 'public.upsert_habit(uuid, text, text, text)', 'execute'),
+    'authenticated can execute upsert_habit');
+select ok(has_function_privilege('authenticated', 'public.delete_habit(uuid, text)', 'execute'),
+    'authenticated can execute delete_habit');
+select ok(has_function_privilege('authenticated', 'public.set_rest_day(date, boolean, text)', 'execute'),
+    'authenticated can execute set_rest_day');
+select ok(has_function_privilege('authenticated', 'public.set_habit_log(uuid, date, boolean, text, text)', 'execute'),
+    'authenticated can execute set_habit_log');
 select ok(has_function_privilege('authenticated', 'public.upsert_profile(text, text, text, bigint, text)', 'execute'),
     'authenticated can execute upsert_profile');
 select ok(has_function_privilege('authenticated', 'public.pull_sync_batch(bigint, integer)', 'execute'),
