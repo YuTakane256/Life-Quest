@@ -14,8 +14,11 @@
  *   完了/取消（complete_task EF / uncomplete_task）
  * - サブタスク: 追加/削除（upsert_subtask / delete_subtask）、
  *   完了/取消（complete_subtask EF / uncomplete_subtask）
+ * - 習慣: 作成/削除（upsert_habit / delete_habit）、
+ *   日次記録・メモ（set_habit_log、completed/memoの絶対状態upsert）、
+ *   休養日（set_rest_day）、全達成ボーナス（claim_habit_bonus EF）
  * ## まだ同期しない操作（後続Issueで拡張）
- * - 習慣・休息日・設定（#512等のMobileパリティで配線）
+ * - 設定（#508等のMobileパリティで配線）
  * - ゲーム操作（宝箱開封・売却・合成・バトルは画面実装 #509/#514 で配線）
  * - 既知の限界: サブタスク完了連鎖による親タスク完了時、サーバーは
  *   親の報酬までは連鎖するが繰り返し次回分は生成しない（complete_task経由のみ）
@@ -30,6 +33,7 @@ import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 export const RPC_OPERATIONS: ReadonlySet<string> = new Set([
     'upsert_task', 'delete_task', 'upsert_subtask', 'delete_subtask',
     'uncomplete_task', 'uncomplete_subtask', 'upsert_profile',
+    'upsert_habit', 'delete_habit', 'set_rest_day', 'set_habit_log',
 ]);
 
 /** Edge Functionとして送る操作（bodyに idempotencyKey として opId を注入する） */
