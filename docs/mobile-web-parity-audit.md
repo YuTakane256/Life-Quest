@@ -10,9 +10,12 @@
 > snapshots, offline outbox, RLS, LWW conflict resolution, and reward
 > idempotency ledgers). The "Current application surfaces" and "Executive
 > summary" sections below describe the pre-implementation gap and are kept for
-> historical context; do not treat them as the current feature matrix. Tracking
-> issue #473 remains open for residual follow-up work only (see its issue body
-> for current status).
+> historical context; do not treat them as the current feature matrix. As of
+> 2026-07-17, Web also has a continuous cloud write path (task, subtask, and
+> habit mutations enqueue to the same outbox engine Mobile uses, shared via
+> `@life-quest/core/cloudOutboxController`), closing the previous one-directional
+> (Mobile-only) sync gap. Tracking issue #473 remains open for residual
+> follow-up work only (see its issue body for current status).
 
 ## Goal
 

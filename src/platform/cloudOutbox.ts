@@ -6,8 +6,17 @@
  * 集約されている。このファイルはWeb固有の依存（localStorageアダプタ、
  * `supabase.ts`/`edgeFunctions.ts`のクライアント）を注入する薄いアダプタ。
  *
- * この時点では registerWebOutboxHooks() を呼ぶ配線先（ストアからのenqueue）は
- * まだ無い。タスク・習慣ストアからの配線は後続PRで行う。
+ * ## 現時点でクラウドへ同期されるWeb操作
+ * - タスク: 作成/削除（upsert_task 全項目 / delete_task）、
+ *   完了/取消（complete_task EF / uncomplete_task）
+ * - サブタスク: 追加/削除（upsert_subtask / delete_subtask）、
+ *   完了/取消（complete_subtask EF / uncomplete_subtask）
+ * - 習慣: 作成/削除（upsert_habit / delete_habit）、
+ *   日次記録・メモ（set_habit_log、completed/memoの絶対状態upsert）、
+ *   休養日（set_rest_day）、全達成ボーナス（claim_habit_bonus EF）
+ * ## まだ同期しない操作
+ * - 設定
+ * - ゲーム操作（宝箱開封・売却・合成・バトル。Mobile側も同様に未配線）
  */
 import {
     createCloudOutboxController,
