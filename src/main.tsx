@@ -6,6 +6,7 @@ import { startAuthSessionListener } from './platform/auth';
 import { registerWebAuthStoreHooks } from './platform/authStores';
 import { registerWebCloudMigrationHooks } from './platform/cloudMigration';
 import { registerWebCloudSyncHooks } from './platform/cloudSync';
+import { registerWebOutboxHooks } from './platform/cloudOutbox';
 import { startWebCanonicalSync } from './platform/canonicalSync';
 
 // 旧quest-board-*データのcanonical移行と、以降のストア変更の書き戻しを開始する。
@@ -17,6 +18,7 @@ startWebCanonicalSync();
 registerWebAuthStoreHooks();
 registerWebCloudMigrationHooks(); // 初回移行はプル開始より先（#506）
 registerWebCloudSyncHooks();
+registerWebOutboxHooks();
 startAuthSessionListener();
 
 createRoot(document.getElementById('root')!).render(
