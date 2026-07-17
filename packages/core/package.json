@@ -36,6 +36,10 @@
       "types": "./src/cloudImport.ts",
       "import": "./src/cloudImport.ts"
     },
+    "./cloudOutboxController": {
+      "types": "./src/cloudOutboxController.ts",
+      "import": "./src/cloudOutboxController.ts"
+    },
     "./cloudPull": {
       "types": "./src/cloudPull.ts",
       "import": "./src/cloudPull.ts"
