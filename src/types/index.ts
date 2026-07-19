@@ -182,6 +182,15 @@ export interface GameStoreState {
     incrementGachaCount: () => void;
     checkGachaMilestones: () => void;
     openChest: (chestId: string) => void;
+    /** open_chest（クラウド権威）の結果を適用する。未知・開封済みchestIdは無視する。 */
+    applyCloudChestResult: (
+        chestId: string,
+        itemId: string | null,
+        templateId: string | null,
+        starterCharacter: boolean,
+    ) => void;
+    /** サーバーが開封済み（409）と応答した場合、演出無しでローカル表示だけ消す。 */
+    discardSyncedChest: (chestId: string) => void;
     equipItem: (equipmentId: string) => void;
     unequipItem: (equipmentId: string) => void;
     autoEquipBest: () => boolean; // 各スロットで最強の装備を装着。変更があれば true。

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     EQUIPMENT_POOL,
     GACHA_CONFIG,
+    getEquipmentTemplateById,
     getMilestoneAtCount,
     rollEquipmentTemplate,
     SELL_XP_BY_RARITY,
@@ -107,5 +108,17 @@ describe('rollEquipmentTemplate', () => {
             expect(template).not.toBeNull();
             expect(EQUIPMENT_POOL).toContainEqual(template);
         }
+    });
+});
+
+describe('getEquipmentTemplateById', () => {
+    it('既知のtemplate_idからEquipmentTemplateを逆引きする', () => {
+        for (const template of EQUIPMENT_POOL) {
+            expect(getEquipmentTemplateById(template.id)).toEqual(template);
+        }
+    });
+
+    it('未知のIDにはnullを返す', () => {
+        expect(getEquipmentTemplateById('not-a-real-template-id')).toBeNull();
     });
 });
