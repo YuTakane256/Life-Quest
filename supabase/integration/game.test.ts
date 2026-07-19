@@ -307,14 +307,62 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         // 素材が墓標化され上位レアリティの結果1点が生まれる
         const ok = await callFn('synthesize_items', { itemIds: commons, idempotencyKey: uuid() });
         expect(ok.status).toBe(200);
-        const body = (await ok.json()) as { result_id: string };
+        const body = (await ok.json()) as { result_id: string; template_id: string };
         const { rows } = await pg.query(
             'select template_id from inventory_items where id=$1 and deleted_at is null', [body.result_id]);
         expect(rows).toHaveLength(1);
         expect(['iron_sword', 'chain_mail', 'silver_ring']).toContain(rows[0].template_id);
+        // レスポンスのtemplate_idが実際に挿入された装備と一致する（DB関数のv_result由来）
+        expect(body.template_id).toBe(rows[0].template_id);
         const { rows: gone } = await pg.query(
             'select count(*) from inventory_items where id = any($1) and deleted_at is null', [commons]);
         expect(gone[0].count).toBe('0');
+    });
+
+    it('冪等キー再送（同時実行・同一キー）: open_chest/synthesize_itemsは両方とも同じtemplate_idを返す', async () => {
+        // EF層はchest.opened/inventory在庫を事前チェックしてから apply を呼ぶため、
+        // 「成功後に同じキーで送り直す」逐次リプレイはEF層の事前チェックで409になり
+        // DB関数のreserve_idempotency_keyまで到達しない。DB側の冪等キー保護が
+        // 実際に効くのは、2リクエストが同一キーでほぼ同時に飛び、EF層の事前チェックを
+        // 両方通過してからDB関数で競合するケース。その場合も両方の呼び出し元へ
+        // 同一のtemplate_id（実際に挿入された装備）が返ることを検証する。
+        const chestId = uuid();
+        await insertWithVersion(async (v) => {
+            await pg.query(
+                `insert into chests (id, user_id, chest_type, label, version) values ($1, $2, 'wood', '木の宝箱', $3)`,
+                [chestId, user.id, v],
+            );
+        });
+        const chestKey = uuid();
+        const [chestA, chestB] = await Promise.all([
+            callFn('open_chest', { chestId, idempotencyKey: chestKey }),
+            callFn('open_chest', { chestId, idempotencyKey: chestKey }),
+        ]);
+        expect(chestA.status).toBe(200);
+        expect(chestB.status).toBe(200);
+        const chestBodyA = (await chestA.json()) as { item_id: string; template_id: string };
+        const chestBodyB = (await chestB.json()) as { item_id: string; template_id: string };
+        expect(chestBodyB).toEqual(chestBodyA);
+
+        const ingredients = [uuid(), uuid(), uuid()];
+        await insertWithVersion(async (v) => {
+            for (const id of ingredients) {
+                await pg.query(
+                    `insert into inventory_items (id, user_id, template_id, version) values ($1, $2, 'wooden_ring', $3)`,
+                    [id, user.id, v],
+                );
+            }
+        });
+        const synthKey = uuid();
+        const [synthA, synthB] = await Promise.all([
+            callFn('synthesize_items', { itemIds: ingredients, idempotencyKey: synthKey }),
+            callFn('synthesize_items', { itemIds: ingredients, idempotencyKey: synthKey }),
+        ]);
+        expect(synthA.status).toBe(200);
+        expect(synthB.status).toBe(200);
+        const synthBodyA = (await synthA.json()) as { result_id: string; template_id: string };
+        const synthBodyB = (await synthB.json()) as { result_id: string; template_id: string };
+        expect(synthBodyB).toEqual(synthBodyA);
     });
 
     it('complete_subtask: 半分XP・生涯1回、全サブタスク完了で親が自動完了し親報酬も連鎖する', async () => {
