@@ -11,6 +11,7 @@ import type {
     EquipmentTemplate,
     Rarity,
 } from '@life-quest/core/equipment';
+import type { BattleAction } from '@life-quest/core/battle';
 
 export type { Priority, Recurrence, Subtask, Task } from '@life-quest/core/tasks';
 export type { Habit, HabitDailyRecord, RestDay } from '@life-quest/core/habits';
@@ -67,6 +68,15 @@ export interface BattleLog {
     enemyHp: number;
 }
 
+/** 戦闘開始時点で固定するプレイヤー実効ステータス（core一貫性のため戦闘中の装備変更等の影響を排除する） */
+export interface BattlePlayerSnapshot {
+    attack: number;
+    defense: number;
+    maxHp: number;
+    level: number;
+    name: string;
+}
+
 export interface BattleState {
     status: BattleStatus;
     currentStage: number;
@@ -78,6 +88,14 @@ export interface BattleState {
     skillCooldowns: Record<string, number>;
     guardTurnsRemaining: number;
     guardDamageReduction: number;
+    /** サーバー再計算用に送る行動列（クラウドバトルのみ使用） */
+    actions: BattleAction[];
+    /** クラウドバトルの識別子。ローカル戦闘ならnull */
+    battleAttemptId: string | null;
+    /** 'cloud'ならXP付与・進行度更新をresolve結果待ちにする（サーバー側二重付与防止） */
+    rewardMode: 'local' | 'cloud';
+    /** 戦闘開始時点で固定したプレイヤーステータス。nullなら未開始 */
+    playerSnapshot: BattlePlayerSnapshot | null;
 }
 
 /** 過去のバトル結果スナップショット。useBattleHistoryStore で永続化。 */
@@ -171,6 +189,10 @@ export interface GameStoreState {
     clearExpiredDebuffs: () => void;
     getEffectiveStats: () => { attack: number; defense: number; maxHp: number };
     startBattle: (stage: number) => void;
+    /** クラウド権威バトルとして開始する（サーバーが返したスナップショットで固定）。 */
+    startCloudBattle: (stage: number, battleAttemptId: string, playerSnapshot: BattlePlayerSnapshot, enemy: Enemy) => void;
+    /** resolve_battle_attemptの結果を適用する。attemptId不一致（別バトルへ遷移済み等）なら無視する。 */
+    applyResolvedCloudBattle: (battleAttemptId: string, outcome: 'victory' | 'defeat', granted: boolean) => void;
     processBattleTurn: () => void;
     activateBattleSkill: (skillId: string) => boolean;
     resetBattle: () => void;

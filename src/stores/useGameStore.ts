@@ -8,6 +8,7 @@ import type {
     EquipmentSlot,
     ChestReward,
     BattleState,
+    BattlePlayerSnapshot,
     Enemy,
     BattleLog,
     GameStoreState,
@@ -44,7 +45,7 @@ import {
 } from '@life-quest/core/equipment';
 import { applyCharacterXp } from '@life-quest/core/progression';
 import { getMilestoneAtCount, rollEquipmentTemplate } from '@life-quest/core/rewards';
-import { applyBattleAction, type BattleActors, type BattleEngineState } from '@life-quest/core/battle';
+import { applyBattleAction, type BattleAction, type BattleActors, type BattleEngineState } from '@life-quest/core/battle';
 
 export {
     MAX_TOTAL_XP,
@@ -143,6 +144,10 @@ const initialBattle: BattleState = {
     skillCooldowns: {},
     guardTurnsRemaining: 0,
     guardDamageReduction: 0,
+    actions: [],
+    battleAttemptId: null,
+    rewardMode: 'local',
+    playerSnapshot: null,
 };
 
 interface GameStorePersisted {
@@ -342,6 +347,12 @@ function sanitizeBattle(raw: unknown, character: CharacterStats): BattleState {
             BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION,
             isFiniteNumber(raw.guardDamageReduction) ? raw.guardDamageReduction : 0,
         )),
+        // クラウド属性は復元しない。古いbattleAttemptIdでの誤ったresolve送信を防ぐため
+        // （リロード後は常にローカル扱いへフォールバックする）。
+        actions: [],
+        battleAttemptId: null,
+        rewardMode: 'local',
+        playerSnapshot: null,
     };
 }
 
@@ -539,6 +550,7 @@ export const useGameStore = create<GameStoreState>()(
                 const stageData = BATTLE_CONFIG.STAGES.find((s) => s.stage === stage);
                 if (!stageData) return;
                 const effectiveStats = get().getEffectiveStats();
+                const character = get().character;
                 const enemy: Enemy = {
                     stage: stageData.stage,
                     name: stageData.name,
@@ -547,6 +559,13 @@ export const useGameStore = create<GameStoreState>()(
                     attack: stageData.attack,
                     defense: stageData.defense,
                     xpReward: stageData.xpReward,
+                };
+                const playerSnapshot: BattlePlayerSnapshot = {
+                    attack: effectiveStats.attack,
+                    defense: effectiveStats.defense,
+                    maxHp: effectiveStats.maxHp,
+                    level: character.level,
+                    name: character.name,
                 };
                 set({
                     battle: {
@@ -559,21 +578,66 @@ export const useGameStore = create<GameStoreState>()(
                         skillCooldowns: {},
                         guardTurnsRemaining: 0,
                         guardDamageReduction: 0,
+                        actions: [],
+                        battleAttemptId: null,
+                        rewardMode: 'local',
+                        playerSnapshot,
                     },
                 });
             },
 
+            startCloudBattle: (stage, battleAttemptId, playerSnapshot, enemy) => {
+                const currentBattle = get().battle;
+                if (!canStartBattleStage(currentBattle, stage)) return;
+                set({
+                    battle: {
+                        ...currentBattle,
+                        status: 'fighting',
+                        currentStage: stage,
+                        enemy,
+                        playerHp: playerSnapshot.maxHp,
+                        logs: [],
+                        skillCooldowns: {},
+                        guardTurnsRemaining: 0,
+                        guardDamageReduction: 0,
+                        actions: [],
+                        battleAttemptId,
+                        rewardMode: 'cloud',
+                        playerSnapshot,
+                    },
+                });
+            },
+
+            applyResolvedCloudBattle: (battleAttemptId, outcome, granted) => {
+                const { battle } = get();
+                // 別バトルへ既に遷移済み（リトライ・リロード等）なら、遅延到着したresolve結果は無視する
+                if (battle.battleAttemptId !== battleAttemptId) return;
+
+                if (outcome === 'victory') {
+                    set((state) => ({
+                        battle: { ...state.battle, maxClearedStage: Math.max(state.battle.maxClearedStage, state.battle.currentStage) },
+                    }));
+                    if (granted && battle.enemy) {
+                        get().addXp(battle.enemy.xpReward);
+                    }
+                }
+                if (battle.enemy) {
+                    recordBattleResult(battle.currentStage, battle.enemy, outcome, battle.logs);
+                }
+            },
+
             processBattleTurn: () => {
-                const { battle, character } = get();
-                if (battle.status !== 'fighting' || !battle.enemy) return;
-                const effectiveStats = get().getEffectiveStats();
+                const { battle } = get();
+                if (battle.status !== 'fighting' || !battle.enemy || !battle.playerSnapshot) return;
+                const snapshot = battle.playerSnapshot;
                 const actors: BattleActors = {
-                    player: { attack: effectiveStats.attack, defense: effectiveStats.defense, maxHp: effectiveStats.maxHp },
+                    player: { attack: snapshot.attack, defense: snapshot.defense, maxHp: snapshot.maxHp },
                     enemy: { ...battle.enemy },
-                    playerLevel: character.level,
-                    playerName: character.name,
+                    playerLevel: snapshot.level,
+                    playerName: snapshot.name,
                 };
-                const { state: next } = applyBattleAction(toBattleEngineState(battle), { type: 'attack' }, actors);
+                const action: BattleAction = { type: 'attack' };
+                const { state: next } = applyBattleAction(toBattleEngineState(battle), action, actors);
                 set({
                     battle: {
                         ...battle,
@@ -584,25 +648,29 @@ export const useGameStore = create<GameStoreState>()(
                         skillCooldowns: next.skillCooldowns,
                         guardTurnsRemaining: next.guardTurnsRemaining,
                         guardDamageReduction: next.guardDamageReduction,
+                        actions: [...battle.actions, action],
                     },
                 });
-                if (next.outcome === 'victory') get().addXp(battle.enemy.xpReward);
-                if (next.outcome !== 'ongoing') {
-                    recordBattleResult(battle.currentStage, battle.enemy, next.outcome, next.logs);
+                if (battle.rewardMode === 'local') {
+                    if (next.outcome === 'victory') get().addXp(battle.enemy.xpReward);
+                    if (next.outcome !== 'ongoing') {
+                        recordBattleResult(battle.currentStage, battle.enemy, next.outcome, next.logs);
+                    }
                 }
             },
 
             activateBattleSkill: (skillId: string) => {
-                const { battle, character } = get();
-                if (battle.status !== 'fighting' || !battle.enemy) return false;
-                const effectiveStats = get().getEffectiveStats();
+                const { battle } = get();
+                if (battle.status !== 'fighting' || !battle.enemy || !battle.playerSnapshot) return false;
+                const snapshot = battle.playerSnapshot;
                 const actors: BattleActors = {
-                    player: { attack: effectiveStats.attack, defense: effectiveStats.defense, maxHp: effectiveStats.maxHp },
+                    player: { attack: snapshot.attack, defense: snapshot.defense, maxHp: snapshot.maxHp },
                     enemy: { ...battle.enemy },
-                    playerLevel: character.level,
-                    playerName: character.name,
+                    playerLevel: snapshot.level,
+                    playerName: snapshot.name,
                 };
-                const result = applyBattleAction(toBattleEngineState(battle), { type: 'skill', skillId }, actors);
+                const action: BattleAction = { type: 'skill', skillId };
+                const result = applyBattleAction(toBattleEngineState(battle), action, actors);
                 if (!result.valid) return false;
                 const next = result.state;
                 set({
@@ -615,11 +683,14 @@ export const useGameStore = create<GameStoreState>()(
                         skillCooldowns: next.skillCooldowns,
                         guardTurnsRemaining: next.guardTurnsRemaining,
                         guardDamageReduction: next.guardDamageReduction,
+                        actions: [...battle.actions, action],
                     },
                 });
-                if (next.outcome === 'victory') get().addXp(battle.enemy.xpReward);
-                if (next.outcome !== 'ongoing') {
-                    recordBattleResult(battle.currentStage, battle.enemy, next.outcome, next.logs);
+                if (battle.rewardMode === 'local') {
+                    if (next.outcome === 'victory') get().addXp(battle.enemy.xpReward);
+                    if (next.outcome !== 'ongoing') {
+                        recordBattleResult(battle.currentStage, battle.enemy, next.outcome, next.logs);
+                    }
                 }
                 return true;
             },
@@ -633,6 +704,10 @@ export const useGameStore = create<GameStoreState>()(
                     skillCooldowns: {},
                     guardTurnsRemaining: 0,
                     guardDamageReduction: 0,
+                    actions: [],
+                    battleAttemptId: null,
+                    rewardMode: 'local',
+                    playerSnapshot: null,
                 },
             })),
 
@@ -650,6 +725,10 @@ export const useGameStore = create<GameStoreState>()(
                         skillCooldowns: {},
                         guardTurnsRemaining: 0,
                         guardDamageReduction: 0,
+                        actions: [],
+                        battleAttemptId: null,
+                        rewardMode: 'local',
+                        playerSnapshot: null,
                     },
                 };
             }),

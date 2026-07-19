@@ -32,6 +32,10 @@ function reset() {
             skillCooldowns: {},
             guardTurnsRemaining: 0,
             guardDamageReduction: 0,
+            actions: [],
+            battleAttemptId: null,
+            rewardMode: 'local',
+            playerSnapshot: null,
         },
     });
 }
