@@ -80,6 +80,10 @@
       "types": "./src/gameState.ts",
       "import": "./src/gameState.ts"
     },
+    "./gameCloud": {
+      "types": "./src/gameCloud.ts",
+      "import": "./src/gameCloud.ts"
+    },
     "./notifications": {
       "types": "./src/notifications.ts",
       "import": "./src/notifications.ts"
