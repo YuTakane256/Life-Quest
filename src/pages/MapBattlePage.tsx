@@ -14,6 +14,7 @@ import { getBattleBackground, getMapBackground } from '../config/mapAssets';
 import heroImg from '@life-quest/assets/images/hero.png';
 import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { getEnemyImageSrc } from '../config/enemyImages';
+import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
 
 
 function getEnemyImage(stage: number) {
@@ -47,6 +48,8 @@ export function MapBattlePage() {
     const battleIntervalRef = useRef<number | null>(null);
     const logEndRef = useRef<HTMLDivElement>(null);
     const effectiveStats = getEffectiveStats();
+    const { resolveState, granted, retry } = useCloudBattleResolve();
+    const isSyncingResult = battle.rewardMode === 'cloud' && resolveState === 'syncing';
 
     const selectedMap = MAP_CONFIG.find(m => m.id === selectedMapId) || MAP_CONFIG[0];
     const mapStages = BATTLE_CONFIG.STAGES.filter(
@@ -195,7 +198,22 @@ export function MapBattlePage() {
                     <div className="rounded-xl p-5 text-center animate-fade-in mb-4" style={{ backgroundColor: 'var(--color-bg-card)', border: '2px solid var(--color-accent-gold)' }}>
                         <Trophy size={48} className="mx-auto mb-2" style={{ color: 'var(--color-accent-gold)' }} />
                         <h3 className="text-xl font-bold mb-1" style={{ color: 'var(--color-accent-gold)' }}>勝利！</h3>
-                        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>{battle.enemy?.xpReward} XP を獲得！</p>
+                        {battle.rewardMode === 'cloud' ? (
+                            <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+                                {resolveState === 'syncing' && '報酬を同期中…'}
+                                {resolveState === 'done' && (granted
+                                    ? `${battle.enemy?.xpReward} XP を獲得！`
+                                    : '同期済み（既に付与済みです）')}
+                                {resolveState === 'error' && (
+                                    <span style={{ color: 'var(--color-text-danger)' }}>
+                                        報酬の同期に失敗しました。
+                                        <button onClick={retry} className="underline ml-1" style={{ color: 'var(--color-accent-primary)' }}>再送</button>
+                                    </span>
+                                )}
+                            </p>
+                        ) : (
+                            <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>{battle.enemy?.xpReward} XP を獲得！</p>
+                        )}
                         <div className="flex gap-2">
                             <button onClick={() => {
                                 const nextStage = Math.min(battle.currentStage + 1, BATTLE_CONFIG.STAGES.length);
@@ -203,12 +221,14 @@ export function MapBattlePage() {
                                 startBattle(nextStage);
                                 setShowVictoryDialog(false);
                             }}
-                                className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1"
+                                disabled={isSyncingResult}
+                                className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                                 <ChevronRight size={18} /> 次へ
                             </button>
                             <button onClick={() => { resetBattle(); setShowVictoryDialog(false); }}
-                                className="px-5 py-3 rounded-lg text-base"
+                                disabled={isSyncingResult}
+                                className="px-5 py-3 rounded-lg text-base disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>
                                 マップへ
                             </button>
@@ -221,15 +241,24 @@ export function MapBattlePage() {
                     <div className="rounded-xl p-5 text-center animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '2px solid var(--color-text-danger)' }}>
                         <Skull size={48} className="mx-auto mb-2" style={{ color: 'var(--color-text-danger)' }} />
                         <h3 className="text-xl font-bold mb-1" style={{ color: 'var(--color-text-danger)' }}>敗北...</h3>
-                        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>レベルを上げて再挑戦しましょう！</p>
+                        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+                            {battle.rewardMode === 'cloud' && resolveState === 'error' ? (
+                                <span style={{ color: 'var(--color-text-danger)' }}>
+                                    結果の同期に失敗しました。
+                                    <button onClick={retry} className="underline ml-1" style={{ color: 'var(--color-accent-primary)' }}>再送</button>
+                                </span>
+                            ) : 'レベルを上げて再挑戦しましょう！'}
+                        </p>
                         <div className="flex gap-2">
                             <button onClick={() => startBattle(battle.currentStage)}
-                                className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1"
+                                disabled={isSyncingResult}
+                                className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                                 <RotateCcw size={18} /> リトライ
                             </button>
                             <button onClick={resetBattle}
-                                className="px-5 py-3 rounded-lg text-base"
+                                disabled={isSyncingResult}
+                                className="px-5 py-3 rounded-lg text-base disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>
                                 マップへ
                             </button>
