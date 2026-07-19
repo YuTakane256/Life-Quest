@@ -46,6 +46,7 @@ import {
 import { applyCharacterXp } from '@life-quest/core/progression';
 import { getEquipmentTemplateById, getMilestoneAtCount, rollEquipmentTemplate } from '@life-quest/core/rewards';
 import { applyBattleAction, type BattleAction, type BattleActors, type BattleEngineState } from '@life-quest/core/battle';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 
 export {
     MAX_TOTAL_XP,
@@ -529,6 +530,24 @@ export const useGameStore = create<GameStoreState>()(
                 }));
             },
 
+            /**
+             * synthesize_items（クラウド権威）の結果を適用する。装備IDはサーバーの
+             * `resultId`をそのまま使う（次回pullで再構成される`equipment`と同一IDになり、
+             * 重複を防ぐ）。素材はサーバー側で既に消費済みのため、テンプレートが未知でも
+             * 素材の除去だけは行う（結果装備は追加しない。次回pullで収束する）。
+             */
+            applyCloudSynthesisResult: (ingredientIds, resultId, templateId) => {
+                const template = getEquipmentTemplateById(templateId);
+                const newItem = template ? createEquipmentFromTemplate(resultId, template) : null;
+                set((state) => ({
+                    equipment: capEquipmentCollection([
+                        ...state.equipment.filter((e) => !ingredientIds.includes(e.id)),
+                        ...(newItem ? [newItem] : []),
+                    ]),
+                }));
+                return newItem;
+            },
+
             equipItem: (equipmentId: string) => {
                 const { equipment } = get();
                 const item = equipment.find((e) => e.id === equipmentId);
@@ -792,6 +811,9 @@ export const useGameStore = create<GameStoreState>()(
                     equipment: state.equipment.filter((e) => e.id !== equipmentId),
                 }));
                 get().addXp(xpGain);
+                // サーバーが知らない装備ID（ローカル生成の宝箱/合成フォールバック産）の売却は
+                // サーバー側で404となり恒久失敗するが、次回pullのサーバー正で収束する（v1既定方針）
+                void enqueueCloudOperation('sell_item', { itemId: equipmentId }, { dependsOnEntityIds: [equipmentId] });
                 return xpGain;
             },
 

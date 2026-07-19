@@ -191,6 +191,8 @@ export interface GameStoreState {
     ) => void;
     /** サーバーが開封済み（409）と応答した場合、演出無しでローカル表示だけ消す。 */
     discardSyncedChest: (chestId: string) => void;
+    /** synthesize_items（クラウド権威）の結果を適用する。生成した装備を返す（未知テンプレートならnull）。 */
+    applyCloudSynthesisResult: (ingredientIds: string[], resultId: string, templateId: string) => Equipment | null;
     equipItem: (equipmentId: string) => void;
     unequipItem: (equipmentId: string) => void;
     autoEquipBest: () => boolean; // 各スロットで最強の装備を装着。変更があれば true。

@@ -14,9 +14,12 @@
  * - 習慣: 作成/削除（upsert_habit / delete_habit）、
  *   日次記録・メモ（set_habit_log、completed/memoの絶対状態upsert）、
  *   休養日（set_rest_day）、全達成ボーナス（claim_habit_bonus EF）
+ * - ゲーム操作: バトル開始/決着（`gameCloud.ts`のrequest/response方式、
+ *   outbox経由ではない）、宝箱開封（同）、装備合成（同）、売却（sell_item EF、
+ *   このoutbox経由）
  * ## まだ同期しない操作
  * - 設定
- * - ゲーム操作（宝箱開封・売却・合成・バトル。Mobile側も同様に未配線）
+ * - Mobile側の宝箱開封・売却・合成配線（バトルは配線済み）
  */
 import {
     createCloudOutboxController,

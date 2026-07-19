@@ -17,6 +17,7 @@ import { useGameStore } from '../../stores/useGameStore';
 import type { Equipment, Rarity } from '../../types';
 import { SLOT_ICONS, SLOT_LABELS } from './equipmentPresentation';
 import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
+import { useCloudItemSynthesis } from '../../hooks/useCloudItemSynthesis';
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
@@ -45,7 +46,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     const equipment = useGameStore((state) => state.equipment);
     const equipItem = useGameStore((state) => state.equipItem);
     const sellItem = useGameStore((state) => state.sellItem);
-    const synthesizeItems = useGameStore((state) => state.synthesizeItems);
+    const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useCloudItemSynthesis();
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
     const [selectedForSynth, setSelectedForSynth] = useState<string[]>([]);
     const [sellFeedback, setSellFeedback] = useState<{ id: string; xp: number } | null>(null);
@@ -93,12 +94,13 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     }, [synthTargetRarity, unequippedItems]);
 
     const handleSynthesize = useCallback(() => {
-        const result = synthesizeItems(selectedForSynth);
-        if (!result) return;
-        setSynthResult(result);
-        setSelectedForSynth([]);
-        setTimeout(() => setSynthResult(null), 3000);
-    }, [selectedForSynth, synthesizeItems]);
+        void synthesize(selectedForSynth).then((result) => {
+            if (!result) return;
+            setSynthResult(result);
+            setSelectedForSynth([]);
+            setTimeout(() => setSynthResult(null), 3000);
+        });
+    }, [selectedForSynth, synthesize]);
 
     const resetMode = useCallback(() => {
         setInventoryMode('normal');
@@ -208,11 +210,19 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
             {inventoryMode === 'synthesize' && selectedForSynth.length === SYNTHESIS_CONFIG.REQUIRED_COUNT && (
                 <button
                     onClick={handleSynthesize}
-                    className="w-full mt-3 py-3 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 animate-fade-in"
+                    disabled={isSynthesizing}
+                    className="w-full mt-3 py-3 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 animate-fade-in disabled:opacity-50"
                     style={{ background: 'linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary))', color: 'white' }}
                 >
-                    <Sparkles size={18} /> 合成する
+                    <Sparkles size={18} /> {isSynthesizing ? '合成中…' : '合成する'}
                 </button>
+            )}
+
+            {synthHasError && (
+                <div className="mt-2 text-xs text-center" style={{ color: 'var(--color-text-danger)' }}>
+                    合成の同期に失敗しました。
+                    <button onClick={() => void retrySynthesize()} className="underline ml-1" style={{ color: 'var(--color-accent-primary)' }}>再送</button>
+                </div>
             )}
         </div>
     );
