@@ -476,7 +476,13 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 const battle = get().activeBattle;
                 if (!battle || battle.battleAttemptId !== battleAttemptId) return;
                 set((state) => {
-                    const nextState: Partial<MobileGameStore> = {};
+                    // 適用後はattemptIdをクリアし、同一結果の再送・二重呼び出しでXPが
+                    // 再付与されないようにする（activeBattle自体は勝利画面表示のため残す）。
+                    const nextState: Partial<MobileGameStore> = {
+                        activeBattle: state.activeBattle
+                            ? { ...state.activeBattle, battleAttemptId: null }
+                            : state.activeBattle,
+                    };
                     if (outcome === 'victory') {
                         nextState.battleProgress = {
                             ...state.battleProgress,

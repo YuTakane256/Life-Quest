@@ -115,6 +115,18 @@ describe('useGameStore applyResolvedCloudBattle', () => {
         expect(useGameStore.getState().battle.maxClearedStage).toBe(firstStage.stage);
     });
 
+    it('同一attemptIdでの再呼び出し（二重発火・再送）はXPを重複付与しない', () => {
+        useGameStore.getState().startCloudBattle(firstStage.stage, 'attempt-1', snapshot, enemy);
+        useGameStore.getState().processBattleTurn();
+
+        useGameStore.getState().applyResolvedCloudBattle('attempt-1', 'victory', true);
+        const xpAfterFirst = useGameStore.getState().character.totalXp;
+        expect(useGameStore.getState().battle.battleAttemptId).toBeNull(); // 適用後はクリアされる
+
+        useGameStore.getState().applyResolvedCloudBattle('attempt-1', 'victory', true);
+        expect(useGameStore.getState().character.totalXp).toBe(xpAfterFirst);
+    });
+
     it('granted:falseなら（再送で既に付与済み等）XPを重複付与しない', () => {
         useGameStore.getState().startCloudBattle(firstStage.stage, 'attempt-1', snapshot, enemy);
         useGameStore.getState().processBattleTurn();

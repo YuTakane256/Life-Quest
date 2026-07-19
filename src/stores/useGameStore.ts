@@ -613,13 +613,19 @@ export const useGameStore = create<GameStoreState>()(
                 // 別バトルへ既に遷移済み（リトライ・リロード等）なら、遅延到着したresolve結果は無視する
                 if (battle.battleAttemptId !== battleAttemptId) return;
 
-                if (outcome === 'victory') {
-                    set((state) => ({
-                        battle: { ...state.battle, maxClearedStage: Math.max(state.battle.maxClearedStage, state.battle.currentStage) },
-                    }));
-                    if (granted && battle.enemy) {
-                        get().addXp(battle.enemy.xpReward);
-                    }
+                // 適用後はattemptIdをクリアし、同一結果の再送・二重呼び出しでXP・履歴が
+                // 再度記録されないようにする（battle自体は勝利画面表示のため残す）。
+                set((state) => ({
+                    battle: {
+                        ...state.battle,
+                        battleAttemptId: null,
+                        maxClearedStage: outcome === 'victory'
+                            ? Math.max(state.battle.maxClearedStage, state.battle.currentStage)
+                            : state.battle.maxClearedStage,
+                    },
+                }));
+                if (outcome === 'victory' && granted && battle.enemy) {
+                    get().addXp(battle.enemy.xpReward);
                 }
                 if (battle.enemy) {
                     recordBattleResult(battle.currentStage, battle.enemy, outcome, battle.logs);

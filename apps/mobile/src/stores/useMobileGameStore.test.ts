@@ -182,6 +182,10 @@ describe('useMobileGameStore', () => {
             useMobileGameStore.getState().applyResolvedCloudBattle('attempt-1', 'victory', true);
             expect(useMobileGameStore.getState().character.totalXp).toBe(stage.xpReward);
             expect(useMobileGameStore.getState().battleProgress.maxClearedStage).toBe(stage.stage);
+
+            // 同一attemptIdでの再呼び出し（二重発火・再送）はXPを重複付与しない
+            useMobileGameStore.getState().applyResolvedCloudBattle('attempt-1', 'victory', true);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(stage.xpReward);
         });
     });
 
