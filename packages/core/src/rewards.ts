@@ -187,3 +187,12 @@ export function rollEquipmentTemplate(
     const index = Math.min(candidates.length - 1, Math.floor(random() * candidates.length));
     return candidates[Math.max(0, index)];
 }
+
+/**
+ * テンプレートIDからEquipmentTemplateを逆引きする。
+ * サーバーが返す`templateId`（open_chest/synthesize_itemsのレスポンス）から
+ * 装備実体を復元するために使う。未知のIDはnull。
+ */
+export function getEquipmentTemplateById(templateId: string): EquipmentTemplate | null {
+    return EQUIPMENT_POOL.find((template) => template.id === templateId) ?? null;
+}

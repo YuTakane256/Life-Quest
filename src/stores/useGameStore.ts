@@ -44,7 +44,7 @@ import {
     selectSynthesisIngredients,
 } from '@life-quest/core/equipment';
 import { applyCharacterXp } from '@life-quest/core/progression';
-import { getMilestoneAtCount, rollEquipmentTemplate } from '@life-quest/core/rewards';
+import { getEquipmentTemplateById, getMilestoneAtCount, rollEquipmentTemplate } from '@life-quest/core/rewards';
 import { applyBattleAction, type BattleAction, type BattleActors, type BattleEngineState } from '@life-quest/core/battle';
 
 export {
@@ -482,6 +482,50 @@ export const useGameStore = create<GameStoreState>()(
                         : state.equipment,
                     battle: chest.isStarterCharacter ? { ...state.battle, battleUnlocked: true } : state.battle,
                     pendingChestReveal: reveal,
+                }));
+            },
+
+            /**
+             * open_chest（クラウド権威）の結果を適用する。装備IDはサーバーの`itemId`を
+             * そのまま使う（次回pullで再構成される`equipment`と同一IDになり、重複を防ぐ）。
+             * 未知のchestId・開封済みchestIdは無視する（冪等・遅延到着対策）。
+             */
+            applyCloudChestResult: (chestId, itemId, templateId, starterCharacter) => {
+                const { chestQueue } = get();
+                const chest = chestQueue.find((c) => c.id === chestId);
+                if (!chest || chest.opened) return;
+                const template = templateId ? getEquipmentTemplateById(templateId) : null;
+                const equipment = template && itemId ? createEquipmentFromTemplate(itemId, template) : null;
+                const reveal: ChestRevealEvent = {
+                    id: generateId(),
+                    chestId: chest.id,
+                    chestType: chest.chestType,
+                    label: chest.label,
+                    equipment,
+                    isStarterCharacter: starterCharacter,
+                };
+                set((state) => ({
+                    chestQueue: capChestQueue(state.chestQueue.map((c) =>
+                        c.id === chestId ? { ...c, opened: true, equipment } : c
+                    )),
+                    equipment: equipment
+                        ? capEquipmentCollection([...state.equipment, equipment])
+                        : state.equipment,
+                    battle: starterCharacter ? { ...state.battle, battleUnlocked: true } : state.battle,
+                    pendingChestReveal: reveal,
+                }));
+            },
+
+            /**
+             * サーバーが「開封済み」（409）と応答した場合に呼ぶ。サーバー側は既に正常に
+             * 開封済みなので、演出は出さずローカルの未開封表示だけを消す（次回pullで
+             * chestQueueからも除去される）。
+             */
+            discardSyncedChest: (chestId: string) => {
+                set((state) => ({
+                    chestQueue: state.chestQueue.map((c) =>
+                        c.id === chestId ? { ...c, opened: true } : c
+                    ),
                 }));
             },
 

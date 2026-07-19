@@ -7,6 +7,7 @@ import type { Equipment, EquipmentSlot } from '../types';
 import heroImg from '@life-quest/assets/images/hero.png';
 import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { useModalEscape } from '../hooks/useModalEscape';
+import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
 import { useTitleStore } from '../stores/useTitleStore';
 import { InventorySection } from '../components/character/InventorySection';
 import { SLOT_ICONS, SLOT_LABELS } from '../components/character/equipmentPresentation';
@@ -55,7 +56,7 @@ export function CharacterPage() {
     const gachaCount = useGameStore((state) => state.gachaCount);
     const chestQueue = useGameStore((state) => state.chestQueue);
     const unequipItem = useGameStore((state) => state.unequipItem);
-    const openChest = useGameStore((state) => state.openChest);
+    const { openingChestId, errorChestId, openChest, retry: retryOpenChest } = useCloudChestOpen();
     const updateCharacter = useGameStore((state) => state.updateCharacter);
     const autoEquipBest = useGameStore((state) => state.autoEquipBest);
     const activeTitle = useTitleStore((state) => state.activeTitle);
@@ -147,10 +148,23 @@ export function CharacterPage() {
                     </h2>
                     <div className="flex flex-wrap gap-2">
                         {unopenedChests.map((chest) => (
-                            <button key={chest.id} onClick={() => openChest(chest.id)} className="px-4 py-3 rounded-xl animate-pulse-glow transition-all hover:scale-105 flex flex-col items-center" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-accent-gold)', minWidth: '120px' }}>
-                                <img src={CHEST_IMAGES[chest.chestType] || CHEST_FALLBACK_IMAGE} alt={chest.label} className="w-14 h-14 object-contain mb-1" />
-                                <div className="text-xs font-medium" style={{ color: 'var(--color-accent-gold)' }}>{chest.label}</div>
-                            </button>
+                            <div key={chest.id} className="flex flex-col items-center">
+                                <button
+                                    onClick={() => void openChest(chest.id)}
+                                    disabled={openingChestId === chest.id}
+                                    className="px-4 py-3 rounded-xl animate-pulse-glow transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex flex-col items-center"
+                                    style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-accent-gold)', minWidth: '120px' }}
+                                >
+                                    <img src={CHEST_IMAGES[chest.chestType] || CHEST_FALLBACK_IMAGE} alt={chest.label} className="w-14 h-14 object-contain mb-1" />
+                                    <div className="text-xs font-medium" style={{ color: 'var(--color-accent-gold)' }}>{chest.label}</div>
+                                </button>
+                                {errorChestId === chest.id && (
+                                    <div className="text-[10px] mt-1 text-center" style={{ color: 'var(--color-text-danger)' }}>
+                                        開封に失敗しました。
+                                        <button onClick={retryOpenChest} className="underline ml-1" style={{ color: 'var(--color-accent-primary)' }}>再送</button>
+                                    </div>
+                                )}
+                            </div>
                         ))}
                     </div>
                 </div>
