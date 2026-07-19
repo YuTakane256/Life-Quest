@@ -15,6 +15,7 @@ import heroImg from '@life-quest/assets/images/hero.png';
 import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { getEnemyImageSrc } from '../config/enemyImages';
 import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
+import { useCloudBattleStart } from '../hooks/useCloudBattleStart';
 
 
 function getEnemyImage(stage: number) {
@@ -35,7 +36,7 @@ function getSkillTone(skill: BattleSkillDefinition): { icon: string; color: stri
 }
 
 export function MapBattlePage() {
-    const { battle, character, getEffectiveStats, startBattle, processBattleTurn, resetBattle, advanceStage, activateBattleSkill } = useGameStore();
+    const { battle, character, getEffectiveStats, processBattleTurn, resetBattle, advanceStage, activateBattleSkill } = useGameStore();
     const history = useBattleHistoryStore((s) => s.history);
     const [showVictoryDialog, setShowVictoryDialog] = useState(false);
     const [selectedMapId, setSelectedMapId] = useState(() => {
@@ -50,6 +51,7 @@ export function MapBattlePage() {
     const effectiveStats = getEffectiveStats();
     const { resolveState, granted, retry } = useCloudBattleResolve();
     const isSyncingResult = battle.rewardMode === 'cloud' && resolveState === 'syncing';
+    const { isStarting, startStage } = useCloudBattleStart();
 
     const selectedMap = MAP_CONFIG.find(m => m.id === selectedMapId) || MAP_CONFIG[0];
     const mapStages = BATTLE_CONFIG.STAGES.filter(
@@ -218,10 +220,10 @@ export function MapBattlePage() {
                             <button onClick={() => {
                                 const nextStage = Math.min(battle.currentStage + 1, BATTLE_CONFIG.STAGES.length);
                                 advanceStage();
-                                startBattle(nextStage);
+                                void startStage(nextStage);
                                 setShowVictoryDialog(false);
                             }}
-                                disabled={isSyncingResult}
+                                disabled={isSyncingResult || isStarting}
                                 className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                                 <ChevronRight size={18} /> 次へ
@@ -250,8 +252,8 @@ export function MapBattlePage() {
                             ) : 'レベルを上げて再挑戦しましょう！'}
                         </p>
                         <div className="flex gap-2">
-                            <button onClick={() => startBattle(battle.currentStage)}
-                                disabled={isSyncingResult}
+                            <button onClick={() => void startStage(battle.currentStage)}
+                                disabled={isSyncingResult || isStarting}
                                 className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                                 <RotateCcw size={18} /> リトライ
@@ -345,8 +347,9 @@ export function MapBattlePage() {
                                 </div>
                             </div>
                             {!isLocked && (
-                                <button onClick={() => startBattle(stage.stage)}
-                                    className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition-colors"
+                                <button onClick={() => void startStage(stage.stage)}
+                                    disabled={isStarting}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     style={{
                                         backgroundColor: isCleared ? 'var(--color-bg-card)' : 'var(--color-accent-primary)',
                                         color: isCleared ? 'var(--color-text-secondary)' : 'white'
