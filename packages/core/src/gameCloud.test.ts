@@ -83,21 +83,21 @@ describe('createGameCloudClient', () => {
             const calls: { name: string; body?: Record<string, unknown> }[] = [];
             const invoker = makeInvoker((name, body) => {
                 calls.push({ name, body });
-                return { item_id: 'item-1', version: 5, starter_character: true };
+                return { item_id: 'item-1', template_id: 'sword-1', version: 5, starter_character: true };
             });
             const client = createGameCloudClient({ getInvoker: () => invoker });
 
             const result = await client.openChest('chest-1', 'key-1');
-            expect(result).toEqual({ itemId: 'item-1', starterCharacter: true });
+            expect(result).toEqual({ itemId: 'item-1', templateId: 'sword-1', starterCharacter: true });
             expect(calls[0]).toEqual({ name: 'open_chest', body: { chestId: 'chest-1', idempotencyKey: 'key-1' } });
         });
 
-        it('blue宝箱（装備なし）はitemIdがnullのまま返る', async () => {
-            const invoker = makeInvoker(() => ({ item_id: null, version: 1 }));
+        it('blue宝箱（装備なし）はitemId/templateIdがnullのまま返る', async () => {
+            const invoker = makeInvoker(() => ({ item_id: null, template_id: null, version: 1 }));
             const client = createGameCloudClient({ getInvoker: () => invoker });
 
             const result = await client.openChest('chest-1', 'key-1');
-            expect(result).toEqual({ itemId: null, starterCharacter: false });
+            expect(result).toEqual({ itemId: null, templateId: null, starterCharacter: false });
         });
     });
 
@@ -111,12 +111,12 @@ describe('createGameCloudClient', () => {
             const calls: { name: string; body?: Record<string, unknown> }[] = [];
             const invoker = makeInvoker((name, body) => {
                 calls.push({ name, body });
-                return { result_id: 'result-1', version: 9 };
+                return { result_id: 'result-1', template_id: 'shield-1', version: 9 };
             });
             const client = createGameCloudClient({ getInvoker: () => invoker });
 
             const result = await client.synthesizeItems(['a', 'b', 'c', 'd', 'e'], 'key-1');
-            expect(result).toEqual({ resultId: 'result-1' });
+            expect(result).toEqual({ resultId: 'result-1', templateId: 'shield-1' });
             expect(calls[0]).toEqual({
                 name: 'synthesize_items',
                 body: { itemIds: ['a', 'b', 'c', 'd', 'e'], idempotencyKey: 'key-1' },

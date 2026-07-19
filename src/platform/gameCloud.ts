@@ -1,5 +1,5 @@
 /**
- * Webのバトルクラウド連携。
+ * Webのゲーム操作クラウド連携（バトル・宝箱開封・装備合成）。
  *
  * リクエスト/レスポンス変換・冪等キー方針は`@life-quest/core/gameCloud`
  * （Web/Mobile共有）に集約されている。このファイルはWeb固有の依存
@@ -13,7 +13,14 @@ const client = createGameCloudClient({
     getInvoker: () => getWebEdgeFunctionInvoker(),
 });
 
-export type { CloudBattleAttempt, ResolveBattleAttemptResponse } from '@life-quest/core/gameCloud';
+export type {
+    CloudBattleAttempt,
+    CloudChestResult,
+    CloudSynthesisResult,
+    ResolveBattleAttemptResponse,
+} from '@life-quest/core/gameCloud';
 
 export const startCloudBattleAttempt = client.startBattleAttempt;
 export const resolveCloudBattleAttempt = client.resolveBattleAttempt;
+export const openCloudChest = client.openChest;
+export const synthesizeCloudItems = client.synthesizeItems;

@@ -56,22 +56,27 @@ export interface ResolveBattleAttemptResponse {
 
 interface OpenChestResponse {
     item_id: string | null;
+    template_id: string | null;
     version: number;
     starter_character?: boolean;
 }
 
 export interface CloudChestResult {
     itemId: string | null;
+    /** 排出装備のテンプレートID。blue（スターター）宝箱等、装備を排出しない場合はnull */
+    templateId: string | null;
     starterCharacter: boolean;
 }
 
 interface SynthesizeItemsResponse {
     result_id: string;
+    template_id: string;
     version: number;
 }
 
 export interface CloudSynthesisResult {
     resultId: string;
+    templateId: string;
 }
 
 export interface GameCloudClient {
@@ -140,6 +145,7 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
             });
             return {
                 itemId: response.item_id,
+                templateId: response.template_id,
                 starterCharacter: response.starter_character === true,
             };
         },
@@ -151,7 +157,7 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
                 itemIds,
                 idempotencyKey,
             });
-            return { resultId: response.result_id };
+            return { resultId: response.result_id, templateId: response.template_id };
         },
     };
 }
