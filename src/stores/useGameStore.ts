@@ -409,6 +409,12 @@ export const useGameStore = create<GameStoreState>()(
                 set((state) => ({
                     character: { ...state.character, ...safeUpdates }
                 }));
+                const { character } = get();
+                void enqueueCloudOperation('update_character_profile', {
+                    p_name: character.name,
+                    p_avatar: character.avatar,
+                    p_base_version: null,
+                });
             },
 
             addXp: (baseXp: number) => {

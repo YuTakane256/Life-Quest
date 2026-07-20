@@ -99,6 +99,41 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         }
     });
 
+    it('update_character_profile: name/avatarを更新し、base_version不一致はconflictを返す', async () => {
+        const first = await user.client.rpc('update_character_profile', {
+            p_name: 'テスト勇者', p_avatar: 'male', p_base_version: null, p_key: uuid(),
+        });
+        expect(first.error).toBeNull();
+        const firstVersion = (first.data as { version: number }).version;
+
+        const { rows } = await pg.query('select name, avatar, version from characters where user_id=$1', [user.id]);
+        expect(rows[0].name).toBe('テスト勇者');
+        expect(rows[0].avatar).toBe('male');
+        expect(Number(rows[0].version)).toBe(firstVersion);
+
+        const conflict = await user.client.rpc('update_character_profile', {
+            p_name: '古い端末からの上書き', p_avatar: 'female', p_base_version: firstVersion - 1, p_key: uuid(),
+        });
+        expect(conflict.error).toBeNull();
+        const conflictBody = conflict.data as { conflict: boolean; current: { name: string } };
+        expect(conflictBody.conflict).toBe(true);
+        expect(conflictBody.current.name).toBe('テスト勇者'); // 変更されていない
+
+        // 同一キー再送は副作用なし（同じversionが返る）
+        const replayKey = uuid();
+        const applied = await user.client.rpc('update_character_profile', {
+            p_name: '再送テスト', p_avatar: 'female', p_base_version: firstVersion, p_key: replayKey,
+        });
+        expect(applied.error).toBeNull();
+        const replay = await user.client.rpc('update_character_profile', {
+            p_name: '再送で変わってはいけない', p_avatar: 'male', p_base_version: firstVersion, p_key: replayKey,
+        });
+        expect(replay.error).toBeNull();
+        expect(replay.data).toEqual(applied.data);
+        const { rows: afterReplay } = await pg.query('select name from characters where user_id=$1', [user.id]);
+        expect(afterReplay[0].name).toBe('再送テスト');
+    });
+
     it('complete_task: 同一キー並行3回でXP・gacha_countが1回分のみ（ADR-004）', async () => {
         const taskId = await createTask('並行完了');
         const key = uuid();

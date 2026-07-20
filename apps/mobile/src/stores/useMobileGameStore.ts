@@ -240,6 +240,12 @@ export const useMobileGameStore = create<MobileGameStore>()(
                         ...(updates.avatar !== undefined ? { avatar: updates.avatar } : {}),
                     },
                 }));
+                const { character } = get();
+                void enqueueCloudOperation('update_character_profile', {
+                    p_name: character.name,
+                    p_avatar: character.avatar,
+                    p_base_version: null,
+                });
             },
 
             addXp: (baseXp) => {
