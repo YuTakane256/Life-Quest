@@ -43,6 +43,7 @@ import {
     type BattleOutcome,
 } from '@life-quest/core/battle';
 import {
+    getEquipmentTemplateById,
     getMilestoneAtCount,
     rollEquipmentTemplate,
     EQUIPMENT_POOL,
@@ -94,6 +95,19 @@ interface MobileGameStore extends GameStateSnapshot {
     checkGachaMilestones: () => void;
     /** 宝箱を開封し、入手した装備を返す（装備なし宝箱・開封済み・不明IDは null）。 */
     openChest: (chestId: string) => Equipment | null;
+    /**
+     * open_chest（クラウド権威）の結果を適用し、入手した装備を返す。装備IDは
+     * サーバーの`itemId`をそのまま使う（次回pullで再構成されるequipmentと
+     * 同一IDになり重複を防ぐ）。未知のchestId・開封済みchestIdは無視する。
+     */
+    applyCloudChestResult: (
+        chestId: string,
+        itemId: string | null,
+        templateId: string | null,
+        starterCharacter: boolean,
+    ) => Equipment | null;
+    /** サーバーが開封済み（409）と応答した場合、ローカルの未開封表示だけ消す。 */
+    discardSyncedChest: (chestId: string) => void;
     equipItem: (equipmentId: string) => void;
     unequipItem: (equipmentId: string) => void;
     /** 各スロットで最強の装備を装着する。変更があれば true。 */
@@ -278,6 +292,37 @@ export const useMobileGameStore = create<MobileGameStore>()(
                         : state.battleProgress,
                 }));
                 return equipment;
+            },
+
+            applyCloudChestResult: (chestId, itemId, templateId, starterCharacter) => {
+                if (!get().hasHydrated) return null;
+                const { chestQueue } = get();
+                const chest = chestQueue.find((candidate) => candidate.id === chestId);
+                if (!chest || chest.opened) return null;
+
+                const template = templateId ? getEquipmentTemplateById(templateId) : null;
+                const equipment = template && itemId ? createEquipmentFromTemplate(itemId, template) : null;
+                set((state) => ({
+                    chestQueue: state.chestQueue.map((candidate) =>
+                        candidate.id === chestId ? { ...candidate, opened: true, equipment } : candidate
+                    ),
+                    equipment: equipment
+                        ? capEquipmentCollection([...state.equipment, equipment])
+                        : state.equipment,
+                    battleProgress: starterCharacter
+                        ? { ...state.battleProgress, battleUnlocked: true }
+                        : state.battleProgress,
+                }));
+                return equipment;
+            },
+
+            discardSyncedChest: (chestId) => {
+                if (!get().hasHydrated) return;
+                set((state) => ({
+                    chestQueue: state.chestQueue.map((candidate) =>
+                        candidate.id === chestId ? { ...candidate, opened: true } : candidate
+                    ),
+                }));
             },
 
             equipItem: (equipmentId) => {
