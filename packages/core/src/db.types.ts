@@ -85,6 +85,8 @@ export type Database = {
           debuff_active: boolean
           debuff_expires_at: string | null
           gacha_count: number
+          last_login_bonus_date: string | null
+          login_streak: number
           max_cleared_stage: number
           name: string
           total_xp: number
@@ -100,6 +102,8 @@ export type Database = {
           debuff_active?: boolean
           debuff_expires_at?: string | null
           gacha_count?: number
+          last_login_bonus_date?: string | null
+          login_streak?: number
           max_cleared_stage?: number
           name?: string
           total_xp?: number
@@ -115,6 +119,8 @@ export type Database = {
           debuff_active?: boolean
           debuff_expires_at?: string | null
           gacha_count?: number
+          last_login_bonus_date?: string | null
+          login_streak?: number
           max_cleared_stage?: number
           name?: string
           total_xp?: number
@@ -586,6 +592,17 @@ export type Database = {
       }
       claim_habit_bonus_apply: {
         Args: { p_date: string; p_key: string; p_user_id: string; p_xp: number }
+        Returns: Json
+      }
+      claim_login_bonus_apply: {
+        Args: {
+          p_chest: Json
+          p_date: string
+          p_key: string
+          p_streak: number
+          p_user_id: string
+          p_xp: number
+        }
         Returns: Json
       }
       complete_subtask_apply: {

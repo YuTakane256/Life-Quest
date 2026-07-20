@@ -16,7 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client as PgClient } from 'pg';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { getTodayJst } from '../../packages/core/src/dates.ts';
+import { getTodayJst, shiftDate } from '../../packages/core/src/dates.ts';
 
 const DB_URL = process.env.SUPABASE_DB_URL;
 const API_URL = process.env.SUPABASE_URL;
@@ -539,6 +539,53 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         const { rows } = await pg.query(
             'select all_habits_complete from stats_daily where user_id=$1 and date=$2', [user.id, date]);
         expect(rows[0].all_habits_complete).toBe(true);
+    });
+
+    it('claim_login_bonus: streakはサーバーが独立算出し、日付単位で生涯1回付与。7日目で特別宝箱', async () => {
+        const xpBefore = Number((await getCharacter()).total_xp);
+        const first = await callFn('claim_login_bonus', { idempotencyKey: uuid() });
+        expect(first.status).toBe(200);
+        const firstBody = (await first.json()) as { granted: boolean; streak: number; xp: number; chest_label: string | null };
+        expect(firstBody.granted).toBe(true);
+        expect(firstBody.streak).toBe(1);
+        expect(firstBody.xp).toBe(20);
+        expect(firstBody.chest_label).toBeNull();
+        expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 20);
+
+        // 同日2回目は拒否（クライアントの自己申告に関わらずサーバーが判定）
+        const second = await callFn('claim_login_bonus', { idempotencyKey: uuid() });
+        expect(second.status).toBe(409);
+        expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 20); // 変化なし
+
+        // reward_transactionsは日付単位でゲートするため、同じ実日付ではEF経由で
+        // 2回目を付与させることができない（意図した挙動）。streak継続・7日目の
+        // 特別宝箱ロジック自体はDB関数を直接呼び、任意のp_dateで検証する。
+        const fakeDate = shiftDate(getTodayJst(), -100);
+        const xpBeforeStreak7 = Number((await getCharacter()).total_xp);
+        const chestId = uuid();
+        const seventh = await pg.query(
+            'select claim_login_bonus_apply($1, $2, $3, $4, $5::jsonb, $6) as result',
+            [user.id, fakeDate, 50, 7, JSON.stringify({ id: chestId, chest_type: 'gold', label: '記念の金の宝箱' }), uuid()],
+        );
+        const seventhBody = seventh.rows[0].result as { granted: boolean; streak: number; xp: number; chest_label: string | null };
+        expect(seventhBody.granted).toBe(true);
+        expect(seventhBody.streak).toBe(7);
+        expect(seventhBody.xp).toBe(50);
+        expect(seventhBody.chest_label).toBe('記念の金の宝箱');
+        expect(Number((await getCharacter()).total_xp)).toBe(xpBeforeStreak7 + 50);
+
+        const { rows } = await pg.query('select chest_type from chests where id=$1', [chestId]);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].chest_type).toBe('gold');
+
+        // 同一(kind, date)への再付与は拒否される（別のp_key・別のchestIdでも）
+        const replay = await pg.query(
+            'select claim_login_bonus_apply($1, $2, $3, $4, $5::jsonb, $6) as result',
+            [user.id, fakeDate, 999, 99, JSON.stringify({ id: uuid(), chest_type: 'gold', label: 'x' }), uuid()],
+        );
+        const replayBody = replay.rows[0].result as { granted: boolean };
+        expect(replayBody.granted).toBe(false);
+        expect(Number((await getCharacter()).total_xp)).toBe(xpBeforeStreak7 + 50); // 変化なし
     });
 
     it('繰り返しタスク: 完了時に次回分が生成され、二重完了でも増殖しない', async () => {

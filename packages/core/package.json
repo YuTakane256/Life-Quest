@@ -60,6 +60,10 @@
       "types": "./src/legacyMigration.ts",
       "import": "./src/legacyMigration.ts"
     },
+    "./loginBonus": {
+      "types": "./src/loginBonus.ts",
+      "import": "./src/loginBonus.ts"
+    },
     "./habits": {
       "types": "./src/habits.ts",
       "import": "./src/habits.ts"

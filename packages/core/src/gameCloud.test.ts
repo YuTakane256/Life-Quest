@@ -123,4 +123,32 @@ describe('createGameCloudClient', () => {
             });
         });
     });
+
+    describe('claimLoginBonus', () => {
+        it('クラウド未接続ならnullを返す', async () => {
+            const client = createGameCloudClient({ getInvoker: () => null });
+            expect(await client.claimLoginBonus()).toBeNull();
+        });
+
+        it('冪等キーを内部生成して送り、レスポンスを変換する', async () => {
+            const calls: { name: string; body?: Record<string, unknown> }[] = [];
+            const invoker = makeInvoker((name, body) => {
+                calls.push({ name, body });
+                return { granted: true, streak: 7, xp: 50, chest_label: '7日連続ログイン記念の金の宝箱', version: 3 };
+            });
+            const client = createGameCloudClient({ getInvoker: () => invoker, generateId: () => 'fixed-id' });
+
+            const result = await client.claimLoginBonus();
+            expect(result).toEqual({ granted: true, streak: 7, xp: 50, chestLabel: '7日連続ログイン記念の金の宝箱' });
+            expect(calls[0]).toEqual({ name: 'claim_login_bonus', body: { idempotencyKey: 'fixed-id' } });
+        });
+
+        it('grantedがfalseでも現在のstreakを変換して返す（同日に既に請求済み）', async () => {
+            const invoker = makeInvoker(() => ({ granted: false, streak: 3, xp: 0, chest_label: null, version: 5 }));
+            const client = createGameCloudClient({ getInvoker: () => invoker });
+
+            const result = await client.claimLoginBonus();
+            expect(result).toEqual({ granted: false, streak: 3, xp: 0, chestLabel: null });
+        });
+    });
 });

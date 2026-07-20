@@ -19,28 +19,11 @@ export {
     type ChestType,
     type GachaMilestone,
 } from '@life-quest/core/rewards';
-import type { ChestType } from '@life-quest/core/rewards';
 
 // ─── デイリーログインボーナス設定 ─────────────────────────────
-export const LOGIN_BONUS_CONFIG = {
-    /** ログインボーナスの基本XP（連続1日目） */
-    BASE_XP: 20,
-
-    /** 連続ログイン1日ごとに加算されるXP */
-    XP_PER_STREAK_DAY: 5,
-
-    /** 1回のログインボーナスで付与されるXPの上限 */
-    MAX_XP: 100,
-
-    /** 特別宝箱を付与する連続ログイン日数の周期（7日ごと） */
-    SPECIAL_CHEST_INTERVAL: 7,
-
-    /** 特別宝箱のタイプ */
-    SPECIAL_CHEST_TYPE: 'gold' satisfies ChestType,
-
-    /** 特別宝箱のラベル */
-    SPECIAL_CHEST_LABEL: '7日連続ログイン記念の金の宝箱',
-} as const;
+// 計算ロジック（サーバーEFと共有）と共にcoreへ移設。既存のimportパスを
+// 維持するためここから再エクスポートする。
+export { LOGIN_BONUS_CONFIG } from '@life-quest/core/loginBonus';
 
 // ─── キャラクター / バトル設定 ────────────────────────────────
 export { CHARACTER_CONFIG } from '@life-quest/core/progression';
