@@ -19,7 +19,13 @@
 > cloud-authoritative on both Web and Mobile, via `@life-quest/core/gameCloud`'s
 > request/response Edge Functions for non-deterministic server rolls (battle,
 > chest, synthesis) and the outbox for the deterministic sell operation.
-> Mobile also gained a resolve-failure retry path matching Web's. Tracking
+> Mobile also gained a resolve-failure retry path matching Web's. Character
+> profile fields (name, avatar, active title) and equipped-item state are
+> also cloud-authoritative on both platforms. Web's daily login bonus (XP +
+> streak, special chest) is now cloud-authoritative too, via a new
+> `claim_login_bonus` Edge Function that computes streak server-side (the
+> "Global feedback" row below is stale on this point for Web; Mobile still
+> has no login bonus feature at all, tracked as follow-up work). Tracking
 > issue #473 remains open for residual follow-up work only (see its issue
 > body for current status).
 

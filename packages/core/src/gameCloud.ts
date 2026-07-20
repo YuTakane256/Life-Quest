@@ -1,5 +1,5 @@
 /**
- * ゲーム操作（バトル・宝箱開封・装備合成）のサーバー権威クラウド連携。
+ * ゲーム操作（バトル・宝箱開封・装備合成・ログインボーナス）のサーバー権威クラウド連携。
  *
  * これらの操作はサーバー側で非決定論的な抽選（敵HP等の乱数、装備テンプレート抽選）
  * を行うため、タスク・習慣のような「ローカルで即時反映してoutboxへenqueueする」
@@ -79,6 +79,23 @@ export interface CloudSynthesisResult {
     templateId: string;
 }
 
+interface ClaimLoginBonusResponse {
+    granted: boolean;
+    streak: number;
+    xp: number;
+    chest_label: string | null;
+    version: number;
+}
+
+export interface CloudLoginBonusResult {
+    /** サーバーがXP・宝箱を実際に付与したか（同日に別端末等から既に請求済みならfalse） */
+    granted: boolean;
+    /** サーバーが算出した現在の連続ログイン日数（grantedがfalseでも現在値が返る） */
+    streak: number;
+    xp: number;
+    chestLabel: string | null;
+}
+
 export interface GameCloudClient {
     /** バトル開始。クラウド未接続ならnull（呼び出し元はローカル計算にフォールバック）。 */
     startBattleAttempt: (stage: number) => Promise<CloudBattleAttempt | null>;
@@ -91,6 +108,14 @@ export interface GameCloudClient {
     openChest: (chestId: string, idempotencyKey: string) => Promise<CloudChestResult | null>;
     /** 装備合成。クラウド未接続ならnull。idempotencyKeyは呼び出し元が管理し、失敗時の再送に使う。 */
     synthesizeItems: (itemIds: readonly string[], idempotencyKey: string) => Promise<CloudSynthesisResult | null>;
+    /**
+     * ログインボーナス請求。クラウド未接続ならnull。サーバーが「今日分か」の
+     * 判定・streak算出・XP/宝箱付与を行うため、クライアントは日付やstreakを
+     * 送らない（habitのclaim_habit_bonusと同じ「クライアントの自己申告を
+     * 信用しない」方針）。idempotencyKeyは内部生成（reward_transactionsの
+     * (kind,date)台帳ゲートが実質的な重複防止を担うため、厳密な再送一致は不要）。
+     */
+    claimLoginBonus: () => Promise<CloudLoginBonusResult | null>;
 }
 
 export interface GameCloudClientDeps {
@@ -158,6 +183,20 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
                 idempotencyKey,
             });
             return { resultId: response.result_id, templateId: response.template_id };
+        },
+
+        claimLoginBonus: async () => {
+            const invoker = await getInvoker();
+            if (!invoker) return null;
+            const response = await invoker<ClaimLoginBonusResponse>('claim_login_bonus', {
+                idempotencyKey: generateId(),
+            });
+            return {
+                granted: response.granted,
+                streak: response.streak,
+                xp: response.xp,
+                chestLabel: response.chest_label,
+            };
         },
     };
 }
