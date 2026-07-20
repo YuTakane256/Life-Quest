@@ -10,9 +10,10 @@ import {
     type StageDefinition,
 } from '@life-quest/core/battle';
 import { getUnlockedBattleSkills } from '@life-quest/core/battleSkills';
-import { resolveCloudBattleAttempt, startCloudBattleAttempt } from '../platform/battleCloud';
+import { startCloudBattleAttempt } from '../platform/battleCloud';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { usePalette } from '../theme/usePalette';
+import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
 
 const OUTCOME_LABELS: Record<BattleOutcome, string> = {
     ongoing: '戦闘中',
@@ -32,9 +33,9 @@ export default function MapScreen() {
     const startBattle = useMobileGameStore((state) => state.startBattle);
     const startCloudBattle = useMobileGameStore((state) => state.startCloudBattle);
     const performBattleAction = useMobileGameStore((state) => state.performBattleAction);
-    const applyResolvedCloudBattle = useMobileGameStore((state) => state.applyResolvedCloudBattle);
     const clearActiveBattle = useMobileGameStore((state) => state.clearActiveBattle);
     const getEffectiveStats = useMobileGameStore((state) => state.getEffectiveStats);
+    const { resolveState, granted, retry: retryResolve } = useCloudBattleResolve();
 
     const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);
@@ -79,63 +80,16 @@ export default function MapScreen() {
         }
     };
 
-    const handleAction = async (action: BattleAction) => {
+    const handleAction = (action: BattleAction) => {
         const battleBeforeAction = activeBattle;
         const beforeOutcome = battleBeforeAction?.state.outcome;
         const outcome = performBattleAction(action);
+        // クラウド報酬モードの決着同期は useCloudBattleResolve が自動で行い、
+        // 同期状況はバトルカード内に表示する（ここではローカル報酬のみ通知する）。
+        if (battleBeforeAction?.rewardMode === 'cloud') return;
         if (outcome === 'victory' && beforeOutcome !== 'victory') {
-            if (battleBeforeAction?.rewardMode === 'cloud' && battleBeforeAction.battleAttemptId) {
-                setBusy(true);
-                try {
-                    const resolution = await resolveCloudBattleAttempt(
-                        battleBeforeAction.battleAttemptId,
-                        [...battleBeforeAction.actions, action],
-                    );
-                    applyResolvedCloudBattle(
-                        battleBeforeAction.battleAttemptId,
-                        resolution.outcome,
-                        resolution.granted,
-                    );
-                    if (resolution.outcome === 'victory') {
-                        setNotice(
-                            resolution.granted
-                                ? `${battleBeforeAction.actors.enemy.name}を倒して ${battleBeforeAction.actors.enemy.xpReward} XP 獲得`
-                                : `${battleBeforeAction.actors.enemy.name}の戦闘結果を同期しました`,
-                        );
-                    } else {
-                        setNotice('敗北としてクラウド同期しました');
-                    }
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : 'バトル結果を同期できませんでした';
-                    setNotice(message);
-                } finally {
-                    setBusy(false);
-                }
-                return;
-            }
             setNotice(`${battleBeforeAction?.actors.enemy.name ?? '敵'}を倒して ${battleBeforeAction?.actors.enemy.xpReward ?? 0} XP 獲得`);
         } else if (outcome === 'defeat') {
-            if (battleBeforeAction?.rewardMode === 'cloud' && battleBeforeAction.battleAttemptId) {
-                setBusy(true);
-                try {
-                    const resolution = await resolveCloudBattleAttempt(
-                        battleBeforeAction.battleAttemptId,
-                        [...battleBeforeAction.actions, action],
-                    );
-                    applyResolvedCloudBattle(
-                        battleBeforeAction.battleAttemptId,
-                        resolution.outcome,
-                        resolution.granted,
-                    );
-                    setNotice('敗北としてクラウド同期しました');
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : 'バトル結果を同期できませんでした';
-                    setNotice(message);
-                } finally {
-                    setBusy(false);
-                }
-                return;
-            }
             setNotice('敗北しました。装備やレベルを整えて再挑戦しましょう');
         }
     };
@@ -209,6 +163,15 @@ export default function MapScreen() {
                                             Stage {activeBattle.stage}: {activeBattle.actors.enemy.name}
                                         </Text>
                                         <Text style={styles.mutedText}>{OUTCOME_LABELS[activeBattle.state.outcome]}</Text>
+                                        {activeBattle.rewardMode === 'cloud' && activeBattle.state.outcome !== 'ongoing' && (
+                                            <Text style={styles.mutedText}>
+                                                {resolveState === 'syncing' && '報酬を同期中…'}
+                                                {resolveState === 'done' && activeBattle.state.outcome === 'victory' && (granted
+                                                    ? `${activeBattle.actors.enemy.xpReward} XP を獲得！`
+                                                    : '同期済み（既に付与済みです）')}
+                                                {resolveState === 'done' && activeBattle.state.outcome === 'defeat' && '敗北としてクラウド同期しました'}
+                                            </Text>
+                                        )}
                                     </View>
                                     <Pressable
                                         accessibilityRole="button"
@@ -219,6 +182,20 @@ export default function MapScreen() {
                                         <Text style={styles.closeButtonText}>閉じる</Text>
                                     </Pressable>
                                 </View>
+
+                                {activeBattle.rewardMode === 'cloud' && resolveState === 'error' && (
+                                    <View style={styles.resolveErrorRow}>
+                                        <Text style={styles.dangerButtonText}>報酬の同期に失敗しました。</Text>
+                                        <Pressable
+                                            accessibilityRole="button"
+                                            accessibilityLabel="バトル結果の同期を再送する"
+                                            onPress={retryResolve}
+                                            style={({ pressed }) => [styles.dangerButton, pressed && styles.muted]}
+                                        >
+                                            <Text style={styles.dangerButtonText}>再送</Text>
+                                        </Pressable>
+                                    </View>
+                                )}
 
                                 <View style={styles.hpGrid}>
                                     <HpBar
@@ -240,7 +217,7 @@ export default function MapScreen() {
                                         accessibilityRole="button"
                                         accessibilityLabel="通常攻撃"
                                         disabled={busy || activeBattle.state.outcome !== 'ongoing'}
-                                        onPress={() => { void handleAction({ type: 'attack' }); }}
+                                        onPress={() => handleAction({ type: 'attack' })}
                                         style={({ pressed }) => [
                                             styles.primaryButton,
                                             (pressed || busy || activeBattle.state.outcome !== 'ongoing') && styles.muted,
@@ -257,7 +234,7 @@ export default function MapScreen() {
                                                 accessibilityRole="button"
                                                 accessibilityLabel={`${skill.name}${cooldown > 0 ? ` クールダウン${cooldown}` : ''}`}
                                                 disabled={disabled}
-                                                onPress={() => { void handleAction({ type: 'skill', skillId: skill.id }); }}
+                                                onPress={() => handleAction({ type: 'skill', skillId: skill.id })}
                                                 style={({ pressed }) => [styles.secondaryButton, (pressed || disabled) && styles.muted]}
                                             >
                                                 <Text style={styles.secondaryButtonText}>
@@ -416,6 +393,9 @@ function createStyles(palette: ThemePalette) {
     battleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
     closeButton: { minHeight: 34, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: palette.border.default, justifyContent: 'center' },
     closeButtonText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
+    resolveErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    dangerButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.tertiary, borderWidth: 1, borderColor: palette.text.danger },
+    dangerButtonText: { color: palette.text.danger, fontSize: 12, fontWeight: '700' },
     hpGrid: { gap: 10 },
     hpBlock: { gap: 5 },
     hpHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
