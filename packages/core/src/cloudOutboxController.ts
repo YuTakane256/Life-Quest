@@ -33,6 +33,7 @@
  *   （409→discard等）を迂回してoutbox経由で送られてしまうことはない
  * - プロフィール: キャラ名・アバター（update_character_profile）、称号
  *   （upsert_profile、display_name/avatarは未使用のためnull送信）
+ * - 装備の装着状態（set_equipped_items、装着中アイテムID集合の絶対状態upsert）
  * ## まだ同期しない操作（後続Issueで拡張）
  * - 設定
  */
@@ -47,7 +48,7 @@ export const RPC_OPERATIONS: ReadonlySet<string> = new Set([
     'upsert_task', 'delete_task', 'upsert_subtask', 'delete_subtask',
     'uncomplete_task', 'uncomplete_subtask', 'upsert_profile',
     'upsert_habit', 'delete_habit', 'set_rest_day', 'set_habit_log',
-    'update_character_profile',
+    'update_character_profile', 'set_equipped_items',
 ]);
 
 /**

@@ -185,6 +185,17 @@ function toLevelUpSummary(fromLevel: number, result: ApplyCharacterXpResult): Le
     };
 }
 
+/**
+ * 装着中アイテムID集合を絶対状態としてクラウドへ送る（set_equipped_items、
+ * equip/unequip/autoEquipBestの3操作すべてから呼ぶ）。ローカル生成ID
+ * （ガチャマイルストーンの404フォールバック産の装備等）が混ざっていても、
+ * サーバー側が非uuid・未知のIDを黙って無視するため問題ない。
+ */
+function syncEquippedLoadout(get: () => MobileGameStore): void {
+    const equippedIds = get().equipment.filter((candidate) => candidate.equipped).map((candidate) => candidate.id);
+    void enqueueCloudOperation('set_equipped_items', { p_item_ids: equippedIds });
+}
+
 export const useMobileGameStore = create<MobileGameStore>()(
     persist(
         (set, get) => {
@@ -349,6 +360,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
                         return candidate;
                     }),
                 }));
+                syncEquippedLoadout(get);
             },
 
             unequipItem: (equipmentId) => {
@@ -358,6 +370,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
                         candidate.id === equipmentId ? { ...candidate, equipped: false } : candidate
                     ),
                 }));
+                syncEquippedLoadout(get);
             },
 
             autoEquipBest: () => {
@@ -380,6 +393,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
                         return { ...candidate, equipped: candidate.id === bestId };
                     }),
                 }));
+                syncEquippedLoadout(get);
                 return true;
             },
 

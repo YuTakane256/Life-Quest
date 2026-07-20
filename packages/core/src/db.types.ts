@@ -675,6 +675,10 @@ export type Database = {
         }
         Returns: Json
       }
+      set_equipped_items: {
+        Args: { p_item_ids: Json; p_key: string }
+        Returns: Json
+      }
       set_habit_log: {
         Args: {
           p_completed: boolean
