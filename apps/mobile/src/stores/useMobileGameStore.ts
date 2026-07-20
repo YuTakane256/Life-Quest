@@ -55,6 +55,7 @@ import { clampString } from '@life-quest/core/validation';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 
 export interface LevelUpSummary {
     fromLevel: number;
@@ -116,6 +117,12 @@ interface MobileGameStore extends GameStateSnapshot {
     sellItem: (equipmentId: string) => number;
     /** 同レアリティ3個を消費して上位レアリティ装備を生成する。 */
     synthesizeItems: (equipmentIds: string[]) => Equipment | null;
+    /**
+     * synthesize_items（クラウド権威）の結果を適用する。装備IDはサーバーの
+     * `resultId`をそのまま使う。素材はサーバー側で既に消費済みのため、
+     * テンプレートが未知でも素材の除去だけは行う。
+     */
+    applyCloudSynthesisResult: (ingredientIds: string[], resultId: string, templateId: string) => Equipment | null;
     getEffectiveStats: () => EffectiveStats;
     unlockBattle: () => void;
     setBattleProgress: (progress: Partial<MobileBattleProgress>) => void;
@@ -379,6 +386,9 @@ export const useMobileGameStore = create<MobileGameStore>()(
                     equipment: state.equipment.filter((candidate) => candidate.id !== equipmentId),
                 }));
                 get().addXp(xpGain);
+                // サーバーが知らない装備ID（ローカル生成の宝箱/合成フォールバック産）の売却は
+                // サーバー側で404となり恒久失敗するが、次回pullのサーバー正で収束する（v1既定方針）
+                void enqueueCloudOperation('sell_item', { itemId: equipmentId }, { dependsOnEntityIds: [equipmentId] });
                 return xpGain;
             },
 
@@ -407,6 +417,19 @@ export const useMobileGameStore = create<MobileGameStore>()(
                     equipment: capEquipmentCollection([
                         ...state.equipment.filter((candidate) => !equipmentIds.includes(candidate.id)),
                         newItem,
+                    ]),
+                }));
+                return newItem;
+            },
+
+            applyCloudSynthesisResult: (ingredientIds, resultId, templateId) => {
+                if (!get().hasHydrated) return null;
+                const template = getEquipmentTemplateById(templateId);
+                const newItem = template ? createEquipmentFromTemplate(resultId, template) : null;
+                set((state) => ({
+                    equipment: capEquipmentCollection([
+                        ...state.equipment.filter((candidate) => !ingredientIds.includes(candidate.id)),
+                        ...(newItem ? [newItem] : []),
                     ]),
                 }));
                 return newItem;

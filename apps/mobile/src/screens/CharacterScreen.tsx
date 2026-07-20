@@ -11,6 +11,7 @@ import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { usePalette } from '../theme/usePalette';
 import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
+import { useCloudItemSynthesis } from '../hooks/useCloudItemSynthesis';
 
 const RARITY_LABELS: Record<Rarity, string> = {
     common: 'コモン',
@@ -44,7 +45,7 @@ export default function CharacterScreen() {
     const unequipItem = useMobileGameStore((state) => state.unequipItem);
     const autoEquipBest = useMobileGameStore((state) => state.autoEquipBest);
     const sellItem = useMobileGameStore((state) => state.sellItem);
-    const synthesizeItems = useMobileGameStore((state) => state.synthesizeItems);
+    const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useCloudItemSynthesis();
     const getEffectiveStats = useMobileGameStore((state) => state.getEffectiveStats);
     const activeTitle = useMobileTitleStore((state) => state.activeTitle);
 
@@ -128,9 +129,11 @@ export default function CharacterScreen() {
                 {
                     text: '合成する',
                     onPress: () => {
-                        const result = synthesizeItems([...selectedIds]);
+                        const ingredientIds = [...selectedIds];
                         setSelectedIds([]);
-                        if (result) setLastRevealText(`合成で「${result.name}」が誕生！`);
+                        void synthesize(ingredientIds).then((result) => {
+                            if (result) setLastRevealText(`合成で「${result.name}」が誕生！`);
+                        });
                     },
                 },
             ],
@@ -336,16 +339,31 @@ export default function CharacterScreen() {
                 <Text style={styles.sectionTitle}>インベントリ（{inventory.length}）</Text>
                 <Pressable
                     accessibilityRole="button"
-                    accessibilityState={{ disabled: !canSynthesize }}
+                    accessibilityState={{ disabled: !canSynthesize || isSynthesizing }}
                     accessibilityLabel={`選択した${SYNTHESIS_CONFIG.REQUIRED_COUNT}個の装備を合成する`}
-                    disabled={!canSynthesize}
+                    disabled={!canSynthesize || isSynthesizing}
                     onPress={handleSynthesize}
-                    style={({ pressed }) => [styles.secondaryButton, (!canSynthesize || pressed) && styles.muted]}
+                    style={({ pressed }) => [styles.secondaryButton, (!canSynthesize || isSynthesizing || pressed) && styles.muted]}
                 >
-                    <Text style={styles.secondaryButtonText}>合成（{selectedItems.length}/{SYNTHESIS_CONFIG.REQUIRED_COUNT}）</Text>
+                    <Text style={styles.secondaryButtonText}>
+                        {isSynthesizing ? '合成中…' : `合成（${selectedItems.length}/${SYNTHESIS_CONFIG.REQUIRED_COUNT}）`}
+                    </Text>
                 </Pressable>
             </View>
             <Text style={styles.hint}>同じレアリティの未装備品{SYNTHESIS_CONFIG.REQUIRED_COUNT}個を選ぶと上位レアリティへ合成できます。</Text>
+            {synthHasError && (
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.dangerButtonText}>合成の同期に失敗しました。</Text>
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="装備合成を再送する"
+                        onPress={() => void retrySynthesize()}
+                        style={({ pressed }) => [styles.dangerButton, pressed && styles.muted]}
+                    >
+                        <Text style={styles.dangerButtonText}>再送</Text>
+                    </Pressable>
+                </View>
+            )}
         </View>
     );
 
