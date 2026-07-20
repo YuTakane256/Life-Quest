@@ -195,6 +195,53 @@ describe('useMobileGameStore', () => {
         });
     });
 
+    describe('applyCloudSynthesisResult', () => {
+        const someTemplate = EQUIPMENT_POOL[0];
+
+        it('素材を除去し、サーバーのresultId/templateIdから結果装備を生成する', () => {
+            useMobileGameStore.setState({
+                equipment: [item('i1', 'wooden_sword'), item('i2', 'wooden_sword'), item('i3', 'wooden_sword')],
+            });
+
+            const result = useMobileGameStore.getState().applyCloudSynthesisResult(
+                ['i1', 'i2', 'i3'], 'server-result-1', someTemplate.id,
+            );
+
+            expect(result).not.toBeNull();
+            expect(result!.id).toBe('server-result-1');
+            expect(result!.templateId).toBe(someTemplate.id);
+
+            const state = useMobileGameStore.getState();
+            expect(state.equipment).toHaveLength(1);
+            expect(state.equipment[0].id).toBe('server-result-1');
+        });
+
+        it('未知のtemplateIdでも素材は除去する（結果装備は追加しない）', () => {
+            useMobileGameStore.setState({
+                equipment: [item('i1', 'wooden_sword'), item('i2', 'wooden_sword'), item('i3', 'wooden_sword')],
+            });
+
+            const result = useMobileGameStore.getState().applyCloudSynthesisResult(
+                ['i1', 'i2', 'i3'], 'server-result-1', 'not-a-real-template',
+            );
+
+            expect(result).toBeNull();
+            expect(useMobileGameStore.getState().equipment).toHaveLength(0);
+        });
+
+        it('素材IDに含まれない装備は残す', () => {
+            useMobileGameStore.setState({
+                equipment: [item('i1', 'wooden_sword'), item('i2', 'wooden_sword'), item('i3', 'wooden_sword'), item('kept', 'wooden_sword')],
+            });
+
+            useMobileGameStore.getState().applyCloudSynthesisResult(['i1', 'i2', 'i3'], 'server-result-1', someTemplate.id);
+
+            const state = useMobileGameStore.getState();
+            expect(state.equipment.some((e) => e.id === 'kept')).toBe(true);
+            expect(state.equipment.some((e) => e.id === 'server-result-1')).toBe(true);
+        });
+    });
+
     describe('バトル', () => {
         function winActiveBattle() {
             for (let i = 0; i < 30; i++) {
