@@ -119,12 +119,35 @@ describe('sendOperation', () => {
             'upsert_subtask', 'delete_subtask', 'uncomplete_subtask',
             'complete_task', 'complete_subtask',
             'upsert_habit', 'delete_habit', 'set_rest_day', 'set_habit_log', 'claim_habit_bonus',
+            'sell_item',
         ];
         for (const operation of knownOperations) {
             expect(
                 RPC_OPERATIONS.has(operation) || EDGE_OPERATIONS.has(operation),
                 `${operation} has no send route`,
             ).toBe(true);
+        }
+    });
+
+    it('非決定論的なゲーム操作（request/response専用）はEDGE_OPERATIONS/RPC_OPERATIONSに含まれない', async () => {
+        // open_chest等をこのoutbox経由でenqueueしても専用エラー分岐（409→discard等）
+        // を迂回できないことを保証する回帰テスト（誤って積める状態に戻すと壊れる）。
+        const requestResponseOnlyOperations = [
+            'open_chest', 'synthesize_items', 'start_battle_attempt', 'resolve_battle_attempt',
+        ];
+        for (const operation of requestResponseOnlyOperations) {
+            expect(RPC_OPERATIONS.has(operation), `${operation} should not be in RPC_OPERATIONS`).toBe(false);
+            expect(EDGE_OPERATIONS.has(operation), `${operation} should not be in EDGE_OPERATIONS`).toBe(false);
+        }
+
+        const controller = createCloudOutboxController({
+            storage: createMemoryStorage(),
+            getRpcClient: () => null,
+            getEdgeInvoker: () => null,
+        });
+        for (const operation of requestResponseOnlyOperations) {
+            const result = await controller.sendOperation(makeOp(operation, {}));
+            expect(result).toEqual({ ok: false, permanent: true, error: `unknown operation: ${operation}` });
         }
     });
 });
