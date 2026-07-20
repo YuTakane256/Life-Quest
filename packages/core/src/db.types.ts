@@ -714,6 +714,15 @@ export type Database = {
         Returns: Json
       }
       uncomplete_task: { Args: { p_id: string; p_key: string }; Returns: Json }
+      update_character_profile: {
+        Args: {
+          p_avatar: string
+          p_base_version: number
+          p_key: string
+          p_name: string
+        }
+        Returns: Json
+      }
       upsert_habit: {
         Args: {
           p_category_id?: string

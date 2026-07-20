@@ -119,7 +119,7 @@ describe('sendOperation', () => {
             'upsert_subtask', 'delete_subtask', 'uncomplete_subtask',
             'complete_task', 'complete_subtask',
             'upsert_habit', 'delete_habit', 'set_rest_day', 'set_habit_log', 'claim_habit_bonus',
-            'sell_item',
+            'sell_item', 'upsert_profile', 'update_character_profile',
         ];
         for (const operation of knownOperations) {
             expect(

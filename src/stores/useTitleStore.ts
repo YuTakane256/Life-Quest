@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createWebPersistStorage } from '../platform/storage';
 import { createSafePersistMerge } from '../utils/persistMerge';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 
 const MAX_TITLE_LENGTH = 40;
 
@@ -22,7 +23,19 @@ export const useTitleStore = create<TitleStoreState>()(
     persist(
         (set) => ({
             activeTitle: null,
-            setActiveTitle: (title) => set({ activeTitle: sanitizeActiveTitle(title) }),
+            setActiveTitle: (title) => {
+                const sanitized = sanitizeActiveTitle(title);
+                set({ activeTitle: sanitized });
+                // display_name/avatarはprofilesテーブルの未使用カラム（キャラ名・
+                // アバターの正本はcharacters側、update_character_profile経由で同期）
+                // のためnullのまま送る。
+                void enqueueCloudOperation('upsert_profile', {
+                    p_display_name: null,
+                    p_avatar: null,
+                    p_active_title: sanitized,
+                    p_base_version: null,
+                });
+            },
         }),
         {
             name: 'quest-board-title',
