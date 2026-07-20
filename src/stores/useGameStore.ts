@@ -72,6 +72,17 @@ function rollEquipment(chestType: ChestType): Equipment | null {
     return template ? createEquipmentInstance(template) : null;
 }
 
+/**
+ * 装着中アイテムID集合を絶対状態としてクラウドへ送る（set_equipped_items、
+ * equip/unequip/autoEquipBestの3操作すべてから呼ぶ）。ローカル生成ID
+ * （ガチャマイルストーンの404フォールバック産の装備等）が混ざっていても、
+ * サーバー側が非uuid・未知のIDを黙って無視するため問題ない。
+ */
+function syncEquippedLoadout(get: () => GameStoreState): void {
+    const equippedIds = get().equipment.filter((e) => e.equipped).map((e) => e.id);
+    void enqueueCloudOperation('set_equipped_items', { p_item_ids: equippedIds });
+}
+
 function canStartBattleStage(battle: BattleState, stage: number): boolean {
     if (!battle.battleUnlocked) return false;
     if (!Number.isInteger(stage) || stage < 1 || stage > MAX_STAGE) return false;
@@ -565,11 +576,15 @@ export const useGameStore = create<GameStoreState>()(
                         return e;
                     }),
                 }));
+                syncEquippedLoadout(get);
             },
 
-            unequipItem: (equipmentId: string) => set((state) => ({
-                equipment: state.equipment.map((e) => e.id === equipmentId ? { ...e, equipped: false } : e),
-            })),
+            unequipItem: (equipmentId: string) => {
+                set((state) => ({
+                    equipment: state.equipment.map((e) => e.id === equipmentId ? { ...e, equipped: false } : e),
+                }));
+                syncEquippedLoadout(get);
+            },
 
             autoEquipBest: () => {
                 const { equipment } = get();
@@ -592,6 +607,7 @@ export const useGameStore = create<GameStoreState>()(
                         return { ...e, equipped: e.id === bestId };
                     }),
                 }));
+                syncEquippedLoadout(get);
                 return true;
             },
 

@@ -316,6 +316,53 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         expect(rows[0].deleted_at).not.toBeNull();
     });
 
+    it('set_equipped_items: 装着中ID集合を絶対状態で反映し、非uuid・所有外・未知IDは黙って無視する', async () => {
+        const itemA = uuid();
+        const itemB = uuid();
+        await insertWithVersion(async (v) => {
+            await pg.query(
+                `insert into inventory_items (id, user_id, template_id, version) values ($1, $3, 'wooden_sword', $4), ($2, $3, 'leather_armor', $4)`,
+                [itemA, itemB, user.id, v],
+            );
+        });
+
+        const res = await user.client.rpc('set_equipped_items', {
+            p_item_ids: [itemA, 'not-a-uuid', uuid()], // 非uuid・未知IDは無視される
+            p_key: uuid(),
+        });
+        expect(res.error).toBeNull();
+
+        const { rows } = await pg.query(
+            'select id, equipped from inventory_items where user_id=$1 order by id', [user.id],
+        );
+        expect(rows.find((r) => r.id === itemA)?.equipped).toBe(true);
+        expect(rows.find((r) => r.id === itemB)?.equipped).toBe(false);
+
+        // 装着中アイテムはsell拒否になる（このガードはequippedがクラウド側で
+        // 実際に更新されて初めて実効化する）
+        const denied = await callFn('sell_item', { itemId: itemA, idempotencyKey: uuid() });
+        expect(denied.status).toBe(409);
+
+        // 絶対状態の再送: itemBだけを装着状態にすると、itemAは自動的に解除される
+        const replaceKey = uuid();
+        const replaced = await user.client.rpc('set_equipped_items', { p_item_ids: [itemB], p_key: replaceKey });
+        expect(replaced.error).toBeNull();
+        const { rows: afterReplace } = await pg.query(
+            'select id, equipped from inventory_items where user_id=$1 order by id', [user.id],
+        );
+        expect(afterReplace.find((r) => r.id === itemA)?.equipped).toBe(false);
+        expect(afterReplace.find((r) => r.id === itemB)?.equipped).toBe(true);
+
+        // 同一キー再送はリプレイされ、副作用なし
+        const replay = await user.client.rpc('set_equipped_items', { p_item_ids: [itemA], p_key: replaceKey });
+        expect(replay.error).toBeNull();
+        expect(replay.data).toEqual(replaced.data);
+        const { rows: afterReplay } = await pg.query(
+            'select id, equipped from inventory_items where user_id=$1 order by id', [user.id],
+        );
+        expect(afterReplay.find((r) => r.id === itemB)?.equipped).toBe(true); // itemAで再送したが変わっていない
+    });
+
     it('synthesize: 同一レアリティ3点で上位1点が生成され、レアリティ混在は拒否される', async () => {
         const commons = [uuid(), uuid(), uuid()];
         const uncommon = uuid();
