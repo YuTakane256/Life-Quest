@@ -10,6 +10,7 @@ import { AVATAR_IMAGES, getChestImage, getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { usePalette } from '../theme/usePalette';
+import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
 
 const RARITY_LABELS: Record<Rarity, string> = {
     common: 'コモン',
@@ -38,7 +39,7 @@ export default function CharacterScreen() {
     const lastLevelUp = useMobileGameStore((state) => state.lastLevelUp);
     const updateCharacter = useMobileGameStore((state) => state.updateCharacter);
     const clearLastLevelUp = useMobileGameStore((state) => state.clearLastLevelUp);
-    const openChest = useMobileGameStore((state) => state.openChest);
+    const { openingChestId, errorChestId, openChest, retry: retryOpenChest } = useCloudChestOpen();
     const equipItem = useMobileGameStore((state) => state.equipItem);
     const unequipItem = useMobileGameStore((state) => state.unequipItem);
     const autoEquipBest = useMobileGameStore((state) => state.autoEquipBest);
@@ -93,8 +94,10 @@ export default function CharacterScreen() {
     };
 
     const handleOpenChest = (chestId: string, label: string) => {
-        const reward = openChest(chestId);
-        setLastRevealText(reward ? `${label}から「${reward.name}」を入手！` : `${label}を開封した！`);
+        void openChest(chestId).then((outcome) => {
+            if (outcome.status !== 'opened') return;
+            setLastRevealText(outcome.equipment ? `${label}から「${outcome.equipment.name}」を入手！` : `${label}を開封した！`);
+        });
     };
 
     const handleSell = (item: Equipment) => {
@@ -248,11 +251,23 @@ export default function CharacterScreen() {
                             <Pressable
                                 accessibilityRole="button"
                                 accessibilityLabel={`${chest.label}を開封する`}
+                                accessibilityState={{ disabled: openingChestId === chest.id }}
+                                disabled={openingChestId === chest.id}
                                 onPress={() => handleOpenChest(chest.id, chest.label)}
-                                style={({ pressed }) => [styles.primaryButton, pressed && styles.muted]}
+                                style={({ pressed }) => [styles.primaryButton, (pressed || openingChestId === chest.id) && styles.muted]}
                             >
-                                <Text style={styles.primaryButtonText}>開封</Text>
+                                <Text style={styles.primaryButtonText}>{openingChestId === chest.id ? '開封中…' : '開封'}</Text>
                             </Pressable>
+                            {errorChestId === chest.id && (
+                                <Pressable
+                                    accessibilityRole="button"
+                                    accessibilityLabel="宝箱開封を再送する"
+                                    onPress={() => void retryOpenChest()}
+                                    style={({ pressed }) => [styles.dangerButton, pressed && styles.muted]}
+                                >
+                                    <Text style={styles.dangerButtonText}>再送</Text>
+                                </Pressable>
+                            )}
                         </View>
                     ))}
                 </View>

@@ -124,6 +124,77 @@ describe('useMobileGameStore', () => {
         });
     });
 
+    describe('applyCloudChestResult', () => {
+        const someTemplate = EQUIPMENT_POOL[0];
+
+        it('サーバーのitemId/templateIdから装備を生成し、装備IDはサーバーのitemIdと一致する', () => {
+            useMobileGameStore.setState({
+                chestQueue: [{ id: 'chest-1', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null }],
+            });
+
+            const equipment = useMobileGameStore.getState().applyCloudChestResult(
+                'chest-1', 'server-item-1', someTemplate.id, false,
+            );
+
+            expect(equipment).not.toBeNull();
+            expect(equipment!.id).toBe('server-item-1');
+            expect(equipment!.templateId).toBe(someTemplate.id);
+
+            const state = useMobileGameStore.getState();
+            expect(state.chestQueue[0]).toMatchObject({ opened: true, equipment });
+            expect(state.equipment).toContainEqual(equipment);
+        });
+
+        it('templateId=null（スターター宝箱等）は装備を生成しないがbattleUnlockedを更新する', () => {
+            useMobileGameStore.setState({
+                chestQueue: [{ id: 'chest-1', chestType: 'blue', label: '青色の宝箱', opened: false, equipment: null, isStarterCharacter: true }],
+            });
+
+            const equipment = useMobileGameStore.getState().applyCloudChestResult('chest-1', null, null, true);
+
+            expect(equipment).toBeNull();
+            expect(useMobileGameStore.getState().battleProgress.battleUnlocked).toBe(true);
+            expect(useMobileGameStore.getState().chestQueue[0].opened).toBe(true);
+        });
+
+        it('未知のtemplateIdは装備を生成せずopenedだけ適用する', () => {
+            useMobileGameStore.setState({
+                chestQueue: [{ id: 'chest-1', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null }],
+            });
+
+            const equipment = useMobileGameStore.getState().applyCloudChestResult(
+                'chest-1', 'server-item-1', 'not-a-real-template', false,
+            );
+
+            expect(equipment).toBeNull();
+            expect(useMobileGameStore.getState().equipment).toHaveLength(0);
+            expect(useMobileGameStore.getState().chestQueue[0].opened).toBe(true);
+        });
+
+        it('既に開封済み・不明IDには何もしない（冪等）', () => {
+            useMobileGameStore.setState({
+                chestQueue: [{ id: 'chest-1', chestType: 'wood', label: 'x', opened: true, equipment: null }],
+            });
+
+            expect(useMobileGameStore.getState().applyCloudChestResult('chest-1', 'i', someTemplate.id, false)).toBeNull();
+            expect(useMobileGameStore.getState().applyCloudChestResult('nope', 'i', someTemplate.id, false)).toBeNull();
+            expect(useMobileGameStore.getState().equipment).toHaveLength(0);
+        });
+    });
+
+    describe('discardSyncedChest', () => {
+        it('該当チェストをopened扱いにする（equipmentは付与しない）', () => {
+            useMobileGameStore.setState({
+                chestQueue: [{ id: 'chest-1', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null }],
+            });
+
+            useMobileGameStore.getState().discardSyncedChest('chest-1');
+
+            expect(useMobileGameStore.getState().chestQueue[0].opened).toBe(true);
+            expect(useMobileGameStore.getState().equipment).toHaveLength(0);
+        });
+    });
+
     describe('バトル', () => {
         function winActiveBattle() {
             for (let i = 0; i < 30; i++) {
