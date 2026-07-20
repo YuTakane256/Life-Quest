@@ -25,8 +25,12 @@
  *   休養日（set_rest_day）、全達成ボーナス（claim_habit_bonus EF）
  * - 売却（sell_item EF）。バトル開始/決着・宝箱開封・装備合成は非決定論的
  *   なサーバー抽選を伴うため、このoutbox（fire-and-forget）ではなく
- *   `gameCloud.ts`のrequest/response方式で連携する（Web配線済み、Mobileは
- *   バトルのみ配線済み）
+ *   `gameCloud.ts`のrequest/response方式で連携する（Web/Mobileとも配線済み）。
+ *   これらの操作名（open_chest/synthesize_items/start_battle_attempt/
+ *   resolve_battle_attempt）は意図的にEDGE_OPERATIONSへ含めない。誤って
+ *   ここへenqueueされても`sendOperation`が「unknown operation」として
+ *   即座に恒久失敗させるため、request/response側の専用エラー分岐
+ *   （409→discard等）を迂回してoutbox経由で送られてしまうことはない
  * ## まだ同期しない操作（後続Issueで拡張）
  * - 設定
  */
@@ -43,11 +47,14 @@ export const RPC_OPERATIONS: ReadonlySet<string> = new Set([
     'upsert_habit', 'delete_habit', 'set_rest_day', 'set_habit_log',
 ]);
 
-/** Edge Functionとして送る操作（bodyに idempotencyKey として opId を注入する） */
+/**
+ * Edge Functionとして送る操作（bodyに idempotencyKey として opId を注入する）。
+ * open_chest/synthesize_items/start_battle_attempt/resolve_battle_attemptは
+ * 非決定論的なサーバー抽選を伴うrequest/response専用操作（`gameCloud.ts`）
+ * のため、意図的にここへ含めない（詳細はファイル冒頭のコメント参照）。
+ */
 export const EDGE_OPERATIONS: ReadonlySet<string> = new Set([
-    'complete_task', 'complete_subtask', 'claim_habit_bonus',
-    'sell_item', 'synthesize_items', 'open_chest',
-    'start_battle_attempt', 'resolve_battle_attempt',
+    'complete_task', 'complete_subtask', 'claim_habit_bonus', 'sell_item',
 ]);
 
 /** 4xx系（認可・検証エラー）は再送しても直らない恒久失敗として扱う */

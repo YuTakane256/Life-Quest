@@ -19,7 +19,6 @@
  *   このoutbox経由）
  * ## まだ同期しない操作
  * - 設定
- * - Mobile側の宝箱開封・売却・合成配線（バトルは配線済み）
  */
 import {
     createCloudOutboxController,

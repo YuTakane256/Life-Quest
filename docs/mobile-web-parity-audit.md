@@ -14,8 +14,14 @@
 > 2026-07-17, Web also has a continuous cloud write path (task, subtask, and
 > habit mutations enqueue to the same outbox engine Mobile uses, shared via
 > `@life-quest/core/cloudOutboxController`), closing the previous one-directional
-> (Mobile-only) sync gap. Tracking issue #473 remains open for residual
-> follow-up work only (see its issue body for current status).
+> (Mobile-only) sync gap. As of 2026-07-20, game operations (battle start/
+> resolve, chest opening, item sale, equipment synthesis) are also
+> cloud-authoritative on both Web and Mobile, via `@life-quest/core/gameCloud`'s
+> request/response Edge Functions for non-deterministic server rolls (battle,
+> chest, synthesis) and the outbox for the deterministic sell operation.
+> Mobile also gained a resolve-failure retry path matching Web's. Tracking
+> issue #473 remains open for residual follow-up work only (see its issue
+> body for current status).
 
 ## Goal
 
