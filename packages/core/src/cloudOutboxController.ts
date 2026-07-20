@@ -23,9 +23,12 @@
  * - 習慣: 作成/削除（upsert_habit / delete_habit）、
  *   日次記録・メモ（set_habit_log、completed/memoの絶対状態upsert）、
  *   休養日（set_rest_day）、全達成ボーナス（claim_habit_bonus EF）
+ * - 売却（sell_item EF）。バトル開始/決着・宝箱開封・装備合成は非決定論的
+ *   なサーバー抽選を伴うため、このoutbox（fire-and-forget）ではなく
+ *   `gameCloud.ts`のrequest/response方式で連携する（Web配線済み、Mobileは
+ *   バトルのみ配線済み）
  * ## まだ同期しない操作（後続Issueで拡張）
  * - 設定
- * - ゲーム操作（宝箱開封・売却・合成・バトル）
  */
 import { registerAuthLifecycleHooks } from './authLifecycle.ts';
 import { cloudOutboxKey } from './cloudPull.ts';
