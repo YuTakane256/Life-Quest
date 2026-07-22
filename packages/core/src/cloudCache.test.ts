@@ -8,6 +8,7 @@ import {
     cloudCacheKey,
     countCloudContentRows,
     createEmptyCloudCache,
+    extractSyncedSettings,
     getSeedableSections,
     loadCloudCache,
     persistCloudCache,
@@ -218,15 +219,15 @@ describe('getSeedableSections（#506移行前のローカルデータ保護）',
             user_settings: [{ user_id: 'u1', version: 1 }],
             characters: [{ user_id: 'u1', total_xp: 0, version: 1 }],
         }));
-        expect(getSeedableSections(cache)).toEqual({ tasks: false, habits: false, game: false });
+        expect(getSeedableSections(cache)).toEqual({ tasks: false, habits: false, game: false, settings: false });
     });
 
-    it('tasksに1行届けばtasksのみseed可（habitsとgameは対象外のまま）', () => {
+    it('tasksに1行届けばtasksのみseed可（habitsとgameとsettingsは対象外のまま）', () => {
         const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
             characters: [{ user_id: 'u1', version: 1 }],
             tasks: [{ id: 't1', version: 2 }],
         }));
-        expect(getSeedableSections(cache)).toEqual({ tasks: true, habits: false, game: false });
+        expect(getSeedableSections(cache)).toEqual({ tasks: true, habits: false, game: false, settings: false });
     });
 
     it('墓標だけでもクラウドに履歴がある証拠としてseed可', () => {
@@ -252,5 +253,48 @@ describe('getSeedableSections（#506移行前のローカルデータ保護）',
             chests: [{ id: 'c1', chest_type: 'wood', version: 3 }],
         }));
         expect(getSeedableSections(withChest).game).toBe(true);
+    });
+
+    it('settingsはuser_settings.settingsが空jsonbのままならseed不可、何か書き込まれていればseed可', () => {
+        const untouched = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            user_settings: [{ user_id: 'u1', settings: {}, version: 1 }],
+        }));
+        expect(getSeedableSections(untouched).settings).toBe(false);
+
+        const touched = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            user_settings: [{ user_id: 'u1', settings: { themeMode: 'dark' }, version: 2 }],
+        }));
+        expect(getSeedableSections(touched).settings).toBe(true);
+    });
+});
+
+describe('extractSyncedSettings', () => {
+    it('user_settings行が無ければnullを返す', () => {
+        expect(extractSyncedSettings(createEmptyCloudCache())).toBeNull();
+    });
+
+    it('settings jsonbから同期対象4項目の生値をそのまま取り出す', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            user_settings: [{
+                user_id: 'u1',
+                settings: {
+                    themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21,
+                    notifiedTaskIds: ['should-not-leak'], // 同期対象外のキーが混入していても無視される
+                },
+                version: 3,
+            }],
+        }));
+        expect(extractSyncedSettings(cache)).toEqual({
+            themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21,
+        });
+    });
+
+    it('settingsが空jsonbなら全項目undefinedを返す（呼び出し元のsanitizeでデフォルト値へ）', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            user_settings: [{ user_id: 'u1', settings: {}, version: 1 }],
+        }));
+        expect(extractSyncedSettings(cache)).toEqual({
+            themeMode: undefined, motionMode: undefined, notificationsEnabled: undefined, habitReminderHour: undefined,
+        });
     });
 });

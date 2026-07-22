@@ -5,6 +5,7 @@ import type { NotificationStoreState } from '../types';
 import { NOTIFICATION_CONFIG, resolveHabitReminderHour } from '../core/notifications';
 import { isFiniteNumber } from '../utils/persistSanitize';
 import { isValidYmd } from '../utils/dateUtils';
+import { syncSettingsToCloud } from '../platform/settingsSync';
 
 export const MAX_NOTIFICATION_TASK_ID_LENGTH = 128;
 
@@ -59,10 +60,14 @@ export const useNotificationStore = create<NotificationStoreState>()(
             lastHabitReminderDate: null,
             habitReminderHour: NOTIFICATION_CONFIG.HABIT_REMINDER_HOUR_JST,
 
-            setEnabled: (enabled: boolean) => set({ enabled: enabled === true }),
+            setEnabled: (enabled: boolean) => {
+                set({ enabled: enabled === true });
+                syncSettingsToCloud();
+            },
 
             setHabitReminderHour: (hour: number) => {
                 set({ habitReminderHour: clampReminderHour(hour) });
+                syncSettingsToCloud();
             },
 
             markTaskNotified: (taskId: string) =>

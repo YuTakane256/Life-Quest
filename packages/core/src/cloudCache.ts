@@ -94,6 +94,8 @@ export interface CloudSectionSeedability {
     tasks: boolean;
     habits: boolean;
     game: boolean;
+    /** user_settingsの4同期項目（themeMode等）を一度でも書き込んだことがあるか */
+    settings: boolean;
 }
 
 /**
@@ -108,10 +110,18 @@ export interface CloudSectionSeedability {
  * - game: charactersが初期行のまま（version 1以下）で、装備・宝箱・
  *   バトル履歴も無い場合はシードしない。ゲーム系の実操作があれば
  *   charactersのversionが進むか行が生まれる
+ * - settings: user_settings.settingsが初期値の空jsonb（'{}'）のままなら
+ *   シードしない（誰も一度もupsert_user_settingsを呼んでいない＝
+ *   ローカルの既定値を消さない）
  */
 export function getSeedableSections(cache: CloudCache): CloudSectionSeedability {
     const character = Object.values(cache.characters)[0];
     const characterTouched = character !== undefined && Number(character.version) > 1;
+    const userSettings = Object.values(cache.user_settings)[0];
+    const settingsTouched = userSettings !== undefined
+        && typeof userSettings.settings === 'object'
+        && userSettings.settings !== null
+        && Object.keys(userSettings.settings as Record<string, unknown>).length > 0;
     return {
         tasks: Object.keys(cache.tasks).length + Object.keys(cache.subtasks).length > 0,
         habits: Object.keys(cache.habits).length
@@ -122,6 +132,33 @@ export function getSeedableSections(cache: CloudCache): CloudSectionSeedability 
             || Object.keys(cache.inventory_items).length > 0
             || Object.keys(cache.chests).length > 0
             || Object.keys(cache.battle_attempts).length > 0,
+        settings: settingsTouched,
+    };
+}
+
+/**
+ * user_settings.settingsから同期対象4項目の生値を取り出す（未検証。値の
+ * 妥当性チェック・既定値へのフォールバックは各プラットフォームの既存
+ * sanitize関数（sanitizeThemeMode等）に委ねる設計）。行が無ければnull。
+ */
+export interface RawSyncedSettings {
+    themeMode: unknown;
+    motionMode: unknown;
+    notificationsEnabled: unknown;
+    habitReminderHour: unknown;
+}
+
+export function extractSyncedSettings(cache: CloudCache): RawSyncedSettings | null {
+    const row = Object.values(cache.user_settings)[0];
+    if (!row) return null;
+    const settings = (typeof row.settings === 'object' && row.settings !== null)
+        ? row.settings as Record<string, unknown>
+        : {};
+    return {
+        themeMode: settings.themeMode,
+        motionMode: settings.motionMode,
+        notificationsEnabled: settings.notificationsEnabled,
+        habitReminderHour: settings.habitReminderHour,
     };
 }
 

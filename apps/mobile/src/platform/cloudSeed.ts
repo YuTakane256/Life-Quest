@@ -11,11 +11,18 @@ import {
     buildCanonicalHabitSnapshot,
     buildCanonicalTaskSnapshot,
     buildStatsLogSnapshot,
+    extractSyncedSettings,
     getSeedableSections,
     type CloudCache,
 } from '@life-quest/core/cloudCache';
+import { resolveHabitReminderHour } from '@life-quest/core/notifications';
 import { seedSectionData } from './canonicalSync';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
+import {
+    sanitizeMobileMotionMode,
+    sanitizeMobileThemeMode,
+    useMobileSettingsStore,
+} from '../stores/useMobileSettingsStore';
 
 /** クラウドが正と言えるセクションだけをストアへ反映する。1つ以上シードしたらtrue。 */
 export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
@@ -42,6 +49,21 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
     // このマージによって以後のプルで正しく復元される。
     if (Object.keys(cache.stats_daily).length > 0) {
         useMobileStatsStore.getState().mergeFromCloud(buildStatsLogSnapshot(cache));
+    }
+    if (seedable.settings) {
+        const settings = extractSyncedSettings(cache);
+        if (settings) {
+            // setState直接呼び出し（set系アクション経由ではない）ため、
+            // ストア内のsyncSettingsToCloudへの再送信は起きない。
+            // notifiedTaskIds/lastHabitReminderDateはここで一切触れない。
+            useMobileSettingsStore.setState({
+                themeMode: sanitizeMobileThemeMode(settings.themeMode),
+                motionMode: sanitizeMobileMotionMode(settings.motionMode),
+                notificationsEnabled: settings.notificationsEnabled === true,
+                habitReminderHour: resolveHabitReminderHour(settings.habitReminderHour),
+            });
+            seeded = true;
+        }
     }
     return seeded;
 }

@@ -17,8 +17,8 @@
  * - ゲーム操作: バトル開始/決着（`gameCloud.ts`のrequest/response方式、
  *   outbox経由ではない）、宝箱開封（同）、装備合成（同）、売却（sell_item EF、
  *   このoutbox経由）
- * ## まだ同期しない操作
- * - 設定
+ * - 設定（upsert_user_settings、themeMode/motionMode/notificationsEnabled/
+ *   habitReminderHourの4項目のみ。集約は`src/platform/settingsSync.ts`）
  */
 import {
     createCloudOutboxController,

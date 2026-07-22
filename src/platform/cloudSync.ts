@@ -21,6 +21,7 @@ import {
     buildCanonicalTaskSnapshot,
     buildStatsLogSnapshot,
     createEmptyCloudCache,
+    extractSyncedSettings,
     getSeedableSections,
     loadCloudCache,
     persistCloudCache,
@@ -36,7 +37,11 @@ import { markCloudSessionSeeded } from './authStores';
 import { seedGame, seedHabits, seedTasks } from './canonicalSync';
 import { getPlatformStorageAdapter } from './storage';
 import { getWebSupabaseClient } from './supabase';
+import { resolveHabitReminderHour } from '../core/notifications';
 import { useStatsStore } from '../stores/useStatsStore';
+import { useThemeStore, sanitizeThemeMode } from '../stores/useThemeStore';
+import { useMotionStore, sanitizeMotionMode } from '../stores/useMotionStore';
+import { useNotificationStore } from '../stores/useNotificationStore';
 
 export interface CloudSyncHandle {
     /** 実行中のプルの完了を待つ（テスト用） */
@@ -74,6 +79,21 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
     // 実績を後退させない）。空のクラウドとのマージは何度呼んでもno-opなので毎回呼んで良い。
     if (Object.keys(cache.stats_daily).length > 0) {
         useStatsStore.getState().mergeFromCloud(buildStatsLogSnapshot(cache));
+    }
+    if (seedable.settings) {
+        const settings = extractSyncedSettings(cache);
+        if (settings) {
+            // setState直接呼び出し（set系アクション経由ではない）ため、
+            // syncSettingsToCloudへの再送信は起きない（seedTasks等と同じ設計）。
+            // notifiedTaskIds/lastHabitReminderDateはここで一切触れない。
+            useThemeStore.setState({ mode: sanitizeThemeMode(settings.themeMode) });
+            useMotionStore.setState({ mode: sanitizeMotionMode(settings.motionMode) });
+            useNotificationStore.setState({
+                enabled: settings.notificationsEnabled === true,
+                habitReminderHour: resolveHabitReminderHour(settings.habitReminderHour),
+            });
+            seeded = true;
+        }
     }
     return seeded;
 }
