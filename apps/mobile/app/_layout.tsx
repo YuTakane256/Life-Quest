@@ -6,12 +6,14 @@ import { registerMobileAuthStoreHooks } from '../src/platform/authStores';
 import { registerMobileCloudMigrationHooks } from '../src/platform/cloudMigration';
 import { registerPendingCompletionFlush } from '../src/platform/pendingCompletionFlush';
 import { registerNotificationChecks } from '../src/platform/notifications';
+import { registerLoginBonusCheck } from '../src/platform/loginBonusCheck';
 import { registerMobileCloudSyncHooks } from '../src/platform/cloudSync';
 import { registerMobileOutboxHooks } from '../src/platform/cloudOutbox';
 import { startMobileCanonicalSync } from '../src/platform/canonicalSync';
 import { startRewardSync } from '../src/stores/rewardSync';
 import { startStatsLogSeed } from '../src/stores/statsLogSeed';
 import { usePalette } from '../src/theme/usePalette';
+import { LoginBonusOverlay } from '../src/components/LoginBonusOverlay';
 
 export default function RootLayout() {
     const { palette, resolvedTheme } = usePalette();
@@ -38,6 +40,8 @@ export default function RootLayout() {
     useEffect(() => registerPendingCompletionFlush(), []);
     // 通知条件のチェック（起動時・フォアグラウンド復帰時・30分間隔。Webと同一セマンティクス）
     useEffect(() => registerNotificationChecks(), []);
+    // デイリーログインボーナスの判定（起動時・フォアグラウンド復帰時。Webと同一セマンティクス）
+    useEffect(() => registerLoginBonusCheck(), []);
     useEffect(() => startAuthSessionListener(), []);
 
     return (
@@ -48,6 +52,7 @@ export default function RootLayout() {
                 <Stack.Screen name="settings" options={{ headerShown: false }} />
                 <Stack.Screen name="help" options={{ headerShown: false }} />
             </Stack>
+            <LoginBonusOverlay />
         </>
     );
 }

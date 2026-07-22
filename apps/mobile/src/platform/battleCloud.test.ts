@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveCloudBattleAttempt, startCloudBattleAttempt } from './battleCloud';
+import { claimCloudLoginBonus, resolveCloudBattleAttempt, startCloudBattleAttempt } from './battleCloud';
 
 const invoker = vi.fn();
 
@@ -70,5 +70,14 @@ describe('battleCloud', () => {
             actions: [{ type: 'attack' }],
             idempotencyKey: 'op-1',
         });
+    });
+
+    it('claim_login_bonusを冪等キー付きで呼び、snake_caseレスポンスを変換する', async () => {
+        invoker.mockResolvedValueOnce({ granted: true, streak: 5, xp: 40, chest_label: null, version: 2 });
+
+        const result = await claimCloudLoginBonus();
+
+        expect(invoker).toHaveBeenCalledWith('claim_login_bonus', { idempotencyKey: 'op-1' });
+        expect(result).toEqual({ granted: true, streak: 5, xp: 40, chestLabel: null });
     });
 });
