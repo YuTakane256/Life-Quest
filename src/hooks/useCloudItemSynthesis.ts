@@ -20,7 +20,7 @@
  */
 import { useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
-import { synthesizeCloudItems } from '../platform/gameCloud';
+import { synthesizeCloudItems, type CloudSynthesisResult } from '../platform/gameCloud';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import type { Equipment } from '../types';
 
@@ -33,8 +33,52 @@ export interface UseCloudItemSynthesisResult {
     retry: () => Promise<Equipment | null>;
 }
 
-function synthKeyOf(itemIds: string[]): string {
+export function synthKeyOf(itemIds: string[]): string {
     return [...itemIds].sort().join(',');
+}
+
+export interface CloudItemSynthesisDeps {
+    synthesizeCloudItems: (itemIds: readonly string[], idempotencyKey: string) => Promise<CloudSynthesisResult | null>;
+    applyCloudSynthesisResult: (ingredientIds: string[], resultId: string, templateId: string) => Equipment | null;
+    localSynthesizeItems: (itemIds: string[]) => Equipment | null;
+}
+
+/**
+ * 'unconfigured-fallback'（未接続=null）と'client-error-fallback'（4xx）は
+ * どちらもローカル合成へ落ちる点は同じだが、呼び出し元の冪等キー削除可否が
+ * 異なる（未接続時はサーバーに何も送っていないため、その素材集合へ最初に
+ * 割り当てたキーを温存し、後で接続できたときに同じキーで送れるようにする。
+ * 4xxはサーバーに実際に送って拒否されたことが確定しているため削除してよい）。
+ */
+export type CloudItemSynthesisOutcome =
+    | { status: 'applied' | 'unconfigured-fallback' | 'client-error-fallback'; equipment: Equipment | null }
+    | { status: 'error'; equipment: null };
+
+/**
+ * 装備合成の判断ロジック本体（ヘッダーコメントのエラー分岐方針を実装する）。
+ * Reactの状態管理から切り離した純粋な非同期関数として抽出し、
+ * `useCloudItemSynthesis.test.ts`から直接テストできるようにする。
+ */
+export async function runCloudItemSynthesis(
+    itemIds: string[],
+    idempotencyKey: string,
+    deps: CloudItemSynthesisDeps,
+): Promise<CloudItemSynthesisOutcome> {
+    try {
+        const result = await deps.synthesizeCloudItems(itemIds, idempotencyKey);
+        if (!result) {
+            return { status: 'unconfigured-fallback', equipment: deps.localSynthesizeItems(itemIds) };
+        }
+        return {
+            status: 'applied',
+            equipment: deps.applyCloudSynthesisResult(itemIds, result.resultId, result.templateId),
+        };
+    } catch (error) {
+        if (error instanceof EdgeFunctionError && error.status !== null && error.status < 500) {
+            return { status: 'client-error-fallback', equipment: deps.localSynthesizeItems(itemIds) };
+        }
+        return { status: 'error', equipment: null };
+    }
 }
 
 export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
@@ -56,19 +100,22 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
             idempotencyKeysRef.current.set(synthKey, key);
         }
         try {
-            const result = await synthesizeCloudItems(itemIds, key);
-            if (!result) {
-                return localSynthesizeItems(itemIds);
+            const outcome = await runCloudItemSynthesis(itemIds, key, {
+                synthesizeCloudItems,
+                applyCloudSynthesisResult,
+                localSynthesizeItems,
+            });
+            if (outcome.status === 'error') {
+                setHasError(true);
+                return null;
             }
-            idempotencyKeysRef.current.delete(synthKey);
-            return applyCloudSynthesisResult(itemIds, result.resultId, result.templateId);
-        } catch (error) {
-            if (error instanceof EdgeFunctionError && error.status !== null && error.status < 500) {
+            if (outcome.status !== 'unconfigured-fallback') {
+                // 未接続時はサーバーに何も送っていないため、この素材集合用の
+                // 冪等キーを温存する（後で接続できたときに同じキーで送れる
+                // ようにする。applied/4xxは削除して良い）
                 idempotencyKeysRef.current.delete(synthKey);
-                return localSynthesizeItems(itemIds);
             }
-            setHasError(true);
-            return null;
+            return outcome.equipment;
         } finally {
             setIsSynthesizing(false);
         }
