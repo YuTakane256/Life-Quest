@@ -119,12 +119,12 @@ export function BattleReplayModal({ entry, onClose }: Props) {
                     {/* プレイヤー */}
                     <div className="rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
                         <div className="text-[10px] mb-1" style={{ color: 'var(--color-text-muted)' }}>自分</div>
-                        <HpBar current={playerHp} max={maxPlayerHp} color="player" height="sm" />
+                        <HpBar current={playerHp} max={maxPlayerHp} color="player" height="sm" label="自分のHP" />
                     </div>
                     {/* 敵 */}
                     <div className="rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
                         <div className="text-[10px] mb-1 truncate" style={{ color: 'var(--color-text-muted)' }}>{enemyName}</div>
-                        <HpBar current={enemyHp} max={enemyMaxHp} color="enemy" height="sm" />
+                        <HpBar current={enemyHp} max={enemyMaxHp} color="enemy" height="sm" label={`${enemyName} のHP`} />
                     </div>
                 </div>
 

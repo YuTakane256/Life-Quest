@@ -128,7 +128,7 @@ export function MapBattlePage() {
                             </div>
                         </div>
                         <div className="text-sm font-bold mb-1 text-center truncate" style={{ color: 'var(--color-text-primary)' }}>{character.name} <span style={{ color: 'var(--color-accent-gold)' }}>Lv.{character.level}</span></div>
-                        <HpBar current={battle.playerHp} max={effectiveStats.maxHp} color="player" height="md" />
+                        <HpBar current={battle.playerHp} max={effectiveStats.maxHp} color="player" height="md" label={`${character.name} のHP`} />
                     </div>
 
                     {/* 敵 */}
@@ -143,7 +143,7 @@ export function MapBattlePage() {
                             </div>
                         </div>
                         <div className="text-sm font-bold mb-1 text-center" style={{ color: 'var(--color-text-danger)' }}>{battle.enemy?.name}</div>
-                        <HpBar current={battle.enemy?.hp ?? 0} max={battle.enemy?.maxHp ?? 1} color="enemy" height="md" />
+                        <HpBar current={battle.enemy?.hp ?? 0} max={battle.enemy?.maxHp ?? 1} color="enemy" height="md" label={`${battle.enemy?.name ?? '敵'} のHP`} />
                     </div>
                 </div>
 
