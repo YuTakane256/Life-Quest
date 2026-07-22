@@ -96,4 +96,34 @@ describe('buildImportPayload（#506）', () => {
         expect(preMigrationBackupKey('u1')).toBe('life-quest:cloud:u1:pre-migration-backup:v1');
         expect(preMigrationBackupKey('u1')).not.toBe(preMigrationBackupKey('u2'));
     });
+
+    it('settingsが無ければnull（Mobileコンテンツ移行はゲーム状態を含まないため）', () => {
+        const payload = buildImportPayload({});
+        expect(payload.settings).toBeNull();
+        expect(buildMobileContentPayload({ tasks: [] }).settings).toBeNull();
+    });
+
+    it('settingsは4項目のallowlistのみ通し、未知のキーは落とす', () => {
+        const payload = buildImportPayload({
+            settings: {
+                themeMode: 'dark',
+                motionMode: 'reduced',
+                notificationsEnabled: true,
+                habitReminderHour: 21,
+                notifiedTaskIds: ['should-not-leak'],
+                lastHabitReminderDate: '2026-07-01',
+            },
+        });
+        expect(payload.settings).toEqual({
+            themeMode: 'dark',
+            motionMode: 'reduced',
+            notificationsEnabled: true,
+            habitReminderHour: 21,
+        });
+    });
+
+    it('settingsがオブジェクトでない場合はnull', () => {
+        expect(buildImportPayload({ settings: 'not-an-object' as unknown as Record<string, unknown> }).settings).toBeNull();
+        expect(buildImportPayload({ settings: ['array'] as unknown as Record<string, unknown> }).settings).toBeNull();
+    });
 });

@@ -27,6 +27,24 @@ function toTimestampOrNull(value: unknown): string | null {
 
 const CHEST_TYPES = Object.keys(GACHA_CONFIG.DROP_RATES) as ChestType[];
 
+/** upsert_user_settingsと同じ4項目のallowlist（値の妥当性はpull時にsanitizeThemeMode等で検証するため、ここでは構造検証のみ） */
+const SETTINGS_ALLOWLIST = ['themeMode', 'motionMode', 'notificationsEnabled', 'habitReminderHour'] as const;
+
+/**
+ * 移行スナップショットのsettingsを構造検証する。import_snapshot_applyは
+ * upsert_user_settingsと異なりjsonb型・サイズの検証を一切行わないため、
+ * ここがこのパスで唯一の構造的な防波堤になる。値の意味論（テーマ名の妥当性等）
+ * はpull時に各ストアのsanitize関数が担うため、ここでは関知しない。
+ */
+function sanitizeImportSettings(input: unknown): Record<string, unknown> | null {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) return null;
+    const result: Record<string, unknown> = {};
+    for (const key of SETTINGS_ALLOWLIST) {
+        if (key in input) result[key] = (input as Record<string, unknown>)[key];
+    }
+    return result;
+}
+
 export interface ImportStatsDaily {
     date: string;
     taskXp?: number;
@@ -203,7 +221,7 @@ export function buildImportPayload(input: ImportSnapshotInput): ImportPayload {
         },
         character,
         active_title: typeof input.activeTitle === 'string' ? input.activeTitle.slice(0, 40) : null,
-        settings: input.settings ?? null,
+        settings: sanitizeImportSettings(input.settings),
     };
 }
 

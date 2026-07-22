@@ -10,6 +10,7 @@ import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import type { ImportSnapshotInput } from '@life-quest/core/cloudImport';
 import { getWebEdgeFunctionInvoker } from './edgeFunctions';
 import { getWebSupabaseClient } from './supabase';
+import { buildSyncedSettingsPayload } from './settingsSync';
 import { useGameStore } from '../stores/useGameStore';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useStatsStore } from '../stores/useStatsStore';
@@ -60,6 +61,7 @@ export function buildWebImportSnapshot(): ImportSnapshotInput {
             opened: chest.opened,
         })),
         activeTitle: titleState.activeTitle,
+        settings: buildSyncedSettingsPayload(),
     };
 }
 
