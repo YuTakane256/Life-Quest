@@ -91,6 +91,21 @@ describe('useMobileGameStore', () => {
         });
     });
 
+    describe('grantChest', () => {
+        it('任意の宝箱を宝箱キューに追加する', () => {
+            useMobileGameStore.getState().grantChest('gold', '記念の金の宝箱');
+            const { chestQueue } = useMobileGameStore.getState();
+            expect(chestQueue).toHaveLength(1);
+            expect(chestQueue[0]).toMatchObject({ chestType: 'gold', label: '記念の金の宝箱', opened: false });
+        });
+
+        it('未hydration時は何もしない', () => {
+            useMobileGameStore.setState({ hasHydrated: false });
+            useMobileGameStore.getState().grantChest('gold', 'x');
+            expect(useMobileGameStore.getState().chestQueue).toHaveLength(0);
+        });
+    });
+
     describe('openChest', () => {
         it('木の宝箱の開封で装備を入手し、宝箱が開封済みになる', () => {
             useMobileGameStore.setState({

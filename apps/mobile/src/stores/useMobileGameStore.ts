@@ -50,6 +50,7 @@ import {
     SELL_XP_BY_RARITY,
     SYNTHESIS_CONFIG,
     type ChestReward,
+    type ChestType,
 } from '@life-quest/core/rewards';
 import { clampString } from '@life-quest/core/validation';
 import { create } from 'zustand';
@@ -94,6 +95,8 @@ interface MobileGameStore extends GameStateSnapshot {
     incrementGachaCount: () => void;
     /** 現在のガチャカウントがマイルストーンなら宝箱をキューに追加する。 */
     checkGachaMilestones: () => void;
+    /** 任意の宝箱を宝箱キューに追加する（ログインボーナスの特別宝箱等）。 */
+    grantChest: (chestType: ChestType, label: string) => void;
     /** 宝箱を開封し、入手した装備を返す（装備なし宝箱・開封済み・不明IDは null）。 */
     openChest: (chestId: string) => Equipment | null;
     /**
@@ -292,6 +295,19 @@ export const useMobileGameStore = create<MobileGameStore>()(
                     opened: false,
                     equipment: null,
                     isStarterCharacter: milestone.chestType === 'blue' && milestone.count === 5,
+                };
+                set({ chestQueue: capChestQueue([...chestQueue, chest]) });
+            },
+
+            grantChest: (chestType, label) => {
+                const { chestQueue, hasHydrated } = get();
+                if (!hasHydrated) return;
+                const chest: ChestReward = {
+                    id: createMobileId(),
+                    chestType,
+                    label,
+                    opened: false,
+                    equipment: null,
                 };
                 set({ chestQueue: capChestQueue([...chestQueue, chest]) });
             },

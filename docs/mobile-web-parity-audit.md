@@ -24,10 +24,11 @@
 > also cloud-authoritative on both platforms. Web's daily login bonus (XP +
 > streak, special chest) is now cloud-authoritative too, via a new
 > `claim_login_bonus` Edge Function that computes streak server-side (the
-> "Global feedback" row below is stale on this point for Web; Mobile still
-> has no login bonus feature at all, tracked as follow-up work). Tracking
-> issue #473 remains open for residual follow-up work only (see its issue
-> body for current status).
+> "Global feedback" row below is stale on this point for both platforms).
+> Mobile also gained a login bonus feature (a global modal
+> overlay + AppState-driven daily check, mirroring Web's), closing that
+> parity gap. Tracking issue #473 remains open for residual follow-up work
+> only (see its issue body for current status).
 
 ## Goal
 
