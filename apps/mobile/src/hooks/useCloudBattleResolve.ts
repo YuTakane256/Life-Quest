@@ -17,8 +17,8 @@
  * 同一actionsで再送できる（サーバーのidempotency_keysが安全に処理する）。
  */
 import { useEffect, useRef, useState } from 'react';
-import { useMobileGameStore } from '../stores/useMobileGameStore';
-import { resolveCloudBattleAttempt } from '../platform/battleCloud';
+import { useMobileGameStore, type ActiveMobileBattle } from '../stores/useMobileGameStore';
+import { resolveCloudBattleAttempt, type ResolveBattleAttemptResponse } from '../platform/battleCloud';
 import type { BattleAction } from '@life-quest/core/battle';
 
 export type CloudBattleResolveState = 'idle' | 'syncing' | 'done' | 'error';
@@ -31,6 +31,54 @@ export interface UseCloudBattleResolveResult {
     retry: () => void;
 }
 
+export interface CloudBattleResolveDeps {
+    resolveCloudBattleAttempt: (
+        battleAttemptId: string,
+        actions: readonly BattleAction[],
+    ) => Promise<ResolveBattleAttemptResponse>;
+    applyResolvedCloudBattle: (battleAttemptId: string, outcome: 'victory' | 'defeat', granted: boolean) => void;
+}
+
+export type CloudBattleResolveOutcome =
+    | { status: 'done'; granted: boolean }
+    | { status: 'error' };
+
+/**
+ * resolve送信の判断ロジック本体。成功時は`applyResolvedCloudBattle`まで
+ * 適用してから結果を返す。Reactの状態管理から切り離した純粋な非同期関数
+ * として抽出し、`useCloudBattleResolve.test.ts`から直接テストできるようにする。
+ */
+export async function runCloudBattleResolve(
+    attemptId: string,
+    actions: readonly BattleAction[],
+    deps: CloudBattleResolveDeps,
+): Promise<CloudBattleResolveOutcome> {
+    try {
+        const response = await deps.resolveCloudBattleAttempt(attemptId, actions);
+        deps.applyResolvedCloudBattle(attemptId, response.outcome, response.granted);
+        return { status: 'done', granted: response.granted };
+    } catch {
+        return { status: 'error' };
+    }
+}
+
+/**
+ * effectの発火条件（決着がvictory/defeat、rewardModeがcloud、
+ * battleAttemptIdが存在、まだこのattemptを処理していない）を切り出した
+ * 純粋な述語。二重発火防止の同期的なref書き込み自体はeffect側に残す
+ * （このガード自体はタイミングに影響しない）。
+ */
+export function shouldResolveBattle(
+    activeBattle: ActiveMobileBattle | null,
+    resolvedAttemptId: string | null,
+): boolean {
+    if (!activeBattle) return false;
+    if (activeBattle.state.outcome !== 'victory' && activeBattle.state.outcome !== 'defeat') return false;
+    if (activeBattle.rewardMode !== 'cloud' || !activeBattle.battleAttemptId) return false;
+    if (resolvedAttemptId === activeBattle.battleAttemptId) return false;
+    return true;
+}
+
 export function useCloudBattleResolve(): UseCloudBattleResolveResult {
     const activeBattle = useMobileGameStore((state) => state.activeBattle);
     const applyResolvedCloudBattle = useMobileGameStore((state) => state.applyResolvedCloudBattle);
@@ -40,24 +88,22 @@ export function useCloudBattleResolve(): UseCloudBattleResolveResult {
 
     const runResolve = (attemptId: string, actions: readonly BattleAction[]): void => {
         setResolveState('syncing');
-        void resolveCloudBattleAttempt(attemptId, actions)
-            .then((response) => {
-                applyResolvedCloudBattle(attemptId, response.outcome, response.granted);
-                setGranted(response.granted);
-                setResolveState('done');
-            })
-            .catch(() => {
-                setResolveState('error');
+        void runCloudBattleResolve(attemptId, actions, { resolveCloudBattleAttempt, applyResolvedCloudBattle })
+            .then((outcome) => {
+                if (outcome.status === 'done') {
+                    setGranted(outcome.granted);
+                    setResolveState('done');
+                } else {
+                    setResolveState('error');
+                }
             });
     };
 
     useEffect(() => {
-        if (!activeBattle) return;
-        if (activeBattle.state.outcome !== 'victory' && activeBattle.state.outcome !== 'defeat') return;
-        if (activeBattle.rewardMode !== 'cloud' || !activeBattle.battleAttemptId) return;
-        if (resolvedAttemptIdRef.current === activeBattle.battleAttemptId) return;
-        resolvedAttemptIdRef.current = activeBattle.battleAttemptId;
-        runResolve(activeBattle.battleAttemptId, activeBattle.actions);
+        if (!shouldResolveBattle(activeBattle, resolvedAttemptIdRef.current)) return;
+        const attemptId = activeBattle!.battleAttemptId!;
+        resolvedAttemptIdRef.current = attemptId;
+        runResolve(attemptId, activeBattle!.actions);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeBattle?.state.outcome, activeBattle?.rewardMode, activeBattle?.battleAttemptId, activeBattle?.actions]);
 
