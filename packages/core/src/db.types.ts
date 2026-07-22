@@ -779,6 +779,10 @@ export type Database = {
         }
         Returns: Json
       }
+      upsert_user_settings: {
+        Args: { p_base_version: number; p_key: string; p_settings: Json }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

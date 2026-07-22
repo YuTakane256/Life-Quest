@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { NOTIFICATION_CONFIG, resolveHabitReminderHour } from '@life-quest/core/notifications';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 
 export type MobileThemeMode = 'light' | 'dark' | 'system';
 export type MobileMotionMode = 'system' | 'standard' | 'reduced';
@@ -80,35 +81,68 @@ function sanitizePersisted(value: unknown): Partial<MobileSettingsState> {
 
 export const useMobileSettingsStore = create<MobileSettingsState>()(
     persist(
-        (set) => ({
-            themeMode: 'system',
-            motionMode: 'system',
-            notificationsEnabled: false,
-            habitReminderHour: 20,
-            notifiedTaskIds: [],
-            lastHabitReminderDate: null,
-            hasHydrated: false,
-            setThemeMode: (mode) => set({ themeMode: sanitizeMobileThemeMode(mode) }),
-            setMotionMode: (mode) => set({ motionMode: sanitizeMobileMotionMode(mode) }),
-            setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled === true }),
-            setHabitReminderHour: (hour) => set({ habitReminderHour: clampReminderHour(hour) }),
-            markTaskNotified: (taskId) =>
-                set((state) => {
-                    const sanitizedId = sanitizeTaskId(taskId);
-                    if (!sanitizedId || state.notifiedTaskIds.includes(sanitizedId)) return state;
-                    return { notifiedTaskIds: sanitizeTaskIds([...state.notifiedTaskIds, sanitizedId]) };
-                }),
-            markHabitReminded: (date) => {
-                if (!YMD_PATTERN.test(date)) return;
-                set({ lastHabitReminderDate: date });
-            },
-            pruneNotifiedTasks: (validTaskIds) =>
-                set((state) => {
-                    const validIds = new Set(sanitizeTaskIds(validTaskIds));
-                    return { notifiedTaskIds: state.notifiedTaskIds.filter((id) => validIds.has(id)) };
-                }),
-            setHasHydrated: (hasHydrated) => set({ hasHydrated }),
-        }),
+        (set, get) => {
+            /**
+             * Web版とは異なりMobileは設定が1ストアに集約されているため、
+             * 集約用の別モジュールは不要（`get()`で自ストアの現在値を読むだけでよい）。
+             * notifiedTaskIds/lastHabitReminderDateはデバイスローカルの重複通知
+             * 防止状態のため、明示的にallowlistから除外する（丸ごと展開しない）。
+             */
+            const syncSettingsToCloud = (): void => {
+                const state = get();
+                void enqueueCloudOperation('upsert_user_settings', {
+                    p_settings: {
+                        themeMode: state.themeMode,
+                        motionMode: state.motionMode,
+                        notificationsEnabled: state.notificationsEnabled,
+                        habitReminderHour: state.habitReminderHour,
+                    },
+                    p_base_version: null,
+                });
+            };
+
+            return {
+                themeMode: 'system',
+                motionMode: 'system',
+                notificationsEnabled: false,
+                habitReminderHour: 20,
+                notifiedTaskIds: [],
+                lastHabitReminderDate: null,
+                hasHydrated: false,
+                setThemeMode: (mode) => {
+                    set({ themeMode: sanitizeMobileThemeMode(mode) });
+                    syncSettingsToCloud();
+                },
+                setMotionMode: (mode) => {
+                    set({ motionMode: sanitizeMobileMotionMode(mode) });
+                    syncSettingsToCloud();
+                },
+                setNotificationsEnabled: (enabled) => {
+                    set({ notificationsEnabled: enabled === true });
+                    syncSettingsToCloud();
+                },
+                setHabitReminderHour: (hour) => {
+                    set({ habitReminderHour: clampReminderHour(hour) });
+                    syncSettingsToCloud();
+                },
+                markTaskNotified: (taskId) =>
+                    set((state) => {
+                        const sanitizedId = sanitizeTaskId(taskId);
+                        if (!sanitizedId || state.notifiedTaskIds.includes(sanitizedId)) return state;
+                        return { notifiedTaskIds: sanitizeTaskIds([...state.notifiedTaskIds, sanitizedId]) };
+                    }),
+                markHabitReminded: (date) => {
+                    if (!YMD_PATTERN.test(date)) return;
+                    set({ lastHabitReminderDate: date });
+                },
+                pruneNotifiedTasks: (validTaskIds) =>
+                    set((state) => {
+                        const validIds = new Set(sanitizeTaskIds(validTaskIds));
+                        return { notifiedTaskIds: state.notifiedTaskIds.filter((id) => validIds.has(id)) };
+                    }),
+                setHasHydrated: (hasHydrated) => set({ hasHydrated }),
+            };
+        },
         {
             name: 'quest-board-mobile-settings',
             storage: createJSONStorage(() => AsyncStorage),

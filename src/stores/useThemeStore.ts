@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createWebPersistStorage } from '../platform/storage';
 import { createSafePersistMerge } from '../utils/persistMerge';
+import { syncSettingsToCloud } from '../platform/settingsSync';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -22,7 +23,10 @@ export const useThemeStore = create<ThemeStoreState>()(
         (set) => ({
             mode: 'system',
             // setMode 経由でも値を検証して invalid なら 'system' に落とす
-            setMode: (mode) => set({ mode: sanitizeThemeMode(mode) }),
+            setMode: (mode) => {
+                set({ mode: sanitizeThemeMode(mode) });
+                syncSettingsToCloud();
+            },
         }),
         {
             name: 'quest-board-theme',

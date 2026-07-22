@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createWebPersistStorage } from '../platform/storage';
 import { createSafePersistMerge } from '../utils/persistMerge';
+import { syncSettingsToCloud } from '../platform/settingsSync';
 
 export type MotionMode = 'system' | 'standard' | 'reduced';
 
@@ -20,7 +21,10 @@ export const useMotionStore = create<MotionStoreState>()(
     persist(
         (set) => ({
             mode: 'system',
-            setMode: (mode) => set({ mode: sanitizeMotionMode(mode) }),
+            setMode: (mode) => {
+                set({ mode: sanitizeMotionMode(mode) });
+                syncSettingsToCloud();
+            },
         }),
         {
             name: 'quest-board-motion',

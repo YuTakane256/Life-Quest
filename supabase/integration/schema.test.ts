@@ -110,6 +110,42 @@ describe.skipIf(!enabled)('#501 コアスキーマ（ローカルSupabase統合�
         expect((ok.data as { version: number }).version).toBeGreaterThan(currentVersion);
     });
 
+    it('upsert_user_settings: 4項目を絶対値upsertし、base_version不一致でconflictを返す', async () => {
+        const settings = { themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21 };
+        const first = await user.client.rpc('upsert_user_settings', {
+            p_settings: settings, p_base_version: null, p_key: uuid(),
+        });
+        expect(first.error).toBeNull();
+        const firstVersion = (first.data as { version: number }).version;
+
+        const { rows } = await pg.query('select settings, version from user_settings where user_id=$1', [user.id]);
+        expect(rows[0].settings).toEqual(settings);
+        expect(Number(rows[0].version)).toBe(firstVersion);
+
+        const conflict = await user.client.rpc('upsert_user_settings', {
+            p_settings: { themeMode: 'light', motionMode: 'system', notificationsEnabled: false, habitReminderHour: 8 },
+            p_base_version: firstVersion - 1,
+            p_key: uuid(),
+        });
+        expect(conflict.error).toBeNull();
+        const conflictBody = conflict.data as { conflict: boolean; current: { settings: unknown } };
+        expect(conflictBody.conflict).toBe(true);
+        expect(conflictBody.current.settings).toEqual(settings); // 変更されていない
+
+        const applied = await user.client.rpc('upsert_user_settings', {
+            p_settings: { themeMode: 'light', motionMode: 'system', notificationsEnabled: false, habitReminderHour: 8 },
+            p_base_version: firstVersion,
+            p_key: uuid(),
+        });
+        expect(applied.error).toBeNull();
+        expect((applied.data as { version: number }).version).toBeGreaterThan(firstVersion);
+
+        const tooLarge = await user.client.rpc('upsert_user_settings', {
+            p_settings: { padding: 'x'.repeat(20000) }, p_base_version: null, p_key: uuid(),
+        });
+        expect(tooLarge.error).not.toBeNull();
+    });
+
     it('1操作1version: 複数テーブルの変更行に同一versionが付与され、(version, id)順で決定的に返る（指摘#8・#9）', async () => {
         // ダミーの複数テーブル操作: 1トランザクションで採番1回、tasks2行+habits1行に同じversionを付与
         const taskIds = [uuid(), uuid()].sort();

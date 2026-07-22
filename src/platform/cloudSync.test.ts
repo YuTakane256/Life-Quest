@@ -117,4 +117,60 @@ describe('applyCloudCacheToWebStores（データ消失パターンの回帰テ�
         applyCloudCacheToWebStores(cache);
         expect(useStatsStore.getState().taskXpLog['2026-07-01']).toBe(50);
     });
+
+    it('user_settings.settingsが空のままなら設定をシードしない（ローカルの既定値を保護）', async () => {
+        const { applyPullBatchToCache, createEmptyCloudCache } = await import('@life-quest/core/cloudCache');
+        const { applyCloudCacheToWebStores } = await import('./cloudSync');
+        const { useThemeStore } = await import('../stores/useThemeStore');
+        const { useMotionStore } = await import('../stores/useMotionStore');
+        const { useNotificationStore } = await import('../stores/useNotificationStore');
+
+        useThemeStore.setState({ mode: 'dark' });
+        useMotionStore.setState({ mode: 'reduced' });
+        useNotificationStore.setState({ enabled: true, habitReminderHour: 21 });
+
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 1, has_more: false,
+            user_settings: [{ user_id: 'u1', settings: {}, version: 1 }],
+        });
+
+        expect(applyCloudCacheToWebStores(cache)).toBe(false);
+        expect(useThemeStore.getState().mode).toBe('dark');
+        expect(useMotionStore.getState().mode).toBe('reduced');
+        expect(useNotificationStore.getState().enabled).toBe(true);
+        expect(useNotificationStore.getState().habitReminderHour).toBe(21);
+    });
+
+    it('user_settings.settingsに何か書き込まれていれば同期対象4項目だけシードする（notifiedTaskIds等は保持）', async () => {
+        const { applyPullBatchToCache, createEmptyCloudCache } = await import('@life-quest/core/cloudCache');
+        const { applyCloudCacheToWebStores } = await import('./cloudSync');
+        const { useThemeStore } = await import('../stores/useThemeStore');
+        const { useMotionStore } = await import('../stores/useMotionStore');
+        const { useNotificationStore } = await import('../stores/useNotificationStore');
+
+        useThemeStore.setState({ mode: 'system' });
+        useMotionStore.setState({ mode: 'system' });
+        useNotificationStore.setState({
+            enabled: false, habitReminderHour: 20,
+            notifiedTaskIds: ['local-task-1'], lastHabitReminderDate: '2026-07-19',
+        });
+
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 2, has_more: false,
+            user_settings: [{
+                user_id: 'u1',
+                settings: { themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 9 },
+                version: 2,
+            }],
+        });
+
+        expect(applyCloudCacheToWebStores(cache)).toBe(true);
+        expect(useThemeStore.getState().mode).toBe('dark');
+        expect(useMotionStore.getState().mode).toBe('reduced');
+        expect(useNotificationStore.getState().enabled).toBe(true);
+        expect(useNotificationStore.getState().habitReminderHour).toBe(9);
+        // デバイスローカルの重複通知防止状態はクラウドpullで一切変更されない
+        expect(useNotificationStore.getState().notifiedTaskIds).toEqual(['local-task-1']);
+        expect(useNotificationStore.getState().lastHabitReminderDate).toBe('2026-07-19');
+    });
 });

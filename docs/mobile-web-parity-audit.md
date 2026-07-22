@@ -27,8 +27,12 @@
 > "Global feedback" row below is stale on this point for both platforms).
 > Mobile also gained a login bonus feature (a global modal
 > overlay + AppState-driven daily check, mirroring Web's), closing that
-> parity gap. Tracking issue #473 remains open for residual follow-up work
-> only (see its issue body for current status).
+> parity gap. As of 2026-07-23, user settings (theme mode, motion mode,
+> notifications enabled, habit reminder hour) are also cloud-authoritative
+> on both platforms via a new `upsert_user_settings` RPC; device-local
+> duplicate-notification state (notified task IDs, last reminder date) is
+> deliberately excluded from sync. Tracking issue #473 remains open for
+> residual follow-up work only (see its issue body for current status).
 
 ## Goal
 

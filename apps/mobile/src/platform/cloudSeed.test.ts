@@ -14,6 +14,7 @@ import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
+import { useMobileSettingsStore } from '../stores/useMobileSettingsStore';
 
 describe('applyCloudCacheToMobileStores（データ消失パターンの回帰テスト）', () => {
     it('初期行だけのクラウド状態では、既存ローカルのタスク・習慣・ゲーム状態を上書きしない', () => {
@@ -92,5 +93,44 @@ describe('applyCloudCacheToMobileStores（データ消失パターンの回帰�
 
         applyCloudCacheToMobileStores(cache);
         expect(useMobileStatsStore.getState().taskXpLog['2026-07-01']).toBe(50);
+    });
+
+    it('user_settings.settingsが空のままなら設定をシードしない（ローカルの既定値を保護）', () => {
+        useMobileSettingsStore.setState({ themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21 });
+
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 1, has_more: false,
+            user_settings: [{ user_id: 'u1', settings: {}, version: 1 }],
+        });
+
+        expect(applyCloudCacheToMobileStores(cache)).toBe(false);
+        expect(useMobileSettingsStore.getState()).toMatchObject({
+            themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21,
+        });
+    });
+
+    it('user_settings.settingsに何か書き込まれていれば同期対象4項目だけシードする（notifiedTaskIds等は保持）', () => {
+        useMobileSettingsStore.setState({
+            themeMode: 'system', motionMode: 'system', notificationsEnabled: false, habitReminderHour: 20,
+            notifiedTaskIds: ['local-task-1'], lastHabitReminderDate: '2026-07-19',
+        });
+
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 2, has_more: false,
+            user_settings: [{
+                user_id: 'u1',
+                settings: { themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 9 },
+                version: 2,
+            }],
+        });
+
+        expect(applyCloudCacheToMobileStores(cache)).toBe(true);
+        const state = useMobileSettingsStore.getState();
+        expect(state).toMatchObject({
+            themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 9,
+        });
+        // デバイスローカルの重複通知防止状態はクラウドpullで一切変更されない
+        expect(state.notifiedTaskIds).toEqual(['local-task-1']);
+        expect(state.lastHabitReminderDate).toBe('2026-07-19');
     });
 });
