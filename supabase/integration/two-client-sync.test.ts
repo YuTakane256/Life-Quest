@@ -15,6 +15,8 @@ import {
     buildCanonicalGameSnapshot,
     buildCanonicalTaskSnapshot,
     createEmptyCloudCache,
+    extractSyncedSettings,
+    getSeedableSections,
     type CloudCache,
 } from '@life-quest/core/cloudCache';
 import { cloudCursorKey, cloudOutboxKey, createCloudPullRunner, type PullBatch } from '@life-quest/core/cloudPull';
@@ -281,5 +283,35 @@ describe.skipIf(!enabled)('#507 2クライアント同期E2E（ローカルSupab
         const mobileTask = mobileDevice.taskSnapshot().tasks.find((task) => task.id === taskId);
         expect(webTask?.name).toBe('Mobile側が変更した名前');
         expect(mobileTask?.name).toBe('Mobile側が変更した名前');
+    });
+
+    it('設定同期: upsert_user_settingsで書いた値が別クライアントのプルへ収束し、未変更ユーザーはseedable対象外のまま', async () => {
+        // 未変更ユーザー: サインアップ直後の初期行（settings='{}'）はseedable対象外であることを確認する
+        const untouchedUser = await createUser(`twoclient-settings-untouched-${Date.now()}@example.com`);
+        const untouchedDevice = createDevice(untouchedUser);
+        await untouchedDevice.runner.flush();
+        expect(getSeedableSections(untouchedDevice.cache).settings).toBe(false);
+
+        // 別ユーザーで書き込み→別デバイスのプルへ収束することを確認する
+        const settingsUser = await createUser(`twoclient-settings-${Date.now()}@example.com`);
+        const writerDevice = createDevice(settingsUser);
+        const readerDevice = createDevice(settingsUser);
+        await writerDevice.runner.flush();
+        await readerDevice.runner.flush();
+        expect(getSeedableSections(readerDevice.cache).settings).toBe(false);
+
+        const written = await settingsUser.client.rpc('upsert_user_settings', {
+            p_settings: { themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21 },
+            p_base_version: null,
+            p_key: uuid(),
+        });
+        expect(written.error).toBeNull();
+
+        await readerDevice.runner.flush();
+        const seedable = getSeedableSections(readerDevice.cache);
+        expect(seedable.settings).toBe(true);
+        expect(extractSyncedSettings(readerDevice.cache)).toEqual({
+            themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21,
+        });
     });
 });
