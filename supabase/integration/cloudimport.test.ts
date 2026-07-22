@@ -47,6 +47,8 @@ const webSnapshot = {
     equipment: [{ templateId: 'iron_sword', equipped: true }],
     chestQueue: [{ chestType: 'silver', label: '銀の宝箱', isStarterCharacter: false, opened: false }],
     activeTitle: '冒険王',
+    // notifiedTaskIdsはallowlist外（sanitizeImportSettingsで剥がされることを確認する）
+    settings: { themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21, notifiedTaskIds: ['should-be-stripped'] },
 };
 
 describe.skipIf(!enabled)('#506 クラウド取り込み（ローカルSupabase統合）', () => {
@@ -115,13 +117,21 @@ describe.skipIf(!enabled)('#506 クラウド取り込み（ローカルSupabase�
 
         // ゲーム状態
         const { rows: characters } = await pg.query(
-            'select name, total_xp, gacha_count, battle_unlocked, max_cleared_stage from characters where user_id=$1', [user.id]);
+            'select name, total_xp, gacha_count, battle_unlocked, max_cleared_stage, version from characters where user_id=$1', [user.id]);
         expect(characters[0]).toMatchObject({
             name: 'Web勇者', total_xp: '1234', gacha_count: '12', battle_unlocked: true, max_cleared_stage: 3,
         });
         const { rows: items } = await pg.query(
             "select template_id, equipped from inventory_items where user_id=$1", [user.id]);
         expect(items).toEqual([{ template_id: 'iron_sword', equipped: true }]);
+
+        // 設定（allowlist外のnotifiedTaskIdsは剥がされ、他コレクションと同一の移行versionを共有する）
+        const { rows: settingsRows } = await pg.query(
+            'select settings, version from user_settings where user_id=$1', [user.id]);
+        expect(settingsRows[0].settings).toEqual({
+            themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21,
+        });
+        expect(settingsRows[0].version).toBe(characters[0].version);
 
         // 証跡（xp_delta=0）と基準値（migration_baseline = 実行直前のtotal_xp）
         const { rows: ledger } = await pg.query(
