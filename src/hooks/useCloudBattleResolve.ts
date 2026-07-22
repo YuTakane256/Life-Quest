@@ -14,7 +14,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
-import { resolveCloudBattleAttempt } from '../platform/gameCloud';
+import { resolveCloudBattleAttempt, type ResolveBattleAttemptResponse } from '../platform/gameCloud';
+import type { BattleAction } from '@life-quest/core/battle';
 
 export type CloudBattleResolveState = 'idle' | 'syncing' | 'done' | 'error';
 
@@ -26,6 +27,38 @@ export interface UseCloudBattleResolveResult {
     retry: () => void;
 }
 
+export interface CloudBattleResolveDeps {
+    resolveCloudBattleAttempt: (
+        battleAttemptId: string,
+        actions: readonly BattleAction[],
+    ) => Promise<ResolveBattleAttemptResponse>;
+    applyResolvedCloudBattle: (battleAttemptId: string, outcome: 'victory' | 'defeat', granted: boolean) => void;
+}
+
+export type CloudBattleResolveOutcome =
+    | { status: 'done'; granted: boolean }
+    | { status: 'error' };
+
+/**
+ * resolve送信の判断ロジック本体。成功時は`applyResolvedCloudBattle`まで
+ * 適用してから結果を返す（呼び出し元は返り値でstate更新するだけでよい）。
+ * Reactの状態管理から切り離した純粋な非同期関数として抽出し、
+ * `useCloudBattleResolve.test.ts`から直接テストできるようにする。
+ */
+export async function runCloudBattleResolve(
+    attemptId: string,
+    actions: readonly BattleAction[],
+    deps: CloudBattleResolveDeps,
+): Promise<CloudBattleResolveOutcome> {
+    try {
+        const response = await deps.resolveCloudBattleAttempt(attemptId, actions);
+        deps.applyResolvedCloudBattle(attemptId, response.outcome, response.granted);
+        return { status: 'done', granted: response.granted };
+    } catch {
+        return { status: 'error' };
+    }
+}
+
 export function useCloudBattleResolve(): UseCloudBattleResolveResult {
     const battle = useGameStore((state) => state.battle);
     const applyResolvedCloudBattle = useGameStore((state) => state.applyResolvedCloudBattle);
@@ -35,14 +68,14 @@ export function useCloudBattleResolve(): UseCloudBattleResolveResult {
 
     const runResolve = (attemptId: string, actions: typeof battle.actions): void => {
         setResolveState('syncing');
-        void resolveCloudBattleAttempt(attemptId, actions)
-            .then((response) => {
-                applyResolvedCloudBattle(attemptId, response.outcome, response.granted);
-                setGranted(response.granted);
-                setResolveState('done');
-            })
-            .catch(() => {
-                setResolveState('error');
+        void runCloudBattleResolve(attemptId, actions, { resolveCloudBattleAttempt, applyResolvedCloudBattle })
+            .then((outcome) => {
+                if (outcome.status === 'done') {
+                    setGranted(outcome.granted);
+                    setResolveState('done');
+                } else {
+                    setResolveState('error');
+                }
             });
     };
 

@@ -24,7 +24,7 @@
  */
 import { useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
-import { openCloudChest } from '../platform/gameCloud';
+import { openCloudChest, type CloudChestResult } from '../platform/gameCloud';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 
 export interface UseCloudChestOpenResult {
@@ -35,6 +35,59 @@ export interface UseCloudChestOpenResult {
     openChest: (chestId: string) => Promise<void>;
     /** errorChestIdと同じキーで再送する。errorChestIdが無ければ何もしない。 */
     retry: () => void;
+}
+
+export interface CloudChestOpenDeps {
+    openCloudChest: (chestId: string, idempotencyKey: string) => Promise<CloudChestResult | null>;
+    applyCloudChestResult: (
+        chestId: string,
+        itemId: string | null,
+        templateId: string | null,
+        starterCharacter: boolean,
+    ) => void;
+    discardSyncedChest: (chestId: string) => void;
+    localOpenChest: (chestId: string) => void;
+}
+
+/**
+ * 'unconfigured-fallback'（未接続=null）と'not-found-fallback'（404）は
+ * どちらもローカル開封へ落ちる点は同じだが、呼び出し元の冪等キー削除可否が
+ * 異なる（未接続時はサーバーに何も送っていないため、そのchestIdへ最初に
+ * 割り当てたキーを温存し、後で接続できたときに同じキーで送れるようにする。
+ * 404はサーバーに実際に送って拒否されたことが確定しているため削除してよい）。
+ */
+export type CloudChestOpenOutcome =
+    | 'applied' | 'unconfigured-fallback' | 'not-found-fallback' | 'discarded' | 'error';
+
+/**
+ * 宝箱開封の判断ロジック本体（ヘッダーコメントのエラー分岐方針を実装する）。
+ * Reactの状態管理から切り離した純粋な非同期関数として抽出し、
+ * `useCloudChestOpen.test.ts`から直接テストできるようにする。
+ */
+export async function runCloudChestOpen(
+    chestId: string,
+    idempotencyKey: string,
+    deps: CloudChestOpenDeps,
+): Promise<CloudChestOpenOutcome> {
+    try {
+        const result = await deps.openCloudChest(chestId, idempotencyKey);
+        if (!result) {
+            deps.localOpenChest(chestId);
+            return 'unconfigured-fallback';
+        }
+        deps.applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
+        return 'applied';
+    } catch (error) {
+        if (error instanceof EdgeFunctionError && error.status === 404) {
+            deps.localOpenChest(chestId);
+            return 'not-found-fallback';
+        }
+        if (error instanceof EdgeFunctionError && error.status === 409) {
+            deps.discardSyncedChest(chestId);
+            return 'discarded';
+        }
+        return 'error';
+    }
 }
 
 export function useCloudChestOpen(): UseCloudChestOpenResult {
@@ -54,25 +107,20 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
             idempotencyKeysRef.current.set(chestId, key);
         }
         try {
-            const result = await openCloudChest(chestId, key);
-            if (!result) {
-                localOpenChest(chestId);
-                return;
-            }
-            applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
-            idempotencyKeysRef.current.delete(chestId);
-        } catch (error) {
-            if (error instanceof EdgeFunctionError && error.status === 404) {
-                localOpenChest(chestId);
+            const outcome = await runCloudChestOpen(chestId, key, {
+                openCloudChest,
+                applyCloudChestResult,
+                discardSyncedChest,
+                localOpenChest,
+            });
+            if (outcome === 'error') {
+                setErrorChestId(chestId);
+            } else if (outcome !== 'unconfigured-fallback') {
+                // 未接続時はサーバーに何も送っていないため、そのchestId用の
+                // 冪等キーを温存する（後で接続できたときに同じキーで送れる
+                // ようにする。applied/404/409は削除して良い）
                 idempotencyKeysRef.current.delete(chestId);
-                return;
             }
-            if (error instanceof EdgeFunctionError && error.status === 409) {
-                discardSyncedChest(chestId);
-                idempotencyKeysRef.current.delete(chestId);
-                return;
-            }
-            setErrorChestId(chestId);
         } finally {
             setOpeningChestId(null);
         }
