@@ -33,6 +33,47 @@ function synthKeyOf(itemIds: string[]): string {
     return [...itemIds].sort().join(',');
 }
 
+export interface CloudSynthesisDeps {
+    synthesizeCloudItems: (itemIds: string[], idempotencyKey: string) => Promise<{ resultId: string; templateId: string } | null>;
+    applyCloudSynthesisResult: (itemIds: string[], resultId: string, templateId: string) => Equipment | null;
+    localSynthesizeItems: (itemIds: string[]) => Equipment | null;
+}
+
+/**
+ * 'unconfigured-fallback'（未接続=null）と'error'（5xx・ネットワーク断・
+ * status=null等）は冪等キーを温存、'applied'と'client-error-fallback'（4xx）
+ * は削除対象（元実装の分岐を踏襲）。
+ */
+export type CloudSynthesisTag = 'applied' | 'unconfigured-fallback' | 'client-error-fallback' | 'error';
+
+/**
+ * 装備合成の判断ロジック本体（ヘッダーコメントのエラー分岐方針を実装する）。
+ * Reactの状態管理から切り離した純粋な非同期関数として抽出し、
+ * `useCloudItemSynthesis.test.ts`から直接テストできるようにする。
+ */
+export async function runCloudSynthesis(
+    itemIds: string[],
+    idempotencyKey: string,
+    deps: CloudSynthesisDeps,
+): Promise<{ tag: CloudSynthesisTag; equipment: Equipment | null }> {
+    try {
+        const result = await deps.synthesizeCloudItems(itemIds, idempotencyKey);
+        if (!result) {
+            return { tag: 'unconfigured-fallback', equipment: deps.localSynthesizeItems(itemIds) };
+        }
+        const equipment = deps.applyCloudSynthesisResult(itemIds, result.resultId, result.templateId);
+        return { tag: 'applied', equipment };
+    } catch (error) {
+        // status===nullを`<500`に含めないこと（null<500はtrueに評価されるため、
+        // 明示的な!==nullガードが無いとネットワーク断がclient-error扱いに
+        // 誤分類され、本来温存すべき冪等キーが誤って削除されてしまう）
+        if (error instanceof EdgeFunctionError && error.status !== null && error.status < 500) {
+            return { tag: 'client-error-fallback', equipment: deps.localSynthesizeItems(itemIds) };
+        }
+        return { tag: 'error', equipment: null };
+    }
+}
+
 export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
     const localSynthesizeItems = useMobileGameStore((state) => state.synthesizeItems);
     const applyCloudSynthesisResult = useMobileGameStore((state) => state.applyCloudSynthesisResult);
@@ -52,19 +93,17 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
             idempotencyKeysRef.current.set(synthKey, key);
         }
         try {
-            const result = await synthesizeCloudItems(itemIds, key);
-            if (!result) {
-                return localSynthesizeItems(itemIds);
+            const { tag, equipment } = await runCloudSynthesis(itemIds, key, {
+                synthesizeCloudItems, applyCloudSynthesisResult, localSynthesizeItems,
+            });
+            if (tag === 'error') {
+                setHasError(true);
+                return null;
             }
-            idempotencyKeysRef.current.delete(synthKey);
-            return applyCloudSynthesisResult(itemIds, result.resultId, result.templateId);
-        } catch (error) {
-            if (error instanceof EdgeFunctionError && error.status !== null && error.status < 500) {
+            if (tag !== 'unconfigured-fallback') {
                 idempotencyKeysRef.current.delete(synthKey);
-                return localSynthesizeItems(itemIds);
             }
-            setHasError(true);
-            return null;
+            return equipment;
         } finally {
             setIsSynthesizing(false);
         }

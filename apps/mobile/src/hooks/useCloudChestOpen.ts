@@ -16,7 +16,7 @@
  */
 import { useRef, useState } from 'react';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
-import { openCloudChest } from '../platform/battleCloud';
+import { openCloudChest, type CloudChestResult } from '../platform/battleCloud';
 import { createMobileId } from '../utils/createMobileId';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import type { Equipment } from '@life-quest/core/equipment';
@@ -39,6 +39,55 @@ export interface UseCloudChestOpenResult {
 
 const PENDING: CloudChestOpenOutcome = { status: 'pending', equipment: null };
 
+export interface CloudChestOpenDeps {
+    openCloudChest: (chestId: string, idempotencyKey: string) => Promise<CloudChestResult | null>;
+    applyCloudChestResult: (
+        chestId: string,
+        itemId: string | null,
+        templateId: string | null,
+        starterCharacter: boolean,
+    ) => Equipment | null;
+    discardSyncedChest: (chestId: string) => void;
+    localOpenChest: (chestId: string) => Equipment | null;
+}
+
+/**
+ * 'unconfigured-fallback'（未接続=null）は冪等キーを温存（サーバーに何も
+ * 送っていないため）、それ以外（applied/404/409/error）は削除対象。
+ * ただしerrorは呼び出し元がsetErrorChestIdする関係で削除しない
+ * （Web版と異なりMobileの元実装は5xx/network時に削除しないため踏襲する）。
+ */
+export type CloudChestOpenTag = 'applied' | 'unconfigured-fallback' | 'not-found-fallback' | 'discarded' | 'error';
+
+/**
+ * 宝箱開封の判断ロジック本体（ヘッダーコメントのエラー分岐方針を実装する）。
+ * Reactの状態管理から切り離した純粋な非同期関数として抽出し、
+ * `useCloudChestOpen.test.ts`から直接テストできるようにする。
+ */
+export async function runCloudChestOpen(
+    chestId: string,
+    idempotencyKey: string,
+    deps: CloudChestOpenDeps,
+): Promise<{ tag: CloudChestOpenTag; equipment: Equipment | null }> {
+    try {
+        const result = await deps.openCloudChest(chestId, idempotencyKey);
+        if (!result) {
+            return { tag: 'unconfigured-fallback', equipment: deps.localOpenChest(chestId) };
+        }
+        const equipment = deps.applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
+        return { tag: 'applied', equipment };
+    } catch (error) {
+        if (error instanceof EdgeFunctionError && error.status === 404) {
+            return { tag: 'not-found-fallback', equipment: deps.localOpenChest(chestId) };
+        }
+        if (error instanceof EdgeFunctionError && error.status === 409) {
+            deps.discardSyncedChest(chestId);
+            return { tag: 'discarded', equipment: null };
+        }
+        return { tag: 'error', equipment: null };
+    }
+}
+
 export function useCloudChestOpen(): UseCloudChestOpenResult {
     const localOpenChest = useMobileGameStore((state) => state.openChest);
     const applyCloudChestResult = useMobileGameStore((state) => state.applyCloudChestResult);
@@ -56,25 +105,18 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
             idempotencyKeysRef.current.set(chestId, key);
         }
         try {
-            const result = await openCloudChest(chestId, key);
-            if (!result) {
-                return { status: 'opened', equipment: localOpenChest(chestId) };
-            }
-            const equipment = applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
-            idempotencyKeysRef.current.delete(chestId);
-            return { status: 'opened', equipment };
-        } catch (error) {
-            if (error instanceof EdgeFunctionError && error.status === 404) {
-                idempotencyKeysRef.current.delete(chestId);
-                return { status: 'opened', equipment: localOpenChest(chestId) };
-            }
-            if (error instanceof EdgeFunctionError && error.status === 409) {
-                discardSyncedChest(chestId);
-                idempotencyKeysRef.current.delete(chestId);
+            const { tag, equipment } = await runCloudChestOpen(chestId, key, {
+                openCloudChest, applyCloudChestResult, discardSyncedChest, localOpenChest,
+            });
+            if (tag === 'error') {
+                setErrorChestId(chestId);
                 return PENDING;
             }
-            setErrorChestId(chestId);
-            return PENDING;
+            if (tag !== 'unconfigured-fallback') {
+                idempotencyKeysRef.current.delete(chestId);
+            }
+            if (tag === 'discarded') return PENDING;
+            return { status: 'opened', equipment };
         } finally {
             setOpeningChestId(null);
         }

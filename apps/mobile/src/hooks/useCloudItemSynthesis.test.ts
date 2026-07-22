@@ -1,0 +1,121 @@
+/**
+ * `runCloudSynthesis`（`useCloudItemSynthesis`から抽出した判断ロジック本体）の
+ * 直接テスト。Web `src/hooks/useCloudItemSynthesis.test.ts`と同じ「純粋関数
+ * 抽出」方針。ヘッダーコメントで定義されたエラー分岐方針（null/4xx→
+ * フォールバック、5xx等→error）を実際のEdgeFunctionErrorインスタンスを
+ * 投げて検証する。
+ */
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('@react-native-async-storage/async-storage', () => ({
+    default: {
+        getItem: vi.fn(async () => null),
+        setItem: vi.fn(async () => {}),
+        removeItem: vi.fn(async () => {}),
+    },
+}));
+
+// フック本体（未使用パスも含め）が`../platform/battleCloud`経由でexpo-secure-store等の
+// ネイティブ依存を読み込むため、jsdom環境で解決できないようモックする
+// （純粋関数のテストではこれらは呼ばれない）
+vi.mock('../platform/edgeFunctions', () => ({
+    getMobileEdgeFunctionInvoker: () => vi.fn(),
+}));
+
+import { runCloudSynthesis } from './useCloudItemSynthesis';
+import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
+import type { Equipment } from '@life-quest/core/equipment';
+
+const dummyEquipment: Equipment = {
+    id: 'result-1', templateId: 'iron_sword', name: '鉄の剣', slot: 'weapon', rarity: 'uncommon',
+    attackBonus: 5, defenseBonus: 0, hpBonus: 0, equipped: false,
+};
+
+function makeDeps(overrides: Partial<Parameters<typeof runCloudSynthesis>[2]> = {}) {
+    return {
+        synthesizeCloudItems: vi.fn(async () => null),
+        applyCloudSynthesisResult: vi.fn(() => dummyEquipment),
+        localSynthesizeItems: vi.fn(() => dummyEquipment),
+        ...overrides,
+    };
+}
+
+describe('runCloudSynthesis', () => {
+    it('クラウドが結果を返せばapplyCloudSynthesisResultへ適用し、appliedを返す', async () => {
+        const deps = makeDeps({
+            synthesizeCloudItems: vi.fn(async () => ({ resultId: 'result-1', templateId: 'iron_sword' })),
+        });
+
+        const result = await runCloudSynthesis(['a', 'b', 'c'], 'key-1', deps);
+
+        expect(deps.synthesizeCloudItems).toHaveBeenCalledWith(['a', 'b', 'c'], 'key-1');
+        expect(deps.applyCloudSynthesisResult).toHaveBeenCalledWith(['a', 'b', 'c'], 'result-1', 'iron_sword');
+        expect(deps.localSynthesizeItems).not.toHaveBeenCalled();
+        expect(result).toEqual({ tag: 'applied', equipment: dummyEquipment });
+    });
+
+    it('nullが返る（未接続）ならローカル合成へフォールバックする（冪等キーは温存対象）', async () => {
+        const deps = makeDeps();
+
+        const result = await runCloudSynthesis(['a', 'b', 'c'], 'key-1', deps);
+
+        expect(deps.localSynthesizeItems).toHaveBeenCalledWith(['a', 'b', 'c']);
+        expect(deps.applyCloudSynthesisResult).not.toHaveBeenCalled();
+        expect(result).toEqual({ tag: 'unconfigured-fallback', equipment: dummyEquipment });
+    });
+
+    it('400（素材数不正）等4xxは全てローカル合成へフォールバックする（DB到達前のためsafe、冪等キーは削除対象）', async () => {
+        const deps = makeDeps({
+            synthesizeCloudItems: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'invalid ingredients', 400); }),
+        });
+
+        const result = await runCloudSynthesis(['a', 'b', 'c'], 'key-1', deps);
+
+        expect(deps.localSynthesizeItems).toHaveBeenCalledWith(['a', 'b', 'c']);
+        expect(result.tag).toBe('client-error-fallback');
+    });
+
+    it('409（レアリティ不一致等）もローカル合成へフォールバックする', async () => {
+        const deps = makeDeps({
+            synthesizeCloudItems: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'synthesis rules not satisfied', 409); }),
+        });
+
+        const result = await runCloudSynthesis(['a', 'b', 'c'], 'key-1', deps);
+
+        expect(deps.localSynthesizeItems).toHaveBeenCalledWith(['a', 'b', 'c']);
+        expect(result.tag).toBe('client-error-fallback');
+    });
+
+    it('5xxはフォールバックせずerrorを返す（DB関数に到達し得るため二重消費防止）', async () => {
+        const deps = makeDeps({
+            synthesizeCloudItems: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'internal error', 500); }),
+        });
+
+        const result = await runCloudSynthesis(['a', 'b', 'c'], 'key-1', deps);
+
+        expect(deps.localSynthesizeItems).not.toHaveBeenCalled();
+        expect(result).toEqual({ tag: 'error', equipment: null });
+    });
+
+    it('ネットワーク断（status=null）等の非EdgeFunctionErrorもerrorを返す（4xx判定に誤って含めない）', async () => {
+        const deps = makeDeps({
+            synthesizeCloudItems: vi.fn(async () => { throw new TypeError('Failed to fetch'); }),
+        });
+
+        const result = await runCloudSynthesis(['a', 'b', 'c'], 'key-1', deps);
+
+        expect(deps.localSynthesizeItems).not.toHaveBeenCalled();
+        expect(result).toEqual({ tag: 'error', equipment: null });
+    });
+
+    it('EdgeFunctionErrorのstatus=null（ネットワーク断相当）もerrorを返す（null<500の罠を踏まない）', async () => {
+        const deps = makeDeps({
+            synthesizeCloudItems: vi.fn(async () => { throw new EdgeFunctionError('network-error', 'offline', null); }),
+        });
+
+        const result = await runCloudSynthesis(['a', 'b', 'c'], 'key-1', deps);
+
+        expect(deps.localSynthesizeItems).not.toHaveBeenCalled();
+        expect(result).toEqual({ tag: 'error', equipment: null });
+    });
+});
