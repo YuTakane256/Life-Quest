@@ -56,6 +56,10 @@
       "types": "./src/hp.ts",
       "import": "./src/hp.ts"
     },
+    "./progressA11y": {
+      "types": "./src/progressA11y.ts",
+      "import": "./src/progressA11y.ts"
+    },
     "./legacyMigration": {
       "types": "./src/legacyMigration.ts",
       "import": "./src/legacyMigration.ts"

@@ -10,6 +10,7 @@ import {
     type StageDefinition,
 } from '@life-quest/core/battle';
 import { getUnlockedBattleSkills } from '@life-quest/core/battleSkills';
+import { getHpBarA11y } from '@life-quest/core/progressA11y';
 import { startCloudBattleAttempt } from '../platform/battleCloud';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { usePalette } from '../theme/usePalette';
@@ -345,13 +346,19 @@ function Stat({ label, value, styles }: { label: string; value: number; styles: 
 
 function HpBar({ label, current, max, styles }: { label: string; current: number; max: number; styles: Styles }) {
     const ratio = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
+    const a11y = getHpBarA11y(current, max);
     return (
         <View style={styles.hpBlock}>
-            <View style={styles.hpHeader}>
+            <View style={styles.hpHeader} accessibilityElementsHidden>
                 <Text style={styles.hpLabel}>{label}</Text>
                 <Text style={styles.hpValue}>{current}/{max}</Text>
             </View>
-            <View style={styles.hpTrack}>
+            <View
+                style={styles.hpTrack}
+                accessibilityRole={a11y.max > 0 ? 'progressbar' : undefined}
+                accessibilityLabel={`${label}のHP`}
+                accessibilityValue={a11y.max > 0 ? { min: 0, max: a11y.max, now: a11y.current, text: a11y.text } : undefined}
+            >
                 <View style={[styles.hpFill, { width: `${Math.round(ratio * 100)}%` }]} />
             </View>
         </View>

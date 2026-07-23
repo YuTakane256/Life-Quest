@@ -29,15 +29,15 @@ export function HpBar({ current, max, color = 'player', height = 'md', label }: 
         barColor = hp.ratio > 0.3 ? 'var(--color-accent-emerald)' : 'var(--color-text-danger)';
     }
 
-    // valueMax=0（HP上限が不明・未設定）はmin===maxとなりprogressbarとしては無効な状態のため、
+    // max=0（HP上限が不明・未設定）はmin===maxとなりprogressbarとしては無効な状態のため、
     // role自体を付与しない（現状の呼び出し元は全てmaxに正の値かフォールバックを渡すため到達しない防御）
-    const a11yProps = a11y.valueMax > 0
+    const a11yProps = a11y.max > 0
         ? {
             role: 'progressbar' as const,
-            'aria-valuenow': a11y.valueNow,
+            'aria-valuenow': a11y.current,
             'aria-valuemin': 0,
-            'aria-valuemax': a11y.valueMax,
-            'aria-valuetext': a11y.valueText,
+            'aria-valuemax': a11y.max,
+            'aria-valuetext': a11y.text,
             'aria-label': label,
         }
         : {};
