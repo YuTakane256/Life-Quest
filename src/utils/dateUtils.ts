@@ -85,7 +85,9 @@ export function formatRelativeDate(dateStr: string): string {
  * ヒートマップ系UI（StatsPage・HabitHeatmapModal）のaria-label/表示文言で共有する。
  */
 export function formatHeatmapDate(date: string): string {
-    return new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
+    // timeZoneを明示しないとIntl.DateTimeFormatは実行環境のローカルタイムゾーンで
+    // 表示してしまい、UTC等のCI環境ではJSTから1日ズレる（実際にCIで検出したバグ）。
+    return new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' })
         .format(new Date(`${date}T00:00:00+09:00`));
 }
 
