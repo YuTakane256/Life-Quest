@@ -5,6 +5,7 @@ import {
     generateId,
     isOverdue,
     formatRelativeDate,
+    formatHeatmapDate,
     isValidYmd,
     shiftDate,
     addRecurrenceInterval,
@@ -216,6 +217,18 @@ describe('formatRelativeDate', () => {
     it('不正な日付は空文字を返す', () => {
         expect(formatRelativeDate('2025-02-29')).toBe('');
         expect(formatRelativeDate('not-a-date')).toBe('');
+    });
+});
+
+describe('formatHeatmapDate', () => {
+    it('JST基準で「M月D日(曜)」形式に整形する', () => {
+        expect(formatHeatmapDate('2025-07-24')).toBe('7月24日(木)');
+    });
+
+    it('UTC境界日でもJSTの日付がずれない（UTC前日深夜のケース）', () => {
+        // 2025-01-01T00:00:00+09:00 は UTC では 2024-12-31T15:00:00Z。
+        // T00:00:00+09:00固定でパースするため、UTC変換によるズレが起きないことを確認する。
+        expect(formatHeatmapDate('2025-01-01')).toBe('1月1日(水)');
     });
 });
 
