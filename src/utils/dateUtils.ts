@@ -81,6 +81,15 @@ export function formatRelativeDate(dateStr: string): string {
 }
 
 /**
+ * YYYY-MM-DD の日付を「7月24日(木)」のようなJST基準の読み上げ向け表示に変換する。
+ * ヒートマップ系UI（StatsPage・HabitHeatmapModal）のaria-label/表示文言で共有する。
+ */
+export function formatHeatmapDate(date: string): string {
+    return new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
+        .format(new Date(`${date}T00:00:00+09:00`));
+}
+
+/**
  * ISO 8601 タイムスタンプを「たった今 / N分前 / N時間前 / N日前 / YYYY/MM/DD」の相対表示にする。
  * 未来時刻が渡されたら「たった今」扱い。
  */

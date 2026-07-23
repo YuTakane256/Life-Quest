@@ -12,6 +12,7 @@ import { useTitleStore } from '../stores/useTitleStore';
 import { getTodayJST, shiftDate } from '../utils/dateUtils';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
 import { getProgressBarA11y } from '../utils/progressBar';
+import { getHeatmapCellLabel } from '../utils/statsHeatmapA11y';
 
 /** 日付セットから最長連続日数とその開始/終了日を返す */
 function computeLongestConsecutive(dateSet: Set<string>): { count: number; start: string; end: string } {
@@ -333,6 +334,7 @@ export function StatsPage() {
                     <button
                         key={tab}
                         onClick={() => setMode(tab)}
+                        aria-pressed={mode === tab}
                         className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200"
                         style={{
                             backgroundColor: mode === tab ? 'var(--color-accent-primary)' : 'transparent',
@@ -433,17 +435,22 @@ export function StatsPage() {
                                 const color = mode === 'tasks' ? TASK_COLORS[level] : HABIT_COLORS[level];
 
                                 return (
-                                    <div
+                                    <button
                                         key={`${wi}-${di}`}
-                                        className="rounded-sm cursor-pointer transition-transform hover:scale-125"
+                                        type="button"
+                                        aria-label={getHeatmapCellLabel(date, tooltipText)}
+                                        className="rounded-sm cursor-pointer transition-transform hover:scale-125 focus:outline-none focus-visible:ring-2"
                                         style={{
                                             width: '13px',
                                             height: '13px',
                                             backgroundColor: color,
-                                        }}
+                                            '--tw-ring-color': 'var(--color-accent-primary)',
+                                        } as React.CSSProperties}
                                         onClick={() => setTooltipInfo(tooltipInfo?.date === date ? null : { date, value: tooltipText })}
                                         onMouseEnter={() => setTooltipInfo({ date, value: tooltipText })}
                                         onMouseLeave={() => setTooltipInfo(null)}
+                                        onFocus={() => setTooltipInfo({ date, value: tooltipText })}
+                                        onBlur={() => setTooltipInfo(null)}
                                     />
                                 );
                             })}

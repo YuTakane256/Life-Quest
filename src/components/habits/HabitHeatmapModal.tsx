@@ -3,7 +3,7 @@ import { CalendarDays, Flame, X } from 'lucide-react';
 import type { Habit, HabitDailyRecord, RestDay } from '../../types';
 import { HABIT_HISTORY_RETENTION_DAYS } from '../../stores/useHabitStore';
 import { buildHabitHeatmapData, type HabitHeatmapDay, type HabitHeatmapStatus } from '../../utils/habitHeatmap';
-import { getTodayJST } from '../../utils/dateUtils';
+import { getTodayJST, formatHeatmapDate } from '../../utils/dateUtils';
 import { useModalEscape } from '../../hooks/useModalEscape';
 
 const STATUS_LABELS: Record<HabitHeatmapStatus, string> = {
@@ -22,11 +22,6 @@ function getStatusStyle(status: HabitHeatmapStatus, color: string) {
     if (status === 'pending') return { backgroundColor: 'var(--color-bg-secondary)', borderColor: color };
     if (status === 'before-created') return { backgroundColor: 'transparent', borderColor: 'var(--color-border-default)', opacity: 0.35 };
     return { backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-default)' };
-}
-
-function formatDate(date: string): string {
-    return new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
-        .format(new Date(`${date}T00:00:00+09:00`));
 }
 
 export function HabitHeatmapModal({
@@ -113,7 +108,7 @@ export function HabitHeatmapModal({
                                 <button
                                     key={day.date}
                                     type="button"
-                                    aria-label={`${formatDate(day.date)}: ${STATUS_LABELS[day.status]}`}
+                                    aria-label={`${formatHeatmapDate(day.date)}: ${STATUS_LABELS[day.status]}`}
                                     title={`${day.date} ${STATUS_LABELS[day.status]}`}
                                     onClick={() => setSelectedDay(day)}
                                     className="w-4 h-4 rounded-[3px] border transition-transform hover:scale-125"
@@ -126,7 +121,7 @@ export function HabitHeatmapModal({
 
                 <div className="min-h-[44px] mt-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
                     {selectedDay ? (
-                        <><strong style={{ color: 'var(--color-text-primary)' }}>{formatDate(selectedDay.date)}</strong><span className="ml-2">{STATUS_LABELS[selectedDay.status]}</span>{selectedDay.memo && <div className="mt-1" style={{ color: 'var(--color-text-muted)' }}>{selectedDay.memo}</div>}</>
+                        <><strong style={{ color: 'var(--color-text-primary)' }}>{formatHeatmapDate(selectedDay.date)}</strong><span className="ml-2">{STATUS_LABELS[selectedDay.status]}</span>{selectedDay.memo && <div className="mt-1" style={{ color: 'var(--color-text-muted)' }}>{selectedDay.memo}</div>}</>
                     ) : '日付を押すと記録の詳細を確認できます'
                     }
                 </div>
