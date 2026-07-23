@@ -18,6 +18,7 @@ import type { Equipment, Rarity } from '../../types';
 import { SLOT_ICONS, SLOT_LABELS } from './equipmentPresentation';
 import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
 import { useCloudItemSynthesis } from '../../hooks/useCloudItemSynthesis';
+import { getEquipmentRowA11y } from './equipmentRowA11y';
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
@@ -309,18 +310,36 @@ function EquipmentRow({ item, mode, isSelected, synthTargetRarity, onEquip, onSe
         if (mode === 'synthesize' && !isSynthDisabled) onToggleSynth();
     };
 
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (mode === 'normal') return;
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault(); // Spaceキーによるページスクロールを抑止（ネイティブbutton/checkboxではないため自前対応が必要）
+        handleClick();
+    };
+
+    const a11y = getEquipmentRowA11y({
+        mode,
+        itemName: item.name,
+        isSelected,
+        isSynthDisabled,
+        sellXp: SELL_XP_BY_RARITY[item.rarity],
+    });
+
     return (
         <div
-            className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${mode !== 'normal' ? 'cursor-pointer' : ''}`}
+            className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${mode !== 'normal' ? 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2' : ''}`}
             style={{
                 backgroundColor: isSelected ? `${RARITY_COLORS[item.rarity]}15` : 'var(--color-bg-card)',
                 border: `1px solid ${isSelected ? RARITY_COLORS[item.rarity] : `${RARITY_COLORS[item.rarity]}33`}`,
                 opacity: isSynthDisabled ? 0.4 : 1,
+                ...(mode !== 'normal' ? { '--tw-ring-color': 'var(--color-accent-primary)', '--tw-ring-offset-color': 'var(--color-bg-primary)' } as React.CSSProperties : {}),
             }}
             onClick={handleClick}
+            onKeyDown={handleKeyDown}
+            {...a11y}
         >
             {mode === 'synthesize' && (
-                <div className="w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all" style={{
+                <div aria-hidden="true" className="w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all" style={{
                     borderColor: isSelected ? RARITY_COLORS[item.rarity] : 'var(--color-text-muted)',
                     backgroundColor: isSelected ? RARITY_COLORS[item.rarity] : 'transparent',
                 }}>
@@ -347,7 +366,7 @@ function EquipmentRow({ item, mode, isSelected, synthTargetRarity, onEquip, onSe
                 <button onClick={onEquip} className="px-3.5 py-2 rounded-lg text-sm font-medium transition-colors" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>装備</button>
             )}
             {mode === 'sell' && (
-                <div className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-bold" style={{ backgroundColor: 'var(--color-accent-gold)', color: '#000' }}>
+                <div aria-hidden="true" className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-bold" style={{ backgroundColor: 'var(--color-accent-gold)', color: '#000' }}>
                     <Coins size={14} /> +{SELL_XP_BY_RARITY[item.rarity]} XP
                 </div>
             )}
