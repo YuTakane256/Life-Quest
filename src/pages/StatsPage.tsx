@@ -11,6 +11,7 @@ import { useGameStore } from '../stores/useGameStore';
 import { useTitleStore } from '../stores/useTitleStore';
 import { getTodayJST, shiftDate } from '../utils/dateUtils';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
+import { getProgressBarA11y } from '../utils/progressBar';
 
 /** 日付セットから最長連続日数とその開始/終了日を返す */
 function computeLongestConsecutive(dateSet: Set<string>): { count: number; start: string; end: string } {
@@ -485,6 +486,11 @@ function SummaryCard({ label, value, icon }: { label: string; value: number; ico
 
 function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
     const percent = Math.round(achievement.progress * 100);
+    const a11y = getProgressBarA11y(
+        achievement.current,
+        achievement.target,
+        (now, max) => (achievement.unlocked ? `達成・${achievement.rewardTitle}` : `${now} / ${max}`),
+    );
     return (
         <div className="rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', opacity: achievement.unlocked ? 1 : 0.78 }}>
             <div className="flex items-start justify-between gap-3 mb-2">
@@ -502,11 +508,25 @@ function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
                         color: achievement.unlocked ? 'var(--color-accent-gold)' : 'var(--color-text-muted)',
                         border: '1px solid var(--color-border-default)',
                     }}
+                    aria-hidden="true"
                 >
                     {achievement.unlocked ? achievement.rewardTitle : `${achievement.current.toLocaleString()}/${achievement.target.toLocaleString()}`}
                 </span>
             </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-card)' }}>
+            <div
+                className="h-1.5 rounded-full overflow-hidden"
+                style={{ backgroundColor: 'var(--color-bg-card)' }}
+                {...(a11y.valueMax > 0
+                    ? {
+                        role: 'progressbar' as const,
+                        'aria-valuenow': a11y.valueNow,
+                        'aria-valuemin': 0,
+                        'aria-valuemax': a11y.valueMax,
+                        'aria-valuetext': a11y.valueText,
+                        'aria-label': achievement.title,
+                    }
+                    : {})}
+            >
                 <div
                     className="h-full rounded-full transition-all"
                     style={{

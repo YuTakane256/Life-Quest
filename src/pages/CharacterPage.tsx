@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Check, Edit2, History, Milestone, Package, Sparkles, X } from 'lucide-react';
 import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stores/useGameStore';
+import { getProgressBarA11y } from '../utils/progressBar';
 import { GACHA_CONFIG } from '../config/gameConfig';
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS } from '../config/equipmentAssets';
 import type { Equipment, EquipmentSlot } from '../types';
@@ -68,6 +69,14 @@ export function CharacterPage() {
     const effectiveStats = useMemo(() => calculateEffectiveStats(character, equipment), [character, equipment]);
     const xpProgress = useMemo(() => calculateXpProgress(character.totalXp, character.level), [character.totalXp, character.level]);
     const nextLevelXp = useMemo(() => calculateNextLevelXp(character.level), [character.level]);
+    // バーの塗り幅はxpProgress（現レベル内の進捗率）で描画されており、
+    // totalXp/nextLevelXp（累計値）とはlevel>=2で一致しないため、ARIA値も
+    // バーの塗りに合わせてround(xpProgress*100)/100を使う（valuetextのみ
+    // 可視テキストのtotalXp/nextLevelXpを流用し、数値情報は保つ）
+    const xpA11y = useMemo(
+        () => getProgressBarA11y(Math.round(xpProgress * 100), 100, () => `${character.totalXp} / ${nextLevelXp}`),
+        [xpProgress, character.totalXp, nextLevelXp],
+    );
     const equippedItems = useMemo(() => equipment.filter((item) => item.equipped), [equipment]);
     const unopenedChests = useMemo(() => chestQueue.filter((chest) => !chest.opened), [chestQueue]);
     const openedChests = useMemo(() => [...chestQueue].filter((chest) => chest.opened).reverse(), [chestQueue]);
@@ -100,9 +109,22 @@ export function CharacterPage() {
                         {activeTitle && <div className="text-[11px] font-semibold mb-1 truncate" style={{ color: 'var(--color-accent-gold)' }}>{activeTitle}</div>}
                         <div className="mb-2">
                             <div className="flex justify-between text-xs mb-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                <span>XP</span><span>{character.totalXp} / {nextLevelXp}</span>
+                                <span aria-hidden="true">XP</span><span aria-hidden="true">{character.totalXp} / {nextLevelXp}</span>
                             </div>
-                            <div className="w-full h-2.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
+                            <div
+                                className="w-full h-2.5 rounded-full overflow-hidden"
+                                style={{ backgroundColor: 'var(--color-bg-secondary)' }}
+                                {...(xpA11y.valueMax > 0
+                                    ? {
+                                        role: 'progressbar' as const,
+                                        'aria-valuenow': xpA11y.valueNow,
+                                        'aria-valuemin': 0,
+                                        'aria-valuemax': xpA11y.valueMax,
+                                        'aria-valuetext': xpA11y.valueText,
+                                        'aria-label': `${character.name} の経験値`,
+                                    }
+                                    : {})}
+                            >
                                 <div className="h-full rounded-full transition-all duration-500" style={{ width: `${xpProgress * 100}%`, background: 'linear-gradient(90deg, var(--color-accent-primary), var(--color-accent-gold))' }} />
                             </div>
                         </div>
