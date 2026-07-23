@@ -19,6 +19,7 @@ import { SLOT_ICONS, SLOT_LABELS } from './equipmentPresentation';
 import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
 import { useCloudItemSynthesis } from '../../hooks/useCloudItemSynthesis';
 import { getEquipmentRowA11y } from './equipmentRowA11y';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
@@ -51,6 +52,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
     const [selectedForSynth, setSelectedForSynth] = useState<string[]>([]);
     const [sellFeedback, setSellFeedback] = useState<{ id: string; xp: number } | null>(null);
+    const [sellConfirmItem, setSellConfirmItem] = useState<Equipment | null>(null);
     const [synthResult, setSynthResult] = useState<Equipment | null>(null);
     const [slotFilter, setSlotFilter] = useState<InventorySlotFilter>('all');
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
@@ -74,13 +76,19 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
         [selectedForSynth, unequippedItems]
     );
 
-    const handleSell = useCallback((itemId: string) => {
+    const confirmSell = useCallback((itemId: string) => {
         const xp = sellItem(itemId);
         if (xp <= 0) return;
         setSellFeedback({ id: itemId, xp });
         setSelectedForSynth((current) => current.filter((id) => id !== itemId));
         setTimeout(() => setSellFeedback(null), 1500);
     }, [sellItem]);
+
+    const handleSellConfirm = useCallback(() => {
+        if (!sellConfirmItem) return;
+        confirmSell(sellConfirmItem.id);
+        setSellConfirmItem(null);
+    }, [sellConfirmItem, confirmSell]);
 
     const toggleSynthSelect = useCallback((itemId: string) => {
         setSelectedForSynth((current) => {
@@ -174,6 +182,16 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
                 </div>
             )}
 
+            <ConfirmDialog
+                open={sellConfirmItem !== null}
+                title="装備を売却しますか？"
+                message={sellConfirmItem ? `「${sellConfirmItem.name}」を売却して +${SELL_XP_BY_RARITY[sellConfirmItem.rarity]} XP を獲得します。この操作は取り消せません。` : ''}
+                confirmLabel="売却する"
+                confirmColor="var(--color-accent-gold)"
+                onConfirm={handleSellConfirm}
+                onClose={() => setSellConfirmItem(null)}
+            />
+
             {unequippedItems.length === 0 ? (
                 <InventoryEmpty icon={<Star size={28} />} message="装備がありません" />
             ) : filteredItems.length === 0 ? (
@@ -188,7 +206,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
                             isSelected={selectedForSynth.includes(item.id)}
                             synthTargetRarity={synthTargetRarity}
                             onEquip={() => equipItem(item.id)}
-                            onSell={() => handleSell(item.id)}
+                            onSell={() => setSellConfirmItem(item)}
                             onToggleSynth={() => toggleSynthSelect(item.id)}
                         />
                     ))}
