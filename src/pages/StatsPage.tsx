@@ -518,13 +518,13 @@ function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
             <div
                 className="h-1.5 rounded-full overflow-hidden"
                 style={{ backgroundColor: 'var(--color-bg-card)' }}
-                {...(a11y.valueMax > 0
+                {...(a11y.max > 0
                     ? {
                         role: 'progressbar' as const,
-                        'aria-valuenow': a11y.valueNow,
+                        'aria-valuenow': a11y.current,
                         'aria-valuemin': 0,
-                        'aria-valuemax': a11y.valueMax,
-                        'aria-valuetext': a11y.valueText,
+                        'aria-valuemax': a11y.max,
+                        'aria-valuetext': a11y.text,
                         'aria-label': achievement.title,
                     }
                     : {})}

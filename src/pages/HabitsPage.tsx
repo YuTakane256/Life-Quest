@@ -128,13 +128,13 @@ export function HabitsPage() {
             {habits.length > 0 && <div className="mb-4"><div
                 className="w-full h-2 rounded-full overflow-hidden"
                 style={{ backgroundColor: 'var(--color-bg-secondary)' }}
-                {...(habitsA11y.valueMax > 0
+                {...(habitsA11y.max > 0
                     ? {
                         role: 'progressbar' as const,
-                        'aria-valuenow': habitsA11y.valueNow,
+                        'aria-valuenow': habitsA11y.current,
                         'aria-valuemin': 0,
-                        'aria-valuemax': habitsA11y.valueMax,
-                        'aria-valuetext': habitsA11y.valueText,
+                        'aria-valuemax': habitsA11y.max,
+                        'aria-valuetext': habitsA11y.text,
                         'aria-label': '本日の習慣達成状況',
                     }
                     : {})}

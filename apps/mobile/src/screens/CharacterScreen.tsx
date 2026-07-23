@@ -5,6 +5,7 @@ import type { ThemePalette } from '@life-quest/core/designTokens';
 import { EQUIPMENT_SLOTS, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
 import { calculateNextLevelXp, calculateXpProgress } from '@life-quest/core/progression';
+import { getProgressBarA11y } from '@life-quest/core/progressA11y';
 import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
 import { AVATAR_IMAGES, getChestImage, getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
@@ -63,6 +64,10 @@ export default function CharacterScreen() {
     const stats = getEffectiveStats();
     const progress = calculateXpProgress(character.totalXp, character.level);
     const nextLevelXp = calculateNextLevelXp(character.level);
+    // Web CharacterPage.tsxと同様、バーの塗り幅はprogress（現レベル内の進捗率）
+    // なので、accessibilityValueもそれに合わせてround(progress*100)/100を使う
+    // （text表示のみtotalXp/nextLevelXpを流用し、数値情報は保つ）
+    const xpA11y = getProgressBarA11y(Math.round(progress * 100), 100, () => `${character.totalXp} / ${nextLevelXp}`);
     const unopenedChests = chestQueue.filter((chest) => !chest.opened);
     const equippedBySlot = useMemo(() => {
         const map = new Map<EquipmentSlot, Equipment>();
@@ -222,12 +227,13 @@ export default function CharacterScreen() {
                 {/* XP進捗 */}
                 <View
                     accessibilityRole="progressbar"
-                    accessibilityLabel={`経験値 ${character.totalXp} / 次のレベルまで ${Math.max(0, nextLevelXp - character.totalXp)}`}
+                    accessibilityLabel={`${character.name} の経験値`}
+                    accessibilityValue={{ min: 0, max: xpA11y.max, now: xpA11y.current, text: xpA11y.text }}
                     style={styles.progressTrack}
                 >
                     <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
                 </View>
-                <Text style={styles.progressText}>XP {character.totalXp} / {nextLevelXp}</Text>
+                <Text style={styles.progressText} accessibilityElementsHidden>XP {character.totalXp} / {nextLevelXp}</Text>
 
                 {/* ステータス */}
                 <View style={styles.statsRow}>

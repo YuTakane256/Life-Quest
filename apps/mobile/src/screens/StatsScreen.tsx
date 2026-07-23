@@ -10,6 +10,7 @@ import {
     groupDatesByWeeks,
 } from '@life-quest/core/stats';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '@life-quest/core/achievements';
+import { getProgressBarA11y } from '@life-quest/core/progressA11y';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
@@ -226,6 +227,11 @@ function SummaryCard({ label, value, styles }: { label: string; value: string; s
 /** Web StatsPage.tsx の AchievementRow と同一の情報構造（アイコン・タイトル・説明・進捗バー）。 */
 function AchievementRow({ achievement, styles }: { achievement: AchievementProgress; styles: Styles }) {
     const percent = Math.round(achievement.progress * 100);
+    const a11y = getProgressBarA11y(
+        achievement.current,
+        achievement.target,
+        (current, max) => (achievement.unlocked ? `達成・${achievement.rewardTitle}` : `${current} / ${max}`),
+    );
     return (
         <View style={[styles.achievementRow, !achievement.unlocked && styles.achievementRowLocked]}>
             <View style={styles.achievementHeader}>
@@ -236,13 +242,18 @@ function AchievementRow({ achievement, styles }: { achievement: AchievementProgr
                         <Text style={styles.achievementDescription} numberOfLines={1}>{achievement.description}</Text>
                     </View>
                 </View>
-                <View style={[styles.achievementBadge, achievement.unlocked && styles.achievementBadgeUnlocked]}>
+                <View style={[styles.achievementBadge, achievement.unlocked && styles.achievementBadgeUnlocked]} accessibilityElementsHidden>
                     <Text style={[styles.achievementBadgeText, achievement.unlocked && styles.achievementBadgeTextUnlocked]}>
                         {achievement.unlocked ? achievement.rewardTitle : `${achievement.current}/${achievement.target}`}
                     </Text>
                 </View>
             </View>
-            <View style={styles.achievementTrack}>
+            <View
+                style={styles.achievementTrack}
+                accessibilityRole={a11y.max > 0 ? 'progressbar' : undefined}
+                accessibilityLabel={achievement.title}
+                accessibilityValue={a11y.max > 0 ? { min: 0, max: a11y.max, now: a11y.current, text: a11y.text } : undefined}
+            >
                 <View
                     style={[
                         styles.achievementFill,
