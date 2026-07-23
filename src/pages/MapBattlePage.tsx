@@ -291,6 +291,8 @@ export function MapBattlePage() {
                             key={map.id}
                             onClick={() => !isLocked && setSelectedMapId(map.id)}
                             disabled={isLocked}
+                            aria-pressed={isSelected}
+                            aria-label={isLocked ? `${map.name}（未開放）` : map.name}
                             className="flex-1 py-2 rounded-xl text-sm font-medium transition-all duration-200"
                             style={{
                                 backgroundColor: isSelected ? 'var(--color-accent-primary)' : 'var(--color-bg-card)',

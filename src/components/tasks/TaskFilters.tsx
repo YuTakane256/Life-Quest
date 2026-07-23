@@ -144,7 +144,7 @@ function QuickFilterRow({ icon, children }: { icon: React.ReactNode; children: R
 
 function FilterButton({ active, label, activeColor, onClick }: { active: boolean; label: string; activeColor: string; onClick: () => void }) {
     return (
-        <button type="button" onClick={onClick} className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 flex-shrink-0" style={{
+        <button type="button" onClick={onClick} aria-pressed={active} className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 flex-shrink-0" style={{
             backgroundColor: active ? activeColor : 'var(--color-bg-secondary)',
             color: active ? 'white' : 'var(--color-text-secondary)',
             border: `1px solid ${active ? activeColor : 'var(--color-border-default)'}`,

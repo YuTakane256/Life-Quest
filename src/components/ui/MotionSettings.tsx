@@ -26,6 +26,7 @@ export function MotionSettings() {
                             key={option.mode}
                             type="button"
                             onClick={() => setMode(option.mode)}
+                            aria-pressed={isActive}
                             className="min-h-10 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
                             style={{
                                 backgroundColor: isActive ? 'var(--color-accent-primary)' : 'transparent',
