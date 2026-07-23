@@ -8,6 +8,7 @@ import type { Habit } from '../types';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useModalEscape } from '../hooks/useModalEscape';
 import { HabitHeatmapModal } from '../components/habits/HabitHeatmapModal';
+import { getProgressBarA11y } from '../utils/progressBar';
 
 const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
     { value: 'createdAt', label: '作成順' },
@@ -104,6 +105,10 @@ export function HabitsPage() {
     const closeMemo = useCallback(() => { setMemoTarget(null); setMemoText(''); }, []);
     useModalEscape(!!memoTarget, closeMemo);
     const completedCount = habits.filter((h) => getRecordForHabit(h.id)?.completed).length;
+    const habitsA11y = useMemo(
+        () => getProgressBarA11y(completedCount, habits.length, (now, max) => `本日 ${now} / ${max} 達成`),
+        [completedCount, habits.length],
+    );
 
     return (
         <div className="app-page max-w-lg mx-auto px-4 pt-6">
@@ -120,7 +125,20 @@ export function HabitsPage() {
             </div>
 
             {/* プログレスバー */}
-            {habits.length > 0 && <div className="mb-4"><div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-secondary)' }}><div className="h-full rounded-full transition-all duration-500" style={{ width: `${habits.length > 0 ? (completedCount / habits.length) * 100 : 0}%`, backgroundColor: allComplete ? 'var(--color-accent-gold)' : 'var(--color-accent-emerald)' }} /></div>{allComplete && <div className="flex items-center gap-1 mt-2 animate-fade-in"><Sparkles size={14} style={{ color: 'var(--color-accent-gold)' }} /><span className="text-xs font-medium" style={{ color: 'var(--color-accent-gold)' }}>全習慣達成！ボーナスXPを獲得！</span></div>}</div>}
+            {habits.length > 0 && <div className="mb-4"><div
+                className="w-full h-2 rounded-full overflow-hidden"
+                style={{ backgroundColor: 'var(--color-bg-secondary)' }}
+                {...(habitsA11y.valueMax > 0
+                    ? {
+                        role: 'progressbar' as const,
+                        'aria-valuenow': habitsA11y.valueNow,
+                        'aria-valuemin': 0,
+                        'aria-valuemax': habitsA11y.valueMax,
+                        'aria-valuetext': habitsA11y.valueText,
+                        'aria-label': '本日の習慣達成状況',
+                    }
+                    : {})}
+            ><div className="h-full rounded-full transition-all duration-500" style={{ width: `${habits.length > 0 ? (completedCount / habits.length) * 100 : 0}%`, backgroundColor: allComplete ? 'var(--color-accent-gold)' : 'var(--color-accent-emerald)' }} /></div>{allComplete && <div className="flex items-center gap-1 mt-2 animate-fade-in"><Sparkles size={14} style={{ color: 'var(--color-accent-gold)' }} /><span className="text-xs font-medium" style={{ color: 'var(--color-accent-gold)' }}>全習慣達成！ボーナスXPを獲得！</span></div>}</div>}
 
             {/* カテゴリフィルターバー */}
             {usedCategoryIds.length > 1 && (
