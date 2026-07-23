@@ -146,6 +146,7 @@ export function HabitsPage() {
                     <Filter size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
                     <button
                         onClick={() => setFilterCategoryId(null)}
+                        aria-pressed={filterCategoryId === null}
                         className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200"
                         style={{
                             backgroundColor: filterCategoryId === null ? 'var(--color-accent-primary)' : 'var(--color-bg-card)',
@@ -159,6 +160,7 @@ export function HabitsPage() {
                         <button
                             key={cat.id}
                             onClick={() => setFilterCategoryId(filterCategoryId === cat.id ? null : cat.id)}
+                            aria-pressed={filterCategoryId === cat.id}
                             className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200"
                             style={{
                                 backgroundColor: filterCategoryId === cat.id ? cat.color + '22' : 'var(--color-bg-card)',
@@ -189,6 +191,7 @@ export function HabitsPage() {
                                         key={cat.id}
                                         type="button"
                                         onClick={() => setSelectedCategoryId(cat.id)}
+                                        aria-pressed={isSelected}
                                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 hover:scale-105"
                                         style={{
                                             backgroundColor: isSelected ? cat.color + '22' : 'var(--color-bg-secondary)',

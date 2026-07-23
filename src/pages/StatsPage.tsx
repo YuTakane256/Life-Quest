@@ -296,6 +296,7 @@ export function StatsPage() {
                             <button
                                 type="button"
                                 onClick={() => setActiveTitle(null)}
+                                aria-pressed={selectedTitle === null}
                                 className="px-2 py-1 rounded-full text-[10px] font-semibold transition-all active:scale-95"
                                 style={{
                                     backgroundColor: selectedTitle === null ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
@@ -310,6 +311,7 @@ export function StatsPage() {
                                     key={title}
                                     type="button"
                                     onClick={() => setActiveTitle(title)}
+                                    aria-pressed={selectedTitle === title}
                                     className="px-2 py-1 rounded-full text-[10px] font-semibold transition-all active:scale-95"
                                     style={{
                                         backgroundColor: selectedTitle === title ? 'var(--color-accent-gold)' : 'var(--color-bg-secondary)',
