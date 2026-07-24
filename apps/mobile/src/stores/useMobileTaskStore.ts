@@ -24,7 +24,7 @@ import { XP_CONFIG } from '@life-quest/core/progression';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
-import { getTodayJst, toIsoDatePart } from '../utils/date';
+import { getTodayJst, isoToJstYmd, toIsoDatePart } from '../utils/date';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileStatsStore } from './useMobileStatsStore';
 import { enqueueCloudOperation, isCloudOutboxActive } from '../platform/cloudOutbox';
@@ -99,7 +99,7 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 // 台帳が既付与でgrantedがfalseの場合は統計ログも記録しない（reconcileRewards再実行時の二重加算防止）
                 if (granted) {
                     useMobileStatsStore.getState().logTaskXp(
-                        toIsoDatePart(pending.completedAt),
+                        isoToJstYmd(pending.completedAt) ?? toIsoDatePart(pending.completedAt),
                         XP_CONFIG.REWARD_BY_PRIORITY[task.priority],
                     );
                 }
@@ -311,7 +311,7 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                         const granted = useMobileGameStore.getState().grantTaskCompletionReward(taskId, task.priority);
                         if (granted) {
                             useMobileStatsStore.getState().logTaskXp(
-                                toIsoDatePart(now),
+                                isoToJstYmd(now) ?? toIsoDatePart(now),
                                 XP_CONFIG.REWARD_BY_PRIORITY[task.priority],
                             );
                         }
@@ -334,7 +334,7 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     if (result.completedSubtask) {
                         const granted = game.grantSubtaskCompletionReward(subtaskId, task.priority);
                         if (granted) {
-                            useMobileStatsStore.getState().logTaskXp(toIsoDatePart(now), getSubtaskRewardXp(task.priority));
+                            useMobileStatsStore.getState().logTaskXp(isoToJstYmd(now) ?? toIsoDatePart(now), getSubtaskRewardXp(task.priority));
                         }
                         // サーバー側は complete_subtask が親完了・親報酬まで連鎖する（#502）
                         void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
@@ -345,7 +345,7 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                         const granted = game.grantTaskCompletionReward(taskId, task.priority);
                         if (granted) {
                             useMobileStatsStore.getState().logTaskXp(
-                                toIsoDatePart(now),
+                                isoToJstYmd(now) ?? toIsoDatePart(now),
                                 XP_CONFIG.REWARD_BY_PRIORITY[task.priority],
                             );
                         }

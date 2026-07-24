@@ -61,6 +61,15 @@ describe('useTaskStore.toggleComplete', () => {
         expect(logTaskXpSpy).toHaveBeenCalled();
     });
 
+    it('JST早朝（UTC前日15時以降）に完了してもJST日付でlogTaskXpが呼ばれる（サーバーのgetTodayJst()と一致させるため）', async () => {
+        // UTC 2025-03-14T20:00:00Z = JST 2025-03-15T05:00:00（早朝）
+        vi.setSystemTime(new Date('2025-03-14T20:00:00Z'));
+        const id = seedTask('A', 'high');
+        useTaskStore.getState().toggleComplete(id);
+        await vi.advanceTimersByTimeAsync(UI_CONFIG.UNDO_DURATION_MS);
+        expect(logTaskXpSpy).toHaveBeenCalledWith('2025-03-15', XP_CONFIG.REWARD_BY_PRIORITY.high);
+    });
+
     it('flushPendingCompletions: 5秒経過前でも即座に確定処理を走らせる', async () => {
         const id = seedTask('A', 'high');
         useTaskStore.getState().toggleComplete(id);
