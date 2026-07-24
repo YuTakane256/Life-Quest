@@ -223,6 +223,34 @@ describe('registerHooks（認証ライフサイクル配線）', () => {
         unregister();
     });
 
+    it('outbox読込中にログアウトしても、古いログイン処理がoutboxを復活させない', async () => {
+        let resolveLoad: (() => void) | undefined;
+        const loadGate = new Promise<void>((resolve) => { resolveLoad = resolve; });
+        const controller = createCloudOutboxController({
+            storage: {
+                getItem: async () => {
+                    await loadGate;
+                    return null;
+                },
+                setItem: async () => {},
+                removeItem: async () => {},
+            },
+            getRpcClient: () => null,
+            getEdgeInvoker: () => null,
+        });
+        const unregister = controller.registerHooks();
+
+        const login = notifyLogin('user-a');
+        await vi.waitFor(() => expect(controller.isActive()).toBe(false));
+        const logout = notifyLogout();
+        resolveLoad?.();
+        await Promise.all([login, logout]);
+
+        expect(controller.isActive()).toBe(false);
+        expect(controller.getActiveOutbox()).toBeNull();
+        unregister();
+    });
+
     it('unregister後はログイン通知に反応しない', async () => {
         const controller = createCloudOutboxController({
             storage: createMemoryStorage(),

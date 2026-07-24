@@ -95,6 +95,43 @@ describe('createSyncOutbox', () => {
         expect(outbox.snapshot()).toHaveLength(0);
     });
 
+    it('drainAndWaitは同じopIdを再送し、成功するまで待つ', async () => {
+        let failOnce = true;
+        const sent: string[] = [];
+        const { outbox } = makeOutbox({
+            send: async (op) => {
+                sent.push(op.opId);
+                if (failOnce) {
+                    failOnce = false;
+                    return { ok: false, permanent: false, error: 'offline' };
+                }
+                return { ok: true };
+            },
+        });
+        await outbox.load();
+        await outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'stable-op-id' });
+        await outbox.flush();
+
+        const result = await outbox.drainAndWait();
+
+        expect(sent).toEqual(['stable-op-id', 'stable-op-id']);
+        expect(outbox.snapshot()).toHaveLength(0);
+        expect(result).toEqual({ retryablePending: false });
+    });
+
+    it('drainAndWaitは一時失敗でpendingが残ることを返す', async () => {
+        const { outbox } = makeOutbox({
+            send: async () => ({ ok: false, permanent: false, error: 'offline' }),
+        });
+        await outbox.load();
+        await outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'pending-op' });
+
+        const result = await outbox.drainAndWait();
+
+        expect(result).toEqual({ retryablePending: true });
+        expect(outbox.snapshot()).toMatchObject([{ opId: 'pending-op', status: 'pending' }]);
+    });
+
     it('恒久エラーはfailedになり、依存する後続opへ連鎖し、ロールバックが呼ばれる', async () => {
         const rolledBack: string[] = [];
         const { outbox } = makeOutbox({

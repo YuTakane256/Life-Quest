@@ -20,6 +20,9 @@ export interface AuthLifecycleHooks {
 }
 
 const registeredHooks = new Set<AuthLifecycleHooks>();
+// 認証SDKはログイン/ログアウト通知を並行して発火しうる。新しい認証遷移が
+// 始まったら、古い通知が後続フック（cloud sync等）を動かさないようにする。
+let lifecycleGeneration = 0;
 
 /** フックを登録する。戻り値で解除できる。 */
 export function registerAuthLifecycleHooks(hooks: AuthLifecycleHooks): () => void {
@@ -32,24 +35,32 @@ export function registerAuthLifecycleHooks(hooks: AuthLifecycleHooks): () => voi
 /** 全フックを破棄する（テスト用）。 */
 export function resetAuthLifecycleHooks(): void {
     registeredHooks.clear();
+    lifecycleGeneration = 0;
 }
 
-async function runHooks(run: (hooks: AuthLifecycleHooks) => void | Promise<void>): Promise<void> {
+async function runHooks(
+    run: (hooks: AuthLifecycleHooks) => void | Promise<void>,
+    shouldContinue: () => boolean = () => true,
+): Promise<void> {
     for (const hooks of [...registeredHooks]) {
+        if (!shouldContinue()) return;
         try {
             await run(hooks);
         } catch {
             // 1つの失敗で他の片付け処理を止めない
         }
+        if (!shouldContinue()) return;
     }
 }
 
 /** セッション確立を全フックへ通知する。 */
 export function notifyLogin(userId: string): Promise<void> {
-    return runHooks((hooks) => hooks.onLogin?.(userId));
+    const generation = ++lifecycleGeneration;
+    return runHooks((hooks) => hooks.onLogin?.(userId), () => generation === lifecycleGeneration);
 }
 
 /** ログアウトを全フックへ通知する。全フック完了後に解決する。 */
 export function notifyLogout(): Promise<void> {
-    return runHooks((hooks) => hooks.onLogout?.());
+    const generation = ++lifecycleGeneration;
+    return runHooks((hooks) => hooks.onLogout?.(), () => generation === lifecycleGeneration);
 }

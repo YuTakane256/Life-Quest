@@ -35,8 +35,8 @@ export default function RootLayout() {
     // 保存済みセッションの復元通知。Supabase未設定なら双方とも何もしない。
     useEffect(() => registerMobileAuthStoreHooks(), []);
     useEffect(() => registerMobileCloudMigrationHooks(), []); // バックアップはプル置換より先（#506）
-    useEffect(() => registerMobileCloudSyncHooks(), []);
     useEffect(() => registerMobileOutboxHooks(), []);
+    useEffect(() => registerMobileCloudSyncHooks(), []);
     useEffect(() => registerPendingCompletionFlush(), []);
     // 通知条件のチェック（起動時・フォアグラウンド復帰時・30分間隔。Webと同一セマンティクス）
     useEffect(() => registerNotificationChecks(), []);
