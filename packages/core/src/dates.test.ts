@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getJstHour, getTodayJst, isOverdue, isValidYmd, shiftDate, toIsoDatePart } from './dates.ts';
+import { getJstHour, getTodayJst, isOverdue, isValidYmd, isoToJstYmd, shiftDate, toIsoDatePart } from './dates.ts';
 
 describe('isValidYmd', () => {
     it('YYYY-MM-DD 形式の実在日を true にする', () => {
@@ -98,6 +98,39 @@ describe('toIsoDatePart', () => {
 
     it('既に日付部分だけの文字列はそのまま返す', () => {
         expect(toIsoDatePart('2026-06-27')).toBe('2026-06-27');
+    });
+});
+
+describe('isoToJstYmd', () => {
+    it('UTC日時をJSTのカレンダー日へ変換する（同日内）', () => {
+        expect(isoToJstYmd('2025-03-15T00:00:00Z')).toBe('2025-03-15');
+    });
+
+    it('UTC 14:59 はJST 23:59でまだ同じ日', () => {
+        expect(isoToJstYmd('2025-03-15T14:59:00Z')).toBe('2025-03-15');
+    });
+
+    it('UTC 15:00 はJST 00:00で翌日になる（サーバーのgetTodayJst()と一致すべき境界）', () => {
+        expect(isoToJstYmd('2025-03-15T15:00:00Z')).toBe('2025-03-16');
+    });
+
+    it('年またぎでも正しいJST日付になる', () => {
+        expect(isoToJstYmd('2024-12-31T15:00:00Z')).toBe('2025-01-01');
+    });
+
+    it('nullや不正な日時文字列は null を返す', () => {
+        expect(isoToJstYmd(null)).toBeNull();
+        expect(isoToJstYmd('not-a-date')).toBeNull();
+    });
+
+    it('getTodayJst()と同一インスタントで常に一致する（実装方式統一の確認）', () => {
+        const samples = ['2025-01-01T00:00:00Z', '2025-06-15T15:00:00Z', '2025-12-31T23:59:59Z'];
+        for (const iso of samples) {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date(iso));
+            expect(isoToJstYmd(iso)).toBe(getTodayJst());
+            vi.useRealTimers();
+        }
     });
 });
 

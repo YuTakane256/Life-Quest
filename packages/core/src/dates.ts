@@ -63,11 +63,25 @@ export function getJstHour(): number {
 
 /**
  * ISO 8601 日時文字列から日付部分（YYYY-MM-DD）を取り出す。
- * タイムゾーン変換は行わず、'T' より前をそのまま返す
- * （タスク完了時刻などUTC生成されたcompletedAtの「その日」を機械的に切り出す用途）。
+ * タイムゾーン変換は行わず、'T' より前をそのまま返す。
+ *
+ * 注意: UTC生成されたタイムスタンプ（`new Date().toISOString()`等）の
+ * 「JSTでのその日」が必要な場合はこの関数ではなく`isoToJstYmd`を使うこと。
+ * 本関数はJST日付文字列同士の再スライス等、TZ変換が不要な限定用途向け。
  */
 export function toIsoDatePart(iso: string): string {
     return iso.split('T')[0];
+}
+
+/**
+ * UTC生成のISO 8601日時文字列を、JSTのカレンダー日（YYYY-MM-DD）へ変換する。
+ * 読めない/非有限な入力は null を返す。
+ */
+export function isoToJstYmd(iso: string | null): string | null {
+    if (!iso) return null;
+    const time = new Date(iso).getTime();
+    if (!Number.isFinite(time)) return null;
+    return formatYmd(new Date(time + JST_OFFSET_HOURS * 60 * 60 * 1000));
 }
 
 /**

@@ -10,6 +10,7 @@ export {
     getTodayJst as getTodayJST,
     isOverdue,
     isValidYmd,
+    isoToJstYmd,
     shiftDate,
     toIsoDatePart,
 } from '../core/dates';

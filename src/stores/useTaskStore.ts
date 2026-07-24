@@ -4,7 +4,7 @@ import { createWebPersistStorage } from '../platform/storage';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { PRIORITIES, RECURRENCES } from '../config/taskLabels';
-import { generateId, getTodayJST, toIsoDatePart } from '../utils/dateUtils';
+import { generateId, getTodayJST, isoToJstYmd, toIsoDatePart } from '../utils/dateUtils';
 import {
     buildNextRecurringTask as buildNextRecurringTaskCore,
     duplicateTask as duplicateTaskCore,
@@ -36,7 +36,12 @@ async function awardTaskXp(priority: Priority, completedAt: string, xpReward: nu
     store.incrementGachaCount();
     store.checkGachaMilestones();
 
-    const dateStr = toIsoDatePart(completedAt);
+    // サーバー（complete_task Edge Function）はgetTodayJst()でstats_dailyへJST日付キーで
+    // 記録するため、クライアント側もJST日付に揃える必要がある（UTC日付のままだと
+    // クラウドプル後のマージでJST 00:00〜09:00完了分が別日付キーに分裂し、
+    // activeDays等の日数系実績が水増しされる）。isoToJstYmdが失敗するケースは
+    // completedAtが常に有効なISO文字列のため実質発生しないが、防御的にフォールバックする。
+    const dateStr = isoToJstYmd(completedAt) ?? toIsoDatePart(completedAt);
     const statsStore = await getStatsStore();
     statsStore.getState().logTaskXp(dateStr, xpReward);
 }

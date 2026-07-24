@@ -71,6 +71,7 @@ export {
     getTodayJst,
     isOverdue,
     isValidYmd,
+    isoToJstYmd,
     shiftDate,
     toIsoDatePart,
 } from './dates.ts';

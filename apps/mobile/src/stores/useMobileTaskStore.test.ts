@@ -70,6 +70,16 @@ describe('useMobileTaskStore', () => {
         expect(useMobileTaskStore.getState().tasks).toEqual([]);
     });
 
+    it('JST早朝（UTC前日15時以降）に完了してもJST日付でtaskXpLogに記録される（サーバーのgetTodayJst()と一致させるため）', () => {
+        // UTC 2025-03-14T20:00:00Z = JST 2025-03-15T05:00:00（早朝）
+        vi.setSystemTime(new Date('2025-03-14T20:00:00Z'));
+        useMobileTaskStore.getState().addTask('早朝完了タスク', 'high');
+        const id = useMobileTaskStore.getState().tasks[0].id;
+        completeAndConfirm(id);
+        expect(useMobileStatsStore.getState().taskXpLog['2025-03-15']).toBe(XP_CONFIG.REWARD_BY_PRIORITY.high);
+        expect(useMobileStatsStore.getState().taskXpLog['2025-03-14']).toBeUndefined();
+    });
+
     it('does not add tasks beyond the shared collection limit', () => {
         const tasks = Array.from({ length: TASK_LIMITS.maxTasks }, (_, index) => task(String(index)));
         useMobileTaskStore.setState({ tasks });

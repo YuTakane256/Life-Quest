@@ -10,6 +10,7 @@
  * canonical統計契約の後続課題（Epic #473）。
  */
 import { areAllHabitsComplete, type Habit, type HabitDailyRecord } from './habits.ts';
+import { isoToJstYmd } from './dates.ts';
 import { XP_CONFIG } from './progression.ts';
 import { getSubtaskRewardXp, type Task } from './tasks.ts';
 
@@ -94,16 +95,6 @@ export function getMonthLabels(weeks: readonly (readonly string[])[]): { label: 
 
 // ─── 集計 ─────────────────────────────────────────────────────
 
-const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-/** ISO日時をJSTの YYYY-MM-DD へ。読めなければ null。 */
-function toJstYmd(iso: string | null): string | null {
-    if (!iso) return null;
-    const time = new Date(iso).getTime();
-    if (!Number.isFinite(time)) return null;
-    return new Date(time + JST_OFFSET_MS).toISOString().slice(0, 10);
-}
-
 /**
  * 完了タスク・完了サブタスクから、JST日付ごとの獲得XPを導出する。
  * XP額は報酬ルール（優先度XP・サブタスクは半分）と同一。
@@ -117,11 +108,11 @@ export function buildTaskXpByDate(tasks: readonly Task[]): Record<string, number
 
     for (const task of tasks) {
         if (task.completed) {
-            add(toJstYmd(task.completedAt), XP_CONFIG.REWARD_BY_PRIORITY[task.priority]);
+            add(isoToJstYmd(task.completedAt), XP_CONFIG.REWARD_BY_PRIORITY[task.priority]);
         }
         for (const subtask of task.subtasks) {
             if (subtask.completed) {
-                add(toJstYmd(subtask.completedAt), getSubtaskRewardXp(task.priority));
+                add(isoToJstYmd(subtask.completedAt), getSubtaskRewardXp(task.priority));
             }
         }
     }
