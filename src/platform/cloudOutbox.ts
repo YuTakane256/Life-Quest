@@ -26,7 +26,7 @@ import {
     RPC_OPERATIONS,
     type CloudOutboxRpcClient,
 } from '@life-quest/core/cloudOutboxController';
-import type { SyncOutbox } from '@life-quest/core/syncOutbox';
+import type { OutboxDrainResult, SyncOutbox } from '@life-quest/core/syncOutbox';
 import { getPlatformStorageAdapter } from './storage';
 import { getWebSupabaseClient } from './supabase';
 import { getWebEdgeFunctionInvoker } from './edgeFunctions';
@@ -85,6 +85,14 @@ export function enqueueCloudOperation(
 /** 再接続・フォアグラウンド復帰などから再送を要求する。 */
 export function requestOutboxDrain(): void {
     controller.requestDrain();
+}
+
+/**
+ * 接続復帰時などに保留操作を再送し、完了してから次のクラウドpullへ進める。
+ * 未ログイン時は何もしない解決済みPromiseを返す。
+ */
+export function drainOutboxAndWait(): Promise<OutboxDrainResult> {
+    return controller.drainAndWait();
 }
 
 /** 認証ライフサイクルへoutboxを配線する。アプリ起動時に一度だけ呼ぶ。 */

@@ -58,4 +58,48 @@ describe('authLifecycle', () => {
 
         expect(removed).not.toHaveBeenCalled();
     });
+
+    it('ログイン処理中にログアウトした場合、古いログイン通知は後続フックを起動しない', async () => {
+        let releaseFirst: (() => void) | undefined;
+        const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+        const firstStarted = vi.fn();
+        const laterLogin = vi.fn();
+        registerAuthLifecycleHooks({
+            onLogin: async () => {
+                firstStarted();
+                await firstGate;
+            },
+        });
+        registerAuthLifecycleHooks({ onLogin: laterLogin });
+
+        const login = notifyLogin('user-1');
+        await vi.waitFor(() => expect(firstStarted).toHaveBeenCalledOnce());
+        const logout = notifyLogout();
+        releaseFirst?.();
+        await Promise.all([login, logout]);
+
+        expect(laterLogin).not.toHaveBeenCalled();
+    });
+
+    it('ログアウト処理中にログインした場合、古いログアウト通知は後続フックを停止しない', async () => {
+        let releaseFirst: (() => void) | undefined;
+        const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+        const firstStarted = vi.fn();
+        const laterLogout = vi.fn();
+        registerAuthLifecycleHooks({
+            onLogout: async () => {
+                firstStarted();
+                await firstGate;
+            },
+        });
+        registerAuthLifecycleHooks({ onLogout: laterLogout });
+
+        const logout = notifyLogout();
+        await vi.waitFor(() => expect(firstStarted).toHaveBeenCalledOnce());
+        const login = notifyLogin('user-2');
+        releaseFirst?.();
+        await Promise.all([logout, login]);
+
+        expect(laterLogout).not.toHaveBeenCalled();
+    });
 });

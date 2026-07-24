@@ -40,7 +40,7 @@
  */
 import { registerAuthLifecycleHooks } from './authLifecycle.ts';
 import { cloudOutboxKey } from './cloudPull.ts';
-import { createSyncOutbox, type OutboxOp, type OutboxSendResult, type SyncOutbox } from './syncOutbox.ts';
+import { createSyncOutbox, type OutboxDrainResult, type OutboxOp, type OutboxSendResult, type SyncOutbox } from './syncOutbox.ts';
 import type { RepositoryStorage } from './syncRepository.ts';
 import { EdgeFunctionError, type EdgeFunctionInvoker } from './edgeFunctions.ts';
 
@@ -112,6 +112,8 @@ export interface CloudOutboxController {
     getActiveOutbox: () => SyncOutbox | null;
     /** 再接続・フォアグラウンド復帰などから再送を要求する。 */
     requestDrain: () => void;
+    /** 再送を要求し、保留操作の送信が終わるまで待つ。 */
+    drainAndWait: () => Promise<OutboxDrainResult>;
     /**
      * 認証ライフサイクルへoutboxを配線する。アプリ起動時に一度だけ呼ぶ。
      * 戻り値の関数で解除する（進行中opはpendingへ戻し、キューはディスクに残す）。
@@ -122,6 +124,9 @@ export interface CloudOutboxController {
 export function createCloudOutboxController(deps: CloudOutboxControllerDeps): CloudOutboxController {
     let activeOutbox: SyncOutbox | null = null;
     let activeUserId: string | null = null;
+    // 非同期のログイン初期化が、後から来たログアウト/別ユーザーのログイン後に
+    // 古いoutboxを復活させないための世代番号。
+    let lifecycleGeneration = 0;
     /** キュー内で未送信の作成・更新系opの opId（エンティティID→opId。依存先解決に使う） */
     const pendingEntityOps = new Map<string, string>();
 
@@ -173,7 +178,7 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
         return op !== null;
     }
 
-    async function startOutbox(userId: string): Promise<void> {
+    async function createOutbox(userId: string): Promise<SyncOutbox> {
         const outbox = createSyncOutbox({
             storage: deps.storage,
             storageKey: cloudOutboxKey(userId),
@@ -181,9 +186,7 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
             onPermanentFailure: deps.onPermanentFailure,
         });
         await outbox.load();
-        activeOutbox = outbox;
-        activeUserId = userId;
-        outbox.requestDrain(); // 前回セッションの残りを再送
+        return outbox;
     }
 
     return {
@@ -192,29 +195,44 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
         isActive: () => activeOutbox !== null,
         getActiveOutbox: () => activeOutbox,
         requestDrain: () => activeOutbox?.requestDrain(),
+        drainAndWait: () => activeOutbox?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),
         registerHooks: () => {
             const unregister = registerAuthLifecycleHooks({
-                onLogin: (userId) => {
+                onLogin: async (userId) => {
                     if (activeUserId === userId && activeOutbox) return;
-                    void (async () => {
-                        await activeOutbox?.stop();
-                        pendingEntityOps.clear();
-                        await startOutbox(userId);
-                    })();
+                    const generation = ++lifecycleGeneration;
+                    const previousOutbox = activeOutbox;
+                    activeOutbox = null;
+                    activeUserId = null;
+                    await previousOutbox?.stop();
+                    if (generation !== lifecycleGeneration) return;
+                    pendingEntityOps.clear();
+                    const outbox = await createOutbox(userId);
+                    if (generation !== lifecycleGeneration) {
+                        await outbox.stop();
+                        return;
+                    }
+                    activeOutbox = outbox;
+                    activeUserId = userId;
+                    outbox.requestDrain(); // 前回セッションの残りを再送
                 },
                 onLogout: async () => {
                     // drain中の操作はpendingへ戻して中断（キューはディスクに残す）
-                    await activeOutbox?.stop();
+                    ++lifecycleGeneration;
+                    const previousOutbox = activeOutbox;
                     activeOutbox = null;
                     activeUserId = null;
                     pendingEntityOps.clear();
+                    await previousOutbox?.stop();
                 },
             });
             return () => {
-                void activeOutbox?.stop();
+                ++lifecycleGeneration;
+                const previousOutbox = activeOutbox;
                 activeOutbox = null;
                 activeUserId = null;
                 pendingEntityOps.clear();
+                void previousOutbox?.stop();
                 unregister();
             };
         },

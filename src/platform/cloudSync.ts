@@ -37,6 +37,7 @@ import { markCloudSessionSeeded } from './authStores';
 import { seedGame, seedHabits, seedTasks } from './canonicalSync';
 import { getPlatformStorageAdapter } from './storage';
 import { getWebSupabaseClient } from './supabase';
+import { drainOutboxAndWait } from './cloudOutbox';
 import { resolveHabitReminderHour } from '../core/notifications';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useThemeStore, sanitizeThemeMode } from '../stores/useThemeStore';
@@ -141,6 +142,20 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         requestPull: () => runner.requestPull(),
     });
 
+    // 楽観更新が残ったままpullすると、古いクラウド状態で一時的に上書きされうる。
+    // 再接続・フォアグラウンド復帰ではoutboxを先に空にしてからpullを要求する。
+    const recoverConnection = async (): Promise<boolean> => {
+        const { retryablePending } = await drainOutboxAndWait();
+        if (stopped || retryablePending) return false;
+        scheduler.trigger('reconnect');
+        try {
+            await runner.flush();
+        } catch {
+            // オフライン時はキャッシュ表示を継続し、次の復帰トリガで再試行する。
+        }
+        return !stopped;
+    };
+
     // Realtime: 全書き込み操作が必ずsync_versionsをUPDATEするため、1購読で全変更を検知できる
     const channel = client
         .channel(`cloud-sync-${userId}`)
@@ -154,12 +169,12 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     const onVisibilityChange = (): void => {
         if (document.visibilityState === 'visible') {
             scheduler.start();
-            scheduler.trigger('foreground');
+            void recoverConnection();
         } else {
             scheduler.stop(); // バックグラウンドでは定期プルを止める
         }
     };
-    const onOnline = (): void => scheduler.trigger('online');
+    const onOnline = (): void => { void recoverConnection(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('online', onOnline);
     scheduler.start();
@@ -168,8 +183,9 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     void (async () => {
         cache = await loadCloudCache(storage, userId);
         if (stopped) return;
-        seedStores();
-        scheduler.trigger('startup');
+        // pending outboxがある間は、前回のクラウドキャッシュで楽観更新を
+        // 上書きしない。送信成功後にのみキャッシュを反映する。
+        if (await recoverConnection()) seedStores();
     })();
 
     return {

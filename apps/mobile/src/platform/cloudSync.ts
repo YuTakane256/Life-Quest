@@ -6,6 +6,7 @@
  * NetInfoによる明示検知はオフラインキュー（#505）と同時に導入する。
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import { AppState, type AppStateStatus } from 'react-native';
 import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
@@ -22,9 +23,10 @@ import {
     type PullBatch,
 } from '@life-quest/core/cloudPull';
 import { markCloudSessionSeeded } from './authStores';
-import { requestOutboxDrain } from './cloudOutbox';
+import { drainOutboxAndWait } from './cloudOutbox';
 import { applyCloudCacheToMobileStores } from './cloudSeed';
 import { getMobileSupabaseClient } from './supabase';
+import { createReconnectDetector, resolveNetworkOnlineState } from './networkRecovery';
 
 export interface CloudSyncHandle {
     flush: () => Promise<void>;
@@ -73,6 +75,19 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         requestPull: () => runner.requestPull(),
     });
 
+    // 再接続時は、古いクラウド状態をpullする前にローカルの保留操作を送る。
+    const recoverConnection = async (): Promise<boolean> => {
+        const { retryablePending } = await drainOutboxAndWait();
+        if (stopped || retryablePending) return false;
+        scheduler.trigger('reconnect');
+        try {
+            await runner.flush();
+        } catch {
+            // オフライン時はキャッシュ表示を継続し、次の復帰トリガで再試行する。
+        }
+        return !stopped;
+    };
+
     const channel = client
         .channel(`cloud-sync-${userId}`)
         .on(
@@ -85,21 +100,25 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     const onAppStateChange = (state: AppStateStatus): void => {
         if (state === 'active') {
             scheduler.start();
-            scheduler.trigger('foreground');
-            requestOutboxDrain(); // 復帰時はoutboxの再送も要求（#505）
+            void recoverConnection();
         } else {
             scheduler.stop(); // バックグラウンドでは定期プルを止める
         }
     };
     const appStateSubscription = AppState.addEventListener('change', onAppStateChange);
+    const detectReconnect = createReconnectDetector(() => { void recoverConnection(); });
+    const netInfoUnsubscribe = NetInfo.addEventListener((state) => {
+        detectReconnect(resolveNetworkOnlineState(state));
+    });
     scheduler.start();
 
     // 起動: まずキャッシュから復元（オフラインでも表示）→ 初回プル
     void (async () => {
         cache = await loadCloudCache(AsyncStorage, userId);
         if (stopped) return;
-        seedStores();
-        scheduler.trigger('startup');
+        // 前回セッションの保留操作があるなら、古いキャッシュで楽観更新を
+        // 上書きしない。送信成功後にだけキャッシュを適用する。
+        if (await recoverConnection()) seedStores();
     })();
 
     return {
@@ -108,6 +127,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
             stopped = true;
             scheduler.stop();
             appStateSubscription.remove();
+            netInfoUnsubscribe();
             void client.removeChannel(channel);
         },
     };

@@ -33,6 +33,11 @@ export type OutboxSendResult =
     | { ok: true }
     | { ok: false; permanent: boolean; error: string };
 
+export interface OutboxDrainResult {
+    /** 一時失敗など、次回の接続回復で再送すべき操作が残っているか。 */
+    retryablePending: boolean;
+}
+
 export interface OutboxDeps {
     storage: RepositoryStorage;
     /** user_id別namespaceの保存キー（cloudOutboxKey(userId)） */
@@ -61,6 +66,12 @@ export interface SyncOutbox {
     enqueue: (input: EnqueueInput) => Promise<OutboxOp | null>;
     /** 送信ループを1周実行する。実行中の再要求はコアレスされる */
     requestDrain: () => void;
+    /**
+     * 再送を要求し、その要求を含むdrainが完了するまで待つ。
+     * 接続復帰時は、古いクラウド状態をpullする前にローカルの保留操作を
+     * サーバーへ反映するために使う。
+     */
+    drainAndWait: () => Promise<OutboxDrainResult>;
     /** 実行中のdrainが終わるまで待つ（テスト・明示フラッシュ用） */
     flush: () => Promise<void>;
     /** 中断: 進行中opをpendingへ戻し、以後のdrainを止める（ログアウト時） */
@@ -229,6 +240,11 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
             return op;
         },
         requestDrain: requestDrainInternal,
+        drainAndWait: async () => {
+            requestDrainInternal();
+            await (running ?? Promise.resolve());
+            return { retryablePending: ops.some((op) => op.status === 'pending') };
+        },
         /** 実行中のdrainがあれば完了を待つ。新たなdrainは起動しない */
         flush: () => running ?? Promise.resolve(),
         stop: async () => {

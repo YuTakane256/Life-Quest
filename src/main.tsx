@@ -18,8 +18,8 @@ startWebCanonicalSync();
 // 保存済みセッションの復元通知。Supabase未設定なら双方とも何もしない。
 registerWebAuthStoreHooks();
 registerWebCloudMigrationHooks(); // 初回移行はプル開始より先（#506）
-registerWebCloudSyncHooks();
 registerWebOutboxHooks();
+registerWebCloudSyncHooks();
 registerPendingCompletionFlush(); // タブ非表示・離脱時の5秒Undo待機を即時確定（#512のMobile対策と対称）
 startAuthSessionListener();
 
