@@ -16,6 +16,10 @@ import { BadRequestError, callApply, json, NotFoundError, requireString, serveGa
 
 serveGameFunction(async (ctx) => {
     const idempotencyKey = requireString(ctx.body, 'idempotencyKey');
+    const expectedUserId = typeof ctx.body.expectedUserId === 'string' ? ctx.body.expectedUserId : null;
+    // 所有者はJWTから確定したctx.userIdだけを使う。expectedUserIdは、クライアントが
+    // 開始操作中に別セッションへ切り替わった競合をDBアクセスより前に拒否する照合値。
+    if (expectedUserId !== null && expectedUserId !== ctx.userId) return json(409, { error: 'auth_user_mismatch' });
     const stage = ctx.body.stage;
     if (typeof stage !== 'number' || !Number.isInteger(stage)) {
         throw new BadRequestError('invalid_stage');

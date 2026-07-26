@@ -10,7 +10,7 @@ describe('createGameCloudClient', () => {
     describe('startBattleAttempt', () => {
         it('クラウド未接続ならnullを返す', async () => {
             const client = createGameCloudClient({ getInvoker: () => null });
-            expect(await client.startBattleAttempt(1)).toBeNull();
+            expect(await client.startBattleAttempt(1, 'key-1', 'user-1')).toBeNull();
         });
 
         it('レスポンスをCloudBattleAttemptへ変換する', async () => {
@@ -25,7 +25,7 @@ describe('createGameCloudClient', () => {
             });
             const client = createGameCloudClient({ getInvoker: () => invoker });
 
-            const result = await client.startBattleAttempt(1);
+            const result = await client.startBattleAttempt(1, 'key-1', 'user-1');
             expect(result).toEqual({
                 battleAttemptId: 'attempt-1',
                 actors: {
@@ -36,11 +36,10 @@ describe('createGameCloudClient', () => {
                 },
             });
             expect(calls[0].name).toBe('start_battle_attempt');
-            expect(calls[0].body).toMatchObject({ stage: 1 });
-            expect(typeof calls[0].body?.idempotencyKey).toBe('string');
+            expect(calls[0].body).toMatchObject({ stage: 1, idempotencyKey: 'key-1', expectedUserId: 'user-1' });
         });
 
-        it('generateIdを注入するとそれを冪等キーに使う', async () => {
+        it('開始用idempotencyKeyをそのまま送る', async () => {
             const invoker = makeInvoker(() => ({
                 battle_attempt_id: 'attempt-1',
                 enemy_snapshot: { stage: 1, name: 'e', maxHp: 1, attack: 1, defense: 1, xpReward: 1 },
@@ -53,8 +52,27 @@ describe('createGameCloudClient', () => {
             };
             const client = createGameCloudClient({ getInvoker: () => wrappedInvoker, generateId: () => 'fixed-id' });
 
-            await client.startBattleAttempt(1);
-            expect(calls[0].body?.idempotencyKey).toBe('fixed-id');
+            await client.startBattleAttempt(1, 'retry-key', 'user-1');
+            expect(calls[0].body?.idempotencyKey).toBe('retry-key');
+        });
+
+        it('呼び出し元の開始用idempotencyKeyをそのまま使う', async () => {
+            const calls: { name: string; body?: Record<string, unknown> }[] = [];
+            const invoker: EdgeFunctionInvoker = async <TResult>(name: string, body?: Record<string, unknown>) => {
+                    calls.push({ name, body });
+                    return {
+                        battle_attempt_id: 'attempt-1',
+                        enemy_snapshot: { stage: 1, name: 'e', maxHp: 1, attack: 1, defense: 1, xpReward: 1 },
+                        player_snapshot: { name: 'p', level: 1, attack: 1, defense: 1, maxHp: 1 },
+                    } as TResult;
+                };
+            const client = createGameCloudClient({
+                getInvoker: () => invoker,
+                generateId: () => 'generated-id',
+            });
+            await client.startBattleAttempt(1, 'retry-stable-id', 'user-1');
+            expect(calls[0].body?.idempotencyKey).toBe('retry-stable-id');
+            expect(calls[0].body?.expectedUserId).toBe('user-1');
         });
     });
 

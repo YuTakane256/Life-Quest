@@ -36,11 +36,12 @@ describe('battleCloud', () => {
             },
         });
 
-        const attempt = await startCloudBattleAttempt(1);
+        const attempt = await startCloudBattleAttempt(1, 'key-1', 'user-1');
 
         expect(invoker).toHaveBeenCalledWith('start_battle_attempt', {
             stage: 1,
-            idempotencyKey: 'op-1',
+            idempotencyKey: 'key-1',
+            expectedUserId: 'user-1',
         });
         expect(attempt).toEqual({
             battleAttemptId: 'attempt-1',

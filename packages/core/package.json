@@ -20,6 +20,10 @@
       "types": "./src/battle.ts",
       "import": "./src/battle.ts"
     },
+    "./battleStartPolicy": {
+      "types": "./src/battleStartPolicy.ts",
+      "import": "./src/battleStartPolicy.ts"
+    },
     "./battleSkills": {
       "types": "./src/battleSkills.ts",
       "import": "./src/battleSkills.ts"

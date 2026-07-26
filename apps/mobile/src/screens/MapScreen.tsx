@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { ThemePalette } from '@life-quest/core/designTokens';
@@ -11,7 +11,10 @@ import {
 } from '@life-quest/core/battle';
 import { getUnlockedBattleSkills } from '@life-quest/core/battleSkills';
 import { getHpBarA11y } from '@life-quest/core/progressA11y';
+import { createBattleStartGate, getBattleStartMessage, requestBattleStart } from '@life-quest/core/battleStartPolicy';
 import { startCloudBattleAttempt } from '../platform/battleCloud';
+import { getBattleAuthState } from '../platform/auth';
+import { createMobileId } from '../utils/createMobileId';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { usePalette } from '../theme/usePalette';
 import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
@@ -44,6 +47,8 @@ export default function MapScreen() {
     const [selectedStage, setSelectedStage] = useState(() => Math.max(1, battleProgress.currentStage));
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const startGateRef = useRef(createBattleStartGate());
+    const retryStartRef = useRef<{ stage: number; idempotencyKey: string } | null>(null);
     const stats = getEffectiveStats();
     const selectedArea = getAreaForStage(selectedStage);
     const unlockedSkills = useMemo(() => getUnlockedBattleSkills(character.level), [character.level]);
@@ -53,30 +58,38 @@ export default function MapScreen() {
         && selectedDefinition !== undefined
         && selectedStage <= battleProgress.maxClearedStage + 1;
 
-    const handleStart = async () => {
+    const handleStart = async (stage = selectedStage, idempotencyKey = createMobileId()) => {
         setNotice(null);
         if (!battleProgress.battleUnlocked) {
             setNotice('青色の宝箱を開封するとマップバトルが解放されます');
             return;
         }
+        if (!startGateRef.current.tryEnter()) return;
         setBusy(true);
         try {
-            const cloudAttempt = await startCloudBattleAttempt(selectedStage);
-            if (cloudAttempt) {
-                startCloudBattle(selectedStage, cloudAttempt.battleAttemptId, cloudAttempt.actors);
+            const result = await requestBattleStart(
+                await getBattleAuthState(),
+                getBattleAuthState,
+                (expectedUserId) => startCloudBattleAttempt(stage, idempotencyKey, expectedUserId),
+            );
+            if (result.kind === 'cloud-started') {
+                startCloudBattle(stage, result.attempt.battleAttemptId, result.attempt.actors);
+                retryStartRef.current = null;
                 setNotice('クラウド同期されたバトルを開始しました');
                 return;
             }
-            if (!startBattle(selectedStage)) {
+            if (result.kind === 'local-started' && !startBattle(stage)) {
                 setNotice('このステージはまだ解放されていません');
+                return;
             }
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'クラウドバトルを開始できませんでした';
-            setNotice(`${message}。端末内バトルへ切り替えます`);
-            if (!startBattle(selectedStage)) {
-                setNotice('このステージはまだ解放されていません');
+            if (result.kind !== 'local-started') {
+                retryStartRef.current = { stage, idempotencyKey };
+                setNotice(getBattleStartMessage(result));
+            } else {
+                retryStartRef.current = null;
             }
         } finally {
+            startGateRef.current.leave();
             setBusy(false);
         }
     };
@@ -145,6 +158,7 @@ export default function MapScreen() {
                             <StageDetail
                                 stage={selectedDefinition}
                                 locked={!canChallenge}
+                                busy={busy}
                                 onStart={handleStart}
                                 styles={styles}
                             />
@@ -153,6 +167,20 @@ export default function MapScreen() {
                         {notice && (
                             <View style={styles.notice} accessibilityRole="alert">
                                 <Text style={styles.noticeText}>{notice}</Text>
+                                {retryStartRef.current && (
+                                    <Pressable
+                                        accessibilityRole="button"
+                                        accessibilityLabel="バトル開始を再試行する"
+                                        disabled={busy}
+                                        onPress={() => {
+                                            const pending = retryStartRef.current;
+                                            if (pending) void handleStart(pending.stage, pending.idempotencyKey);
+                                        }}
+                                        style={({ pressed }) => [styles.noticeRetryButton, (pressed || busy) && styles.muted]}
+                                    >
+                                        <Text style={styles.noticeRetryText}>再試行</Text>
+                                    </Pressable>
+                                )}
                             </View>
                         )}
 
@@ -275,7 +303,7 @@ export default function MapScreen() {
     );
 }
 
-function StageDetail({ stage, locked, onStart, styles }: { stage: StageDefinition; locked: boolean; onStart: () => void; styles: Styles }) {
+function StageDetail({ stage, locked, busy, onStart, styles }: { stage: StageDefinition; locked: boolean; busy: boolean; onStart: () => void; styles: Styles }) {
     return (
         <View style={styles.card}>
             <View style={styles.stageDetailTop}>
@@ -286,11 +314,11 @@ function StageDetail({ stage, locked, onStart, styles }: { stage: StageDefinitio
                 <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Stage ${stage.stage}へ挑戦する`}
-                    disabled={locked}
+                    disabled={locked || busy}
                     onPress={onStart}
-                    style={({ pressed }) => [styles.primaryButton, (pressed || locked) && styles.muted]}
+                    style={({ pressed }) => [styles.primaryButton, (pressed || locked || busy) && styles.muted]}
                 >
-                    <Text style={styles.primaryButtonText}>{locked ? '未解放' : '挑戦'}</Text>
+                    <Text style={styles.primaryButtonText}>{locked ? '未解放' : busy ? '開始中…' : '挑戦'}</Text>
                 </Pressable>
             </View>
             <View style={styles.statsRow}>
@@ -394,8 +422,10 @@ function createStyles(palette: ThemePalette) {
     secondaryButton: { minHeight: 38, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
     secondaryButtonText: { color: palette.text.primary, fontSize: 12, fontWeight: '800' },
     muted: { opacity: 0.45 },
-    notice: { borderRadius: 8, borderWidth: 1, borderColor: palette.border.active, backgroundColor: palette.bg.secondary, padding: 12 },
+    notice: { borderRadius: 8, borderWidth: 1, borderColor: palette.border.active, backgroundColor: palette.bg.secondary, padding: 12, gap: 8 },
     noticeText: { color: palette.text.secondary, fontSize: 13, lineHeight: 18 },
+    noticeRetryButton: { alignSelf: 'flex-start', minHeight: 32, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.active },
+    noticeRetryText: { color: palette.text.primary, fontSize: 12, fontWeight: '800' },
     battleCard: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: 10, padding: 16, gap: 12 },
     battleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
     closeButton: { minHeight: 34, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: palette.border.default, justifyContent: 'center' },

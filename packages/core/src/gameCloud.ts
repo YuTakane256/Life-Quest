@@ -7,8 +7,8 @@
  * サーバーが返した結果をそのままUIへ反映するリクエスト/レスポンス型で連携する
  * （元はMobile専用のbattleCloud.tsにあった設計をWeb/Mobile共有のためcoreへ移設）。
  *
- * - 未ログイン・Edge Function未設定時はnullを返す（呼び出し元はローカル
- *   フォールバック動作に切り替える）
+ * - 未ログイン・Edge Function未設定時はnullを返す。報酬を伴う操作の呼び出し元は
+ *   認証状態に応じた安全なポリシーを適用する（認証済みのローカル報酬生成は禁止）
  * - ネットワークエラー・サーバーエラーはEdgeFunctionErrorとしてthrowする
  *   （outbox側のcode/status分類と同じ表現に統一。呼び出し元でtry/catchする）
  * - open_chest/synthesize_itemsはUI層から冪等キーを受け取る（内部生成しない）。
@@ -97,8 +97,11 @@ export interface CloudLoginBonusResult {
 }
 
 export interface GameCloudClient {
-    /** バトル開始。クラウド未接続ならnull（呼び出し元はローカル計算にフォールバック）。 */
-    startBattleAttempt: (stage: number) => Promise<CloudBattleAttempt | null>;
+    /**
+     * バトル開始。expectedUserIdはJWT主体との競合検出専用で、所有者の決定には使わない。
+     * クラウド未接続ならnull。認証済み呼び出し元はローカル開始へ切り替えない。
+     */
+    startBattleAttempt: (stage: number, idempotencyKey: string, expectedUserId: string) => Promise<CloudBattleAttempt | null>;
     /** バトル決着。クラウド未接続なら例外。 */
     resolveBattleAttempt: (
         battleAttemptId: string,
@@ -129,12 +132,15 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
     const generateId = deps.generateId ?? (() => crypto.randomUUID());
 
     return {
-        startBattleAttempt: async (stage) => {
+        startBattleAttempt: async (stage, idempotencyKey, expectedUserId) => {
             const invoker = await getInvoker();
             if (!invoker) return null;
             const response = await invoker<StartBattleAttemptResponse>('start_battle_attempt', {
                 stage,
-                idempotencyKey: generateId(),
+                idempotencyKey,
+                // JWT以外で所有者を決めることはない。これは開始要求の途中で
+                // セッション主体が切り替わった競合をEdge Functionで検出するためだけの値。
+                expectedUserId,
             });
             return {
                 battleAttemptId: response.battle_attempt_id,

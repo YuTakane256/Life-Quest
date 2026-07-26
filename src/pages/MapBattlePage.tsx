@@ -51,7 +51,15 @@ export function MapBattlePage() {
     const effectiveStats = getEffectiveStats();
     const { resolveState, granted, retry } = useCloudBattleResolve();
     const isSyncingResult = battle.rewardMode === 'cloud' && resolveState === 'syncing';
-    const { isStarting, startStage } = useCloudBattleStart();
+    const { isStarting, startError, startStage, retry: retryStart } = useCloudBattleStart();
+
+    const handleNextStage = async () => {
+        const nextStage = Math.min(battle.currentStage + 1, BATTLE_CONFIG.STAGES.length);
+        await startStage(nextStage, () => {
+            advanceStage();
+            setShowVictoryDialog(false);
+        });
+    };
 
     const selectedMap = MAP_CONFIG.find(m => m.id === selectedMapId) || MAP_CONFIG[0];
     const mapStages = BATTLE_CONFIG.STAGES.filter(
@@ -195,6 +203,13 @@ export function MapBattlePage() {
                     style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
                 />
 
+                {startError && battle.status !== 'victory' && (
+                    <p role="alert" className="text-sm mb-4" style={{ color: 'var(--color-text-danger)' }}>
+                        {startError}
+                        <button onClick={() => void retryStart()} disabled={isStarting} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
+                    </p>
+                )}
+
                 {/* 勝利ダイアログ */}
                 {battle.status === 'victory' && showVictoryDialog && (
                     <div className="rounded-xl p-5 text-center animate-fade-in mb-4" style={{ backgroundColor: 'var(--color-bg-card)', border: '2px solid var(--color-accent-gold)' }}>
@@ -217,12 +232,7 @@ export function MapBattlePage() {
                             <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>{battle.enemy?.xpReward} XP を獲得！</p>
                         )}
                         <div className="flex gap-2">
-                            <button onClick={() => {
-                                const nextStage = Math.min(battle.currentStage + 1, BATTLE_CONFIG.STAGES.length);
-                                advanceStage();
-                                void startStage(nextStage);
-                                setShowVictoryDialog(false);
-                            }}
+                            <button onClick={() => void handleNextStage()}
                                 disabled={isSyncingResult || isStarting}
                                 className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
@@ -235,6 +245,12 @@ export function MapBattlePage() {
                                 マップへ
                             </button>
                         </div>
+                        {startError && (
+                            <p role="alert" className="text-sm mt-3" style={{ color: 'var(--color-text-danger)' }}>
+                                {startError}
+                                <button onClick={() => void retryStart()} disabled={isStarting} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -280,6 +296,12 @@ export function MapBattlePage() {
 
             <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--color-text-primary)' }}>マップ</h1>
             <p className="text-base mb-4" style={{ color: 'var(--color-text-muted)' }}>最高到達: ステージ {battle.maxClearedStage || '-'}</p>
+            {startError && (
+                <p role="alert" className="text-sm mb-4" style={{ color: 'var(--color-text-danger)' }}>
+                    {startError}
+                    <button onClick={() => void retryStart()} disabled={isStarting} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
+                </p>
+            )}
 
             {/* マップ切り替えタブ */}
             <div className="flex gap-2 mb-4">

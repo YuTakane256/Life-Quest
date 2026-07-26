@@ -1,26 +1,34 @@
 /**
  * バトル開始をクラウド権威で行う（可能な場合）。
  *
- * `startCloudBattleAttempt(stage)`を試行し、成功（非null）ならサーバーの
- * スナップショットで`startCloudBattle`（`rewardMode: 'cloud'`）を、
- * 未ログイン・Edge Function未設定（null）またはネットワークエラー等の
- * 例外時はローカル`startBattle`（`rewardMode: 'local'`）へフォールバック
- * する（Mobileの`MapScreen.tsx`のhandleStartと対称のパターン）。
+ * 認証済みならクラウド開始だけを許可する。認証の確認不能・クラウド開始失敗時は
+ * ローカル報酬へフォールバックせず、UIへ再試行可能な失敗結果を返す。
  *
  * `isStarting`中の呼び出しは二重開始防止のため無視する。
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import {
+    createBattleStartGate,
+    getBattleStartMessage,
+    requestBattleStart,
+    type BattleAuthState,
+    type BattleStartResult,
+} from '@life-quest/core/battleStartPolicy';
 import { useGameStore } from '../stores/useGameStore';
 import { startCloudBattleAttempt, type CloudBattleAttempt } from '../platform/gameCloud';
+import { getBattleAuthState } from '../platform/auth';
 import type { BattlePlayerSnapshot, Enemy } from '../types';
 
 export interface UseCloudBattleStartResult {
     isStarting: boolean;
-    startStage: (stage: number) => Promise<void>;
+    startError: string | null;
+    startStage: (stage: number, beforeStart?: () => void) => Promise<BattleStartResult<CloudBattleAttempt>>;
+    retry: () => Promise<BattleStartResult<CloudBattleAttempt> | null>;
 }
 
 export interface CloudBattleStartDeps {
-    startCloudBattleAttempt: (stage: number) => Promise<CloudBattleAttempt | null>;
+    getBattleAuthState: () => Promise<BattleAuthState>;
+    startCloudBattleAttempt: (stage: number, idempotencyKey: string, expectedUserId: string) => Promise<CloudBattleAttempt | null>;
     startBattle: (stage: number) => void;
     startCloudBattle: (
         stage: number,
@@ -31,18 +39,23 @@ export interface CloudBattleStartDeps {
 }
 
 /**
- * `startStage`の判断ロジック本体（クラウド試行→null/例外ならローカル
- * フォールバック）。Reactの状態管理から切り離した純粋な非同期関数として
- * 抽出し、`useCloudBattleStart.test.ts`から直接テストできるようにする
- * （`renderHook`基盤が無いため、フックはこれを呼ぶだけの薄い配線にする）。
+ * `startStage`の判断ロジック本体。Reactの状態管理から切り離し、共有ポリシー
+ * の結果を直接テストできるようにする。
  */
-export async function runCloudBattleStart(stage: number, deps: CloudBattleStartDeps): Promise<void> {
-    try {
-        const attempt = await deps.startCloudBattleAttempt(stage);
-        if (!attempt) {
-            deps.startBattle(stage);
-            return;
-        }
+export async function runCloudBattleStart(
+    stage: number,
+    idempotencyKey: string,
+    deps: CloudBattleStartDeps,
+    beforeStart?: () => void,
+): Promise<BattleStartResult<CloudBattleAttempt>> {
+    const result = await requestBattleStart(
+        await deps.getBattleAuthState(),
+        deps.getBattleAuthState,
+        (expectedUserId) => deps.startCloudBattleAttempt(stage, idempotencyKey, expectedUserId),
+    );
+    if (result.kind === 'cloud-started') {
+        beforeStart?.();
+        const attempt = result.attempt;
         const playerSnapshot: BattlePlayerSnapshot = {
             attack: attempt.actors.player.attack,
             defense: attempt.actors.player.defense,
@@ -52,26 +65,53 @@ export async function runCloudBattleStart(stage: number, deps: CloudBattleStartD
         };
         const enemy: Enemy = { ...attempt.actors.enemy, hp: attempt.actors.enemy.maxHp };
         deps.startCloudBattle(stage, attempt.battleAttemptId, playerSnapshot, enemy);
-    } catch {
-        // クラウド接続エラー時はローカル計算にフォールバックする
+    } else if (result.kind === 'local-started') {
+        beforeStart?.();
         deps.startBattle(stage);
     }
+    return result;
 }
 
 export function useCloudBattleStart(): UseCloudBattleStartResult {
     const startBattle = useGameStore((state) => state.startBattle);
     const startCloudBattle = useGameStore((state) => state.startCloudBattle);
     const [isStarting, setIsStarting] = useState(false);
+    const [startError, setStartError] = useState<string | null>(null);
+    const startGateRef = useRef(createBattleStartGate());
+    const retryRef = useRef<{ stage: number; idempotencyKey: string; beforeStart?: () => void } | null>(null);
 
-    const startStage = async (stage: number): Promise<void> => {
-        if (isStarting) return;
+    const startStage = async (
+        stage: number,
+        beforeStart?: () => void,
+        idempotencyKey: string = crypto.randomUUID(),
+    ): Promise<BattleStartResult<CloudBattleAttempt>> => {
+        if (!startGateRef.current.tryEnter()) return { kind: 'retryable-error' };
         setIsStarting(true);
+        setStartError(null);
         try {
-            await runCloudBattleStart(stage, { startCloudBattleAttempt, startBattle, startCloudBattle });
+            const result = await runCloudBattleStart(
+                stage,
+                idempotencyKey,
+                { getBattleAuthState, startCloudBattleAttempt, startBattle, startCloudBattle },
+                beforeStart,
+            );
+            if (result.kind === 'cloud-started' || result.kind === 'local-started') {
+                retryRef.current = null;
+            } else {
+                retryRef.current = { stage, idempotencyKey, beforeStart };
+                setStartError(getBattleStartMessage(result));
+            }
+            return result;
         } finally {
+            startGateRef.current.leave();
             setIsStarting(false);
         }
     };
 
-    return { isStarting, startStage };
+    const retry = async (): Promise<BattleStartResult<CloudBattleAttempt> | null> => {
+        const pending = retryRef.current;
+        return pending ? startStage(pending.stage, pending.beforeStart, pending.idempotencyKey) : null;
+    };
+
+    return { isStarting, startError, startStage, retry };
 }
