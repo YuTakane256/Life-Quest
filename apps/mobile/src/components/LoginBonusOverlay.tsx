@@ -10,15 +10,32 @@ import { usePalette } from '../theme/usePalette';
 export function LoginBonusOverlay() {
     const pendingBonus = useMobileLoginBonusStore((state) => state.pendingBonus);
     const clearPendingBonus = useMobileLoginBonusStore((state) => state.clearPendingBonus);
+    const claimMessage = useMobileLoginBonusStore((state) => state.claimMessage);
+    const claimStatus = useMobileLoginBonusStore((state) => state.claimStatus);
+    const retryDailyLogin = useMobileLoginBonusStore((state) => state.retryDailyLogin);
     const { palette } = usePalette();
     const styles = createStyles(palette);
 
-    if (!pendingBonus) return null;
+    const retryable = claimStatus === 'retryable-error' || claimStatus === 'unavailable' || claimStatus === 'rejected';
+    const banner = claimMessage ? (
+        <View style={styles.banner}>
+            <Text style={styles.bannerText}>{claimMessage}</Text>
+            {retryable && (
+                <Pressable accessibilityRole="button" onPress={() => void retryDailyLogin()} hitSlop={8}>
+                    <Text style={styles.retry}>再試行</Text>
+                </Pressable>
+            )}
+        </View>
+    ) : null;
+
+    if (!pendingBonus) return banner;
 
     return (
-        <Modal visible transparent animationType="fade" onRequestClose={clearPendingBonus}>
-            <Pressable style={styles.backdrop} onPress={clearPendingBonus}>
-                <Pressable style={styles.card} onPress={(event) => event.stopPropagation()}>
+        <>
+            {banner}
+            <Modal visible transparent animationType="fade" onRequestClose={clearPendingBonus}>
+                <Pressable style={styles.backdrop} onPress={clearPendingBonus}>
+                    <Pressable style={styles.card} onPress={(event) => event.stopPropagation()}>
                     <Text style={styles.title}>ログインボーナス</Text>
                     <Text style={styles.streak}>連続ログイン{pendingBonus.streak}日目</Text>
 
@@ -35,9 +52,10 @@ export function LoginBonusOverlay() {
                     )}
 
                     <Text style={styles.hint}>タップして閉じる</Text>
+                    </Pressable>
                 </Pressable>
-            </Pressable>
-        </Modal>
+            </Modal>
+        </>
     );
 }
 
@@ -78,5 +96,24 @@ function createStyles(palette: ThemePalette) {
         rowValueXp: { color: palette.accent.emerald, fontSize: 15, fontWeight: '800' },
         rowValueChest: { color: palette.accent.gold, fontSize: 13, fontWeight: '800', textAlign: 'right', flexShrink: 1 },
         hint: { color: palette.text.muted, fontSize: 11, marginTop: 12 },
+        banner: {
+            position: 'absolute',
+            left: 16,
+            right: 16,
+            bottom: 84,
+            zIndex: 20,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            borderWidth: 1,
+            borderColor: palette.border.default,
+            borderRadius: 8,
+            backgroundColor: palette.bg.card,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+        },
+        bannerText: { color: palette.text.secondary, flex: 1, fontSize: 12 },
+        retry: { color: palette.accent.primary, fontSize: 12, fontWeight: '800' },
     });
 }

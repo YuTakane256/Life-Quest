@@ -27,6 +27,7 @@ import { drainOutboxAndWait } from './cloudOutbox';
 import { applyCloudCacheToMobileStores } from './cloudSeed';
 import { getMobileSupabaseClient } from './supabase';
 import { createReconnectDetector, resolveNetworkOnlineState } from './networkRecovery';
+import { requestMobileLoginBonusRecheck } from '../stores/useMobileLoginBonusStore';
 
 export interface CloudSyncHandle {
     flush: () => Promise<void>;
@@ -80,11 +81,14 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         const { retryablePending } = await drainOutboxAndWait();
         if (stopped || retryablePending) return false;
         scheduler.trigger('reconnect');
+        let pulled = false;
         try {
             await runner.flush();
+            pulled = true;
         } catch {
             // オフライン時はキャッシュ表示を継続し、次の復帰トリガで再試行する。
         }
+        if (pulled && !stopped) requestMobileLoginBonusRecheck();
         return !stopped;
     };
 

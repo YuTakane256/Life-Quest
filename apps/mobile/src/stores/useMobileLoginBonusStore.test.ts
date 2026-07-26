@@ -18,12 +18,22 @@ vi.mock('../platform/battleCloud', () => ({
     claimCloudLoginBonus: vi.fn(async (): Promise<CloudLoginBonusResult | null> => null),
 }));
 
-import { useMobileLoginBonusStore } from './useMobileLoginBonusStore';
+vi.mock('../platform/auth', () => ({
+    getGameAuthState: vi.fn(async () => ({ kind: 'anonymous' })),
+}));
+
+import {
+    beginMobileLoginBonusCloudSession,
+    clearMobileLoginBonusCloudSession,
+    useMobileLoginBonusStore,
+} from './useMobileLoginBonusStore';
 import { useMobileGameStore } from './useMobileGameStore';
 import { LOGIN_BONUS_CONFIG } from '@life-quest/core/loginBonus';
 import { claimCloudLoginBonus } from '../platform/battleCloud';
+import { getGameAuthState } from '../platform/auth';
 
 const claimCloudLoginBonusMock = vi.mocked(claimCloudLoginBonus);
+const getGameAuthStateMock = vi.mocked(getGameAuthState);
 
 // JST 2025-03-15 12:00:00 に固定
 const BASE_DATE = new Date('2025-03-15T03:00:00.000Z'); // UTC 03:00 = JST 12:00
@@ -52,12 +62,17 @@ function reset(fakeDate: Date = BASE_DATE) {
     });
     claimCloudLoginBonusMock.mockReset();
     claimCloudLoginBonusMock.mockResolvedValue(null);
+    getGameAuthStateMock.mockReset();
+    getGameAuthStateMock.mockResolvedValue({ kind: 'anonymous' });
     vi.useFakeTimers();
     vi.setSystemTime(fakeDate);
 }
 
 describe('useMobileLoginBonusStore（ローカル経路、クラウド未接続）', () => {
-    beforeEach(() => reset());
+    beforeEach(async () => {
+        reset();
+        await useMobileLoginBonusStore.persist.rehydrate();
+    });
 
     afterEach(() => {
         vi.useRealTimers();
@@ -187,7 +202,10 @@ describe('useMobileLoginBonusStore（ローカル経路、クラウド未接続�
 });
 
 describe('useMobileLoginBonusStore（クラウド経路）', () => {
-    beforeEach(() => reset());
+    beforeEach(async () => {
+        reset();
+        await useMobileLoginBonusStore.persist.rehydrate();
+    });
 
     afterEach(() => {
         vi.useRealTimers();
@@ -195,7 +213,8 @@ describe('useMobileLoginBonusStore（クラウド経路）', () => {
     });
 
     it('granted: trueならサーバーのstreak/xp/chestLabelをそのまま反映し、ローカル付与はしない', async () => {
-        claimCloudLoginBonusMock.mockResolvedValue({ granted: true, streak: 4, xp: 35, chestLabel: null });
+        getGameAuthStateMock.mockResolvedValue({ kind: 'authenticated', userId: 'user-1' });
+        claimCloudLoginBonusMock.mockResolvedValue({ granted: true, alreadyClaimed: false, claimDate: '2025-03-15', streak: 4, xp: 35, chestLabel: null });
 
         useMobileLoginBonusStore.getState().checkDailyLogin();
         await flushAsync();
@@ -210,7 +229,8 @@ describe('useMobileLoginBonusStore（クラウド経路）', () => {
     });
 
     it('granted: falseなら演出を出さず、日付とstreakだけ進める', async () => {
-        claimCloudLoginBonusMock.mockResolvedValue({ granted: false, streak: 3, xp: 0, chestLabel: null });
+        getGameAuthStateMock.mockResolvedValue({ kind: 'authenticated', userId: 'user-1' });
+        claimCloudLoginBonusMock.mockResolvedValue({ granted: false, alreadyClaimed: true, claimDate: '2025-03-15', streak: 3, xp: 0, chestLabel: null });
 
         useMobileLoginBonusStore.getState().checkDailyLogin();
         await flushAsync();
@@ -222,16 +242,71 @@ describe('useMobileLoginBonusStore（クラウド経路）', () => {
         expect(state.pendingBonus).toBeNull();
     });
 
-    it('クラウド接続エラー時はローカルへフォールバックする', async () => {
+    it('認証済みのクラウド接続エラーではローカル報酬へフォールバックしない', async () => {
+        getGameAuthStateMock.mockResolvedValue({ kind: 'authenticated', userId: 'user-1' });
         claimCloudLoginBonusMock.mockRejectedValue(new Error('network error'));
 
         useMobileLoginBonusStore.getState().checkDailyLogin();
         await flushAsync();
 
-        expect(addXpSpy).toHaveBeenCalledWith(LOGIN_BONUS_CONFIG.BASE_XP);
+        expect(addXpSpy).not.toHaveBeenCalled();
         const state = useMobileLoginBonusStore.getState();
-        expect(state.streak).toBe(1);
-        expect(state.pendingBonus).not.toBeNull();
+        expect(state.streak).toBe(0);
+        expect(state.pendingBonus).toBeNull();
+        expect(state.claimStatus).toBe('retryable-error');
+    });
+
+    it('ゲームストアのhydration完了前は請求もローカル付与も行わない', async () => {
+        useMobileGameStore.setState({ hasHydrated: false });
+
+        await expect(useMobileLoginBonusStore.getState().checkDailyLogin()).resolves.toEqual({ kind: 'deferred' });
+
+        expect(claimCloudLoginBonusMock).not.toHaveBeenCalled();
+        expect(addXpSpy).not.toHaveBeenCalled();
+        expect(useMobileLoginBonusStore.getState().lastLoginDate).toBeNull();
+    });
+
+    it('認証ライフサイクルの隔離は匿名状態を残し、クラウド演出と失敗表示を消す', () => {
+        useMobileLoginBonusStore.setState({
+            activeCloudUserId: 'user-a',
+            lastLoginDate: '2025-03-15',
+            streak: 4,
+            pendingBonus: { date: '2025-03-15', streak: 4, xp: 35, chestLabel: null },
+            claimStatus: 'retryable-error',
+            claimMessage: '通信を確認してください。',
+            anonymousState: { lastLoginDate: '2025-03-12', streak: 2 },
+        });
+
+        clearMobileLoginBonusCloudSession();
+        expect(useMobileLoginBonusStore.getState()).toMatchObject({
+            activeCloudUserId: null, lastLoginDate: '2025-03-12', streak: 2,
+            pendingBonus: null, claimStatus: 'idle', claimMessage: null,
+        });
+
+        beginMobileLoginBonusCloudSession('user-b');
+        expect(useMobileLoginBonusStore.getState()).toMatchObject({
+            activeCloudUserId: 'user-b', lastLoginDate: null, streak: 0, pendingBonus: null,
+        });
+    });
+
+    it('請求中の復帰再確認は失敗後に一度だけ再実行する', async () => {
+        getGameAuthStateMock.mockResolvedValue({ kind: 'authenticated', userId: 'user-1' });
+        let rejectClaim!: (error: Error) => void;
+        claimCloudLoginBonusMock
+            .mockReturnValueOnce(new Promise((_resolve, reject) => { rejectClaim = reject; }))
+            .mockResolvedValueOnce({ granted: false, alreadyClaimed: true, claimDate: '2025-03-15', streak: 2, xp: 0, chestLabel: null });
+
+        const first = useMobileLoginBonusStore.getState().checkDailyLogin();
+        await flushAsync();
+        void useMobileLoginBonusStore.getState().checkDailyLogin();
+        rejectClaim(new Error('offline'));
+
+        await first;
+        await flushAsync();
+        expect(claimCloudLoginBonusMock).toHaveBeenCalledTimes(2);
+        expect(useMobileLoginBonusStore.getState()).toMatchObject({
+            claimStatus: 'idle', lastLoginDate: '2025-03-15', streak: 2,
+        });
     });
 
     it('今日分は受取済みならクラウド請求もしない', async () => {

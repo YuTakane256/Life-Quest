@@ -152,21 +152,36 @@ describe('createGameCloudClient', () => {
             const calls: { name: string; body?: Record<string, unknown> }[] = [];
             const invoker = makeInvoker((name, body) => {
                 calls.push({ name, body });
-                return { granted: true, streak: 7, xp: 50, chest_label: '7日連続ログイン記念の金の宝箱', version: 3 };
+                return { granted: true, already_claimed: false, claim_date: '2025-03-15', streak: 7, xp: 50, chest_label: '7日連続ログイン記念の金の宝箱', version: 3 };
             });
             const client = createGameCloudClient({ getInvoker: () => invoker, generateId: () => 'fixed-id' });
 
             const result = await client.claimLoginBonus();
-            expect(result).toEqual({ granted: true, streak: 7, xp: 50, chestLabel: '7日連続ログイン記念の金の宝箱' });
+            expect(result).toEqual({ granted: true, alreadyClaimed: false, claimDate: '2025-03-15', streak: 7, xp: 50, chestLabel: '7日連続ログイン記念の金の宝箱' });
             expect(calls[0]).toEqual({ name: 'claim_login_bonus', body: { idempotencyKey: 'fixed-id' } });
         });
 
         it('grantedがfalseでも現在のstreakを変換して返す（同日に既に請求済み）', async () => {
-            const invoker = makeInvoker(() => ({ granted: false, streak: 3, xp: 0, chest_label: null, version: 5 }));
+            const invoker = makeInvoker(() => ({ granted: false, already_claimed: true, claim_date: '2025-03-15', streak: 3, xp: 0, chest_label: null, version: 5 }));
             const client = createGameCloudClient({ getInvoker: () => invoker });
 
             const result = await client.claimLoginBonus();
-            expect(result).toEqual({ granted: false, streak: 3, xp: 0, chestLabel: null });
+            expect(result).toEqual({ granted: false, alreadyClaimed: true, claimDate: '2025-03-15', streak: 3, xp: 0, chestLabel: null });
+        });
+
+        it('呼び出し元の日付キーとexpectedUserIdをそのまま送る', async () => {
+            const calls: { name: string; body?: Record<string, unknown> }[] = [];
+            const invoker = makeInvoker((name, body) => {
+                calls.push({ name, body });
+                return { granted: false, already_claimed: true, claim_date: '2025-03-15', streak: 3, xp: 0, chest_label: null, version: 5 };
+            });
+            const client = createGameCloudClient({ getInvoker: () => invoker });
+
+            await client.claimLoginBonus('login-bonus:2025-03-15', 'user-1');
+            expect(calls[0]).toEqual({
+                name: 'claim_login_bonus',
+                body: { idempotencyKey: 'login-bonus:2025-03-15', expectedUserId: 'user-1' },
+            });
         });
     });
 });

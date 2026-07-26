@@ -578,7 +578,8 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
 
     it('claim_login_bonus: streakはサーバーが独立算出し、日付単位で生涯1回付与。7日目で特別宝箱', async () => {
         const xpBefore = Number((await getCharacter()).total_xp);
-        const first = await callFn('claim_login_bonus', { idempotencyKey: uuid() });
+        const firstKey = uuid();
+        const first = await callFn('claim_login_bonus', { idempotencyKey: firstKey });
         expect(first.status).toBe(200);
         const firstBody = (await first.json()) as { granted: boolean; streak: number; xp: number; chest_label: string | null };
         expect(firstBody.granted).toBe(true);
@@ -587,10 +588,24 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         expect(firstBody.chest_label).toBeNull();
         expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 20);
 
-        // 同日2回目は拒否（クライアントの自己申告に関わらずサーバーが判定）
+        // レスポンス消失を想定した同一キー再送は、日付の既受領判定より先に
+        // idempotency_keysの最初の確定結果を再生する（演出内容も変わらない）。
+        const sameKeyReplay = await callFn('claim_login_bonus', { idempotencyKey: firstKey });
+        expect(sameKeyReplay.status).toBe(200);
+        expect(await sameKeyReplay.json()).toEqual(firstBody);
+        expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 20);
+
+        // 同日2回目は付与しないが、クライアントが安全に状態を同期できる正常応答を返す。
         const second = await callFn('claim_login_bonus', { idempotencyKey: uuid() });
-        expect(second.status).toBe(409);
+        expect(second.status).toBe(200);
+        const secondBody = (await second.json()) as { granted: boolean; already_claimed: boolean; streak: number; xp: number; chest_label: string | null };
+        expect(secondBody).toMatchObject({ granted: false, already_claimed: true, streak: 1, xp: 0, chest_label: null });
         expect(Number((await getCharacter()).total_xp)).toBe(xpBefore + 20); // 変化なし
+
+        // 旧クライアントはexpectedUserIdを送らなくても上の初回請求が成功する。
+        // 新クライアントが送る場合はJWT主体と不一致ならRPC前に拒否する。
+        const mismatch = await callFn('claim_login_bonus', { idempotencyKey: uuid(), expectedUserId: other.id });
+        expect(mismatch.status).toBe(409);
 
         // reward_transactionsは日付単位でゲートするため、同じ実日付ではEF経由で
         // 2回目を付与させることができない（意図した挙動）。streak継続・7日目の

@@ -78,6 +78,9 @@ export async function getBattleAuthState(): Promise<BattleAuthState> {
     }
 }
 
+/** バトル以外のクラウド権威ゲーム操作でも使う操作時点の認証判定。 */
+export const getGameAuthState = getBattleAuthState;
+
 /**
  * アプリ起動時に呼ぶ。保存済みセッションが復元されたら notifyLogin を発火する。
  * 戻り値で購読解除できる。

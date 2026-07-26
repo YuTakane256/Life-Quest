@@ -9,6 +9,7 @@ import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { beginMobileLoginBonusCloudSession, clearMobileLoginBonusCloudSession } from '../stores/useMobileLoginBonusStore';
 
 let cloudSessionSeeded = false;
 
@@ -32,7 +33,11 @@ export function clearMobileCloudStores(): void {
 /** ログアウトフックを登録する。アプリ起動時に一度だけ呼ぶ。 */
 export function registerMobileAuthStoreHooks(): () => void {
     return registerAuthLifecycleHooks({
+        onLogin: (userId) => {
+            beginMobileLoginBonusCloudSession(userId);
+        },
         onLogout: () => {
+            clearMobileLoginBonusCloudSession();
             if (!cloudSessionSeeded) return; // クラウド未シードならローカルデータを守る
             clearMobileCloudStores();
             cloudSessionSeeded = false;

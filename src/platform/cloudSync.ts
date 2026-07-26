@@ -43,6 +43,7 @@ import { useStatsStore } from '../stores/useStatsStore';
 import { useThemeStore, sanitizeThemeMode } from '../stores/useThemeStore';
 import { useMotionStore, sanitizeMotionMode } from '../stores/useMotionStore';
 import { useNotificationStore } from '../stores/useNotificationStore';
+import { requestLoginBonusRecheck } from '../stores/useLoginBonusStore';
 
 export interface CloudSyncHandle {
     /** 実行中のプルの完了を待つ（テスト用） */
@@ -148,11 +149,16 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         const { retryablePending } = await drainOutboxAndWait();
         if (stopped || retryablePending) return false;
         scheduler.trigger('reconnect');
+        let pulled = false;
         try {
             await runner.flush();
+            pulled = true;
         } catch {
             // オフライン時はキャッシュ表示を継続し、次の復帰トリガで再試行する。
         }
+        // 同期が成功した復帰時だけ未請求ボーナスを再確認する。ストア側の
+        // 世代・in-flightゲートが複数トリガの重複を吸収する。
+        if (pulled && !stopped) requestLoginBonusRecheck();
         return !stopped;
     };
 

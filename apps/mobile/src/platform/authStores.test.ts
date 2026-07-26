@@ -18,6 +18,11 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
     },
 }));
 
+vi.mock('../stores/useMobileLoginBonusStore', () => ({
+    beginMobileLoginBonusCloudSession: vi.fn(),
+    clearMobileLoginBonusCloudSession: vi.fn(),
+}));
+
 void AsyncStorage;
 
 describe('Mobileログアウト時のストアクリア（ADR-009）', () => {

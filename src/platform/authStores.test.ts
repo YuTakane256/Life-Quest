@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
     clearWebCloudStores,
     markCloudSessionSeeded,
@@ -8,6 +8,7 @@ import {
 } from './authStores';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
+import { useLoginBonusStore } from '../stores/useLoginBonusStore';
 
 function task(id: string) {
     return {
@@ -48,6 +49,48 @@ describe('Webログアウト時のストアクリア（ADR-009）', () => {
 
         expect(useTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
         expect(useTitleStore.getState().activeTitle).toBe('ローカル称号');
+        unregister();
+    });
+
+    it('ログインボーナスはクラウドシードの有無に関係なくログアウト時に即時隔離する', async () => {
+        const unregister = registerWebAuthStoreHooks();
+        useLoginBonusStore.setState({
+            activeCloudUserId: 'user-a',
+            lastLoginDate: '2026-07-26',
+            streak: 4,
+            pendingBonus: { date: '2026-07-26', streak: 4, xp: 35, chestLabel: null },
+            claimStatus: 'retryable-error',
+            claimMessage: '通信を確認してください。',
+            anonymousState: { lastLoginDate: '2026-07-20', streak: 2 },
+        });
+
+        await notifyLogout();
+
+        expect(useLoginBonusStore.getState()).toMatchObject({
+            activeCloudUserId: null,
+            lastLoginDate: '2026-07-20',
+            streak: 2,
+            pendingBonus: null,
+            claimStatus: 'idle',
+            claimMessage: null,
+        });
+        unregister();
+    });
+
+    it('別ユーザーのログイン通知で前アカウントのボーナス状態を即時隔離する', async () => {
+        const unregister = registerWebAuthStoreHooks();
+        useLoginBonusStore.setState({
+            activeCloudUserId: 'user-a',
+            lastLoginDate: '2026-07-26',
+            streak: 4,
+            pendingBonus: { date: '2026-07-26', streak: 4, xp: 35, chestLabel: null },
+        });
+
+        await notifyLogin('user-b');
+
+        expect(useLoginBonusStore.getState()).toMatchObject({
+            activeCloudUserId: 'user-b', lastLoginDate: null, streak: 0, pendingBonus: null,
+        });
         unregister();
     });
 
