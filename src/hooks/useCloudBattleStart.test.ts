@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runCloudBattleStart } from './useCloudBattleStart';
 import type { CloudBattleAttempt } from '../platform/gameCloud';
+import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 
 describe('runCloudBattleStart', () => {
     it('攻撃側スナップショットを含むattemptが返ればstartCloudBattleへ変換して渡す', async () => {
@@ -23,9 +24,11 @@ describe('runCloudBattleStart', () => {
         const startBattle = vi.fn();
         const startCloudBattle = vi.fn();
 
-        await runCloudBattleStart(1, { startCloudBattleAttempt, startBattle, startCloudBattle });
+        await expect(runCloudBattleStart(1, 'key-1', {
+            getBattleAuthState: async () => ({ kind: 'authenticated', userId: 'user-1' }), startCloudBattleAttempt, startBattle, startCloudBattle,
+        })).resolves.toMatchObject({ kind: 'cloud-started' });
 
-        expect(startCloudBattleAttempt).toHaveBeenCalledWith(1);
+        expect(startCloudBattleAttempt).toHaveBeenCalledWith(1, 'key-1', 'user-1');
         expect(startBattle).not.toHaveBeenCalled();
         expect(startCloudBattle).toHaveBeenCalledWith(
             1,
@@ -35,25 +38,85 @@ describe('runCloudBattleStart', () => {
         );
     });
 
-    it('attemptがnull（未接続）ならローカルstartBattleへフォールバックする', async () => {
+    it('認証済みでattemptがnullならローカルstartBattleを呼ばない', async () => {
         const startCloudBattleAttempt = vi.fn(async () => null);
         const startBattle = vi.fn();
         const startCloudBattle = vi.fn();
 
-        await runCloudBattleStart(3, { startCloudBattleAttempt, startBattle, startCloudBattle });
+        await expect(runCloudBattleStart(3, 'key-3', {
+            getBattleAuthState: async () => ({ kind: 'authenticated', userId: 'user-1' }), startCloudBattleAttempt, startBattle, startCloudBattle,
+        })).resolves.toEqual({ kind: 'retryable-error' });
 
-        expect(startBattle).toHaveBeenCalledWith(3);
+        expect(startBattle).not.toHaveBeenCalled();
         expect(startCloudBattle).not.toHaveBeenCalled();
     });
 
-    it('例外（ネットワークエラー等）でもローカルstartBattleへフォールバックする', async () => {
+    it('認証済みのネットワーク例外でもローカルstartBattleを呼ばない', async () => {
         const startCloudBattleAttempt = vi.fn(async () => { throw new Error('network error'); });
         const startBattle = vi.fn();
         const startCloudBattle = vi.fn();
 
-        await runCloudBattleStart(5, { startCloudBattleAttempt, startBattle, startCloudBattle });
+        await expect(runCloudBattleStart(5, 'key-5', {
+            getBattleAuthState: async () => ({ kind: 'authenticated', userId: 'user-1' }), startCloudBattleAttempt, startBattle, startCloudBattle,
+        })).resolves.toEqual({ kind: 'retryable-error' });
 
-        expect(startBattle).toHaveBeenCalledWith(5);
+        expect(startBattle).not.toHaveBeenCalled();
         expect(startCloudBattle).not.toHaveBeenCalled();
+    });
+
+    it('匿名利用者だけローカルstartBattleへ進む', async () => {
+        const startCloudBattleAttempt = vi.fn();
+        const startBattle = vi.fn();
+        const startCloudBattle = vi.fn();
+
+        await expect(runCloudBattleStart(2, 'key-2', {
+            getBattleAuthState: async () => ({ kind: 'anonymous' }), startCloudBattleAttempt, startBattle, startCloudBattle,
+        })).resolves.toEqual({ kind: 'local-started' });
+
+        expect(startCloudBattleAttempt).not.toHaveBeenCalled();
+        expect(startBattle).toHaveBeenCalledWith(2);
+    });
+
+    it('401では再ログインが必要な結果を返し、ローカル開始しない', async () => {
+        const startBattle = vi.fn();
+        await expect(runCloudBattleStart(2, 'key-2', {
+            getBattleAuthState: async () => ({ kind: 'authenticated', userId: 'user-1' }),
+            startCloudBattleAttempt: async () => { throw new EdgeFunctionError('http-error', 'expired', 401); },
+            startBattle,
+            startCloudBattle: vi.fn(),
+        })).resolves.toEqual({ kind: 'auth-error' });
+        expect(startBattle).not.toHaveBeenCalled();
+    });
+
+    it('次へ用の事前遷移は開始失敗時に実行せず、成功時だけ実行する', async () => {
+        const beforeStart = vi.fn();
+        const startCloudBattle = vi.fn();
+        const failed = await runCloudBattleStart(2, 'next-key', {
+            getBattleAuthState: async () => ({ kind: 'authenticated', userId: 'user-1' }),
+            startCloudBattleAttempt: async () => null,
+            startBattle: vi.fn(),
+            startCloudBattle,
+        }, beforeStart);
+        expect(failed).toEqual({ kind: 'retryable-error' });
+        expect(beforeStart).not.toHaveBeenCalled();
+        expect(startCloudBattle).not.toHaveBeenCalled();
+
+        const attempt: CloudBattleAttempt = {
+            battleAttemptId: 'attempt-next',
+            actors: {
+                player: { attack: 10, defense: 5, maxHp: 50 },
+                enemy: { stage: 2, name: '敵', maxHp: 20, attack: 2, defense: 1, xpReward: 4 },
+                playerLevel: 1,
+                playerName: '勇者',
+            },
+        };
+        await runCloudBattleStart(2, 'next-key', {
+            getBattleAuthState: async () => ({ kind: 'authenticated', userId: 'user-1' }),
+            startCloudBattleAttempt: async () => attempt,
+            startBattle: vi.fn(),
+            startCloudBattle,
+        }, beforeStart);
+        expect(beforeStart).toHaveBeenCalledTimes(1);
+        expect(startCloudBattle).toHaveBeenCalledTimes(1);
     });
 });

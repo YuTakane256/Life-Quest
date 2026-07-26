@@ -7,6 +7,7 @@
  *   ストアのメモリ即時クリアがログアウトAPIの一部として完了する契約）
  */
 import { notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
+import type { BattleAuthState } from '@life-quest/core/battleStartPolicy';
 import { getWebSupabaseClient } from './supabase';
 
 export type AuthResult =
@@ -62,6 +63,19 @@ export async function getCurrentUser(): Promise<AuthUserInfo | null> {
     const { data } = await client.auth.getSession();
     if (!data.session) return null;
     return { userId: data.session.user.id, email: data.session.user.email ?? null };
+}
+
+/** バトル開始のため、操作時点のセッションを三値で確認する。 */
+export async function getBattleAuthState(): Promise<BattleAuthState> {
+    const client = getWebSupabaseClient();
+    if (!client) return { kind: 'anonymous' };
+    try {
+        const { data, error } = await client.auth.getSession();
+        if (error) return { kind: 'unavailable' };
+        return data.session ? { kind: 'authenticated', userId: data.session.user.id } : { kind: 'anonymous' };
+    } catch {
+        return { kind: 'unavailable' };
+    }
 }
 
 /**

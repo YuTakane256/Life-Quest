@@ -216,7 +216,7 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         const xpBefore = Number((await getCharacter()).total_xp);
 
         for (let round = 0; round < 2; round++) {
-            const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid() });
+            const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid(), expectedUserId: user.id });
             expect(start.status).toBe(200);
             const attempt = (await start.json()) as { battle_attempt_id: string; player_snapshot: { attack: number } };
             expect(attempt.player_snapshot.attack).toBeGreaterThan(0); // サーバーが確定したステータス
@@ -237,9 +237,44 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         expect(character.max_cleared_stage).toBe(1);
     });
 
+    it('バトル開始: 期待ユーザーとJWT主体が異なる場合、attemptを作らず409で拒否する', async () => {
+        const before = await pg.query('select count(*) from battle_attempts where user_id=$1', [other.id]);
+        const response = await callFn('start_battle_attempt', {
+            stage: 1,
+            idempotencyKey: uuid(),
+            expectedUserId: user.id,
+        }, other.token);
+
+        expect(response.status).toBe(409);
+        expect(await response.json()).toEqual({ error: 'auth_user_mismatch' });
+        const after = await pg.query('select count(*) from battle_attempts where user_id=$1', [other.id]);
+        expect(after.rows[0].count).toBe(before.rows[0].count);
+    });
+
+    it('バトル開始: expectedUserIdがJWT主体と一致すれば開始できる', async () => {
+        const response = await callFn('start_battle_attempt', {
+            stage: 1,
+            idempotencyKey: uuid(),
+            expectedUserId: user.id,
+        });
+        expect(response.status).toBe(200);
+    });
+
+    it('バトル開始: expectedUserIdなしの旧クライアントもJWT主体で開始できる', async () => {
+        const before = await pg.query('select count(*) from battle_attempts where user_id=$1', [user.id]);
+        const response = await callFn('start_battle_attempt', {
+            stage: 1,
+            idempotencyKey: uuid(),
+        });
+
+        expect(response.status).toBe(200);
+        const after = await pg.query('select count(*) from battle_attempts where user_id=$1', [user.id]);
+        expect(Number(after.rows[0].count)).toBe(Number(before.rows[0].count) + 1);
+    });
+
     it('同一battle_attempt_idの二重resolveは既存結果を返しXPは二重付与されない（ADR-010）', async () => {
         const winActions = Array.from({ length: 12 }, () => ({ type: 'attack' }));
-        const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid() });
+        const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid(), expectedUserId: user.id });
         const attempt = (await start.json()) as { battle_attempt_id: string };
 
         const first = await callFn('resolve_battle_attempt', {
@@ -259,7 +294,7 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
     });
 
     it('虚偽の行動列はサーバー再計算で拒否される（勝利の自己申告を信用しない）', async () => {
-        const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid() });
+        const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid(), expectedUserId: user.id });
         const attempt = (await start.json()) as { battle_attempt_id: string };
 
         // 決着に至らない行動列（1回攻撃しただけで「勝った」と主張するのに相当）
@@ -289,7 +324,7 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
     });
 
     it('進行ロック: max_cleared_stage+1 を超えるステージへの挑戦は拒否される', async () => {
-        const res = await callFn('start_battle_attempt', { stage: 5, idempotencyKey: uuid() });
+        const res = await callFn('start_battle_attempt', { stage: 5, idempotencyKey: uuid(), expectedUserId: user.id });
         expect(res.status).toBe(409);
         expect(((await res.json()) as { error: string }).error).toContain('stage_locked');
     });
@@ -765,7 +800,7 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
 
     it('並行実行: 同一battle_attemptを2本の別キーで同時resolveしてもXPは1回分', async () => {
         const winActions = Array.from({ length: 12 }, () => ({ type: 'attack' }));
-        const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid() });
+        const start = await callFn('start_battle_attempt', { stage: 1, idempotencyKey: uuid(), expectedUserId: user.id });
         const attempt = (await start.json()) as { battle_attempt_id: string };
         const xpBefore = Number((await getCharacter()).total_xp);
 
