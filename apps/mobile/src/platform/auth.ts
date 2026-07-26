@@ -72,6 +72,9 @@ export async function getBattleAuthState(): Promise<BattleAuthState> {
     }
 }
 
+/** バトル以外のクラウド権威ゲーム操作でも使う操作時点の認証判定。 */
+export const getGameAuthState = getBattleAuthState;
+
 /** アプリ起動時に呼ぶ。セッション復元時に notifyLogin を発火する。 */
 export function startAuthSessionListener(): () => void {
     const client = getMobileSupabaseClient();

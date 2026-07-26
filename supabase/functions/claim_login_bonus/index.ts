@@ -10,18 +10,44 @@ import { callApply, json, requireString, serveGameFunction } from '../_shared/ha
 
 serveGameFunction(async (ctx) => {
     const idempotencyKey = requireString(ctx.body, 'idempotencyKey');
+    const expectedUserId = typeof ctx.body.expectedUserId === 'string' ? ctx.body.expectedUserId : null;
+    // 所有者はJWTのctx.userIdだけで確定する。これはリクエスト中の別アカウントへの
+    // 切替を、報酬RPCを実行する前に検出するための照合値であり、旧クライアントでは省略可。
+    if (expectedUserId !== null && expectedUserId !== ctx.userId) return json(409, { error: 'auth_user_mismatch' });
+
+    // 同じキーの再送は、日付の既受領判定より先に最初の確定結果を返す。レスポンス
+    // 消失後でも granted/xp/chest を同じ内容で再生し、演出とクライアント状態を安全に
+    // 収束させる。台帳はservice_role専用で、必ずJWT由来のctx.userIdで絞り込む。
+    const { data: replay, error: replayError } = await ctx.service
+        .from('idempotency_keys')
+        .select('operation, result')
+        .eq('user_id', ctx.userId)
+        .eq('key', idempotencyKey)
+        .maybeSingle<{ operation: string; result: unknown | null }>();
+    if (replayError) return json(500, { error: replayError.message });
+    if (replay?.operation === 'claim_login_bonus' && replay.result !== null) return json(200, replay.result);
+
     const today = getTodayJst();
 
     const { data: character, error } = await ctx.service
         .from('characters')
-        .select('login_streak, last_login_bonus_date')
+        .select('login_streak, last_login_bonus_date, version')
         .eq('user_id', ctx.userId)
-        .single<{ login_streak: number; last_login_bonus_date: string | null }>();
+        .single<{ login_streak: number; last_login_bonus_date: string | null; version: number }>();
     if (error || !character) return json(500, { error: error?.message ?? 'character not found' });
 
     const bonus = computeLoginBonus(character.last_login_bonus_date, character.login_streak, today);
     if (!bonus) {
-        return json(409, { error: 'already_claimed_today' });
+        // 同日の別端末請求や再送は失敗ではなく、確定済みのサーバー状態を返す。
+        return json(200, {
+            granted: false,
+            already_claimed: true,
+            claim_date: character.last_login_bonus_date ?? today,
+            streak: character.login_streak,
+            xp: 0,
+            chest_label: null,
+            version: character.version,
+        });
     }
 
     const chest = bonus.isSpecialDay

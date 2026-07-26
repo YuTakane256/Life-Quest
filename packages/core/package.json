@@ -72,6 +72,10 @@
       "types": "./src/loginBonus.ts",
       "import": "./src/loginBonus.ts"
     },
+    "./loginBonusPolicy": {
+      "types": "./src/loginBonusPolicy.ts",
+      "import": "./src/loginBonusPolicy.ts"
+    },
     "./habits": {
       "types": "./src/habits.ts",
       "import": "./src/habits.ts"

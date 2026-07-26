@@ -81,6 +81,8 @@ export interface CloudSynthesisResult {
 
 interface ClaimLoginBonusResponse {
     granted: boolean;
+    already_claimed?: boolean;
+    claim_date: string;
     streak: number;
     xp: number;
     chest_label: string | null;
@@ -90,6 +92,10 @@ interface ClaimLoginBonusResponse {
 export interface CloudLoginBonusResult {
     /** サーバーがXP・宝箱を実際に付与したか（同日に別端末等から既に請求済みならfalse） */
     granted: boolean;
+    /** 同日の請求済みを正常応答として返す。 */
+    alreadyClaimed: boolean;
+    /** サーバーが確定したJST日付。 */
+    claimDate: string;
     /** サーバーが算出した現在の連続ログイン日数（grantedがfalseでも現在値が返る） */
     streak: number;
     xp: number;
@@ -115,10 +121,10 @@ export interface GameCloudClient {
      * ログインボーナス請求。クラウド未接続ならnull。サーバーが「今日分か」の
      * 判定・streak算出・XP/宝箱付与を行うため、クライアントは日付やstreakを
      * 送らない（habitのclaim_habit_bonusと同じ「クライアントの自己申告を
-     * 信用しない」方針）。idempotencyKeyは内部生成（reward_transactionsの
-     * (kind,date)台帳ゲートが実質的な重複防止を担うため、厳密な再送一致は不要）。
+     * 信用しない」方針）。呼び出し元は日付単位で安定したidempotencyKeyを渡し、
+     * リトライでも同じ要求として再送する。
      */
-    claimLoginBonus: () => Promise<CloudLoginBonusResult | null>;
+    claimLoginBonus: (idempotencyKey?: string, expectedUserId?: string) => Promise<CloudLoginBonusResult | null>;
 }
 
 export interface GameCloudClientDeps {
@@ -191,14 +197,17 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
             return { resultId: response.result_id, templateId: response.template_id };
         },
 
-        claimLoginBonus: async () => {
+        claimLoginBonus: async (idempotencyKey = generateId(), expectedUserId) => {
             const invoker = await getInvoker();
             if (!invoker) return null;
             const response = await invoker<ClaimLoginBonusResponse>('claim_login_bonus', {
-                idempotencyKey: generateId(),
+                idempotencyKey,
+                ...(expectedUserId === undefined ? {} : { expectedUserId }),
             });
             return {
                 granted: response.granted,
+                alreadyClaimed: response.already_claimed === true || response.granted === false,
+                claimDate: response.claim_date,
                 streak: response.streak,
                 xp: response.xp,
                 chestLabel: response.chest_label,

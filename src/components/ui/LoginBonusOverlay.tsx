@@ -6,6 +6,9 @@ import { useModalEscape } from '../../hooks/useModalEscape';
 export function LoginBonusOverlay() {
     const pendingBonus = useLoginBonusStore((s) => s.pendingBonus);
     const clearPendingBonus = useLoginBonusStore((s) => s.clearPendingBonus);
+    const claimMessage = useLoginBonusStore((s) => s.claimMessage);
+    const claimStatus = useLoginBonusStore((s) => s.claimStatus);
+    const retryDailyLogin = useLoginBonusStore((s) => s.retryDailyLogin);
     const [visible, setVisible] = useState(false);
 
     const handleDismiss = useCallback(() => {
@@ -19,12 +22,40 @@ export function LoginBonusOverlay() {
         if (pendingBonus) setVisible(true);
     }, [pendingBonus]);
 
-    if (!pendingBonus || !visible) return null;
+    const retryable = claimStatus === 'retryable-error' || claimStatus === 'unavailable' || claimStatus === 'rejected';
+    const banner = claimMessage ? (
+        <div
+            role="status"
+            className="fixed left-4 right-4 z-[295] flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+            style={{
+                bottom: 'calc(64px + env(safe-area-inset-bottom, 0px) + 12px)',
+                backgroundColor: 'var(--color-bg-card)',
+                borderColor: 'var(--color-border-default)',
+                color: 'var(--color-text-secondary)',
+            }}
+        >
+            <span>{claimMessage}</span>
+            {retryable && (
+                <button
+                    type="button"
+                    onClick={() => void retryDailyLogin()}
+                    className="shrink-0 rounded-md px-2 py-1 text-xs font-bold"
+                    style={{ color: 'var(--color-accent-primary)' }}
+                >
+                    再試行
+                </button>
+            )}
+        </div>
+    ) : null;
+
+    if (!pendingBonus || !visible) return banner;
 
     const titleId = 'login-bonus-overlay-title';
 
     return (
-        <div
+        <>
+            {banner}
+            <div
             className="fixed inset-0 z-[290] flex items-center justify-center animate-levelup-overlay"
             style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
             onClick={handleDismiss}
@@ -114,6 +145,7 @@ export function LoginBonusOverlay() {
                     タップして閉じる
                 </p>
             </div>
-        </div>
+            </div>
+        </>
     );
 }

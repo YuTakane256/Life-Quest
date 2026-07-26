@@ -223,13 +223,28 @@ export interface LoginBonus {
     chestLabel: string | null; // 特別宝箱を付与した場合のラベル（無ければnull）
 }
 
+export interface LoginBonusLocalState {
+    lastLoginDate: string | null;
+    streak: number;
+}
+
 export interface LoginBonusStoreState {
     lastLoginDate: string | null; // 最後にボーナスを受け取った日 YYYY-MM-DD (JST)
     streak: number; // 現在の連続ログイン日数
     pendingBonus: LoginBonus | null; // 未表示のログインボーナス（モーダル表示待ち）
-    checkDailyLogin: () => void; // アプリ起動時に呼び出してボーナス判定を行う
+    /** 匿名プレイ分だけを保存し、クラウドアカウント間で表示を共有しない。 */
+    anonymousState: LoginBonusLocalState;
+    /** 現在表示しているクラウドアカウント。永続化しない。 */
+    activeCloudUserId: string | null;
+    claimStatus: LoginBonusClaimStatus;
+    claimMessage: string | null;
+    checkDailyLogin: () => Promise<LoginBonusCheckResult>; // アプリ起動時に呼び出してボーナス判定を行う
+    retryDailyLogin: () => Promise<LoginBonusCheckResult>;
     clearPendingBonus: () => void; // モーダルを閉じたときに呼び出す
 }
+
+export type LoginBonusClaimStatus = 'idle' | 'checking' | 'retryable-error' | 'auth-error' | 'unavailable' | 'rejected';
+export type LoginBonusCheckResult = import('@life-quest/core/loginBonusPolicy').LoginBonusClaimResult;
 
 // ─── 通知関連 ──────────────────────────────────────────────────
 export interface NotificationStoreState {

@@ -17,6 +17,7 @@ import { sanitizeGameStoreState, useGameStore } from '../stores/useGameStore';
 import { sanitizeHabitStoreState, useHabitStore } from '../stores/useHabitStore';
 import { sanitizeTaskStoreState, useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
+import { beginLoginBonusCloudSession, clearLoginBonusCloudSession } from '../stores/useLoginBonusStore';
 
 let cloudSessionSeeded = false;
 
@@ -48,7 +49,13 @@ export function clearWebCloudStores(): void {
  */
 export function registerWebAuthStoreHooks(): () => void {
     return registerAuthLifecycleHooks({
+        onLogin: (userId) => {
+            // クラウド同期の開始より先に、前アカウントの演出・失敗状態を隔離する。
+            beginLoginBonusCloudSession(userId);
+        },
         onLogout: () => {
+            // cloudSessionSeededの有無に関係なくログインボーナスはアカウント固有。
+            clearLoginBonusCloudSession();
             if (!cloudSessionSeeded) return; // クラウド未シードならローカルデータを守る
             clearWebCloudStores();
             cloudSessionSeeded = false;
