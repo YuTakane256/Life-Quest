@@ -154,6 +154,12 @@ export {
     type PullBatch,
 } from './cloudPull.ts';
 export {
+    createInactiveCloudSyncState,
+    deriveCloudSyncAttention,
+    type CloudPullPhase,
+    type CloudSyncPublicState,
+} from './cloudSyncState.ts';
+export {
     createSyncCursor,
     SYNC_CURSOR_KEY,
     writeCanonicalSnapshot,

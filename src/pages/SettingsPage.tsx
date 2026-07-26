@@ -1,6 +1,7 @@
 import { ArrowLeft, ChevronRight, HelpCircle, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AccountSettings } from '../components/ui/AccountSettings';
+import { CloudSyncSettings } from '../components/ui/CloudSyncSettings';
 import { DataBackupSettings } from '../components/ui/DataBackupSettings';
 import { MotionSettings } from '../components/ui/MotionSettings';
 import { ThemeSettings } from '../components/ui/ThemeSettings';
@@ -32,6 +33,7 @@ export function SettingsPage() {
 
             <div className="flex flex-col gap-4">
                 <AccountSettings />
+                <CloudSyncSettings />
                 <ThemeSettings />
                 <MotionSettings />
                 <NotificationSettings />

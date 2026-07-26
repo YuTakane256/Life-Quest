@@ -15,6 +15,16 @@ import type { RepositoryStorage } from './syncRepository.ts';
 
 export type OutboxOpStatus = 'pending' | 'inflight' | 'failed' | 'conflict';
 
+/** UIへ公開してよい、同期失敗の分類。 */
+export type SyncFailureKind =
+    | 'network' | 'server' | 'auth-required' | 'validation' | 'forbidden'
+    | 'not-found' | 'conflict' | 'unsupported' | 'dependency' | 'unknown';
+
+export interface OutboxFailure {
+    kind: SyncFailureKind;
+    occurredAt: string;
+}
+
 export interface OutboxOp {
     opId: string;
     /** 送信先の操作名（DB RPC名またはEdge Function名） */
@@ -27,15 +37,27 @@ export interface OutboxOp {
     enqueuedAt: string;
     /** 楽観更新の巻き戻しに使うスナップショット（プラットフォーム側が解釈する） */
     optimisticSnapshot: unknown;
+    /** 原文・payloadを含まない、再起動後も利用できる安全な失敗情報。 */
+    failure?: OutboxFailure;
 }
 
 export type OutboxSendResult =
     | { ok: true }
-    | { ok: false; permanent: boolean; error: string };
+    | { ok: false; permanent: boolean; error: string; failureKind?: SyncFailureKind };
 
 export interface OutboxDrainResult {
     /** 一時失敗など、次回の接続回復で再送すべき操作が残っているか。 */
     retryablePending: boolean;
+}
+
+export interface OutboxPublicState {
+    pending: number;
+    inflight: number;
+    failed: number;
+    conflict: number;
+    oldestPendingAt: string | null;
+    lastPushSuccessAt: string | null;
+    failureKinds: readonly SyncFailureKind[];
 }
 
 export interface OutboxDeps {
@@ -76,8 +98,13 @@ export interface SyncOutbox {
     flush: () => Promise<void>;
     /** 中断: 進行中opをpendingへ戻し、以後のdrainを止める（ログアウト時） */
     stop: () => Promise<void>;
+    /** 認証回復後に、auth-requiredで停止した保留操作だけを同じopIdで再開する。 */
+    resumeAfterAuth: () => Promise<void>;
     /** 現在のキュー内容（テスト・UI表示用のコピー） */
     snapshot: () => OutboxOp[];
+    /** payloadやIDを露出しないUI用状態。 */
+    getState: () => OutboxPublicState;
+    subscribe: (listener: (state: OutboxPublicState) => void) => () => void;
 }
 
 interface PersistedOutbox {
@@ -109,13 +136,38 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
     let stopped = false;
     let running: Promise<void> | null = null;
     let dirty = false;
+    let lastPushSuccessAt: string | null = null;
+    const listeners = new Set<(state: OutboxPublicState) => void>();
+
+    const getState = (): OutboxPublicState => {
+        const counts = { pending: 0, inflight: 0, failed: 0, conflict: 0 };
+        let oldestPendingAt: string | null = null;
+        const failureKinds = new Set<SyncFailureKind>();
+        for (const op of ops) {
+            counts[op.status] += 1;
+            if ((op.status === 'pending' || op.status === 'inflight')
+                && (oldestPendingAt === null || op.enqueuedAt < oldestPendingAt)) {
+                oldestPendingAt = op.enqueuedAt;
+            }
+            if (op.failure) failureKinds.add(op.failure.kind);
+        }
+        return { ...counts, oldestPendingAt, lastPushSuccessAt, failureKinds: [...failureKinds] };
+    };
+
+    const notify = (): void => {
+        const state = getState();
+        listeners.forEach((listener) => listener(state));
+    };
 
     const persist = async (): Promise<void> => {
         await deps.storage.setItem(deps.storageKey, JSON.stringify({ ops } satisfies PersistedOutbox));
     };
 
-    const setStatus = (opId: string, status: OutboxOpStatus): void => {
-        ops = ops.map((op) => (op.opId === opId ? { ...op, status } : op));
+    const setStatus = (opId: string, status: OutboxOpStatus, failure?: OutboxFailure): void => {
+        ops = ops.map((op) => (op.opId === opId
+            ? { ...op, status, ...(failure ? { failure } : status === 'inflight' ? { failure: undefined } : {}) }
+            : op));
+        notify();
     };
 
     /** 依存が全て完了している（=キューに残っていない）pendingの先頭opを返す */
@@ -123,6 +175,8 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
         const queuedIds = new Set(ops.map((op) => op.opId));
         for (const op of ops) {
             if (op.status !== 'pending') continue;
+            // 401後の操作は、再ログインが成功するまで同じopIdのまま停止する。
+            if (op.failure?.kind === 'auth-required') continue;
             const blocked = op.dependsOn.some((dependency) => queuedIds.has(dependency));
             if (!blocked) return op;
         }
@@ -134,7 +188,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
         const dependents = ops.filter((op) =>
             op.status === 'pending' && op.dependsOn.includes(failedId));
         for (const dependent of dependents) {
-            setStatus(dependent.opId, 'failed');
+            setStatus(dependent.opId, 'failed', { kind: 'dependency', occurredAt: now() });
             await deps.onPermanentFailure?.(ops.find((op) => op.opId === dependent.opId)!);
             await cascadeFailure(dependent.opId);
         }
@@ -153,7 +207,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
             try {
                 result = await deps.send(op);
             } catch (error) {
-                result = { ok: false, permanent: false, error: error instanceof Error ? error.message : 'send failed' };
+                result = { ok: false, permanent: false, failureKind: 'network', error: error instanceof Error ? error.message : 'send failed' };
             }
 
             if (stopped) {
@@ -165,20 +219,28 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
 
             if (result.ok) {
                 ops = ops.filter((candidate) => candidate.opId !== op.opId);
+                lastPushSuccessAt = now();
+                notify();
                 await persist();
                 continue;
             }
 
             if (result.permanent) {
-                setStatus(op.opId, 'failed');
+                setStatus(
+                    op.opId,
+                    result.failureKind === 'conflict' ? 'conflict' : 'failed',
+                    { kind: result.failureKind ?? 'unknown', occurredAt: now() },
+                );
                 await deps.onPermanentFailure?.(ops.find((candidate) => candidate.opId === op.opId)!);
                 await cascadeFailure(op.opId);
                 await persist();
                 continue; // 依存しない後続は送り続ける
             }
 
-            // 一時エラー（ネットワーク断等）: pendingへ戻して中断。次のトリガで再開
-            setStatus(op.opId, 'pending');
+            // 一時エラー: pendingへ戻して中断。401だけは再ログインまで送らない。
+            setStatus(op.opId, 'pending', result.failureKind
+                ? { kind: result.failureKind, occurredAt: now() }
+                : undefined);
             await persist();
             return;
         }
@@ -213,6 +275,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
             const raw = await deps.storage.getItem(deps.storageKey);
             if (!raw) {
                 ops = [];
+                notify();
                 return;
             }
             try {
@@ -220,6 +283,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
             } catch {
                 ops = [];
             }
+            notify();
         },
         enqueue: async (input) => {
             const opId = input.opId ?? generateId();
@@ -235,6 +299,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
                 optimisticSnapshot: input.optimisticSnapshot ?? null,
             };
             ops = [...ops, op];
+            notify();
             await persist();
             requestDrainInternal();
             return op;
@@ -251,6 +316,28 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
             stopped = true;
             await (running ?? Promise.resolve());
         },
+        resumeAfterAuth: async () => {
+            if (stopped) return;
+            let changed = false;
+            ops = ops.map((op) => {
+                if (op.status === 'pending' && op.failure?.kind === 'auth-required') {
+                    changed = true;
+                    return { ...op, failure: undefined };
+                }
+                return op;
+            });
+            if (!changed) return;
+            notify();
+            await persist();
+            requestDrainInternal();
+            await (running ?? Promise.resolve());
+        },
         snapshot: () => ops.map((op) => ({ ...op })),
+        getState,
+        subscribe: (listener) => {
+            listeners.add(listener);
+            listener(getState());
+            return () => listeners.delete(listener);
+        },
     };
 }

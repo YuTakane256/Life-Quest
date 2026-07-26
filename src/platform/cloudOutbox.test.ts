@@ -59,15 +59,15 @@ describe('registerWebOutboxHooks', () => {
 describe('sendOperation（送信ルーティング）', () => {
     it('Supabase環境が未設定なら一時エラーとして報告される（キューに残り、次回再送で回復できる）', async () => {
         const rpcResult = await sendOperation(makeOp('upsert_task', { p_id: 't1' }));
-        expect(rpcResult).toEqual({ ok: false, permanent: false, error: 'supabase env not configured' });
+        expect(rpcResult).toEqual({ ok: false, permanent: false, failureKind: 'network', error: 'supabase env not configured' });
 
         const edgeResult = await sendOperation(makeOp('complete_task', { taskId: 't1' }));
-        expect(edgeResult).toEqual({ ok: false, permanent: false, error: 'edge functions not configured' });
+        expect(edgeResult).toEqual({ ok: false, permanent: false, failureKind: 'network', error: 'edge functions not configured' });
     });
 
     it('未知の操作は恒久失敗として報告される', async () => {
         const result = await sendOperation(makeOp('bogus_operation', {}));
-        expect(result).toEqual({ ok: false, permanent: true, error: 'unknown operation: bogus_operation' });
+        expect(result).toEqual({ ok: false, permanent: true, failureKind: 'unsupported', error: 'unknown operation: bogus_operation' });
     });
 
     it('タスク・習慣ストアがenqueueする全操作が送信先を持つ（unknown operationにならない）', () => {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from './authLifecycle.ts';
 import {
+    classifySyncFailure,
     createCloudOutboxController,
     EDGE_OPERATIONS,
     RPC_OPERATIONS,
@@ -33,6 +34,15 @@ function makeOp(operation: string, payload: Record<string, unknown> = {}): Outbo
 }
 
 describe('sendOperation', () => {
+    it('HTTP失敗を再送方針ごとの安全な分類に正規化する', () => {
+        expect(classifySyncFailure(401)).toEqual({ permanent: false, kind: 'auth-required' });
+        expect(classifySyncFailure(409)).toEqual({ permanent: true, kind: 'conflict' });
+        expect(classifySyncFailure(429)).toEqual({ permanent: false, kind: 'server' });
+        expect(classifySyncFailure(422)).toEqual({ permanent: true, kind: 'validation' });
+        expect(classifySyncFailure(503)).toEqual({ permanent: false, kind: 'server' });
+        expect(classifySyncFailure()).toEqual({ permanent: false, kind: 'network' });
+        expect(classifySyncFailure(418)).toEqual({ permanent: true, kind: 'unsupported' });
+    });
     it('RPC_OPERATIONSはrpcクライアント経由で送られ、opIdがp_keyになる', async () => {
         const rpcCalls: { name: string; params: Record<string, unknown> }[] = [];
         const rpcClient: CloudOutboxRpcClient = {
@@ -61,7 +71,18 @@ describe('sendOperation', () => {
             getEdgeInvoker: () => null,
         });
         const result = await controller.sendOperation(makeOp('upsert_task', {}));
-        expect(result).toEqual({ ok: false, permanent: true, error: 'invalid' });
+        expect(result).toEqual({ ok: false, permanent: false, failureKind: 'unknown', error: 'invalid' });
+    });
+
+    it('未知のRPC error.codeは検証エラーと推測せず、再送可能なunknownにする', async () => {
+        const controller = createCloudOutboxController({
+            storage: createMemoryStorage(),
+            getRpcClient: () => ({ rpc: async () => ({ error: { message: 'opaque', code: 'XX000' } }) }),
+            getEdgeInvoker: () => null,
+        });
+        await expect(controller.sendOperation(makeOp('upsert_task', {}))).resolves.toEqual({
+            ok: false, permanent: false, failureKind: 'unknown', error: 'opaque',
+        });
     });
 
     it('rpcクライアント未取得（未ログイン等）は一時エラー', async () => {
@@ -71,7 +92,7 @@ describe('sendOperation', () => {
             getEdgeInvoker: () => null,
         });
         const result = await controller.sendOperation(makeOp('upsert_task', {}));
-        expect(result).toEqual({ ok: false, permanent: false, error: 'supabase env not configured' });
+        expect(result).toEqual({ ok: false, permanent: false, failureKind: 'network', error: 'supabase env not configured' });
     });
 
     it('EDGE_OPERATIONSはinvoker経由で送られ、opIdがidempotencyKeyになる', async () => {
@@ -100,7 +121,7 @@ describe('sendOperation', () => {
             },
         });
         const result = await controller.sendOperation(makeOp('complete_task', {}));
-        expect(result).toEqual({ ok: false, permanent: true, error: 'not found' });
+        expect(result).toEqual({ ok: false, permanent: true, failureKind: 'not-found', error: 'not found' });
     });
 
     it('未知の操作は恒久失敗として報告される', async () => {
@@ -110,7 +131,7 @@ describe('sendOperation', () => {
             getEdgeInvoker: () => null,
         });
         const result = await controller.sendOperation(makeOp('bogus_operation', {}));
-        expect(result).toEqual({ ok: false, permanent: true, error: 'unknown operation: bogus_operation' });
+        expect(result).toEqual({ ok: false, permanent: true, failureKind: 'unsupported', error: 'unknown operation: bogus_operation' });
     });
 
     it('RPC_OPERATIONS/EDGE_OPERATIONSに既知の操作が網羅されている', () => {
@@ -148,7 +169,7 @@ describe('sendOperation', () => {
         });
         for (const operation of requestResponseOnlyOperations) {
             const result = await controller.sendOperation(makeOp(operation, {}));
-            expect(result).toEqual({ ok: false, permanent: true, error: `unknown operation: ${operation}` });
+            expect(result).toEqual({ ok: false, permanent: true, failureKind: 'unsupported', error: `unknown operation: ${operation}` });
         }
     });
 });
@@ -220,6 +241,36 @@ describe('registerHooks（認証ライフサイクル配線）', () => {
         await notifyLogout();
         expect(controller.isActive()).toBe(false);
 
+        unregister();
+    });
+
+    it('401で停止した操作は通常drainで再送せず、再ログイン後に同じopIdで再開する', async () => {
+        let authenticated = false;
+        const opIds: string[] = [];
+        const controller = createCloudOutboxController({
+            storage: createMemoryStorage(),
+            getRpcClient: () => null,
+            getEdgeInvoker: () => async <TResult>(_name: string, body: Record<string, unknown> = {}) => {
+                opIds.push(String(body.idempotencyKey));
+                if (!authenticated) throw new EdgeFunctionError('unauthorized', 'expired', 401);
+                return {} as TResult;
+            },
+        });
+        const unregister = controller.registerHooks();
+        await notifyLogin('user-a');
+        await vi.waitFor(() => expect(controller.isActive()).toBe(true));
+        await controller.enqueue('complete_task', { taskId: 'task-1' });
+        await vi.waitFor(() => expect(controller.getState().failureKinds).toContain('auth-required'));
+
+        controller.requestDrain();
+        await controller.getActiveOutbox()?.flush();
+        expect(opIds).toHaveLength(1); // 再ログインまで無限再送しない
+
+        authenticated = true;
+        await notifyLogin('user-a');
+        await vi.waitFor(() => expect(controller.getActiveOutbox()?.snapshot()).toHaveLength(0));
+        expect(opIds).toHaveLength(2);
+        expect(opIds[0]).toBe(opIds[1]);
         unregister();
     });
 

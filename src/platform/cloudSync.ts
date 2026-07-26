@@ -33,11 +33,21 @@ import {
     createInsurancePullScheduler,
     type PullBatch,
 } from '@life-quest/core/cloudPull';
+import {
+    createInactiveCloudSyncState,
+    deriveCloudSyncAttention,
+    type CloudSyncPublicState,
+} from '@life-quest/core/cloudSyncState';
 import { markCloudSessionSeeded } from './authStores';
 import { seedGame, seedHabits, seedTasks } from './canonicalSync';
 import { getPlatformStorageAdapter } from './storage';
 import { getWebSupabaseClient } from './supabase';
-import { drainOutboxAndWait } from './cloudOutbox';
+import {
+    drainOutboxAndWait,
+    getWebCloudOutboxState,
+    retryPendingOutbox,
+    subscribeWebCloudOutboxState,
+} from './cloudOutbox';
 import { resolveHabitReminderHour } from '../core/notifications';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useThemeStore, sanitizeThemeMode } from '../stores/useThemeStore';
@@ -50,6 +60,27 @@ export interface CloudSyncHandle {
     flush: () => Promise<void>;
     /** 購読・タイマーを全て止める */
     stop: () => void;
+    /** 保留操作の送信と通常の差分pullを行う。恒久失敗は変更しない。 */
+    syncNow: () => Promise<void>;
+}
+
+let cloudSyncState: CloudSyncPublicState = createInactiveCloudSyncState();
+const cloudSyncListeners = new Set<(state: CloudSyncPublicState) => void>();
+let cloudSyncGeneration = 0;
+
+function publishCloudSyncState(next: CloudSyncPublicState): void {
+    cloudSyncState = next;
+    cloudSyncListeners.forEach((listener) => listener(next));
+}
+
+export function getWebCloudSyncState(): CloudSyncPublicState {
+    return cloudSyncState;
+}
+
+export function subscribeWebCloudSyncState(listener: (state: CloudSyncPublicState) => void): () => void {
+    cloudSyncListeners.add(listener);
+    listener(cloudSyncState);
+    return () => cloudSyncListeners.delete(listener);
 }
 
 /**
@@ -108,6 +139,22 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
 
     let cache: CloudCache = createEmptyCloudCache();
     let stopped = false;
+    const generation = ++cloudSyncGeneration;
+    let pushState = getWebCloudOutboxState();
+    let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
+    const publish = (): void => {
+        if (stopped || generation !== cloudSyncGeneration) return;
+        publishCloudSyncState({
+            availability: pushState.availability === 'inactive' ? 'inactive' : 'ready',
+            push: pushState,
+            pull: pullState,
+            attention: deriveCloudSyncAttention(pushState, pullState),
+        });
+    };
+    const unsubscribeOutbox = subscribeWebCloudOutboxState((state) => {
+        pushState = state;
+        publish();
+    });
 
     const seedStores = (): void => {
         if (applyCloudCacheToWebStores(cache)) {
@@ -139,8 +186,25 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         },
     });
 
+    const pullNow = async (): Promise<void> => {
+        if (stopped) return;
+        pullState = { ...pullState, phase: 'pulling' };
+        publish();
+        try {
+            await runner.flush();
+            if (stopped) return;
+            pullState = { phase: 'idle', lastSuccessAt: new Date().toISOString() };
+            publish();
+        } catch {
+            if (stopped) return;
+            pullState = { ...pullState, phase: 'failed' };
+            publish();
+            throw new Error('cloud pull failed');
+        }
+    };
+
     const scheduler = createInsurancePullScheduler({
-        requestPull: () => runner.requestPull(),
+        requestPull: () => { void pullNow().catch(() => undefined); },
     });
 
     // 楽観更新が残ったままpullすると、古いクラウド状態で一時的に上書きされうる。
@@ -148,10 +212,9 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     const recoverConnection = async (): Promise<boolean> => {
         const { retryablePending } = await drainOutboxAndWait();
         if (stopped || retryablePending) return false;
-        scheduler.trigger('reconnect');
         let pulled = false;
         try {
-            await runner.flush();
+            await pullNow();
             pulled = true;
         } catch {
             // オフライン時はキャッシュ表示を継続し、次の復帰トリガで再試行する。
@@ -168,19 +231,19 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         .on(
             'postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'sync_versions', filter: `user_id=eq.${userId}` },
-            () => runner.requestPull(),
+            () => { void pullNow().catch(() => undefined); },
         )
         .subscribe();
 
     const onVisibilityChange = (): void => {
         if (document.visibilityState === 'visible') {
             scheduler.start();
-            void recoverConnection();
+            void recoverConnection().catch(() => undefined);
         } else {
             scheduler.stop(); // バックグラウンドでは定期プルを止める
         }
     };
-    const onOnline = (): void => { void recoverConnection(); };
+    const onOnline = (): void => { void recoverConnection().catch(() => undefined); };
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('online', onOnline);
     scheduler.start();
@@ -192,16 +255,31 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         // pending outboxがある間は、前回のクラウドキャッシュで楽観更新を
         // 上書きしない。送信成功後にのみキャッシュを反映する。
         if (await recoverConnection()) seedStores();
-    })();
+    })().catch(() => undefined);
 
+    publish();
     return {
         flush: () => runner.flush(),
+        syncNow: async () => {
+            await retryPendingOutbox();
+            const state = getWebCloudOutboxState();
+            if (state.pending > 0 || state.inflight > 0) return;
+            try {
+                await pullNow();
+            } catch {
+                // 失敗状態は公開済み。UIイベントへ未処理のPromiseを返さない。
+            }
+        },
         stop: () => {
             stopped = true;
+            unsubscribeOutbox();
             scheduler.stop();
             document.removeEventListener('visibilitychange', onVisibilityChange);
             window.removeEventListener('online', onOnline);
             void client.removeChannel(channel);
+            if (generation === cloudSyncGeneration) {
+                publishCloudSyncState(createInactiveCloudSyncState());
+            }
         },
     };
 }
@@ -212,6 +290,11 @@ let activeUserId: string | null = null;
 /** テスト用: 現在アクティブな同期ハンドル。 */
 export function getActiveWebCloudSync(): CloudSyncHandle | null {
     return activeHandle;
+}
+
+/** 設定画面から呼ぶ、安全な同期。恒久失敗・競合の破棄や再送はしない。 */
+export function syncWebNow(): Promise<void> {
+    return activeHandle?.syncNow() ?? Promise.resolve();
 }
 
 /**

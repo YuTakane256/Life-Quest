@@ -22,8 +22,18 @@ import {
     createInsurancePullScheduler,
     type PullBatch,
 } from '@life-quest/core/cloudPull';
+import {
+    createInactiveCloudSyncState,
+    deriveCloudSyncAttention,
+    type CloudSyncPublicState,
+} from '@life-quest/core/cloudSyncState';
 import { markCloudSessionSeeded } from './authStores';
-import { drainOutboxAndWait } from './cloudOutbox';
+import {
+    drainOutboxAndWait,
+    getMobileCloudOutboxState,
+    retryPendingOutbox,
+    subscribeMobileCloudOutboxState,
+} from './cloudOutbox';
 import { applyCloudCacheToMobileStores } from './cloudSeed';
 import { getMobileSupabaseClient } from './supabase';
 import { createReconnectDetector, resolveNetworkOnlineState } from './networkRecovery';
@@ -32,6 +42,26 @@ import { requestMobileLoginBonusRecheck } from '../stores/useMobileLoginBonusSto
 export interface CloudSyncHandle {
     flush: () => Promise<void>;
     stop: () => void;
+    syncNow: () => Promise<void>;
+}
+
+let cloudSyncState: CloudSyncPublicState = createInactiveCloudSyncState();
+const cloudSyncListeners = new Set<(state: CloudSyncPublicState) => void>();
+let cloudSyncGeneration = 0;
+
+function publishCloudSyncState(next: CloudSyncPublicState): void {
+    cloudSyncState = next;
+    cloudSyncListeners.forEach((listener) => listener(next));
+}
+
+export function getMobileCloudSyncState(): CloudSyncPublicState {
+    return cloudSyncState;
+}
+
+export function subscribeMobileCloudSyncState(listener: (state: CloudSyncPublicState) => void): () => void {
+    cloudSyncListeners.add(listener);
+    listener(cloudSyncState);
+    return () => cloudSyncListeners.delete(listener);
 }
 
 /** ログイン中ユーザーのクラウド同期を開始する。環境未設定なら null。 */
@@ -41,6 +71,22 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
 
     let cache: CloudCache = createEmptyCloudCache();
     let stopped = false;
+    const generation = ++cloudSyncGeneration;
+    let pushState = getMobileCloudOutboxState();
+    let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
+    const publish = (): void => {
+        if (stopped || generation !== cloudSyncGeneration) return;
+        publishCloudSyncState({
+            availability: pushState.availability === 'inactive' ? 'inactive' : 'ready',
+            push: pushState,
+            pull: pullState,
+            attention: deriveCloudSyncAttention(pushState, pullState),
+        });
+    };
+    const unsubscribeOutbox = subscribeMobileCloudOutboxState((state) => {
+        pushState = state;
+        publish();
+    });
 
     const seedStores = (): void => {
         if (applyCloudCacheToMobileStores(cache)) {
@@ -72,18 +118,34 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         },
     });
 
+    const pullNow = async (): Promise<void> => {
+        if (stopped) return;
+        pullState = { ...pullState, phase: 'pulling' };
+        publish();
+        try {
+            await runner.flush();
+            if (stopped) return;
+            pullState = { phase: 'idle', lastSuccessAt: new Date().toISOString() };
+            publish();
+        } catch {
+            if (stopped) return;
+            pullState = { ...pullState, phase: 'failed' };
+            publish();
+            throw new Error('cloud pull failed');
+        }
+    };
+
     const scheduler = createInsurancePullScheduler({
-        requestPull: () => runner.requestPull(),
+        requestPull: () => { void pullNow().catch(() => undefined); },
     });
 
     // 再接続時は、古いクラウド状態をpullする前にローカルの保留操作を送る。
     const recoverConnection = async (): Promise<boolean> => {
         const { retryablePending } = await drainOutboxAndWait();
         if (stopped || retryablePending) return false;
-        scheduler.trigger('reconnect');
         let pulled = false;
         try {
-            await runner.flush();
+            await pullNow();
             pulled = true;
         } catch {
             // オフライン時はキャッシュ表示を継続し、次の復帰トリガで再試行する。
@@ -97,20 +159,20 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         .on(
             'postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'sync_versions', filter: `user_id=eq.${userId}` },
-            () => runner.requestPull(),
+            () => { void pullNow().catch(() => undefined); },
         )
         .subscribe();
 
     const onAppStateChange = (state: AppStateStatus): void => {
         if (state === 'active') {
             scheduler.start();
-            void recoverConnection();
+            void recoverConnection().catch(() => undefined);
         } else {
             scheduler.stop(); // バックグラウンドでは定期プルを止める
         }
     };
     const appStateSubscription = AppState.addEventListener('change', onAppStateChange);
-    const detectReconnect = createReconnectDetector(() => { void recoverConnection(); });
+    const detectReconnect = createReconnectDetector(() => { void recoverConnection().catch(() => undefined); });
     const netInfoUnsubscribe = NetInfo.addEventListener((state) => {
         detectReconnect(resolveNetworkOnlineState(state));
     });
@@ -123,16 +185,31 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         // 前回セッションの保留操作があるなら、古いキャッシュで楽観更新を
         // 上書きしない。送信成功後にだけキャッシュを適用する。
         if (await recoverConnection()) seedStores();
-    })();
+    })().catch(() => undefined);
 
+    publish();
     return {
         flush: () => runner.flush(),
+        syncNow: async () => {
+            await retryPendingOutbox();
+            const state = getMobileCloudOutboxState();
+            if (state.pending > 0 || state.inflight > 0) return;
+            try {
+                await pullNow();
+            } catch {
+                // 失敗状態は公開済み。UIイベントへ未処理のPromiseを返さない。
+            }
+        },
         stop: () => {
             stopped = true;
+            unsubscribeOutbox();
             scheduler.stop();
             appStateSubscription.remove();
             netInfoUnsubscribe();
             void client.removeChannel(channel);
+            if (generation === cloudSyncGeneration) {
+                publishCloudSyncState(createInactiveCloudSyncState());
+            }
         },
     };
 }
@@ -143,6 +220,10 @@ let activeUserId: string | null = null;
 /** テスト用: 現在アクティブな同期ハンドル。 */
 export function getActiveMobileCloudSync(): CloudSyncHandle | null {
     return activeHandle;
+}
+
+export function syncMobileNow(): Promise<void> {
+    return activeHandle?.syncNow() ?? Promise.resolve();
 }
 
 /** 認証ライフサイクルへクラウド同期を配線する。アプリ起動時に一度だけ呼ぶ。 */

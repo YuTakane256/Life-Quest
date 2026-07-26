@@ -40,7 +40,15 @@
  */
 import { registerAuthLifecycleHooks } from './authLifecycle.ts';
 import { cloudOutboxKey } from './cloudPull.ts';
-import { createSyncOutbox, type OutboxDrainResult, type OutboxOp, type OutboxSendResult, type SyncOutbox } from './syncOutbox.ts';
+import {
+    createSyncOutbox,
+    type OutboxDrainResult,
+    type OutboxOp,
+    type OutboxPublicState,
+    type OutboxSendResult,
+    type SyncFailureKind,
+    type SyncOutbox,
+} from './syncOutbox.ts';
 import type { RepositoryStorage } from './syncRepository.ts';
 import { EdgeFunctionError, type EdgeFunctionInvoker } from './edgeFunctions.ts';
 
@@ -62,9 +70,22 @@ export const EDGE_OPERATIONS: ReadonlySet<string> = new Set([
     'complete_task', 'complete_subtask', 'claim_habit_bonus', 'sell_item',
 ]);
 
-/** 4xx系（認可・検証エラー）は再送しても直らない恒久失敗として扱う */
-function isPermanentStatus(status: number): boolean {
-    return status >= 400 && status < 500;
+export interface CloudOutboxPublicState extends OutboxPublicState {
+    availability: 'inactive' | 'ready';
+}
+
+/** HTTP / Supabaseエラーを、UIへ安全に渡せる再送方針へ正規化する。 */
+export function classifySyncFailure(status?: number): { permanent: boolean; kind: SyncFailureKind } {
+    if (status === undefined) return { permanent: false, kind: 'network' };
+    // 401は操作自体が無効とは限らない。同じopIdを再ログイン後にだけ再送する。
+    if (status === 401) return { permanent: false, kind: 'auth-required' };
+    if (status === 408 || status === 425 || status === 429 || status >= 500) return { permanent: false, kind: 'server' };
+    if (status === 403) return { permanent: true, kind: 'forbidden' };
+    if (status === 404) return { permanent: true, kind: 'not-found' };
+    if (status === 409) return { permanent: true, kind: 'conflict' };
+    if (status === 400 || status === 422) return { permanent: true, kind: 'validation' };
+    if (status >= 400 && status < 500) return { permanent: true, kind: 'unsupported' };
+    return { permanent: false, kind: 'unknown' };
 }
 
 /**
@@ -114,6 +135,10 @@ export interface CloudOutboxController {
     requestDrain: () => void;
     /** 再送を要求し、保留操作の送信が終わるまで待つ。 */
     drainAndWait: () => Promise<OutboxDrainResult>;
+    /** 保留中の操作だけを今すぐ送信する。failed/conflictは変更しない。 */
+    retryPending: () => Promise<OutboxDrainResult>;
+    getState: () => CloudOutboxPublicState;
+    subscribe: (listener: (state: CloudOutboxPublicState) => void) => () => void;
     /**
      * 認証ライフサイクルへoutboxを配線する。アプリ起動時に一度だけ呼ぶ。
      * 戻り値の関数で解除する（進行中opはpendingへ戻し、キューはディスクに残す）。
@@ -129,35 +154,59 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
     let lifecycleGeneration = 0;
     /** キュー内で未送信の作成・更新系opの opId（エンティティID→opId。依存先解決に使う） */
     const pendingEntityOps = new Map<string, string>();
+    const listeners = new Set<(state: CloudOutboxPublicState) => void>();
+    let activeOutboxUnsubscribe: (() => void) | null = null;
+
+    const inactiveState = (): CloudOutboxPublicState => ({
+        availability: 'inactive', pending: 0, inflight: 0, failed: 0, conflict: 0,
+        oldestPendingAt: null, lastPushSuccessAt: null, failureKinds: [],
+    });
+    const getState = (): CloudOutboxPublicState => activeOutbox
+        ? { availability: 'ready', ...activeOutbox.getState() }
+        : inactiveState();
+    const notify = (): void => {
+        const state = getState();
+        listeners.forEach((listener) => listener(state));
+    };
+    const detachOutbox = (): void => {
+        activeOutboxUnsubscribe?.();
+        activeOutboxUnsubscribe = null;
+    };
 
     async function sendOperation(op: OutboxOp): Promise<OutboxSendResult> {
         if (RPC_OPERATIONS.has(op.operation)) {
             const client = await deps.getRpcClient();
-            if (!client) return { ok: false, permanent: false, error: 'supabase env not configured' };
+            if (!client) return { ok: false, permanent: false, error: 'supabase env not configured', failureKind: 'network' };
             const { error } = await client.rpc(op.operation, { ...op.payload, p_key: op.opId });
             if (!error) return { ok: true };
-            // PostgRESTのRPCエラー: DB関数のraiseは全て「再送で直らない」検証系として扱うが、
-            // ネットワーク層の失敗（FetchError等）はcodeが付かないため一時エラーへ。
-            const permanent = typeof error.code === 'string' && error.code.length > 0;
-            return { ok: false, permanent, error: error.message };
+            // 数字3桁のHTTP statusだけを既知分類する。Postgres/PostgREST等の
+            // 非HTTP codeは意味を推測せず、再送可能なunknownとして残す。
+            const status = typeof error.code === 'string' && /^\d{3}$/.test(error.code)
+                ? Number(error.code)
+                : undefined;
+            const classified = status === undefined
+                ? { permanent: false, kind: 'unknown' as const }
+                : classifySyncFailure(status);
+            return { ok: false, permanent: classified.permanent, failureKind: classified.kind, error: error.message };
         }
 
         if (EDGE_OPERATIONS.has(op.operation)) {
             const invoker = await deps.getEdgeInvoker();
-            if (!invoker) return { ok: false, permanent: false, error: 'edge functions not configured' };
+            if (!invoker) return { ok: false, permanent: false, error: 'edge functions not configured', failureKind: 'network' };
             try {
                 await invoker(op.operation, { ...op.payload, idempotencyKey: op.opId });
                 return { ok: true };
             } catch (error) {
                 if (error instanceof EdgeFunctionError && typeof error.status === 'number') {
-                    return { ok: false, permanent: isPermanentStatus(error.status), error: error.message };
+                    const classified = classifySyncFailure(error.status);
+                    return { ok: false, permanent: classified.permanent, failureKind: classified.kind, error: error.message };
                 }
                 // 未認証・ネットワーク断は再送可能（セッション回復後のdrainで再試行）
-                return { ok: false, permanent: false, error: error instanceof Error ? error.message : 'network error' };
+                return { ok: false, permanent: false, failureKind: 'network', error: error instanceof Error ? error.message : 'network error' };
             }
         }
 
-        return { ok: false, permanent: true, error: `unknown operation: ${op.operation}` };
+        return { ok: false, permanent: true, failureKind: 'unsupported', error: `unknown operation: ${op.operation}` };
     }
 
     async function enqueue(
@@ -196,14 +245,26 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
         getActiveOutbox: () => activeOutbox,
         requestDrain: () => activeOutbox?.requestDrain(),
         drainAndWait: () => activeOutbox?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),
+        retryPending: () => activeOutbox?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),
+        getState,
+        subscribe: (listener) => {
+            listeners.add(listener);
+            listener(getState());
+            return () => listeners.delete(listener);
+        },
         registerHooks: () => {
             const unregister = registerAuthLifecycleHooks({
                 onLogin: async (userId) => {
-                    if (activeUserId === userId && activeOutbox) return;
+                    if (activeUserId === userId && activeOutbox) {
+                        await activeOutbox.resumeAfterAuth();
+                        return;
+                    }
                     const generation = ++lifecycleGeneration;
                     const previousOutbox = activeOutbox;
+                    detachOutbox();
                     activeOutbox = null;
                     activeUserId = null;
+                    notify();
                     await previousOutbox?.stop();
                     if (generation !== lifecycleGeneration) return;
                     pendingEntityOps.clear();
@@ -214,24 +275,33 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
                     }
                     activeOutbox = outbox;
                     activeUserId = userId;
+                    activeOutboxUnsubscribe = outbox.subscribe(() => {
+                        if (generation === lifecycleGeneration && activeOutbox === outbox) notify();
+                    });
+                    notify();
+                    await outbox.resumeAfterAuth(); // 前回の401で止まった同一opIdを再開
                     outbox.requestDrain(); // 前回セッションの残りを再送
                 },
                 onLogout: async () => {
                     // drain中の操作はpendingへ戻して中断（キューはディスクに残す）
                     ++lifecycleGeneration;
                     const previousOutbox = activeOutbox;
+                    detachOutbox();
                     activeOutbox = null;
                     activeUserId = null;
                     pendingEntityOps.clear();
+                    notify();
                     await previousOutbox?.stop();
                 },
             });
             return () => {
                 ++lifecycleGeneration;
                 const previousOutbox = activeOutbox;
+                detachOutbox();
                 activeOutbox = null;
                 activeUserId = null;
                 pendingEntityOps.clear();
+                notify();
                 void previousOutbox?.stop();
                 unregister();
             };

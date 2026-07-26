@@ -48,6 +48,10 @@
       "types": "./src/cloudPull.ts",
       "import": "./src/cloudPull.ts"
     },
+    "./cloudSyncState": {
+      "types": "./src/cloudSyncState.ts",
+      "import": "./src/cloudSyncState.ts"
+    },
     "./achievements": {
       "types": "./src/achievements.ts",
       "import": "./src/achievements.ts"

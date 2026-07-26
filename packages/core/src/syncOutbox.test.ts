@@ -132,6 +132,30 @@ describe('createSyncOutbox', () => {
         expect(outbox.snapshot()).toMatchObject([{ opId: 'pending-op', status: 'pending' }]);
     });
 
+    it('auth-requiredのpendingはresumeAfterAuthまで通常drainで再送しない', async () => {
+        let attempts = 0;
+        const { outbox } = makeOutbox({
+            send: async () => {
+                attempts += 1;
+                return attempts === 1
+                    ? { ok: false, permanent: false, failureKind: 'auth-required', error: 'expired' }
+                    : { ok: true };
+            },
+        });
+        await outbox.load();
+        await outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'same-op' });
+        await outbox.flush();
+        expect(outbox.getState()).toMatchObject({ pending: 1, failureKinds: ['auth-required'] });
+
+        outbox.requestDrain();
+        await outbox.flush();
+        expect(attempts).toBe(1);
+
+        await outbox.resumeAfterAuth();
+        expect(attempts).toBe(2);
+        expect(outbox.snapshot()).toHaveLength(0);
+    });
+
     it('恒久エラーはfailedになり、依存する後続opへ連鎖し、ロールバックが呼ばれる', async () => {
         const rolledBack: string[] = [];
         const { outbox } = makeOutbox({
@@ -151,6 +175,36 @@ describe('createSyncOutbox', () => {
         expect(statuses.child).toBe('failed');   // 連鎖
         expect(statuses.independent).toBeUndefined(); // 独立opは送信済みで消えている
         expect(rolledBack).toEqual(['root', 'child']);
+    });
+
+    it('公開状態はpayloadやopIdを漏らさず、failedを再送対象にしない', async () => {
+        const { outbox } = makeOutbox({
+            send: async () => ({ ok: false, permanent: true, failureKind: 'validation', error: 'private server detail' }),
+        });
+        const observed: unknown[] = [];
+        const unsubscribe = outbox.subscribe((state) => observed.push(state));
+        await outbox.load();
+        await outbox.enqueue({ operation: 'upsert_task', payload: { secret: 'never expose' }, opId: 'sensitive-id' });
+        await outbox.flush();
+
+        expect(outbox.getState()).toMatchObject({ pending: 0, failed: 1, failureKinds: ['validation'] });
+        expect(JSON.stringify(observed)).not.toContain('sensitive-id');
+        expect(JSON.stringify(observed)).not.toContain('never expose');
+        expect(JSON.stringify(observed)).not.toContain('private server detail');
+        expect((await outbox.drainAndWait()).retryablePending).toBe(false);
+        expect(outbox.snapshot()[0].status).toBe('failed');
+        unsubscribe();
+    });
+
+    it('購読解除後は状態変更を通知しない', async () => {
+        const { outbox } = makeOutbox({ send: async () => ({ ok: false, permanent: false, error: 'offline' }) });
+        let calls = 0;
+        const unsubscribe = outbox.subscribe(() => { calls += 1; });
+        unsubscribe();
+        await outbox.load();
+        await outbox.enqueue({ operation: 'upsert_task', payload: {} });
+        await outbox.flush();
+        expect(calls).toBe(1); // subscribe直後の初期通知のみ
     });
 
     it('永続化から復元し、前回セッションのinflightはpendingへ戻る（強制終了相当）', async () => {
