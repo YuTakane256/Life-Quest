@@ -7,6 +7,7 @@ import { getSubtaskRewardXp } from '@life-quest/core/tasks';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileStatsStore } from './useMobileStatsStore';
 import { useMobileTaskStore } from './useMobileTaskStore';
+import { isoToJstYmd } from '../utils/date';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -271,7 +272,7 @@ describe('useMobileTaskStore', () => {
             const id = useMobileTaskStore.getState().tasks[0].id;
             completeAndConfirm(id);
 
-            const today = useMobileTaskStore.getState().tasks[0].completedAt!.split('T')[0];
+            const today = isoToJstYmd(useMobileTaskStore.getState().tasks[0].completedAt)!;
             expect(useMobileStatsStore.getState().taskXpLog[today]).toBe(XP_CONFIG.REWARD_BY_PRIORITY.high);
         });
 
@@ -279,7 +280,7 @@ describe('useMobileTaskStore', () => {
             useMobileTaskStore.getState().addTask('削除予定', 'medium');
             const id = useMobileTaskStore.getState().tasks[0].id;
             completeAndConfirm(id);
-            const today = useMobileTaskStore.getState().tasks[0].completedAt!.split('T')[0];
+            const today = isoToJstYmd(useMobileTaskStore.getState().tasks[0].completedAt)!;
             const loggedXp = useMobileStatsStore.getState().taskXpLog[today];
             expect(loggedXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
 
