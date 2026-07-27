@@ -16,6 +16,7 @@ import {
     EDGE_OPERATIONS,
     RPC_OPERATIONS,
     type CloudOutboxRpcClient,
+    type CloudOutboxPublicState,
 } from '@life-quest/core/cloudOutboxController';
 import type { OutboxDrainResult, SyncOutbox } from '@life-quest/core/syncOutbox';
 
@@ -82,6 +83,19 @@ export function requestOutboxDrain(): void {
 /** 接続復帰時に保留操作を再送し、完了してからクラウドpullへ進める。 */
 export function drainOutboxAndWait(): Promise<OutboxDrainResult> {
     return controller.drainAndWait();
+}
+
+/** 保留中の操作だけを再送する。恒久失敗・競合は変更しない。 */
+export function retryPendingOutbox(): Promise<OutboxDrainResult> {
+    return controller.retryPending();
+}
+
+export function getMobileCloudOutboxState(): CloudOutboxPublicState {
+    return controller.getState();
+}
+
+export function subscribeMobileCloudOutboxState(listener: (state: CloudOutboxPublicState) => void): () => void {
+    return controller.subscribe(listener);
 }
 
 /** 認証ライフサイクルへoutboxを配線する。アプリ起動時に一度だけ呼ぶ。 */

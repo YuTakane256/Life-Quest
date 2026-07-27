@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import type { ThemePalette } from '@life-quest/core/designTokens';
+import type { CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
 import { getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../platform/auth';
 import {
     approveMobileContentImport,
@@ -12,6 +13,7 @@ import {
 } from '../platform/cloudMigration';
 import { ensureNotificationPermission } from '../platform/notifications';
 import { readMobileSupabaseEnv } from '../platform/supabase';
+import { getMobileCloudSyncState, subscribeMobileCloudSyncState, syncMobileNow } from '../platform/cloudSync';
 import {
     useMobileSettingsStore,
     type MobileMotionMode,
@@ -46,6 +48,17 @@ function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
     return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
+}
+
+function syncMessage(state: CloudSyncPublicState): string {
+    if (state.availability === 'inactive') return 'ログインすると同期状態を確認できます';
+    if (state.push.failureKinds.includes('auth-required')) return '再ログインすると保留中の同期を再開できます';
+    if (state.push.conflict > 0) return '一部の変更に競合があります。今すぐ同期では自動再送しません';
+    if (state.push.failed > 0) return '一部の変更を同期できませんでした。今すぐ同期では自動再送しません';
+    if (state.pull.phase === 'failed') return 'クラウドの変更を確認できませんでした。接続を確認してください';
+    if (state.push.pending > 0 || state.push.inflight > 0) return `同期を待っている変更: ${state.push.pending + state.push.inflight}件`;
+    if (state.pull.lastSuccessAt === null) return 'クラウドの変更を確認しています';
+    return '同期済み';
 }
 
 async function readStorageSummary(): Promise<StorageSummary> {
@@ -90,6 +103,8 @@ export default function SettingsScreen() {
         bytes: 0,
     });
     const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+    const [syncState, setSyncState] = useState<CloudSyncPublicState>(getMobileCloudSyncState);
+    const [syncing, setSyncing] = useState(false);
 
     // ONにする時はOSの通知許可を要求し、拒否されたらトグルを戻す（Web設定画面と同じ挙動）
     const handleNotificationsToggle = useCallback(async (enabled: boolean) => {
@@ -132,6 +147,14 @@ export default function SettingsScreen() {
         })();
         return () => { cancelled = true; };
     }, [refreshAccount]);
+
+    useEffect(() => subscribeMobileCloudSyncState(setSyncState), []);
+
+    const handleSyncNow = async (): Promise<void> => {
+        if (syncing || syncState.availability !== 'ready') return;
+        setSyncing(true);
+        try { await syncMobileNow(); } finally { setSyncing(false); }
+    };
 
     const handleImportContent = async () => {
         if (!pendingContent) return;
@@ -251,6 +274,29 @@ export default function SettingsScreen() {
                             </View>
                         )}
                         {message && <Text accessibilityRole="alert" style={styles.message}>{message}</Text>}
+                    </Card>
+
+                    <Card title="同期" styles={styles}>
+                        <Text
+                            accessibilityRole={syncState.attention === 'required' ? 'alert' : undefined}
+                            accessibilityLiveRegion="polite"
+                            style={[styles.hint, syncState.attention === 'required' && styles.syncWarning]}
+                        >
+                            {syncMessage(syncState)}
+                        </Text>
+                        {syncState.pull.lastSuccessAt && syncState.attention !== 'required' && (
+                            <Text style={styles.hint}>最終確認: {new Date(syncState.pull.lastSuccessAt).toLocaleString('ja-JP')}</Text>
+                        )}
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="今すぐ同期"
+                            accessibilityState={{ disabled: syncing || syncState.availability !== 'ready', busy: syncing }}
+                            disabled={syncing || syncState.availability !== 'ready'}
+                            onPress={() => { void handleSyncNow(); }}
+                            style={({ pressed }) => [styles.syncButton, (syncing || syncState.availability !== 'ready' || pressed) && styles.muted]}
+                        >
+                            <Text style={styles.syncButtonText}>{syncing ? '同期中' : '今すぐ同期'}</Text>
+                        </Pressable>
                     </Card>
 
                     <Card title="テーマ" styles={styles}>
@@ -436,6 +482,9 @@ function createStyles(palette: ThemePalette) {
         primaryButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
         secondaryButton: { alignSelf: 'flex-start', height: 38, paddingHorizontal: 14, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
         secondaryButtonText: { color: palette.text.primary, fontSize: 13, fontWeight: '700' },
+        syncButton: { minHeight: 44, alignSelf: 'flex-start', paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
+        syncButtonText: { color: palette.accent.primary, fontSize: 13, fontWeight: '800' },
+        syncWarning: { color: palette.text.danger },
         linkText: { color: palette.text.muted, fontSize: 12, textDecorationLine: 'underline' },
         message: { color: palette.text.secondary, fontSize: 12 },
         muted: { opacity: 0.45 },

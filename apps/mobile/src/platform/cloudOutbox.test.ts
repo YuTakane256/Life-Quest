@@ -77,6 +77,7 @@ describe('cloudOutboxの送信ルーティング（#505）', () => {
         expect(result).toEqual({
             ok: false,
             permanent: true,
+            failureKind: 'unsupported',
             error: 'unknown operation: bogus_operation',
         });
     });
