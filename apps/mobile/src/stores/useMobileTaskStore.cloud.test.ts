@@ -5,6 +5,7 @@
  * 「クラウド有効時の繰り返しローカル二重生成」の各欠落パターンを再現して検証する。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 
 const memory = new Map<string, string>();
 
@@ -30,6 +31,7 @@ vi.mock('../platform/cloudOutbox', () => ({
 
 import { useMobileTaskStore } from './useMobileTaskStore';
 import { useMobileGameStore } from './useMobileGameStore';
+import { clearPendingRewardOperations } from '../platform/pendingRewardOperations';
 
 function ops(operation: string) {
     return enqueued.filter((entry) => entry.operation === operation);
@@ -43,6 +45,8 @@ describe('Mobileタスク操作のクラウド同期（#505/#512）', () => {
         enqueued.length = 0;
         rewardCalls = [];
         cloudActive = true;
+        setGameRewardAuthorityState('authenticated');
+        clearPendingRewardOperations();
         useMobileTaskStore.setState({ tasks: [], pendingCompletions: [], hasHydrated: true });
         // 報酬付与の回数を数える（実ロジックは走らせない）
         useMobileGameStore.setState({
@@ -186,6 +190,7 @@ describe('Mobileタスク操作のクラウド同期（#505/#512）', () => {
 
     it('クラウド無効（未ログイン）時は従来どおりローカルで繰り返し次回分を生成する', () => {
         cloudActive = false;
+        setGameRewardAuthorityState('anonymous');
         useMobileTaskStore.getState().addTask('毎日タスク', 'medium', { recurrence: 'daily', dueDate: '2026-07-06' });
         const taskId = useMobileTaskStore.getState().tasks[0].id;
 

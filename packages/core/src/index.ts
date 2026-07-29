@@ -6,6 +6,12 @@ export {
     type AuthLifecycleHooks,
 } from './authLifecycle.ts';
 export {
+    getGameRewardAuthorityState,
+    setGameRewardAuthorityState,
+    subscribeGameRewardAuthority,
+    type GameRewardAuthorityState,
+} from './gameRewardAuthority.ts';
+export {
     createEdgeFunctionInvoker,
     EdgeFunctionError,
     type EdgeFunctionDeps,

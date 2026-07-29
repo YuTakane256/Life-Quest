@@ -100,6 +100,10 @@
       "types": "./src/gameState.ts",
       "import": "./src/gameState.ts"
     },
+    "./gameRewardAuthority": {
+      "types": "./src/gameRewardAuthority.ts",
+      "import": "./src/gameRewardAuthority.ts"
+    },
     "./gameCloud": {
       "types": "./src/gameCloud.ts",
       "import": "./src/gameCloud.ts"

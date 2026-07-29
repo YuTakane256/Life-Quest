@@ -27,6 +27,8 @@ export interface ChestReward {
     opened: boolean;
     equipment: Equipment | null;
     isStarterCharacter?: boolean;
+    /** サーバー同期済みの宝箱か。未指定の旧ローカル保存データは local として扱う。 */
+    origin?: 'local' | 'cloud';
 }
 
 export const GACHA_CONFIG = {

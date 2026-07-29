@@ -13,7 +13,14 @@
  *   ドメイン状態には残るため、ここで拾い直される。
  */
 import { areAllHabitsComplete } from '@life-quest/core/habits';
+import { getGameRewardAuthorityState, subscribeGameRewardAuthority } from '@life-quest/core/gameRewardAuthority';
 import { getTodayJst } from '../utils/date';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
+import {
+    getPendingRewardOperations,
+    removePendingRewardOperation,
+    consumeAnonymousRecoverySuppression,
+} from '../platform/pendingRewardOperations';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileHabitStore } from './useMobileHabitStore';
 import { useMobileTaskStore } from './useMobileTaskStore';
@@ -26,8 +33,13 @@ export function reconcileRewards(today: string = getTodayJst()): void {
     const game = useMobileGameStore.getState();
     if (!game.hasHydrated) return;
 
+    // 認証復元中は「報酬未確定」を保つ。authenticated/anonymous確定の購読で
+    // 同じ完了状態をもう一度読むため、ユーザー操作を失わず二重付与もしない。
+    const authority = getGameRewardAuthorityState();
+    if (authority === 'resolving') return;
+
     const taskState = useMobileTaskStore.getState();
-    if (taskState.hasHydrated) {
+    if (taskState.hasHydrated && authority === 'anonymous') {
         for (const task of taskState.tasks) {
             if (task.completed) {
                 game.grantTaskCompletionReward(task.id, task.priority);
@@ -64,6 +76,46 @@ export function startRewardSync(getToday: () => string = getTodayJst): () => voi
     run();
 
     const unsubscribes = [
+        // MobileのRootLayoutではrewardSyncのeffectが認証listenerより先に開始する。
+        // initial resolving中に完了した操作のみを確定時に消費し、全履歴は送らない。
+        subscribeGameRewardAuthority((authority) => {
+            if (authority === 'resolving') return;
+            if (authority === 'anonymous' && consumeAnonymousRecoverySuppression()) return;
+            const pending = getPendingRewardOperations();
+            if (authority === 'authenticated') {
+                for (const operation of pending) {
+                    const enqueue = operation.kind === 'complete_task'
+                        ? enqueueCloudOperation(
+                            'complete_task',
+                            { taskId: operation.taskId },
+                            { dependsOnEntityIds: [operation.taskId] },
+                        )
+                        : enqueueCloudOperation(
+                            'complete_subtask',
+                            { subtaskId: operation.subtaskId },
+                            { dependsOnEntityIds: [operation.subtaskId, operation.taskId] },
+                        );
+                    void enqueue.then(async (accepted) => {
+                        if (!accepted) return;
+                        try {
+                            await removePendingRewardOperation(operation);
+                        } catch {
+                            // 永続化失敗時はメモリ/端末キューに残し、次回再送する。
+                        }
+                    }).catch(() => undefined);
+                }
+                return;
+            }
+            for (const operation of pending) {
+                if (operation.kind === 'complete_task') {
+                    useMobileTaskStore.getState().recoverDeferredTaskCompletion(operation.taskId);
+                } else {
+                    useMobileTaskStore.getState().recoverDeferredSubtaskCompletion(operation.taskId, operation.subtaskId);
+                }
+                void removePendingRewardOperation(operation).catch(() => undefined);
+            }
+            run();
+        }),
         useMobileGameStore.subscribe((state, previous) => {
             if (state.hasHydrated && !previous.hasHydrated) run();
         }),

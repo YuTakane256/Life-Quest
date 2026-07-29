@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { useTaskStore } from './useTaskStore';
 import { useGameStore } from './useGameStore';
 import { useStatsStore } from './useStatsStore';
@@ -17,6 +18,7 @@ describe('useTaskStore.toggleComplete', () => {
 
     beforeEach(() => {
         vi.useFakeTimers();
+        setGameRewardAuthorityState('anonymous');
         resetStore();
         // useGameStore / useStatsStore の副作用を握りつぶす
         addXpSpy = vi.spyOn(useGameStore.getState(), 'addXp').mockImplementation(() => undefined);

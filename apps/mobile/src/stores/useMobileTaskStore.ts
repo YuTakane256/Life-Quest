@@ -21,6 +21,7 @@ import {
     type Recurrence,
 } from '@life-quest/core/tasks';
 import { XP_CONFIG } from '@life-quest/core/progression';
+import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
@@ -28,6 +29,7 @@ import { getTodayJst, isoToJstYmd, toIsoDatePart } from '../utils/date';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileStatsStore } from './useMobileStatsStore';
 import { enqueueCloudOperation, isCloudOutboxActive } from '../platform/cloudOutbox';
+import { deferSubtaskCompletion, deferTaskCompletion } from '../platform/pendingRewardOperations';
 
 export interface AddTaskOptions {
     dueDate?: string | null;
@@ -61,6 +63,9 @@ interface MobileTaskStore {
     addSubtask: (taskId: string, name: string) => boolean;
     deleteSubtask: (taskId: string, subtaskId: string) => void;
     toggleSubtaskComplete: (taskId: string, subtaskId: string) => void;
+    /** 認証復元中に保留したローカル報酬を匿名確定後に一度だけ確定する。 */
+    recoverDeferredTaskCompletion: (taskId: string) => void;
+    recoverDeferredSubtaskCompletion: (taskId: string, subtaskId: string) => void;
     setHasHydrated: (value: boolean) => void;
 }
 
@@ -74,7 +79,7 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
             const spawnRecurringNext = (task: Task): void => {
                 // クラウド同期中は complete_task EF がサーバー側で次回分を生成する。
                 // ローカルでも生成すると別IDの重複タスクが二重にできるためスキップする。
-                if (isCloudOutboxActive()) return;
+                if (getGameRewardAuthorityState() !== 'anonymous' || isCloudOutboxActive()) return;
                 const next = buildNextRecurringTask({
                     task,
                     taskId: createMobileId(),
@@ -104,7 +109,11 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     );
                 }
                 spawnRecurringNext(task);
-                void enqueueCloudOperation('complete_task', { taskId: task.id }, { dependsOnEntityIds: [task.id] });
+                if (getGameRewardAuthorityState() === 'resolving') {
+                    deferTaskCompletion(task.id);
+                } else {
+                    void enqueueCloudOperation('complete_task', { taskId: task.id }, { dependsOnEntityIds: [task.id] });
+                }
             };
 
             /** 対象タスクのUndo待機をタイマーごと破棄する（確定処理は行わない） */
@@ -318,7 +327,11 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                         spawnRecurringNext(task);
                         // サーバーのdelete_subtaskは親完了まで連鎖しないため、明示的に完了を送る
                         //（報酬の重複はサーバーのreward_transactionsが防ぐ）
-                        void enqueueCloudOperation('complete_task', { taskId }, { dependsOnEntityIds: [taskId, subtaskId] });
+                        if (getGameRewardAuthorityState() === 'resolving') {
+                            deferTaskCompletion(taskId);
+                        } else {
+                            void enqueueCloudOperation('complete_task', { taskId }, { dependsOnEntityIds: [taskId, subtaskId] });
+                        }
                     }
                 },
 
@@ -337,7 +350,11 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                             useMobileStatsStore.getState().logTaskXp(isoToJstYmd(now) ?? toIsoDatePart(now), getSubtaskRewardXp(task.priority));
                         }
                         // サーバー側は complete_subtask が親完了・親報酬まで連鎖する（#502）
-                        void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
+                        if (getGameRewardAuthorityState() === 'resolving') {
+                            deferSubtaskCompletion(taskId, subtaskId);
+                        } else {
+                            void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
+                        }
                     } else {
                         void enqueueCloudOperation('uncomplete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
                     }
@@ -350,6 +367,37 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                             );
                         }
                         spawnRecurringNext(task);
+                        if (getGameRewardAuthorityState() === 'resolving') {
+                            deferTaskCompletion(taskId);
+                        }
+                    }
+                },
+
+                recoverDeferredTaskCompletion: (taskId) => {
+                    const task = get().tasks.find((candidate) => candidate.id === taskId);
+                    if (!task?.completed || getGameRewardAuthorityState() !== 'anonymous') return;
+                    const granted = useMobileGameStore.getState().grantTaskCompletionReward(task.id, task.priority);
+                    if (granted) {
+                        const completedAt = task.completedAt ?? new Date().toISOString();
+                        useMobileStatsStore.getState().logTaskXp(
+                            isoToJstYmd(completedAt) ?? toIsoDatePart(completedAt),
+                            XP_CONFIG.REWARD_BY_PRIORITY[task.priority],
+                        );
+                    }
+                    spawnRecurringNext(task);
+                },
+
+                recoverDeferredSubtaskCompletion: (taskId, subtaskId) => {
+                    const task = get().tasks.find((candidate) => candidate.id === taskId);
+                    const subtask = task?.subtasks.find((candidate) => candidate.id === subtaskId);
+                    if (!task || !subtask?.completed || getGameRewardAuthorityState() !== 'anonymous') return;
+                    const granted = useMobileGameStore.getState().grantSubtaskCompletionReward(subtask.id, task.priority);
+                    if (granted) {
+                        const completedAt = subtask.completedAt ?? new Date().toISOString();
+                        useMobileStatsStore.getState().logTaskXp(
+                            isoToJstYmd(completedAt) ?? toIsoDatePart(completedAt),
+                            getSubtaskRewardXp(task.priority),
+                        );
                     }
                 },
 

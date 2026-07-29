@@ -16,6 +16,12 @@ import {
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 import { enqueueCloudOperation, isWebCloudOutboxActive } from '../platform/cloudOutbox';
+import { getGameRewardAuthorityState, subscribeGameRewardAuthority } from '@life-quest/core/gameRewardAuthority';
+import {
+    deferWebRewardOperation,
+    getPendingWebRewardOperations,
+    removePendingWebRewardOperation,
+} from '../platform/pendingRewardOperations';
 
 /** pending completions はLocalStorageに保存しない（タイマーは復元不可能） */
 interface TaskStorePersisted {
@@ -29,12 +35,28 @@ export const MAX_SUBTASKS_PER_TASK = 200;
 const getGameStore = () => import('./useGameStore').then(m => m.useGameStore);
 const getStatsStore = () => import('./useStatsStore').then(m => m.useStatsStore);
 
-async function awardTaskXp(priority: Priority, completedAt: string, xpReward: number = XP_CONFIG.REWARD_BY_PRIORITY[priority]) {
+async function awardTaskXp(
+    priority: Priority,
+    completedAt: string,
+    xpReward: number = XP_CONFIG.REWARD_BY_PRIORITY[priority],
+    key?: string,
+): Promise<boolean> {
+    // 遅延importより先に境界を確認する。ここが後だと、復元中に開始した
+    // Promiseが認証確定後にローカル報酬として実行されてしまう。
+    const authority = getGameRewardAuthorityState();
+    if (authority === 'resolving') {
+        if (key) deferWebRewardOperation({ key, priority, completedAt, xpReward });
+        return false;
+    }
     const gameStore = await getGameStore();
     const store = gameStore.getState();
     store.addXp(xpReward);
     store.incrementGachaCount();
-    store.checkGachaMilestones();
+    // サインイン後はcomplete_task / complete_subtaskがDBロック下で宝箱を作る。
+    // ここで別IDのローカル宝箱まで作ると、次回pullで二重になる。
+    if (getGameRewardAuthorityState() === 'anonymous' && !isWebCloudOutboxActive()) {
+        store.checkGachaMilestones();
+    }
 
     // サーバー（complete_task Edge Function）はgetTodayJst()でstats_dailyへJST日付キーで
     // 記録するため、クライアント側もJST日付に揃える必要がある（UTC日付のままだと
@@ -44,6 +66,57 @@ async function awardTaskXp(priority: Priority, completedAt: string, xpReward: nu
     const dateStr = isoToJstYmd(completedAt) ?? toIsoDatePart(completedAt);
     const statsStore = await getStatsStore();
     statsStore.getState().logTaskXp(dateStr, xpReward);
+    return true;
+}
+
+/**
+ * 認証復元中に完了したWebタスクの報酬を、認証確定後に再照合する。
+ * authenticated時もローカル宝箱は作らず、通常のクラウドpullが宝箱を反映する。
+ */
+export function registerWebPendingTaskRewardRecovery(): () => void {
+    return subscribeGameRewardAuthority((authority) => {
+        if (authority === 'resolving') return;
+        const pending = getPendingWebRewardOperations();
+        if (pending.length === 0) return;
+        for (const reward of pending) {
+            const [kind, id] = reward.key.split(':', 2);
+            void awardTaskXp(reward.priority, reward.completedAt, reward.xpReward).then((granted) => {
+                if (!granted || authority !== 'anonymous') return;
+                if (kind === 'task') {
+                    spawnWebRecurringNext(id);
+                    removePendingWebRewardOperation(reward.key);
+                    return;
+                }
+                const parent = useTaskStore.getState().tasks.find((candidate) =>
+                    candidate.subtasks.some((subtask) => subtask.id === id),
+                );
+                if (parent?.completed) spawnWebRecurringNext(parent.id);
+                removePendingWebRewardOperation(reward.key);
+            });
+            if (authority === 'authenticated') {
+                if (kind === 'task') {
+                    void enqueueCloudOperation('complete_task', { taskId: id }, { dependsOnEntityIds: [id] })
+                        .then((accepted) => {
+                            if (accepted) removePendingWebRewardOperation(reward.key);
+                        })
+                        .catch(() => undefined);
+                } else if (kind === 'subtask') {
+                    const task = useTaskStore.getState().tasks.find((candidate) =>
+                        candidate.subtasks.some((subtask) => subtask.id === id),
+                    );
+                    if (task) {
+                        void enqueueCloudOperation(
+                            'complete_subtask',
+                            { subtaskId: id },
+                            { dependsOnEntityIds: [id, task.id] },
+                        ).then((accepted) => {
+                            if (accepted) removePendingWebRewardOperation(reward.key);
+                        }).catch(() => undefined);
+                    }
+                }
+            }
+        }
+    });
 }
 
 function getSubtaskXp(priority: Priority) {
@@ -132,6 +205,16 @@ function buildNextRecurringTask(task: Task): Task | null {
     });
 }
 
+function spawnWebRecurringNext(taskId: string): void {
+    const task = useTaskStore.getState().tasks.find((candidate) => candidate.id === taskId);
+    if (!task || !task.completed || getGameRewardAuthorityState() !== 'anonymous') return;
+    const next = buildNextRecurringTask(task);
+    if (!next) return;
+    const tasks = useTaskStore.getState().tasks;
+    if (hasOpenRecurringDuplicate(tasks, next) || tasks.length >= MAX_PERSISTED_TASKS) return;
+    useTaskStore.setState((state) => ({ tasks: [...state.tasks, next] }));
+}
+
 export const useTaskStore = create<TaskStoreState>()(
     persist(
         (set, get) => {
@@ -151,12 +234,17 @@ export const useTaskStore = create<TaskStoreState>()(
                 if (!pendingTask) return;
 
                 void (async () => {
-                    await awardTaskXp(pendingTask.priority, pending.completedAt);
+                    const rewarded = await awardTaskXp(
+                        pendingTask.priority,
+                        pending.completedAt,
+                        XP_CONFIG.REWARD_BY_PRIORITY[pendingTask.priority],
+                        `task:${pending.taskId}`,
+                    );
 
                     // クラウド同期中は complete_task EF がサーバー側で次回分を生成する。
                     // ローカルでも生成すると別IDの重複タスクが二重にできるためスキップする
                     // （Mobileのspawn Recurring Nextと同一設計）。
-                    if (!isWebCloudOutboxActive()) {
+                    if (rewarded && !isWebCloudOutboxActive()) {
                         const next = buildNextRecurringTask(pendingTask);
                         if (next) {
                             const exists = hasOpenRecurringDuplicate(get().tasks, next);
@@ -165,7 +253,9 @@ export const useTaskStore = create<TaskStoreState>()(
                             }
                         }
                     }
-                    void enqueueCloudOperation('complete_task', { taskId: pending.taskId }, { dependsOnEntityIds: [pending.taskId] });
+                    if (getGameRewardAuthorityState() !== 'resolving') {
+                        void enqueueCloudOperation('complete_task', { taskId: pending.taskId }, { dependsOnEntityIds: [pending.taskId] });
+                    }
                 })();
             };
 
@@ -470,16 +560,19 @@ export const useTaskStore = create<TaskStoreState>()(
                     }));
 
                     if (isCompleting) {
-                        void awardTaskXp(task.priority, completedAt, getSubtaskXp(task.priority));
+                        void awardTaskXp(task.priority, completedAt, getSubtaskXp(task.priority), `subtask:${subtaskId}`);
                         // サーバー側は complete_subtask が親完了・親報酬まで連鎖する
-                        void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
+                        if (getGameRewardAuthorityState() !== 'resolving') {
+                            void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
+                        }
                     } else {
                         void enqueueCloudOperation('uncomplete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
                     }
 
                     // サブタスク完了で親タスクが完了したら、繰り返しタスクの次回分を生成
                     // （クラウド同期中はcomplete_task EFがサーバー側で生成するためスキップ）
-                    if (isCompleting && allSubtasksComplete && !task.completed && !isWebCloudOutboxActive()) {
+                    if (isCompleting && allSubtasksComplete && !task.completed
+                        && getGameRewardAuthorityState() !== 'resolving' && !isWebCloudOutboxActive()) {
                         const next = buildNextRecurringTask(task);
                         if (next) {
                             const exists = hasOpenRecurringDuplicate(get().tasks, next);

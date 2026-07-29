@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASK_LIMITS, createTask, type Task } from '@life-quest/core/tasks';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { XP_CONFIG } from '@life-quest/core/progression';
@@ -8,6 +9,8 @@ import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileStatsStore } from './useMobileStatsStore';
 import { useMobileTaskStore } from './useMobileTaskStore';
 import { isoToJstYmd } from '../utils/date';
+import { clearPendingRewardOperations } from '../platform/pendingRewardOperations';
+import { startRewardSync } from './rewardSync';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -29,6 +32,8 @@ describe('useMobileTaskStore', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
+        setGameRewardAuthorityState('anonymous');
+        clearPendingRewardOperations();
         useMobileTaskStore.setState({ tasks: [], pendingCompletions: [], hasHydrated: true });
         useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, lastLevelUp: null });
         useMobileStatsStore.setState({ taskXpLog: {}, habitLog: {}, seeded: true, hasHydrated: true });
@@ -120,6 +125,44 @@ describe('useMobileTaskStore', () => {
     });
 
     describe('ゲーム報酬連携', () => {
+        it('認証復元中の繰り返しタスクはanonymous確定後に報酬と次回分を一度だけ生成する', () => {
+            setGameRewardAuthorityState('resolving');
+            const stop = startRewardSync(() => '2026-07-02');
+            try {
+                useMobileTaskStore.getState().addTask('毎日の復元中タスク', 'medium', { recurrence: 'daily' });
+                const id = useMobileTaskStore.getState().tasks[0].id;
+                completeAndConfirm(id);
+
+                expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+                expect(useMobileTaskStore.getState().tasks).toHaveLength(1);
+
+                setGameRewardAuthorityState('anonymous');
+                expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
+                expect(useMobileTaskStore.getState().tasks).toHaveLength(2);
+
+                setGameRewardAuthorityState('anonymous');
+                expect(useMobileTaskStore.getState().tasks).toHaveLength(2);
+            } finally {
+                stop();
+            }
+        });
+
+        it('認証復元中の繰り返しタスクはauthenticated確定後にローカル次回分を生成しない', () => {
+            setGameRewardAuthorityState('resolving');
+            const stop = startRewardSync(() => '2026-07-02');
+            try {
+                useMobileTaskStore.getState().addTask('クラウド復元中タスク', 'medium', { recurrence: 'daily' });
+                const id = useMobileTaskStore.getState().tasks[0].id;
+                completeAndConfirm(id);
+
+                setGameRewardAuthorityState('authenticated');
+                expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+                expect(useMobileTaskStore.getState().tasks).toHaveLength(1);
+            } finally {
+                stop();
+            }
+        });
+
         it('タスク完了で優先度に応じたXPとガチャカウントが付与される（Undo猶予後に確定）', () => {
             useMobileTaskStore.getState().addTask('報酬テスト');
             const id = useMobileTaskStore.getState().tasks[0].id;

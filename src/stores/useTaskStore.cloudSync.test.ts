@@ -4,6 +4,12 @@ import { useGameStore } from './useGameStore';
 import { useStatsStore } from './useStatsStore';
 import { UI_CONFIG } from '../config/gameConfig';
 import { enqueueCloudOperation } from '../platform/cloudOutbox';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
+import {
+    clearPendingWebRewardOperations,
+    detachPendingWebRewardOperations,
+    getPendingWebRewardOperations,
+} from '../platform/pendingRewardOperations';
 
 vi.mock('../platform/cloudOutbox', () => ({
     enqueueCloudOperation: vi.fn(async () => true),
@@ -13,6 +19,8 @@ vi.mock('../platform/cloudOutbox', () => ({
 const enqueueMock = vi.mocked(enqueueCloudOperation);
 
 function resetStore() {
+    setGameRewardAuthorityState('anonymous');
+    clearPendingWebRewardOperations();
     localStorage.clear();
     useTaskStore.setState({ tasks: [], pendingCompletions: [] });
 }
@@ -67,6 +75,121 @@ describe('useTaskStore クラウド同期の配線', () => {
 
         await vi.advanceTimersByTimeAsync(UI_CONFIG.UNDO_DURATION_MS);
         expect(enqueueMock).toHaveBeenCalledWith('complete_task', { taskId: id }, { dependsOnEntityIds: [id] });
+    });
+
+    it('Webでもresolving中は報酬を確定せず、anonymous確定後に保留分を適用する', async () => {
+        const { registerWebPendingTaskRewardRecovery } = await import('./useTaskStore');
+        const stop = registerWebPendingTaskRewardRecovery();
+        try {
+            setGameRewardAuthorityState('resolving');
+            useTaskStore.getState().addTask('復元中の完了', null, 'medium', 'none');
+            const id = useTaskStore.getState().tasks[0].id;
+            useTaskStore.getState().toggleComplete(id);
+            useTaskStore.getState().flushPendingCompletions();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(useGameStore.getState().addXp).not.toHaveBeenCalled();
+            expect(useGameStore.getState().incrementGachaCount).not.toHaveBeenCalled();
+
+            setGameRewardAuthorityState('anonymous');
+            await vi.dynamicImportSettled();
+            expect(useGameStore.getState().addXp).toHaveBeenCalledWith(20);
+            expect(useGameStore.getState().incrementGachaCount).toHaveBeenCalledTimes(1);
+        } finally {
+            stop();
+        }
+    });
+
+    it('Webの復元中繰り返しタスクはanonymous確定後に一度だけ次回分を生成する', async () => {
+        const { registerWebPendingTaskRewardRecovery } = await import('./useTaskStore');
+        const stop = registerWebPendingTaskRewardRecovery();
+        try {
+            setGameRewardAuthorityState('resolving');
+            useTaskStore.getState().addTask('復元中の毎日タスク', null, 'medium', 'daily');
+            const id = useTaskStore.getState().tasks[0].id;
+            useTaskStore.getState().toggleComplete(id);
+            useTaskStore.getState().flushPendingCompletions();
+            await vi.dynamicImportSettled();
+            expect(useTaskStore.getState().tasks).toHaveLength(1);
+            expect(enqueueMock).not.toHaveBeenCalledWith('complete_task', { taskId: id }, { dependsOnEntityIds: [id] });
+
+            setGameRewardAuthorityState('anonymous');
+            await vi.dynamicImportSettled();
+            expect(useTaskStore.getState().tasks).toHaveLength(2);
+
+            setGameRewardAuthorityState('anonymous');
+            expect(useTaskStore.getState().tasks).toHaveLength(2);
+        } finally {
+            stop();
+        }
+    });
+
+    it('Webの復元中繰り返しタスクはauthenticated確定後に保留操作だけを送り、ローカル次回分を作らない', async () => {
+        const { registerWebPendingTaskRewardRecovery } = await import('./useTaskStore');
+        const stop = registerWebPendingTaskRewardRecovery();
+        try {
+            setGameRewardAuthorityState('resolving');
+            useTaskStore.getState().addTask('クラウド復元中の毎日タスク', null, 'medium', 'daily');
+            const id = useTaskStore.getState().tasks[0].id;
+            enqueueMock.mockClear();
+            useTaskStore.getState().toggleComplete(id);
+            useTaskStore.getState().flushPendingCompletions();
+            await vi.dynamicImportSettled();
+
+            setGameRewardAuthorityState('authenticated');
+            await vi.dynamicImportSettled();
+            await vi.waitFor(() => expect(getPendingWebRewardOperations()).toEqual([]));
+            expect(useTaskStore.getState().tasks).toHaveLength(1);
+            expect(enqueueMock).toHaveBeenCalledTimes(1);
+            expect(enqueueMock).toHaveBeenCalledWith('complete_task', { taskId: id }, { dependsOnEntityIds: [id] });
+        } finally {
+            stop();
+        }
+    });
+
+    it('Webはoutbox enqueue失敗時に保留操作を残す', async () => {
+        const { registerWebPendingTaskRewardRecovery } = await import('./useTaskStore');
+        const stop = registerWebPendingTaskRewardRecovery();
+        try {
+            setGameRewardAuthorityState('resolving');
+            useTaskStore.getState().addTask('失敗する復元操作', null, 'medium', 'none');
+            const id = useTaskStore.getState().tasks[0].id;
+            enqueueMock.mockClear();
+            useTaskStore.getState().toggleComplete(id);
+            useTaskStore.getState().flushPendingCompletions();
+            await vi.dynamicImportSettled();
+            enqueueMock.mockResolvedValueOnce(false);
+
+            setGameRewardAuthorityState('authenticated');
+            await vi.dynamicImportSettled();
+            expect(getPendingWebRewardOperations().map((operation) => operation.key)).toEqual([`task:${id}`]);
+        } finally {
+            stop();
+        }
+    });
+
+    it('Webのログアウト起因anonymous遷移は直前userの保留操作をローカル報酬にしない', async () => {
+        const { registerWebPendingTaskRewardRecovery } = await import('./useTaskStore');
+        const stop = registerWebPendingTaskRewardRecovery();
+        try {
+            setGameRewardAuthorityState('resolving');
+            useTaskStore.getState().addTask('ログアウト前の保留操作', null, 'medium', 'none');
+            const id = useTaskStore.getState().tasks[0].id;
+            useTaskStore.getState().toggleComplete(id);
+            useTaskStore.getState().flushPendingCompletions();
+            await vi.dynamicImportSettled();
+            expect(getPendingWebRewardOperations().map((operation) => operation.key)).toEqual([`task:${id}`]);
+
+            detachPendingWebRewardOperations();
+            setGameRewardAuthorityState('anonymous');
+            await vi.dynamicImportSettled();
+
+            expect(getPendingWebRewardOperations()).toEqual([]);
+            expect(useGameStore.getState().addXp).not.toHaveBeenCalled();
+        } finally {
+            stop();
+        }
     });
 
     it('Undo待機中の取消はcomplete_task/uncomplete_taskいずれも送らない', () => {

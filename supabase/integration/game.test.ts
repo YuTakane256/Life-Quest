@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client as PgClient } from 'pg';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getTodayJst, shiftDate } from '../../packages/core/src/dates.ts';
+import { getMilestoneAtCount } from '../../packages/core/src/rewards.ts';
 
 const DB_URL = process.env.SUPABASE_DB_URL;
 const API_URL = process.env.SUPABASE_URL;
@@ -884,5 +885,88 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
             [user.id, today],
         );
         expect(Number(afterReplay.rows[0].task_xp)).toBe(Number(afterFirst.rows[0].task_xp));
+    });
+
+    it('並行する別タスクがgacha_count=8から11へ進んでも10個目の木箱をちょうど1個生成する', async () => {
+        // 他テストの累積値を切り離し、DB内のロック後判定だけを検証する。
+        await pg.query('delete from chests where user_id=$1', [user.id]);
+        await pg.query('update characters set gacha_count=8 where user_id=$1', [user.id]);
+        const taskIds = await Promise.all(['節目並行A', '節目並行B', '節目並行C'].map(createTask));
+
+        const results = await Promise.all(taskIds.map((taskId) =>
+            callFn('complete_task', { taskId, idempotencyKey: uuid() }),
+        ));
+        for (const result of results) expect(result.status).toBe(200);
+
+        expect((await getCharacter()).gacha_count).toBe('11');
+        const { rows } = await pg.query(
+            "select count(*) from chests where user_id=$1 and chest_type='wood' and deleted_at is null",
+            [user.id],
+        );
+        expect(rows[0].count).toBe('1');
+    });
+
+    it('gacha_count=4で同一タスク・同一キーを並行/再送しても青箱は1個だけ', async () => {
+        await pg.query('delete from chests where user_id=$1', [user.id]);
+        await pg.query('update characters set gacha_count=4 where user_id=$1', [user.id]);
+        const taskId = await createTask('青箱の冪等性');
+        const key = uuid();
+        const responses = await Promise.all([
+            callFn('complete_task', { taskId, idempotencyKey: key }),
+            callFn('complete_task', { taskId, idempotencyKey: key }),
+            callFn('complete_task', { taskId, idempotencyKey: key }),
+        ]);
+        for (const response of responses) expect(response.status).toBe(200);
+        // 応答を受け取れなかったクライアントが同じキーで再送するケース。
+        expect((await callFn('complete_task', { taskId, idempotencyKey: key })).status).toBe(200);
+
+        expect((await getCharacter()).gacha_count).toBe('5');
+        const { rows } = await pg.query(
+            "select count(*) as count, bool_and(is_starter_character) as starter from chests where user_id=$1 and chest_type='blue' and deleted_at is null",
+            [user.id],
+        );
+        expect(rows[0].count).toBe('1');
+        expect(rows[0].starter).toBe(true);
+    });
+
+    it('サブタスク完了と親自動完了が節目をまたいでも木箱をちょうど1個生成する', async () => {
+        await pg.query('delete from chests where user_id=$1', [user.id]);
+        await pg.query('update characters set gacha_count=8 where user_id=$1', [user.id]);
+        const taskId = await createTask('親自動完了の節目');
+        const [firstSubtask, secondSubtask] = [uuid(), uuid()];
+        await insertWithVersion(async (version) => {
+            await pg.query(
+                'insert into subtasks (id, task_id, user_id, name, version) values ($1, $3, $4, $5, $6), ($2, $3, $4, $5, $6)',
+                [firstSubtask, secondSubtask, taskId, user.id, '子', version],
+            );
+        });
+
+        expect((await callFn('complete_subtask', { subtaskId: firstSubtask, idempotencyKey: uuid() })).status).toBe(200);
+        expect((await callFn('complete_subtask', { subtaskId: secondSubtask, idempotencyKey: uuid() })).status).toBe(200);
+        expect((await getCharacter()).gacha_count).toBe('11');
+        const { rows } = await pg.query(
+            "select count(*) from chests where user_id=$1 and chest_type='wood' and deleted_at is null",
+            [user.id],
+        );
+        expect(rows[0].count).toBe('1');
+    });
+
+    it.each([
+        [5, 'blue', true],
+        [105, 'blue', false],
+        [500, 'red_gold', false],
+        [1000, 'rainbow', false],
+    ] as const)('coreとDBでcount %i のマイルストーン定義が一致する', async (count, chestType, starter) => {
+        const core = getMilestoneAtCount(count);
+        expect(core?.chestType).toBe(chestType);
+        await pg.query('delete from chests where user_id=$1', [user.id]);
+        await pg.query('update characters set gacha_count=$2 where user_id=$1', [user.id, count - 1]);
+        const taskId = await createTask(`定義照合 ${count}`);
+        expect((await callFn('complete_task', { taskId, idempotencyKey: uuid() })).status).toBe(200);
+        const { rows } = await pg.query(
+            'select chest_type, is_starter_character from chests where user_id=$1 and deleted_at is null',
+            [user.id],
+        );
+        expect(rows).toEqual([{ chest_type: chestType, is_starter_character: starter }]);
     });
 });

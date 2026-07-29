@@ -7,8 +7,10 @@
  *   ストアのメモリ即時クリアがログアウトAPIの一部として完了する契約）
  */
 import { notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type { BattleAuthState } from '@life-quest/core/battleStartPolicy';
 import { getWebSupabaseClient } from './supabase';
+import { detachPendingWebRewardOperations, restorePendingWebRewardOperations } from './pendingRewardOperations';
 
 export type AuthResult =
     | { ok: true }
@@ -29,7 +31,10 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     const { data, error } = await client.auth.signUp({ email, password });
     if (error) return { ok: false, message: error.message };
     if (data.session && data.user) {
+        setGameRewardAuthorityState('resolving');
+        try { restorePendingWebRewardOperations(data.user.id); } catch { /* メモリ保留は維持する */ }
         await notifyLogin(data.user.id);
+        setGameRewardAuthorityState('authenticated');
     }
     return { ok: true };
 }
@@ -40,7 +45,10 @@ export async function signInWithEmail(email: string, password: string): Promise<
     const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) return { ok: false, message: error.message };
     if (data.user) {
+        setGameRewardAuthorityState('resolving');
+        try { restorePendingWebRewardOperations(data.user.id); } catch { /* メモリ保留は維持する */ }
         await notifyLogin(data.user.id);
+        setGameRewardAuthorityState('authenticated');
     }
     return { ok: true };
 }
@@ -52,7 +60,9 @@ export async function signOutUser(): Promise<AuthResult> {
     if (error) return { ok: false, message: error.message };
     // ローカルデータ（quest-board-*）は保持する。ここではフック（同期停止・
     // クラウド対象ストアのメモリクリア）だけを完了させる。
+    detachPendingWebRewardOperations();
     await notifyLogout();
+    setGameRewardAuthorityState('anonymous');
     return { ok: true };
 }
 
@@ -87,12 +97,26 @@ export const getGameAuthState = getBattleAuthState;
  */
 export function startAuthSessionListener(): () => void {
     const client = getWebSupabaseClient();
-    if (!client) return () => {};
+    if (!client) {
+        setGameRewardAuthorityState('anonymous');
+        return () => {};
+    }
+    setGameRewardAuthorityState('resolving');
     const { data } = client.auth.onAuthStateChange((event, session) => {
-        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
-            void notifyLogin(session.user.id);
+        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
+            setGameRewardAuthorityState('resolving');
+            try { restorePendingWebRewardOperations(session.user.id); } catch { /* メモリ保留は維持する */ }
+            void notifyLogin(session.user.id).then(() => setGameRewardAuthorityState('authenticated'));
+        }
+        if (event === 'INITIAL_SESSION' && !session) {
+            detachPendingWebRewardOperations();
+            setGameRewardAuthorityState('anonymous');
         }
         if (event === 'SIGNED_OUT') {
+            // authenticatedの保留操作をanonymous報酬として消費させない。
+            // 永続キーは残し、同一userの次回ログインでのみ復元する。
+            detachPendingWebRewardOperations();
+            setGameRewardAuthorityState('anonymous');
             void notifyLogout();
         }
     });
