@@ -205,6 +205,7 @@ export function sanitizeChestReward(raw: unknown): ChestReward | null {
         label: clampString(raw.label, GAME_STATE_LIMITS.maxChestLabelLength),
         opened: raw.opened === true,
         equipment,
+        ...(raw.origin === 'local' || raw.origin === 'cloud' ? { origin: raw.origin } : {}),
         ...(typeof raw.isStarterCharacter === 'boolean' ? { isStarterCharacter: raw.isStarterCharacter } : {}),
     };
 }

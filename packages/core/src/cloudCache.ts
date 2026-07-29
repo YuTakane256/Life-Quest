@@ -277,6 +277,7 @@ export function buildCanonicalGameSnapshot(cache: CloudCache): CanonicalGameSnap
             label: asString(row.label),
             opened: false,
             equipment: null,
+            origin: 'cloud' as const,
             ...(row.is_starter_character === true ? { isStarterCharacter: true } : {}),
         }));
 

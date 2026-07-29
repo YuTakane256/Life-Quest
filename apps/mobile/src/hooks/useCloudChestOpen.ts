@@ -2,10 +2,10 @@
  * 宝箱開封をクラウド権威で行う（可能な場合）。Web `src/hooks/useCloudChestOpen.ts`
  * の移植（エラー分岐の設計はWebと同一。詳細な理由もそちらのコメント参照）。
  *
- * - `openCloudChest`が`null`を返す（未ログイン・Edge Function未設定）→
- *   無条件でローカル`openChest`へフォールバック
- * - `EdgeFunctionError`でstatus 404（ローカル生成IDの宝箱が未同期）→
- *   ローカル`openChest`へフォールバック
+ * - `openCloudChest`が`null`を返す、またはstatus 404の場合は、旧ローカル
+ *   宝箱だけをローカル`openChest`へフォールバック
+ * - canonical pull由来（`origin: 'cloud'`）の宝箱はnull/404でもフォールバックせず
+ *   再送・次回pullへ委ねる
  * - status 409（`chest_already_opened`。サーバー側は既に正常）→ エラー扱い
  *   せず`discardSyncedChest`で演出無しにローカル未開封表示だけ消す
  * - それ以外（ネットワーク断・5xx等）→ フォールバックせず`errorChestId`を
@@ -49,6 +49,8 @@ export interface CloudChestOpenDeps {
     ) => Equipment | null;
     discardSyncedChest: (chestId: string) => void;
     localOpenChest: (chestId: string) => Equipment | null;
+    /** canonical pull由来の宝箱は、404でも端末内の抽選へ戻さない。 */
+    allowLocalFallback?: boolean;
 }
 
 /**
@@ -72,12 +74,14 @@ export async function runCloudChestOpen(
     try {
         const result = await deps.openCloudChest(chestId, idempotencyKey);
         if (!result) {
+            if (deps.allowLocalFallback === false) return { tag: 'error', equipment: null };
             return { tag: 'unconfigured-fallback', equipment: deps.localOpenChest(chestId) };
         }
         const equipment = deps.applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
         return { tag: 'applied', equipment };
     } catch (error) {
         if (error instanceof EdgeFunctionError && error.status === 404) {
+            if (deps.allowLocalFallback === false) return { tag: 'error', equipment: null };
             return { tag: 'not-found-fallback', equipment: deps.localOpenChest(chestId) };
         }
         if (error instanceof EdgeFunctionError && error.status === 409) {
@@ -92,6 +96,7 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
     const localOpenChest = useMobileGameStore((state) => state.openChest);
     const applyCloudChestResult = useMobileGameStore((state) => state.applyCloudChestResult);
     const discardSyncedChest = useMobileGameStore((state) => state.discardSyncedChest);
+    const chestQueue = useMobileGameStore((state) => state.chestQueue);
     const [openingChestId, setOpeningChestId] = useState<string | null>(null);
     const [errorChestId, setErrorChestId] = useState<string | null>(null);
     const idempotencyKeysRef = useRef(new Map<string, string>());
@@ -106,7 +111,11 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
         }
         try {
             const { tag, equipment } = await runCloudChestOpen(chestId, key, {
-                openCloudChest, applyCloudChestResult, discardSyncedChest, localOpenChest,
+                openCloudChest,
+                applyCloudChestResult,
+                discardSyncedChest,
+                localOpenChest,
+                allowLocalFallback: chestQueue.find((chest) => chest.id === chestId)?.origin !== 'cloud',
             });
             if (tag === 'error') {
                 setErrorChestId(chestId);

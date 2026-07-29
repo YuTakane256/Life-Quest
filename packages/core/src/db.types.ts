@@ -607,10 +607,8 @@ export type Database = {
       }
       complete_subtask_apply: {
         Args: {
-          p_chest: Json
           p_date: string
           p_key: string
-          p_parent_chest: Json
           p_parent_xp: number
           p_subtask_id: string
           p_user_id: string
@@ -620,7 +618,6 @@ export type Database = {
       }
       complete_task_apply: {
         Args: {
-          p_chest: Json
           p_date: string
           p_key: string
           p_next_task: Json

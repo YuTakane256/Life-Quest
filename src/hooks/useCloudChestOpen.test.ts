@@ -55,6 +55,16 @@ describe('runCloudChestOpen', () => {
         expect(outcome).toBe('not-found-fallback');
     });
 
+    it('クラウド由来の宝箱が404でもローカル抽選へフォールバックしない', async () => {
+        const deps = makeDeps({
+            allowLocalFallback: false,
+            openCloudChest: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'not found', 404); }),
+        });
+
+        await expect(runCloudChestOpen('chest-1', 'key-1', deps)).resolves.toBe('error');
+        expect(deps.localOpenChest).not.toHaveBeenCalled();
+    });
+
     it('409（既に開封済み）ならdiscardSyncedChestを呼び、演出は出さない', async () => {
         const deps = makeDeps({
             openCloudChest: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'chest_already_opened', 409); }),

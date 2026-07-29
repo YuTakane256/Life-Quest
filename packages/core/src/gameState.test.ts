@@ -110,6 +110,13 @@ describe('sanitizeChestQueue', () => {
         expect(sanitizeChestQueue([chest, chest])).toHaveLength(1);
     });
 
+    it('クラウド由来の宝箱originを永続化復元後も保持する', () => {
+        const [chest] = sanitizeChestQueue([
+            { id: 'cloud-1', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null, origin: 'cloud' },
+        ]);
+        expect(chest.origin).toBe('cloud');
+    });
+
     it('上限を超えたら未開封を優先して残す', () => {
         const items = Array.from({ length: GAME_STATE_LIMITS.maxChestQueueItems + 10 }, (_, i) => ({
             id: `chest-${i}`,

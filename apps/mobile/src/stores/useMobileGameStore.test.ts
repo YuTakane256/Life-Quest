@@ -4,6 +4,7 @@ import { createInitialGameStateSnapshot, GAME_STATE_LIMITS } from '@life-quest/c
 import { CHARACTER_CONFIG, XP_CONFIG } from '@life-quest/core/progression';
 import { EQUIPMENT_POOL, SELL_XP_BY_RARITY } from '@life-quest/core/rewards';
 import { BATTLE_CONFIG } from '@life-quest/core/battle';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GAME_STORE_VERSION, useMobileGameStore } from './useMobileGameStore';
 
@@ -28,6 +29,7 @@ function item(id: string, templateId: string, equipped = false): Equipment {
 }
 
 function resetStore() {
+    setGameRewardAuthorityState('anonymous');
     useMobileGameStore.setState({
         ...createInitialGameStateSnapshot(),
         battleProgress: { battleUnlocked: false, currentStage: 1, maxClearedStage: 0 },
@@ -490,6 +492,17 @@ describe('報酬付与（二重付与防止）', () => {
         expect(state.chestQueue[0]).toMatchObject({ chestType: 'blue', isStarterCharacter: true });
     });
 
+    it('サインイン中のタスク報酬はローカル宝箱を生成せず、クラウドpullを待つ', () => {
+        setGameRewardAuthorityState('authenticated');
+        for (let i = 0; i < 5; i++) {
+            useMobileGameStore.getState().grantTaskCompletionReward(`cloud-task-${i}`, 'low');
+        }
+
+        const state = useMobileGameStore.getState();
+        expect(state.gachaCount).toBe(5);
+        expect(state.chestQueue).toHaveLength(0);
+    });
+
     it('習慣全達成ボーナスは同じ日付に一度だけ付与される', () => {
         expect(useMobileGameStore.getState().grantHabitAllCompleteBonus('2026-07-02')).toBe(true);
         expect(useMobileGameStore.getState().grantHabitAllCompleteBonus('2026-07-02')).toBe(false);
@@ -497,6 +510,17 @@ describe('報酬付与（二重付与防止）', () => {
 
         expect(useMobileGameStore.getState().grantHabitAllCompleteBonus('2026-07-03')).toBe(true);
         expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS * 2);
+    });
+
+    it('サインイン中でも習慣報酬は従来どおりローカル宝箱を生成する', () => {
+        setGameRewardAuthorityState('authenticated');
+        useMobileGameStore.setState({ gachaCount: 4 });
+
+        expect(useMobileGameStore.getState().grantHabitAllCompleteBonus('2026-07-04')).toBe(true);
+        expect(useMobileGameStore.getState().gachaCount).toBe(5);
+        expect(useMobileGameStore.getState().chestQueue).toMatchObject([
+            { chestType: 'blue', origin: 'local', isStarterCharacter: true },
+        ]);
     });
 
     it('rehydration相当のmergeを経ても台帳が保持され重複しない', () => {

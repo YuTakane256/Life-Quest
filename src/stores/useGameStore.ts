@@ -284,6 +284,7 @@ function sanitizeChest(raw: unknown): ChestReward | null {
         label: clampString(raw.label, 120),
         opened: raw.opened === true,
         equipment,
+        ...(raw.origin === 'local' || raw.origin === 'cloud' ? { origin: raw.origin } : {}),
         ...(typeof raw.isStarterCharacter === 'boolean' ? { isStarterCharacter: raw.isStarterCharacter } : {}),
     };
 }
@@ -473,6 +474,7 @@ export const useGameStore = create<GameStoreState>()(
                     label: m.label,
                     opened: false,
                     equipment: null,
+                    origin: 'local',
                     isStarterCharacter: m.chestType === 'blue' && m.count === 5,
                 }));
                 set({ chestQueue: capChestQueue([...chestQueue, ...newChests]) });
@@ -874,6 +876,7 @@ export const useGameStore = create<GameStoreState>()(
                     label,
                     opened: false,
                     equipment: null,
+                    origin: 'local',
                 };
                 set((state) => ({ chestQueue: capChestQueue([...state.chestQueue, newChest]) }));
             },

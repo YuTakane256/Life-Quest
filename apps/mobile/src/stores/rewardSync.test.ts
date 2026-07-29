@@ -1,10 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { createHabit } from '@life-quest/core/habits';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { XP_CONFIG } from '@life-quest/core/progression';
 import { createTask, type Task } from '@life-quest/core/tasks';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reconcileRewards, startRewardSync } from './rewardSync';
+import {
+    clearPendingRewardOperations,
+    detachPendingRewardOperations,
+    getPendingRewardOperations,
+} from '../platform/pendingRewardOperations';
+import { enqueueCloudOperation } from '../platform/cloudOutbox';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileHabitStore } from './useMobileHabitStore';
 import { useMobileTaskStore } from './useMobileTaskStore';
@@ -17,6 +24,11 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
     },
 }));
 
+vi.mock('../platform/cloudOutbox', () => ({
+    enqueueCloudOperation: vi.fn(async () => true),
+    isCloudOutboxActive: vi.fn(() => false),
+}));
+
 const storage = vi.mocked(AsyncStorage);
 const TODAY = '2026-07-02';
 
@@ -27,6 +39,8 @@ function completedTask(id: string, priority: Task['priority'] = 'medium'): Task 
 }
 
 function resetAllStores({ hydrated = true } = {}) {
+    setGameRewardAuthorityState('anonymous');
+    clearPendingRewardOperations();
     useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: hydrated, lastLevelUp: null });
     useMobileTaskStore.setState({ tasks: [], hasHydrated: hydrated });
     useMobileHabitStore.setState({
@@ -146,6 +160,118 @@ describe('reconcileRewards（再照合による報酬回復）', () => {
 
         expect(() => reconcileRewards(TODAY)).not.toThrow();
         expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+    });
+});
+
+describe('認証復元中の報酬保留', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        resetAllStores();
+    });
+
+    it('Mobile起動順（rewardSync先行）でresolving中の完了をanonymous確定後に一度だけ付与する', () => {
+        setGameRewardAuthorityState('resolving');
+        useMobileTaskStore.setState({ tasks: [completedTask('startup-task')] });
+        const stop = startRewardSync(() => TODAY);
+        try {
+            reconcileRewards(TODAY);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+            expect(useMobileGameStore.getState().rewardLedger.rewardedTaskIds).toEqual([]);
+
+            setGameRewardAuthorityState('anonymous');
+            expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
+            expect(useMobileGameStore.getState().rewardLedger.rewardedTaskIds).toEqual(['startup-task']);
+        } finally {
+            stop();
+        }
+    });
+
+    it('resolvingからauthenticatedへ確定してもローカルXP・宝箱を確定しない', () => {
+        setGameRewardAuthorityState('resolving');
+        useMobileTaskStore.setState({ tasks: [completedTask('cloud-startup-task')] });
+        const stop = startRewardSync(() => TODAY);
+        try {
+            setGameRewardAuthorityState('authenticated');
+            const game = useMobileGameStore.getState();
+            expect(game.character.totalXp).toBe(0);
+            expect(game.gachaCount).toBe(0);
+            expect(game.chestQueue).toEqual([]);
+            expect(game.rewardLedger.rewardedTaskIds).toEqual([]);
+        } finally {
+            stop();
+        }
+    });
+
+    it('authenticated確定時は復元中に保留した操作だけを一度だけ送信し、成功後に個別削除する', async () => {
+        setGameRewardAuthorityState('resolving');
+        const stop = startRewardSync(() => TODAY);
+        try {
+            useMobileTaskStore.setState({ tasks: [completedTask('historic-task')] });
+            useMobileTaskStore.getState().addTask('復元中の操作');
+            const id = useMobileTaskStore.getState().tasks.at(-1)?.id;
+            if (!id) throw new Error('task missing');
+            useMobileTaskStore.getState().toggleTask(id);
+            useMobileTaskStore.getState().flushPendingCompletions();
+            vi.mocked(enqueueCloudOperation).mockClear();
+
+            setGameRewardAuthorityState('authenticated');
+
+            await vi.waitFor(() => expect(getPendingRewardOperations()).toEqual([]));
+
+            expect(enqueueCloudOperation).toHaveBeenCalledTimes(1);
+            expect(enqueueCloudOperation).toHaveBeenCalledWith(
+                'complete_task',
+                { taskId: id },
+                { dependsOnEntityIds: [id] },
+            );
+
+            setGameRewardAuthorityState('authenticated');
+            expect(enqueueCloudOperation).toHaveBeenCalledTimes(1);
+        } finally {
+            stop();
+        }
+    });
+
+    it('outbox enqueue失敗時は保留操作を削除せず次回再送へ残す', async () => {
+        setGameRewardAuthorityState('resolving');
+        const stop = startRewardSync(() => TODAY);
+        try {
+            useMobileTaskStore.getState().addTask('復元中の失敗操作');
+            const id = useMobileTaskStore.getState().tasks.at(-1)?.id;
+            if (!id) throw new Error('task missing');
+            useMobileTaskStore.getState().toggleTask(id);
+            useMobileTaskStore.getState().flushPendingCompletions();
+            vi.mocked(enqueueCloudOperation).mockClear();
+            vi.mocked(enqueueCloudOperation).mockResolvedValueOnce(false);
+
+            setGameRewardAuthorityState('authenticated');
+            await vi.waitFor(() => expect(enqueueCloudOperation).toHaveBeenCalledTimes(1));
+            expect(getPendingRewardOperations()).toEqual([{ kind: 'complete_task', taskId: id }]);
+        } finally {
+            stop();
+        }
+    });
+
+    it('ログアウト起因のanonymous遷移では直前userの保留操作や完了履歴をローカル報酬として消費しない', () => {
+        setGameRewardAuthorityState('resolving');
+        const stop = startRewardSync(() => TODAY);
+        try {
+            useMobileTaskStore.getState().addTask('ログアウト前の保留操作');
+            const id = useMobileTaskStore.getState().tasks.at(-1)?.id;
+            if (!id) throw new Error('task missing');
+            useMobileTaskStore.getState().toggleTask(id);
+            useMobileTaskStore.getState().flushPendingCompletions();
+            expect(getPendingRewardOperations()).toEqual([{ kind: 'complete_task', taskId: id }]);
+
+            detachPendingRewardOperations({ suppressAnonymousRecovery: true });
+            setGameRewardAuthorityState('anonymous');
+
+            expect(getPendingRewardOperations()).toEqual([]);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+            expect(useMobileGameStore.getState().rewardLedger.rewardedTaskIds).toEqual([]);
+        } finally {
+            stop();
+        }
     });
 });
 

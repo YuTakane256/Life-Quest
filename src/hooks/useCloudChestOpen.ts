@@ -7,13 +7,10 @@
  * サーバー側で成功していた場合（レスポンスがネットワーク断で届かなかった等）
  * にサーバーと乖離した装備をローカルに表示してしまう危険がある。
  * そのため:
- * - `openCloudChest`が`null`を返す（未ログイン・Edge Function未設定）→
- *   サーバーに何も送っていないので無条件でローカル`openChest`へフォールバック
- * - `EdgeFunctionError`でstatus 404（サーバーがそのchestIdを知らない＝
- *   ローカル生成IDで未同期の宝箱。`checkGachaMilestones`はクラウド有効時も
- *   ローカルIDで宝箱を積むため、次回pull到着までの間このケースが起こり得る）
- *   → ローカル`openChest`へフォールバック（`seedGame`が次回pullで丸ごと
- *   上書きするため、最終的にサーバーの実態へ収束する）
+ * - `openCloudChest`が`null`を返す、またはstatus 404の場合は、旧ローカル
+ *   宝箱だけをローカル`openChest`へフォールバックする
+ * - canonical pull由来（`origin: 'cloud'`）の宝箱はnull/404でもフォールバックせず
+ *   再送・次回pullへ委ねる。サインイン中のサーバー正を端末抽選で上書きしないため
  * - status 409（`chest_already_opened`。サーバー側は既に正常）→ エラー扱い
  *   せず`discardSyncedChest`で演出無しにローカル未開封表示だけ消す
  * - それ以外（ネットワーク断・5xx等）→ フォールバックせず`errorChestId`を
@@ -47,11 +44,13 @@ export interface CloudChestOpenDeps {
     ) => void;
     discardSyncedChest: (chestId: string) => void;
     localOpenChest: (chestId: string) => void;
+    /** canonical pull由来の宝箱は、404でも端末内の抽選へ戻さない。 */
+    allowLocalFallback?: boolean;
 }
 
 /**
- * 'unconfigured-fallback'（未接続=null）と'not-found-fallback'（404）は
- * どちらもローカル開封へ落ちる点は同じだが、呼び出し元の冪等キー削除可否が
+ * local originに限り、'unconfigured-fallback'（未接続=null）と
+ * 'not-found-fallback'（404）はどちらもローカル開封へ落ちる。呼び出し元の冪等キー削除可否が
  * 異なる（未接続時はサーバーに何も送っていないため、そのchestIdへ最初に
  * 割り当てたキーを温存し、後で接続できたときに同じキーで送れるようにする。
  * 404はサーバーに実際に送って拒否されたことが確定しているため削除してよい）。
@@ -72,6 +71,7 @@ export async function runCloudChestOpen(
     try {
         const result = await deps.openCloudChest(chestId, idempotencyKey);
         if (!result) {
+            if (deps.allowLocalFallback === false) return 'error';
             deps.localOpenChest(chestId);
             return 'unconfigured-fallback';
         }
@@ -79,6 +79,7 @@ export async function runCloudChestOpen(
         return 'applied';
     } catch (error) {
         if (error instanceof EdgeFunctionError && error.status === 404) {
+            if (deps.allowLocalFallback === false) return 'error';
             deps.localOpenChest(chestId);
             return 'not-found-fallback';
         }
@@ -94,6 +95,7 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
     const localOpenChest = useGameStore((state) => state.openChest);
     const applyCloudChestResult = useGameStore((state) => state.applyCloudChestResult);
     const discardSyncedChest = useGameStore((state) => state.discardSyncedChest);
+    const chestQueue = useGameStore((state) => state.chestQueue);
     const [openingChestId, setOpeningChestId] = useState<string | null>(null);
     const [errorChestId, setErrorChestId] = useState<string | null>(null);
     const idempotencyKeysRef = useRef(new Map<string, string>());
@@ -112,6 +114,7 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
                 applyCloudChestResult,
                 discardSyncedChest,
                 localOpenChest,
+                allowLocalFallback: chestQueue.find((chest) => chest.id === chestId)?.origin !== 'cloud',
             });
             if (outcome === 'error') {
                 setErrorChestId(chestId);

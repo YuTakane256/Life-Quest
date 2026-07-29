@@ -10,7 +10,6 @@ import { getTodayJst } from '../../../packages/core/src/dates.ts';
 import { XP_CONFIG } from '../../../packages/core/src/progression.ts';
 import { buildNextRecurringTask, type Priority, type Recurrence, type Task } from '../../../packages/core/src/tasks.ts';
 import { callApply, NotFoundError, requireString, serveGameFunction } from '../_shared/handler.ts';
-import { computeNextMilestoneChest } from '../_shared/game.ts';
 
 interface TaskRow {
     id: string;
@@ -35,7 +34,6 @@ serveGameFunction(async (ctx) => {
     if (error || !task) throw new NotFoundError();
 
     const xp = XP_CONFIG.REWARD_BY_PRIORITY[task.priority] ?? XP_CONFIG.REWARD_BY_PRIORITY.medium;
-    const chest = await computeNextMilestoneChest(ctx);
     const today = getTodayJst();
 
     // 繰り返し次回分（coreの共有ルール。重複ガードの最終判定はDB側）
@@ -78,7 +76,6 @@ serveGameFunction(async (ctx) => {
         p_task_id: taskId,
         p_xp: xp,
         p_date: today,
-        p_chest: chest,
         p_next_task: nextTaskParam,
         p_key: idempotencyKey,
     });

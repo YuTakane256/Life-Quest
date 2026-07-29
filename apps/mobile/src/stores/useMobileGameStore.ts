@@ -56,7 +56,8 @@ import { clampString } from '@life-quest/core/validation';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
-import { enqueueCloudOperation } from '../platform/cloudOutbox';
+import { enqueueCloudOperation, isCloudOutboxActive } from '../platform/cloudOutbox';
+import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 
 export interface LevelUpSummary {
     fromLevel: number;
@@ -207,19 +208,24 @@ export const useMobileGameStore = create<MobileGameStore>()(
              * 単一の set で適用する。永続化が1回の書き込みになるため、
              * 途中断で「XPだけ付与されて台帳が残らない」状態が起きない。
              */
-            const applyRewardGrant = (ledger: RewardLedger, baseXp: number): void => {
+            const applyRewardGrant = (
+                ledger: RewardLedger,
+                baseXp: number,
+                createLocalMilestone = true,
+            ): void => {
                 const state = get();
                 const result = applyCharacterXp(state.character, baseXp);
                 const levelUp = toLevelUpSummary(state.character.level, result);
                 const gachaCount = Math.min(Number.MAX_SAFE_INTEGER, state.gachaCount + 1);
                 const milestone = getMilestoneAtCount(gachaCount);
-                const chestQueue = milestone
+                const chestQueue = createLocalMilestone && milestone
                     ? capChestQueue([...state.chestQueue, {
                         id: createMobileId(),
                         chestType: milestone.chestType,
                         label: milestone.label,
                         opened: false,
                         equipment: null,
+                        origin: 'local',
                         isStarterCharacter: milestone.chestType === 'blue' && milestone.count === 5,
                     }])
                     : state.chestQueue;
@@ -294,6 +300,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
                     label: milestone.label,
                     opened: false,
                     equipment: null,
+                    origin: 'local',
                     isStarterCharacter: milestone.chestType === 'blue' && milestone.count === 5,
                 };
                 set({ chestQueue: capChestQueue([...chestQueue, chest]) });
@@ -308,6 +315,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
                     label,
                     opened: false,
                     equipment: null,
+                    origin: 'local',
                 };
                 set({ chestQueue: capChestQueue([...chestQueue, chest]) });
             },
@@ -611,9 +619,16 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 // rehydrationのmergeで上書きされて消失・重複する。復元後は rewardSync の
                 // 再照合が完了済みタスクから安全に付与し直す。
                 if (!get().hasHydrated) return false;
+                // セッション復元中は台帳を含む報酬全体を未確定のまま保つ。
+                // auth確定後にrewardSyncが完了済みタスクから再照合する。
+                if (getGameRewardAuthorityState() === 'resolving') return false;
                 const claim = claimTaskReward(get().rewardLedger, taskId);
                 if (!claim.granted) return false;
-                applyRewardGrant(claim.ledger, XP_CONFIG.REWARD_BY_PRIORITY[priority]);
+                applyRewardGrant(
+                    claim.ledger,
+                    XP_CONFIG.REWARD_BY_PRIORITY[priority],
+                    getGameRewardAuthorityState() === 'anonymous' && !isCloudOutboxActive(),
+                );
                 return true;
             },
 
@@ -627,9 +642,14 @@ export const useMobileGameStore = create<MobileGameStore>()(
 
             grantSubtaskCompletionReward: (subtaskId, priority) => {
                 if (!get().hasHydrated) return false;
+                if (getGameRewardAuthorityState() === 'resolving') return false;
                 const claim = claimSubtaskReward(get().rewardLedger, subtaskId);
                 if (!claim.granted) return false;
-                applyRewardGrant(claim.ledger, getSubtaskRewardXp(priority));
+                applyRewardGrant(
+                    claim.ledger,
+                    getSubtaskRewardXp(priority),
+                    getGameRewardAuthorityState() === 'anonymous' && !isCloudOutboxActive(),
+                );
                 return true;
             },
             };
