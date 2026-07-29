@@ -11,6 +11,8 @@ import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthorit
 import type { BattleAuthState } from '@life-quest/core/battleStartPolicy';
 import { getWebSupabaseClient } from './supabase';
 import { detachPendingWebRewardOperations, restorePendingWebRewardOperations } from './pendingRewardOperations';
+import { getWebEdgeFunctionInvoker } from './edgeFunctions';
+import { cleanupDeletedWebAccount } from './accountDeletion';
 
 export type AuthResult =
     | { ok: true }
@@ -64,6 +66,34 @@ export async function signOutUser(): Promise<AuthResult> {
     await notifyLogout();
     setGameRewardAuthorityState('anonymous');
     return { ok: true };
+}
+
+/**
+ * 現在のアカウントを物理削除する。Edge Functionの成功前は端末データにも
+ * セッションにも触れない。userIdはJWTからサーバーが決定する。
+ */
+export async function deleteCurrentAccount(): Promise<AuthResult> {
+    const client = getWebSupabaseClient();
+    const invoke = getWebEdgeFunctionInvoker();
+    if (!client || !invoke) return notConfigured();
+    const { data } = await client.auth.getSession();
+    const userId = data.session?.user.id;
+    if (!userId) return { ok: false, message: 'ログインが必要です' };
+    try {
+        await invoke('delete_account');
+    } catch {
+        return { ok: false, message: '退会処理に失敗しました。データはそのまま保持されています。' };
+    }
+    let cleanupFailed = false;
+    detachPendingWebRewardOperations();
+    try { await cleanupDeletedWebAccount(userId); } catch { cleanupFailed = true; }
+    // cleanup失敗時も削除済みアカウントのセッションは残さない。全工程を試みた後に必ず実行する。
+    try { await client.auth.signOut({ scope: 'local' }); } catch { cleanupFailed = true; }
+    try { await notifyLogout(); } catch { cleanupFailed = true; }
+    setGameRewardAuthorityState('anonymous');
+    return cleanupFailed
+        ? { ok: false, message: 'アカウントは削除されました。一部の端末データを削除できませんでした。アプリを再起動してください。' }
+        : { ok: true };
 }
 
 /** 現在のセッションのユーザー。未ログイン・未設定なら null。 */

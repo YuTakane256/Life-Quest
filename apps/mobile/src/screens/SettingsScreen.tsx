@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import type { ThemePalette } from '@life-quest/core/designTokens';
 import type { CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
-import { getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../platform/auth';
+import { deleteCurrentAccount, getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../platform/auth';
 import {
     approveMobileContentImport,
     getPendingMobileContent,
@@ -94,6 +94,8 @@ export default function SettingsScreen() {
     const [currentEmail, setCurrentEmail] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [deleteConfirming, setDeleteConfirming] = useState(false);
+    const [deleteText, setDeleteText] = useState('');
     const [pendingContent, setPendingContent] = useState<PendingMobileContent | null>(null);
     const [importMessage, setImportMessage] = useState<string | null>(null);
     const [storageSummary, setStorageSummary] = useState<StorageSummary>({
@@ -201,6 +203,21 @@ export default function SettingsScreen() {
         setBusy(false);
     };
 
+    const handleDelete = async (): Promise<void> => {
+        if (busy || deleteText !== '削除') return;
+        setBusy(true);
+        setMessage(null);
+        const result = await deleteCurrentAccount();
+        if (result.ok) {
+            setCurrentEmail(null);
+            setPendingContent(null);
+            setDeleteConfirming(false);
+            setDeleteText('');
+            setMessage('アカウントとクラウドデータを削除しました');
+        } else setMessage(result.message);
+        setBusy(false);
+    };
+
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView contentContainerStyle={styles.scroll}>
@@ -227,6 +244,28 @@ export default function SettingsScreen() {
                                 >
                                     <Text style={styles.secondaryButtonText}>ログアウト</Text>
                                 </Pressable>
+                                {!deleteConfirming ? (
+                                    <Pressable
+                                        accessibilityRole="button"
+                                        accessibilityLabel="アカウントを削除する"
+                                        disabled={busy}
+                                        onPress={() => setDeleteConfirming(true)}
+                                        style={({ pressed }) => [styles.deleteLink, (busy || pressed) && styles.muted]}
+                                    >
+                                        <Text style={styles.deleteLinkText}>アカウントを削除</Text>
+                                    </Pressable>
+                                ) : (
+                                    <View style={styles.deletePanel}>
+                                        <Text style={styles.hint}>クラウド上のデータは完全に削除されます。確認のため「削除」と入力してください。</Text>
+                                        <TextInput value={deleteText} onChangeText={setDeleteText} placeholder="削除" placeholderTextColor={palette.text.muted} accessibilityLabel="退会確認文字" style={styles.input} />
+                                        <View style={styles.formActions}>
+                                            <Pressable accessibilityRole="button" accessibilityLabel="アカウントを完全に削除する" accessibilityState={{ disabled: busy || deleteText !== '削除', busy }} disabled={busy || deleteText !== '削除'} onPress={() => { void handleDelete(); }} style={({ pressed }) => [styles.deleteButton, (busy || deleteText !== '削除' || pressed) && styles.muted]}>
+                                                <Text style={styles.primaryButtonText}>{busy ? '削除中' : '完全に削除する'}</Text>
+                                            </Pressable>
+                                            <Pressable accessibilityRole="button" accessibilityLabel="退会をキャンセルする" disabled={busy} onPress={() => { setDeleteConfirming(false); setDeleteText(''); }}><Text style={styles.linkText}>キャンセル</Text></Pressable>
+                                        </View>
+                                    </View>
+                                )}
                             </View>
                         ) : (
                             <View style={styles.form}>
@@ -482,6 +521,10 @@ function createStyles(palette: ThemePalette) {
         primaryButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
         secondaryButton: { alignSelf: 'flex-start', height: 38, paddingHorizontal: 14, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
         secondaryButtonText: { color: palette.text.primary, fontSize: 13, fontWeight: '700' },
+        deleteLink: { alignSelf: 'flex-start', paddingVertical: 4 },
+        deleteLinkText: { color: palette.text.danger, fontSize: 12, fontWeight: '700' },
+        deletePanel: { gap: 8, borderTopWidth: 1, borderColor: palette.border.default, paddingTop: 12 },
+        deleteButton: { height: 40, paddingHorizontal: 18, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.text.danger },
         syncButton: { minHeight: 44, alignSelf: 'flex-start', paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
         syncButtonText: { color: palette.accent.primary, fontSize: 13, fontWeight: '800' },
         syncWarning: { color: palette.text.danger },

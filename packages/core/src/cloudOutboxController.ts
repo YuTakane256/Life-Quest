@@ -131,6 +131,8 @@ export interface CloudOutboxController {
     isActive: () => boolean;
     /** テスト用: 現在アクティブなoutbox。 */
     getActiveOutbox: () => SyncOutbox | null;
+    /** 退会成功後の完全detach。以後enqueueしても削除済みnamespaceを再作成しない。 */
+    detachForAccountDeletion: () => Promise<void>;
     /** 再接続・フォアグラウンド復帰などから再送を要求する。 */
     requestDrain: () => void;
     /** 再送を要求し、保留操作の送信が終わるまで待つ。 */
@@ -238,11 +240,23 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
         return outbox;
     }
 
+    async function detachForAccountDeletion(): Promise<void> {
+        ++lifecycleGeneration;
+        const previousOutbox = activeOutbox;
+        detachOutbox();
+        activeOutbox = null;
+        activeUserId = null;
+        pendingEntityOps.clear();
+        notify();
+        await previousOutbox?.stop();
+    }
+
     return {
         sendOperation,
         enqueue,
         isActive: () => activeOutbox !== null,
         getActiveOutbox: () => activeOutbox,
+        detachForAccountDeletion,
         requestDrain: () => activeOutbox?.requestDrain(),
         drainAndWait: () => activeOutbox?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),
         retryPending: () => activeOutbox?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),

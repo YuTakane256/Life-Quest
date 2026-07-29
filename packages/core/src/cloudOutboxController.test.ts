@@ -244,6 +244,29 @@ describe('registerHooks（認証ライフサイクル配線）', () => {
         unregister();
     });
 
+    it('退会detachは購読とactive stateを外し、その後enqueueしてもキューを再作成しない', async () => {
+        const map = new Map<string, string>();
+        const controller = createCloudOutboxController({
+            storage: {
+                getItem: async (key) => map.get(key) ?? null,
+                setItem: async (key, value) => { map.set(key, value); },
+                removeItem: async (key) => { map.delete(key); },
+            },
+            getRpcClient: () => null,
+            getEdgeInvoker: () => null,
+        });
+        const unregister = controller.registerHooks();
+        await notifyLogin('user-a');
+        await vi.waitFor(() => expect(controller.isActive()).toBe(true));
+        await controller.enqueue('upsert_task', { p_id: 'task-a' }, { trackEntityId: 'task-a' });
+        await controller.detachForAccountDeletion();
+
+        expect(controller.isActive()).toBe(false);
+        expect(controller.getActiveOutbox()).toBeNull();
+        expect(await controller.enqueue('upsert_task', { p_id: 'task-b' }, { trackEntityId: 'task-b' })).toBe(false);
+        unregister();
+    });
+
     it('401で停止した操作は通常drainで再送せず、再ログイン後に同じopIdで再開する', async () => {
         let authenticated = false;
         const opIds: string[] = [];

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CloudOff, UserRound } from 'lucide-react';
-import { getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../../platform/auth';
+import { deleteCurrentAccount, getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../../platform/auth';
 import { readWebSupabaseEnv } from '../../platform/supabase';
 
 type Mode = 'signIn' | 'signUp';
@@ -17,6 +17,8 @@ export function AccountSettings() {
     const [currentEmail, setCurrentEmail] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [deleteConfirming, setDeleteConfirming] = useState(false);
+    const [deleteText, setDeleteText] = useState('');
 
     useEffect(() => {
         let cancelled = false;
@@ -51,6 +53,20 @@ export function AccountSettings() {
         } else {
             setMessage(result.message);
         }
+        setBusy(false);
+    };
+
+    const handleDelete = async () => {
+        if (busy || deleteText !== '削除') return;
+        setBusy(true);
+        setMessage(null);
+        const result = await deleteCurrentAccount();
+        if (result.ok) {
+            setCurrentEmail(null);
+            setDeleteConfirming(false);
+            setDeleteText('');
+            setMessage('アカウントとクラウドデータを削除しました');
+        } else setMessage(result.message);
         setBusy(false);
     };
 
@@ -89,6 +105,35 @@ export function AccountSettings() {
                     >
                         ログアウト
                     </button>
+                    {!deleteConfirming ? (
+                        <button
+                            type="button"
+                            onClick={() => setDeleteConfirming(true)}
+                            disabled={busy}
+                            className="self-start text-sm disabled:opacity-50"
+                            style={{ color: 'var(--color-danger, #dc2626)' }}
+                        >
+                            アカウントを削除
+                        </button>
+                    ) : (
+                        <div className="flex flex-col gap-2 border-t pt-3" style={{ borderColor: 'var(--color-border-default)' }}>
+                            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>クラウド上のデータは完全に削除されます。確認のため「削除」と入力してください。</p>
+                            <input
+                                value={deleteText}
+                                onChange={(event) => setDeleteText(event.target.value)}
+                                placeholder="削除"
+                                aria-label="退会確認文字"
+                                className="px-3 py-2 rounded-lg text-sm"
+                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                            />
+                            <div className="flex gap-2">
+                                <button type="button" onClick={handleDelete} disabled={busy || deleteText !== '削除'} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ backgroundColor: 'var(--color-danger, #dc2626)', color: '#fff' }}>
+                                    {busy ? '削除中' : '完全に削除する'}
+                                </button>
+                                <button type="button" onClick={() => { setDeleteConfirming(false); setDeleteText(''); }} disabled={busy} className="text-xs underline disabled:opacity-50" style={{ color: 'var(--color-text-muted)' }}>キャンセル</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="flex flex-col gap-2">

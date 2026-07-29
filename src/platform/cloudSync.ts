@@ -297,6 +297,13 @@ export function syncWebNow(): Promise<void> {
     return activeHandle?.syncNow() ?? Promise.resolve();
 }
 
+/** 退会成功後の専用停止。通常ログアウトと異なり、この後namespaceを破棄する。 */
+export function stopWebCloudSyncForAccountDeletion(): void {
+    activeHandle?.stop();
+    activeHandle = null;
+    activeUserId = null;
+}
+
 /**
  * 認証ライフサイクルへクラウド同期を配線する。アプリ起動時に一度だけ呼ぶ。
  * onLoginで同期開始（TOKEN_REFRESH等の重複通知は無視）、onLogoutで停止する。

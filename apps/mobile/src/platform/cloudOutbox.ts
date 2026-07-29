@@ -53,6 +53,11 @@ export function getActiveMobileOutbox(): SyncOutbox | null {
     return controller.getActiveOutbox();
 }
 
+/** 退会成功後は先に送信を止める。キュー削除はaccountDeletion側で行う。 */
+export async function stopMobileOutboxForAccountDeletion(): Promise<void> {
+    await controller.detachForAccountDeletion();
+}
+
 /**
  * クラウド同期が有効（ログイン済みでoutboxが動作中）かの同期判定。
  * ストアはこれで「サーバー権威に任せる処理」と「ローカル処理」を分岐する
