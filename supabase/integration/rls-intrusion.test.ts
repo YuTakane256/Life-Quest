@@ -233,7 +233,6 @@ describe.skipIf(!enabled)('#507 service roleバイパス前提の所有者検証
             p_task_id: ownerTaskId,
             p_xp: 10,
             p_date: '2026-07-01',
-            p_chest: null,
             p_next_task: null,
             p_key: uuid(),
         });
