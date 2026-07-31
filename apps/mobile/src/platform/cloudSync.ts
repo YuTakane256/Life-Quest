@@ -226,6 +226,13 @@ export function syncMobileNow(): Promise<void> {
     return activeHandle?.syncNow() ?? Promise.resolve();
 }
 
+/** 退会成功後の専用停止。通常ログアウトと異なり、この後namespaceを破棄する。 */
+export function stopMobileCloudSyncForAccountDeletion(): void {
+    activeHandle?.stop();
+    activeHandle = null;
+    activeUserId = null;
+}
+
 /** 認証ライフサイクルへクラウド同期を配線する。アプリ起動時に一度だけ呼ぶ。 */
 export function registerMobileCloudSyncHooks(): () => void {
     const unregister = registerAuthLifecycleHooks({

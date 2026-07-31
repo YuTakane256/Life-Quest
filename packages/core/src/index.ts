@@ -5,6 +5,7 @@ export {
     resetAuthLifecycleHooks,
     type AuthLifecycleHooks,
 } from './authLifecycle.ts';
+export { accountDeletionKeys, deleteAccountCloudData, runAccountDeletionCleanup } from './accountDeletion.ts';
 export {
     getGameRewardAuthorityState,
     setGameRewardAuthorityState,

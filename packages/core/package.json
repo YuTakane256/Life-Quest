@@ -36,6 +36,10 @@
       "types": "./src/cloudCache.ts",
       "import": "./src/cloudCache.ts"
     },
+    "./accountDeletion": {
+      "types": "./src/accountDeletion.ts",
+      "import": "./src/accountDeletion.ts"
+    },
     "./cloudImport": {
       "types": "./src/cloudImport.ts",
       "import": "./src/cloudImport.ts"

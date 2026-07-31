@@ -16,7 +16,8 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 vi.mock('./supabase', () => ({
     getMobileSupabaseClient: vi.fn(() => ({
         auth: {
-            onAuthStateChange: vi.fn((listener: typeof state.listener) => {
+            // Vitest hoists mock factories before TypeScript transforms this callback.
+            onAuthStateChange: vi.fn((listener) => {
                 state.listener = listener;
                 return { data: { subscription: { unsubscribe: vi.fn() } } };
             }),
@@ -27,6 +28,14 @@ vi.mock('./supabase', () => ({
 vi.mock('@life-quest/core/authLifecycle', () => ({
     notifyLogin: vi.fn(async () => undefined),
     notifyLogout: vi.fn(async () => undefined),
+}));
+
+vi.mock('./edgeFunctions', () => ({
+    getMobileEdgeFunctionInvoker: vi.fn(() => null),
+}));
+
+vi.mock('./accountDeletion', () => ({
+    cleanupDeletedMobileAccount: vi.fn(async () => undefined),
 }));
 
 import { startAuthSessionListener } from './auth';
