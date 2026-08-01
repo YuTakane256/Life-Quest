@@ -2,7 +2,7 @@
  * Mobile通知チェックのテスト。「見た目だけのトグル」への退行防止として、
  * トグルON+許可済みのときに実際にexpo-notificationsへ通知が渡ることを検証する。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -65,6 +65,8 @@ function makeTask(id: string, overrides: Partial<Task> = {}): Task {
 
 describe('runMobileNotificationChecks', () => {
     beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-07-13T12:00:00.000Z'));
         vi.clearAllMocks();
         useMobileSettingsStore.setState({
             notificationsEnabled: true,
@@ -74,6 +76,10 @@ describe('runMobileNotificationChecks', () => {
         });
         useMobileTaskStore.setState({ tasks: [], pendingCompletions: [], hasHydrated: true });
         useMobileHabitStore.setState({ habits: [], records: [], restDays: [], hasHydrated: true });
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it('トグルOFFなら何も通知しない', async () => {
