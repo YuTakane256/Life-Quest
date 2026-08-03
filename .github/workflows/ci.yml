@@ -27,7 +27,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '20'
+          node-version: '22.22.2'
           cache: 'npm'
 
       - name: Install dependencies
@@ -70,8 +70,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # 統合テストのRealtime購読にネイティブWebSocket（Node 21+）が必要
-          node-version: '22'
+          # 統合テストのRealtime購読とjsdom 30の要件に合わせる
+          node-version: '22.22.2'
           cache: 'npm'
 
       - name: Install dependencies
