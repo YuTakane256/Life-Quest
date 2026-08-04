@@ -8,6 +8,7 @@
     "android": "expo start --android",
     "export:android": "expo export --platform android --output-dir dist",
     "ios": "expo start --ios",
+    "ios:parity": "LIFE_QUEST_APP_VARIANT=parity expo run:ios",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
