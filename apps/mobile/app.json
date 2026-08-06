@@ -15,6 +15,7 @@
       "typedRoutes": true
     },
     "ios": {
+      "bundleIdentifier": "com.yutakane.lifequest",
       "supportsTablet": true
     },
     "android": {

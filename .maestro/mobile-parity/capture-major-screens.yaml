@@ -1,0 +1,66 @@
+appId: com.yutakane.lifequest.parity
+name: Capture anonymous Mobile parity reference screens
+---
+# clearState starts from only local, anonymous data. Do not log in while running
+# this flow: its screenshots are intended to be shareable review artifacts.
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "タスク"
+    timeout: 10000
+
+# A fresh state always gets the daily-login modal after hydration. Wait for it
+# instead of testing immediately, then wait until its fade-out finishes.
+- extendedWaitUntil:
+    visible: "ログインボーナス"
+    timeout: 10000
+- tapOn:
+    point: "50%,90%"
+- extendedWaitUntil:
+    notVisible: "ログインボーナス"
+    timeout: 5000
+
+# Tasks: create a deterministic sample task through the public UI.
+- tapOn: "新しいタスク"
+- inputText: "デモ: 朝の振り返り"
+- tapOn: "タスクを追加"
+- takeScreenshot: "01-tasks"
+
+# Habits: create and complete one deterministic sample habit.
+- tapOn: "習慣"
+- extendedWaitUntil:
+    visible: "続けたい習慣"
+    timeout: 5000
+- tapOn: "続けたい習慣"
+- inputText: "デモ: 読書"
+- tapOn: "習慣を追加"
+- tapOn: "デモ: 読書を達成にする"
+- takeScreenshot: "02-habits"
+
+# Statistics uses the same anonymous task and habit records created above.
+- tapOn: "統計"
+- extendedWaitUntil:
+    visible: "統計"
+    timeout: 5000
+- takeScreenshot: "03-stats"
+
+# Character is the anonymous initial profile; no personal profile is recorded.
+- tapOn: "キャラ"
+- extendedWaitUntil:
+    visible: "キャラクター"
+    timeout: 5000
+- takeScreenshot: "04-character"
+
+# Inventory is embedded below the character profile on Mobile.
+- scrollUntilVisible:
+    element: "インベントリ（0）"
+    direction: DOWN
+    timeout: 10000
+- takeScreenshot: "05-inventory"
+
+# Settings is captured while logged out, so no account address or cloud data appears.
+- tapOn: "設定"
+- extendedWaitUntil:
+    visible: "設定"
+    timeout: 5000
+- takeScreenshot: "06-settings"

@@ -27,6 +27,8 @@
     "lint": "eslint .",
     "mobile:start": "npm run start --workspace @life-quest/mobile",
     "mobile:export": "npm run export:android --workspace @life-quest/mobile",
+    "mobile:ios": "npm run ios:parity --workspace @life-quest/mobile",
+    "mobile:parity:screenshots": "node scripts/run-mobile-parity-screenshots.mjs",
     "mobile:typecheck": "npm run typecheck --workspace @life-quest/mobile",
     "preview": "vite preview",
     "test": "vitest run",
