@@ -15,6 +15,7 @@ export default defineConfig({
             'packages/**/*.test.ts',
             'apps/mobile/**/*.test.ts',
             'supabase/integration/**/*.test.ts',
+            'scripts/**/*.test.mjs',
         ],
         // 各テストで同じ store インスタンスを共有しないよう isolate を有効化
         isolate: true,
