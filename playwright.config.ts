@@ -16,10 +16,25 @@ export default defineConfig({
         {
             name: 'desktop-chromium',
             use: { ...devices['Desktop Chrome'] },
+            testIgnore: /visual-parity\/.*\.spec\.ts/,
         },
         {
             name: 'mobile-chromium',
             use: { ...devices['Pixel 7'] },
+            testIgnore: /visual-parity\/.*\.spec\.ts/,
+        },
+        {
+            name: 'web-parity-390x844',
+            testMatch: /visual-parity\/.*\.spec\.ts/,
+            testIgnore: process.env.RUN_WEB_PARITY === '1' ? undefined : /visual-parity\/.*\.spec\.ts/,
+            use: {
+                browserName: 'chromium',
+                viewport: { width: 390, height: 844 },
+                deviceScaleFactor: 1,
+                colorScheme: 'dark',
+                reducedMotion: 'reduce',
+                timezoneId: 'Asia/Tokyo',
+            },
         },
     ],
     webServer: {

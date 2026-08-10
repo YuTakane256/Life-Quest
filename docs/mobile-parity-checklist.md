@@ -66,10 +66,27 @@ The first reports `com.yutakane.lifequest`; the second reports
 
 ## Compare with Web
 
-Capture the matching Web routes at the same review point with the existing
-Playwright setup (`npm run e2e`) or a clean local browser profile. Web is the
-product reference; native layouts may adapt for touch and safe areas, but the
-following must agree.
+The first deterministic Web reference is the dark `/tasks` capture at 390 x 844.
+Run it locally with:
+
+```bash
+npm run e2e:parity
+```
+
+Its reviewed baseline is committed beside
+`e2e/visual-parity/tasks-web.spec.ts`. The test uses test-local anonymous
+`localStorage`, a fixed date (`2026-08-10`), reduced motion, and seeded task
+data; it never reads or changes a normal browser profile, Supabase, or a user
+account. When an intentional Web task design change is approved, refresh the
+baseline and review the resulting image diff before committing it:
+
+```bash
+RUN_WEB_PARITY=1 npm run e2e -- --project=web-parity-390x844 --update-snapshots
+```
+
+Compare the matching Mobile task capture against this image using the same dark
+theme and representative state. Web is the product reference; native layouts
+may adapt for touch and safe areas, but the following must agree.
 
 | Area | Web reference | Check |
 | --- | --- | --- |
