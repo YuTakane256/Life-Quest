@@ -30,6 +30,7 @@ export function getWebSupabaseClient(): SupabaseClient | null {
             auth: {
                 persistSession: true,
                 autoRefreshToken: true,
+                flowType: 'pkce',
             },
         })
         : null;
