@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const isWebParityRun = process.env.RUN_WEB_PARITY === '1';
+
 export default defineConfig({
     testDir: './e2e',
     fullyParallel: true,
@@ -39,8 +41,13 @@ export default defineConfig({
     ],
     webServer: {
         command: 'npm run dev -- --host 127.0.0.1 --port 4174',
+        // Parity captures must always render the logged-out local experience,
+        // regardless of credentials in a developer's shell or .env files.
+        env: isWebParityRun
+            ? { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' }
+            : undefined,
         url: 'http://127.0.0.1:4174/tasks',
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: !process.env.CI && !isWebParityRun,
         timeout: 120_000,
         stdout: 'ignore',
         stderr: 'pipe',

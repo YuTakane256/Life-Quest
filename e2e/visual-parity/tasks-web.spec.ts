@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { installTaskParityState, taskParitySnapshotName } from '../fixtures/parity-state';
+import { installWebParityState, taskParitySnapshotName, waitForWebParityRender } from '../fixtures/parity-state';
 
 test.beforeEach(async ({ page }) => {
-    await installTaskParityState(page);
+    await installWebParityState(page);
 });
 
 test('renders the deterministic dark task reference at 390x844', async ({ page }) => {
@@ -15,7 +15,7 @@ test('renders the deterministic dark task reference at 390x844', async ({ page }
     await page.getByText('完了タスク (1)', { exact: true }).click();
     await expect(page.getByText('朝の散歩を記録する', { exact: true })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'メインナビゲーション' })).toBeVisible();
-    await page.evaluate(() => document.fonts.ready);
+    await waitForWebParityRender(page);
 
     await expect(page).toHaveScreenshot(taskParitySnapshotName, {
         animations: 'disabled',

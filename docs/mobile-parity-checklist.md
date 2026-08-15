@@ -66,23 +66,30 @@ The first reports `com.yutakane.lifequest`; the second reports
 
 ## Compare with Web
 
-The first deterministic Web reference is the dark `/tasks` capture at 390 x 844.
+Deterministic Web references cover `/tasks`, `/habits`, `/stats`, `/character`,
+`/character/inventory`, and `/settings` at 390 x 844 in dark mode.
 Run it locally with:
 
 ```bash
 npm run e2e:parity
 ```
 
-Its reviewed baseline is committed beside
-`e2e/visual-parity/tasks-web.spec.ts`. The test uses test-local anonymous
-`localStorage`, a fixed date (`2026-08-10`), reduced motion, and seeded task
-data; it never reads or changes a normal browser profile, Supabase, or a user
-account. When an intentional Web task design change is approved, refresh the
-baseline and review the resulting image diff before committing it:
+Their reviewed baselines are committed beside the specs in
+`e2e/visual-parity/`. The tests use test-local anonymous
+`localStorage`, a fixed date (`2026-08-10`), reduced motion, and seeded
+anonymous task, habit, statistics, character, and inventory data; they never
+read or change a normal browser profile, Supabase, or a user account. When an
+intentional Web design change is approved, refresh the affected baseline and
+review the resulting image diff before committing it:
 
 ```bash
 RUN_WEB_PARITY=1 npm run e2e -- --project=web-parity-390x844 --update-snapshots
 ```
+
+The parity project always starts a fresh local Vite server and clears
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for that server. It therefore
+remains logged out and local-only even when a developer has Supabase credentials
+in their shell or `.env` files.
 
 Compare the matching Mobile task capture against this image using the same dark
 theme and representative state. Web is the product reference; native layouts
