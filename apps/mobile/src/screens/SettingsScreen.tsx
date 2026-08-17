@@ -5,7 +5,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import type { ThemePalette } from '@life-quest/core/designTokens';
 import type { CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
-import { deleteCurrentAccount, getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../platform/auth';
+import {
+    deleteCurrentAccount,
+    cancelPasswordRecovery,
+    getCurrentUser,
+    getPasswordRecoveryState,
+    requestPasswordReset,
+    resendEmailVerification,
+    signInWithEmail,
+    signOutUser,
+    signUpWithEmail,
+    subscribePasswordRecoveryState,
+    updatePasswordFromRecovery,
+} from '../platform/auth';
 import {
     approveMobileContentImport,
     getPendingMobileContent,
@@ -21,7 +33,7 @@ import {
 } from '../stores/useMobileSettingsStore';
 import { usePalette } from '../theme/usePalette';
 
-type Mode = 'signIn' | 'signUp';
+type Mode = 'signIn' | 'signUp' | 'passwordReset';
 
 type StorageSummary = {
     loading: boolean;
@@ -90,8 +102,11 @@ export default function SettingsScreen() {
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [passwordConfirmation, setPasswordConfirmation] = useState('');
     const [mode, setMode] = useState<Mode>('signIn');
     const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+    const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+    const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [deleteConfirming, setDeleteConfirming] = useState(false);
@@ -151,6 +166,7 @@ export default function SettingsScreen() {
     }, [refreshAccount]);
 
     useEffect(() => subscribeMobileCloudSyncState(setSyncState), []);
+    useEffect(() => subscribePasswordRecoveryState(setRecoveryState), []);
 
     const handleSyncNow = async (): Promise<void> => {
         if (syncing || syncState.availability !== 'ready') return;
@@ -182,8 +198,62 @@ export default function SettingsScreen() {
         const result = await action(email.trim(), password);
         if (result.ok) {
             await refreshAccount();
-            setMessage(mode === 'signIn' ? 'ログインしました' : '登録しました');
+            if (mode === 'signUp' && result.emailVerificationPending) {
+                setVerificationEmail(email.trim());
+                setMessage('登録を受け付けました。確認が必要な場合は受信箱の案内をご確認ください。');
+            } else {
+                setMessage(mode === 'signIn' ? 'ログインしました' : '登録しました');
+            }
             setPassword('');
+        } else {
+            setMessage(result.message);
+        }
+        setBusy(false);
+    };
+
+    const handlePasswordResetRequest = async (): Promise<void> => {
+        setBusy(true);
+        setMessage(null);
+        const result = await requestPasswordReset(email.trim());
+        setMessage(result.ok
+            ? '入力したメールアドレスに、パスワード再設定用のリンクを送信しました。'
+            : result.message);
+        setBusy(false);
+    };
+
+    const handleResendVerification = async (): Promise<void> => {
+        if (!verificationEmail) return;
+        setBusy(true);
+        setMessage(null);
+        await resendEmailVerification(verificationEmail);
+        setMessage('確認が必要な場合は、受信箱の案内をご確認ください。');
+        setBusy(false);
+    };
+
+    const handleRecoveryPasswordUpdate = async (): Promise<void> => {
+        setBusy(true);
+        setMessage(null);
+        const result = await updatePasswordFromRecovery(password);
+        if (result.ok) {
+            setPassword('');
+            setPasswordConfirmation('');
+            setMessage('パスワードを更新しました。新しいパスワードでログインできます。');
+        } else {
+            setMessage(result.message);
+        }
+        setBusy(false);
+    };
+
+    const handleRecoveryCancel = async (nextMode: Mode = 'signIn'): Promise<void> => {
+        setBusy(true);
+        setMessage(null);
+        const result = await cancelPasswordRecovery();
+        if (result.ok) {
+            setPassword('');
+            setPasswordConfirmation('');
+            setCurrentEmail(null);
+            setVerificationEmail(null);
+            setMode(nextMode);
         } else {
             setMessage(result.message);
         }
@@ -232,6 +302,42 @@ export default function SettingsScreen() {
                             <Text style={styles.mutedText}>
                                 クラウド接続は未設定です。これまでどおり端末内のみで動作します。
                             </Text>
+                        ) : recoveryState === 'ready' ? (
+                            <View style={styles.form}>
+                                <Text style={styles.hint}>新しいパスワードを設定してください。</Text>
+                                <TextInput
+                                    value={password}
+                                    onChangeText={setPassword}
+                                    placeholder="新しいパスワード（6文字以上）"
+                                    placeholderTextColor={palette.text.muted}
+                                    secureTextEntry
+                                    autoComplete="new-password"
+                                    accessibilityLabel="新しいパスワード"
+                                    style={styles.input}
+                                />
+                                <TextInput
+                                    value={passwordConfirmation}
+                                    onChangeText={setPasswordConfirmation}
+                                    placeholder="新しいパスワード（確認）"
+                                    placeholderTextColor={palette.text.muted}
+                                    secureTextEntry
+                                    autoComplete="new-password"
+                                    accessibilityLabel="新しいパスワードの確認"
+                                    style={styles.input}
+                                />
+                                {passwordConfirmation.length > 0 && password !== passwordConfirmation && <Text accessibilityRole="alert" style={styles.hint}>パスワードが一致しません。</Text>}
+                                <View style={styles.formActions}>
+                                    <Pressable accessibilityRole="button" accessibilityLabel="パスワードを更新する" disabled={busy || password.length < 6 || password !== passwordConfirmation} onPress={() => { void handleRecoveryPasswordUpdate(); }} style={({ pressed }) => [styles.primaryButton, (busy || password.length < 6 || password !== passwordConfirmation || pressed) && styles.muted]}>
+                                        <Text style={styles.primaryButtonText}>{busy ? '更新中' : 'パスワードを更新'}</Text>
+                                    </Pressable>
+                                    <Pressable accessibilityRole="button" accessibilityLabel="パスワード更新をキャンセルする" disabled={busy} onPress={() => { void handleRecoveryCancel(); }}><Text style={styles.linkText}>キャンセル</Text></Pressable>
+                                </View>
+                            </View>
+                        ) : recoveryState === 'invalid' ? (
+                            <View style={styles.form}>
+                                <Text style={styles.hint}>このリンクは無効または期限切れです。もう一度パスワードを再設定してください。</Text>
+                                <Pressable accessibilityRole="button" accessibilityLabel="パスワードを再設定する" disabled={busy} onPress={() => { void handleRecoveryCancel('passwordReset'); }}><Text style={styles.linkText}>パスワードを再設定する</Text></Pressable>
+                            </View>
                         ) : currentEmail ? (
                             <View style={styles.loggedIn}>
                                 <Text style={styles.bodyText}>ログイン中: {currentEmail}</Text>
@@ -267,6 +373,16 @@ export default function SettingsScreen() {
                                     </View>
                                 )}
                             </View>
+                        ) : verificationEmail ? (
+                            <View style={styles.form}>
+                                <Text style={styles.hint}>{verificationEmail} 宛てに確認メールを送信しました。リンクを開くまでログインできません。</Text>
+                                <View style={styles.formActions}>
+                                    <Pressable accessibilityRole="button" accessibilityLabel="確認メールを再送する" disabled={busy} onPress={() => { void handleResendVerification(); }} style={({ pressed }) => [styles.secondaryButton, (busy || pressed) && styles.muted]}>
+                                        <Text style={styles.secondaryButtonText}>{busy ? '送信中' : '確認メールを再送'}</Text>
+                                    </Pressable>
+                                    <Pressable accessibilityRole="button" accessibilityLabel="ログインへ戻る" disabled={busy} onPress={() => { setVerificationEmail(null); setMode('signIn'); }}><Text style={styles.linkText}>ログインへ戻る</Text></Pressable>
+                                </View>
+                            </View>
                         ) : (
                             <View style={styles.form}>
                                 <TextInput
@@ -279,7 +395,7 @@ export default function SettingsScreen() {
                                     accessibilityLabel="メールアドレス"
                                     style={styles.input}
                                 />
-                                <TextInput
+                                {mode !== 'passwordReset' && <TextInput
                                     value={password}
                                     onChangeText={setPassword}
                                     placeholder="パスワード（6文字以上）"
@@ -287,28 +403,29 @@ export default function SettingsScreen() {
                                     secureTextEntry
                                     accessibilityLabel="パスワード"
                                     style={styles.input}
-                                />
+                                />}
                                 <View style={styles.formActions}>
                                     <Pressable
                                         accessibilityRole="button"
-                                        accessibilityLabel={mode === 'signIn' ? 'ログインする' : '新規登録する'}
-                                        disabled={busy || !email.trim() || password.length < 6}
-                                        onPress={handleSubmit}
+                                        accessibilityLabel={mode === 'signIn' ? 'ログインする' : mode === 'signUp' ? '新規登録する' : '再設定メールを送る'}
+                                        disabled={busy || !email.trim() || (mode !== 'passwordReset' && password.length < 6)}
+                                        onPress={() => { void (mode === 'passwordReset' ? handlePasswordResetRequest() : handleSubmit()); }}
                                         style={({ pressed }) => [
                                             styles.primaryButton,
-                                            (busy || !email.trim() || password.length < 6 || pressed) && styles.muted,
+                                            (busy || !email.trim() || (mode !== 'passwordReset' && password.length < 6) || pressed) && styles.muted,
                                         ]}
                                     >
-                                        <Text style={styles.primaryButtonText}>{mode === 'signIn' ? 'ログイン' : '新規登録'}</Text>
+                                        <Text style={styles.primaryButtonText}>{mode === 'signIn' ? 'ログイン' : mode === 'signUp' ? '新規登録' : '再設定メールを送る'}</Text>
                                     </Pressable>
                                     <Pressable
                                         accessibilityRole="button"
                                         accessibilityLabel={mode === 'signIn' ? '新規登録へ切り替える' : 'ログインへ切り替える'}
-                                        onPress={() => setMode(mode === 'signIn' ? 'signUp' : 'signIn')}
+                                        onPress={() => { setMode(mode === 'signIn' ? 'signUp' : 'signIn'); setPassword(''); setPasswordConfirmation(''); }}
                                         hitSlop={8}
                                     >
                                         <Text style={styles.linkText}>{mode === 'signIn' ? 'アカウントを作る' : 'ログインへ戻る'}</Text>
                                     </Pressable>
+                                    {mode === 'signIn' && <Pressable accessibilityRole="button" accessibilityLabel="パスワードを忘れた場合" onPress={() => { setMode('passwordReset'); setPassword(''); setPasswordConfirmation(''); }} hitSlop={8}><Text style={styles.linkText}>パスワードを忘れた場合</Text></Pressable>}
                                 </View>
                             </View>
                         )}

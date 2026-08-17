@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { startAuthSessionListener } from '../src/platform/auth';
+import { startAuthSessionListener, startMobilePasswordRecoveryLinkListener } from '../src/platform/auth';
 import { registerMobileAuthStoreHooks } from '../src/platform/authStores';
 import { registerMobileCloudMigrationHooks } from '../src/platform/cloudMigration';
 import { registerPendingCompletionFlush } from '../src/platform/pendingCompletionFlush';
@@ -43,6 +43,8 @@ export default function RootLayout() {
     // デイリーログインボーナスの判定（起動時・フォアグラウンド復帰時。Webと同一セマンティクス）
     useEffect(() => registerLoginBonusCheck(), []);
     useEffect(() => startAuthSessionListener(), []);
+    // Supabase recovery links are delivered through the app scheme, not a browser URL.
+    useEffect(() => startMobilePasswordRecoveryLinkListener(), []);
 
     return (
         <>

@@ -1,9 +1,21 @@
 import { useEffect, useState } from 'react';
 import { CloudOff, UserRound } from 'lucide-react';
-import { deleteCurrentAccount, getCurrentUser, signInWithEmail, signOutUser, signUpWithEmail } from '../../platform/auth';
+import {
+    deleteCurrentAccount,
+    cancelPasswordRecovery,
+    getCurrentUser,
+    getPasswordRecoveryState,
+    requestPasswordReset,
+    resendEmailVerification,
+    signInWithEmail,
+    signOutUser,
+    signUpWithEmail,
+    subscribePasswordRecoveryState,
+    updatePasswordFromRecovery,
+} from '../../platform/auth';
 import { readWebSupabaseEnv } from '../../platform/supabase';
 
-type Mode = 'signIn' | 'signUp';
+type Mode = 'signIn' | 'signUp' | 'passwordReset';
 
 /**
  * アカウントセクション（#503、メール認証の最小UI）。
@@ -13,8 +25,11 @@ export function AccountSettings() {
     const configured = readWebSupabaseEnv() !== null;
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [passwordConfirmation, setPasswordConfirmation] = useState('');
     const [mode, setMode] = useState<Mode>('signIn');
     const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+    const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+    const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [deleteConfirming, setDeleteConfirming] = useState(false);
@@ -28,6 +43,8 @@ export function AccountSettings() {
         return () => { cancelled = true; };
     }, []);
 
+    useEffect(() => subscribePasswordRecoveryState(setRecoveryState), []);
+
     const handleSubmit = async () => {
         setBusy(true);
         setMessage(null);
@@ -36,8 +53,62 @@ export function AccountSettings() {
         if (result.ok) {
             const user = await getCurrentUser();
             setCurrentEmail(user?.email ?? null);
-            setMessage(mode === 'signIn' ? 'ログインしました' : '登録しました（確認メールが必要な場合があります）');
+            if (mode === 'signUp' && result.emailVerificationPending) {
+                setVerificationEmail(email.trim());
+                setMessage('登録を受け付けました。確認が必要な場合は受信箱の案内をご確認ください。');
+            } else {
+                setMessage(mode === 'signIn' ? 'ログインしました' : '登録しました');
+            }
             setPassword('');
+        } else {
+            setMessage(result.message);
+        }
+        setBusy(false);
+    };
+
+    const handlePasswordResetRequest = async () => {
+        setBusy(true);
+        setMessage(null);
+        const result = await requestPasswordReset(email.trim());
+        setMessage(result.ok
+            ? '入力したメールアドレスに、パスワード再設定用のリンクを送信しました。'
+            : result.message);
+        setBusy(false);
+    };
+
+    const handleResendVerification = async () => {
+        if (!verificationEmail) return;
+        setBusy(true);
+        setMessage(null);
+        await resendEmailVerification(verificationEmail);
+        setMessage('確認が必要な場合は、受信箱の案内をご確認ください。');
+        setBusy(false);
+    };
+
+    const handleRecoveryPasswordUpdate = async () => {
+        setBusy(true);
+        setMessage(null);
+        const result = await updatePasswordFromRecovery(password);
+        if (result.ok) {
+            setPassword('');
+            setPasswordConfirmation('');
+            setMessage('パスワードを更新しました。新しいパスワードでログインできます。');
+        } else {
+            setMessage(result.message);
+        }
+        setBusy(false);
+    };
+
+    const handleRecoveryCancel = async (nextMode: Mode = 'signIn') => {
+        setBusy(true);
+        setMessage(null);
+        const result = await cancelPasswordRecovery();
+        if (result.ok) {
+            setPassword('');
+            setPasswordConfirmation('');
+            setCurrentEmail(null);
+            setVerificationEmail(null);
+            setMode(nextMode);
         } else {
             setMessage(result.message);
         }
@@ -91,6 +162,44 @@ export function AccountSettings() {
                     <CloudOff size={14} />
                     クラウド接続は未設定です。これまでどおり端末内のみで動作します。
                 </div>
+            ) : recoveryState === 'ready' ? (
+                <div className="flex flex-col gap-2">
+                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>新しいパスワードを設定してください。</p>
+                    <input
+                        type="password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder="新しいパスワード（6文字以上）"
+                        autoComplete="new-password"
+                        aria-label="新しいパスワード"
+                        className="px-3 py-2 rounded-lg text-sm"
+                        style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                    />
+                    <input
+                        type="password"
+                        value={passwordConfirmation}
+                        onChange={(event) => setPasswordConfirmation(event.target.value)}
+                        placeholder="新しいパスワード（確認）"
+                        autoComplete="new-password"
+                        aria-label="新しいパスワードの確認"
+                        className="px-3 py-2 rounded-lg text-sm"
+                        style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                    />
+                    {passwordConfirmation.length > 0 && password !== passwordConfirmation && (
+                        <p role="alert" className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>パスワードが一致しません。</p>
+                    )}
+                    <div className="flex items-center gap-2">
+                        <button type="button" onClick={handleRecoveryPasswordUpdate} disabled={busy || password.length < 6 || password !== passwordConfirmation} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ backgroundColor: 'var(--color-accent-primary)', color: '#fff' }}>
+                            {busy ? '更新中' : 'パスワードを更新'}
+                        </button>
+                        <button type="button" onClick={() => { void handleRecoveryCancel(); }} disabled={busy} className="text-xs underline disabled:opacity-50" style={{ color: 'var(--color-text-muted)' }}>キャンセル</button>
+                    </div>
+                </div>
+            ) : recoveryState === 'invalid' ? (
+                <div className="flex flex-col gap-2">
+                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>このリンクは無効または期限切れです。もう一度パスワードを再設定してください。</p>
+                    <button type="button" onClick={() => { void handleRecoveryCancel('passwordReset'); }} disabled={busy} className="self-start text-xs underline disabled:opacity-50" style={{ color: 'var(--color-text-muted)' }}>パスワードを再設定する</button>
+                </div>
             ) : currentEmail ? (
                 <div className="flex flex-col gap-3">
                     <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
@@ -135,6 +244,18 @@ export function AccountSettings() {
                         </div>
                     )}
                 </div>
+            ) : verificationEmail ? (
+                <div className="flex flex-col gap-2">
+                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        {verificationEmail} 宛てに確認メールを送信しました。リンクを開くまでログインできません。
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button type="button" onClick={handleResendVerification} disabled={busy} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}>
+                            {busy ? '送信中' : '確認メールを再送'}
+                        </button>
+                        <button type="button" onClick={() => { setVerificationEmail(null); setMode('signIn'); }} disabled={busy} className="text-xs underline disabled:opacity-50" style={{ color: 'var(--color-text-muted)' }}>ログインへ戻る</button>
+                    </div>
+                </div>
             ) : (
                 <div className="flex flex-col gap-2">
                     <input
@@ -146,33 +267,35 @@ export function AccountSettings() {
                         className="px-3 py-2 rounded-lg text-sm"
                         style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
                     />
-                    <input
+                    {mode !== 'passwordReset' && <input
                         type="password"
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
                         placeholder="パスワード（6文字以上）"
                         autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
+                        aria-label="パスワード"
                         className="px-3 py-2 rounded-lg text-sm"
                         style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
-                    />
+                    />}
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
-                            onClick={handleSubmit}
-                            disabled={busy || !email.trim() || password.length < 6}
+                            onClick={mode === 'passwordReset' ? handlePasswordResetRequest : handleSubmit}
+                            disabled={busy || !email.trim() || (mode !== 'passwordReset' && password.length < 6)}
                             className="px-4 py-2 rounded-lg text-sm font-semibold transition-all active:scale-95 disabled:opacity-50"
                             style={{ backgroundColor: 'var(--color-accent-primary)', color: '#fff' }}
                         >
-                            {mode === 'signIn' ? 'ログイン' : '新規登録'}
+                            {mode === 'signIn' ? 'ログイン' : mode === 'signUp' ? '新規登録' : '再設定メールを送る'}
                         </button>
                         <button
                             type="button"
-                            onClick={() => setMode(mode === 'signIn' ? 'signUp' : 'signIn')}
+                            onClick={() => { setMode(mode === 'signIn' ? 'signUp' : 'signIn'); setPassword(''); setPasswordConfirmation(''); }}
                             className="text-xs underline"
                             style={{ color: 'var(--color-text-muted)' }}
                         >
                             {mode === 'signIn' ? 'アカウントを作る' : 'ログインへ戻る'}
                         </button>
+                        {mode === 'signIn' && <button type="button" onClick={() => { setMode('passwordReset'); setPassword(''); setPasswordConfirmation(''); }} className="text-xs underline" style={{ color: 'var(--color-text-muted)' }}>パスワードを忘れた場合</button>}
                     </div>
                 </div>
             )}

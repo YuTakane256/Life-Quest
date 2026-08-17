@@ -4,18 +4,54 @@ import { consumeAnonymousRecoverySuppression } from './pendingRewardOperations';
 
 const state = vi.hoisted(() => ({
     listener: null as null | ((event: string, session: { user: { id: string } } | null) => void),
+    resetPasswordForEmail: vi.fn(async () => ({ error: null })),
+    resend: vi.fn(async () => ({ error: null })),
+    updateUser: vi.fn(async () => ({ error: null })),
+    exchangeCodeForSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } }, error: null })),
+    signUp: vi.fn(async () => ({ data: { user: { id: 'user-1' }, session: null }, error: null })),
+    getSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } } })),
+    signInWithPassword: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
+    signOut: vi.fn(async () => ({ error: null })),
+    recoveryGate: null as string | null,
+    storageReadError: false,
+    storageWriteError: false,
+    notifyLogin: vi.fn(async () => undefined),
+    notifyLogout: vi.fn(async () => undefined),
+}));
+
+vi.mock('expo-linking', () => ({
+    getInitialURL: vi.fn(async () => null),
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
-        getItem: vi.fn(async () => null),
-        setItem: vi.fn(async () => undefined),
+        getItem: vi.fn(async () => {
+            if (state.storageReadError) throw new Error('storage unavailable');
+            return state.recoveryGate;
+        }),
+        setItem: vi.fn(async (_key: string, value: string) => {
+            if (state.storageWriteError) throw new Error('storage unavailable');
+            state.recoveryGate = value;
+        }),
+        removeItem: vi.fn(async () => {
+            if (state.storageWriteError) throw new Error('storage unavailable');
+            state.recoveryGate = null;
+        }),
     },
 }));
 
 vi.mock('./supabase', () => ({
     getMobileSupabaseClient: vi.fn(() => ({
         auth: {
+            resetPasswordForEmail: state.resetPasswordForEmail,
+            resend: state.resend,
+            updateUser: state.updateUser,
+            exchangeCodeForSession: state.exchangeCodeForSession,
+            signUp: state.signUp,
+            getSession: state.getSession,
+            signInWithPassword: state.signInWithPassword,
+            signOut: state.signOut,
             // Vitest hoists mock factories before TypeScript transforms this callback.
             onAuthStateChange: vi.fn((listener) => {
                 state.listener = listener;
@@ -26,8 +62,8 @@ vi.mock('./supabase', () => ({
 }));
 
 vi.mock('@life-quest/core/authLifecycle', () => ({
-    notifyLogin: vi.fn(async () => undefined),
-    notifyLogout: vi.fn(async () => undefined),
+    notifyLogin: state.notifyLogin,
+    notifyLogout: state.notifyLogout,
 }));
 
 vi.mock('./edgeFunctions', () => ({
@@ -38,12 +74,28 @@ vi.mock('./accountDeletion', () => ({
     cleanupDeletedMobileAccount: vi.fn(async () => undefined),
 }));
 
-import { startAuthSessionListener } from './auth';
+import {
+    getPasswordRecoveryState,
+    handleMobileAuthCallbackUrl,
+    handleMobilePasswordRecoveryUrl,
+    requestPasswordReset,
+    resendEmailVerification,
+    cancelPasswordRecovery,
+    clearPasswordRecoveryState,
+    signUpWithEmail,
+    startAuthSessionListener,
+    updatePasswordFromRecovery,
+} from './auth';
 
 describe('Mobile auth reward authority', () => {
     afterEach(() => {
         state.listener = null;
         setGameRewardAuthorityState('anonymous');
+        state.recoveryGate = null;
+        state.storageReadError = false;
+        state.storageWriteError = false;
+        clearPasswordRecoveryState();
+        vi.clearAllMocks();
     });
 
     it('TOKEN_REFRESHEDでresolvingへ戻さず、保留操作の再処理を招かない', async () => {
@@ -59,14 +111,125 @@ describe('Mobile auth reward authority', () => {
         }
     });
 
-    it('実SIGNED_OUTイベントはanonymous遷移前に保留キューの匿名回収を抑止する', () => {
+    it('実SIGNED_OUTイベントはanonymous遷移前に保留キューの匿名回収を抑止する', async () => {
         const stop = startAuthSessionListener();
         try {
             state.listener?.('SIGNED_OUT', null);
-            expect(getGameRewardAuthorityState()).toBe('anonymous');
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('anonymous'));
             expect(consumeAnonymousRecoverySuppression()).toBe(true);
         } finally {
             stop();
         }
+    });
+
+    it('登録後にセッションが無い時は確認メール待ちを返す', async () => {
+        await expect(signUpWithEmail('new@example.com', 'secret1')).resolves.toEqual({ ok: true, emailVerificationPending: true });
+        expect(state.signUp).toHaveBeenCalledWith(expect.objectContaining({
+            email: 'new@example.com',
+            password: 'secret1',
+            options: expect.objectContaining({ emailRedirectTo: 'lifequest://settings?auth=verify' }),
+        }));
+    });
+
+    it('再設定と確認メールでは同じアドレスを使い、アプリスキームへ戻す', async () => {
+        await requestPasswordReset('person@example.com');
+        await resendEmailVerification('person@example.com');
+        expect(state.resetPasswordForEmail).toHaveBeenCalledWith('person@example.com', { redirectTo: 'lifequest://settings?auth=recovery' });
+        expect(state.resend).toHaveBeenCalledWith(expect.objectContaining({ type: 'signup', email: 'person@example.com' }));
+    });
+
+    it('確認メール再送はSupabaseエラー時も同じ中立的な応答を返す', async () => {
+        state.resend.mockResolvedValueOnce({ error: new Error('User not found') } as never);
+        await expect(resendEmailVerification('unknown@example.com')).resolves.toEqual({ ok: true });
+    });
+
+    it('復旧リンクのcodeをセッションへ交換した後にだけパスワードを更新する', async () => {
+        await handleMobilePasswordRecoveryUrl('lifequest://settings?code=recovery-code&type=recovery&auth=recovery');
+        expect(state.exchangeCodeForSession).toHaveBeenCalledWith('recovery-code');
+        expect(getPasswordRecoveryState()).toBe('ready');
+        const stop = startAuthSessionListener();
+        state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
+        expect(getGameRewardAuthorityState()).toBe('resolving');
+        await expect(updatePasswordFromRecovery('secret1')).resolves.toEqual({ ok: true });
+        expect(state.updateUser).toHaveBeenCalledWith({ password: 'secret1' });
+        expect(getGameRewardAuthorityState()).toBe('authenticated');
+        stop();
+    });
+
+    it('無効なスキーム・パス、またはURL内Bearer tokenはセッション交換しない', async () => {
+        await handleMobilePasswordRecoveryUrl('other://settings?code=bad&type=recovery&auth=recovery');
+        await handleMobilePasswordRecoveryUrl('lifequest://other?code=bad&type=recovery&auth=recovery');
+        await handleMobilePasswordRecoveryUrl('lifequest://settings?type=recovery&auth=recovery&access_token=token&refresh_token=refresh');
+        expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
+    });
+
+    it('確認済みメールのPKCE callbackは交換し、復旧ゲートを有効化しない', async () => {
+        await handleMobileAuthCallbackUrl('lifequest://settings?code=verify-code&type=signup&auth=verify');
+        expect(state.exchangeCodeForSession).toHaveBeenCalledWith('verify-code');
+        expect(getPasswordRecoveryState()).toBe('idle');
+    });
+
+    it('確認callbackでも型や遷移先が一致しなければ交換しない', async () => {
+        await handleMobileAuthCallbackUrl('lifequest://settings?code=bad&type=recovery&auth=verify');
+        await handleMobileAuthCallbackUrl('lifequest://settings/extra?code=bad&type=signup&auth=verify');
+        expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
+    });
+
+    it('同じPKCE URLは一度だけ交換する', async () => {
+        const url = 'lifequest://settings?code=one-time-code&type=recovery&auth=recovery';
+        await handleMobilePasswordRecoveryUrl(url);
+        await handleMobilePasswordRecoveryUrl(url);
+        expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('永続された復旧ゲートは再起動時の初期セッションを通常ログインとして処理しない', async () => {
+        state.recoveryGate = '1';
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+        } finally {
+            stop();
+        }
+    });
+
+    it('復旧のキャンセルはsignOut成功後だけゲートを解除し、失敗時は状態を維持する', async () => {
+        await handleMobilePasswordRecoveryUrl('lifequest://settings?code=cancel-code&type=recovery&auth=recovery');
+        state.signOut.mockResolvedValueOnce({ error: new Error('offline') } as never);
+        await expect(cancelPasswordRecovery()).resolves.toMatchObject({ ok: false });
+        expect(getPasswordRecoveryState()).toBe('ready');
+        await expect(cancelPasswordRecovery()).resolves.toEqual({ ok: true });
+        expect(getPasswordRecoveryState()).toBe('idle');
+        expect(state.recoveryGate).toBeNull();
+    });
+
+    it('復旧ゲートを書き込めない時はPKCEコードを交換しない', async () => {
+        state.storageWriteError = true;
+        await handleMobileAuthCallbackUrl('lifequest://settings?code=write-failure&type=recovery&auth=recovery');
+        expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
+        expect(getPasswordRecoveryState()).toBe('invalid');
+    });
+
+    it('復旧ゲートを読み込めない時は初期セッションをfail-closedで停止する', async () => {
+        state.storageReadError = true;
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('invalid'));
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+        } finally {
+            stop();
+        }
+    });
+
+    it('Supabaseの生エラーをログイン画面向けに返さない', async () => {
+        state.signInWithPassword.mockResolvedValueOnce({ data: { user: null }, error: new Error('User not found') } as never);
+        const { signInWithEmail } = await import('./auth');
+        await expect(signInWithEmail('unknown@example.com', 'secret1')).resolves.toEqual({
+            ok: false,
+            message: '操作を完了できませんでした。入力内容と接続を確認して、時間をおいてもう一度お試しください。',
+        });
     });
 });
