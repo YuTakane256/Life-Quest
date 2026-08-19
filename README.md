@@ -1,194 +1,172 @@
-# 🌟 Life Quest — Gamified Productivity App
+# Life Quest
 
-> **タスク管理 × RPGゲーム** をかけ合わせた、モチベーション継続型の生産性向上アプリ
+**タスク管理をRPGの進行に変える、Web / Mobile対応のゲーミフィケーションアプリ**
 
+[![CI](https://github.com/YuTakane256/Life-Quest/actions/workflows/ci.yml/badge.svg)](https://github.com/YuTakane256/Life-Quest/actions/workflows/ci.yml)
+[![E2E](https://github.com/YuTakane256/Life-Quest/actions/workflows/e2e.yml/badge.svg)](https://github.com/YuTakane256/Life-Quest/actions/workflows/e2e.yml)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite)](https://vitejs.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-4-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
-[![Zustand](https://img.shields.io/badge/Zustand-5-orange)](https://zustand-demo.pmnd.rs/)
+[![Expo](https://img.shields.io/badge/Expo-57-000020?logo=expo)](https://expo.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?logo=supabase)](https://supabase.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
----
+Life Questは、日々のタスクや習慣の達成を、キャラクター育成・装備収集・マップ攻略へつなげる個人開発プロジェクトです。単なる演出付きToDoアプリに留めず、React製WebクライアントとExpo / React Native製Mobileクライアントを、共有ドメインロジックとSupabaseバックエンドで接続しています。
 
-## 📖 概要
+ログイン中はタスク、習慣、キャラクター、インベントリ、報酬、バトル進行をユーザー単位で同期します。未ログインでも端末内で利用でき、既存ローカルデータからクラウドへ移行する経路を備えています。
 
-**Life Quest** は、日常のタスクや習慣管理をRPGゲームの要素と組み合わせることで、タスク完了へのモチベーションを継続的に高めるWebアプリです。
+## Screenshots
 
-タスクを消化するたびにキャラクターが成長し、宝箱から装備品を獲得。レベルアップしながらステージを攻略していくゲーム体験を通じて、**「やらなきゃいけない」を「やりたい」に変える**ことを目指しています。
+| タスク管理 | 習慣管理 |
+| --- | --- |
+| [![タスクの作成・優先度・期限・サブタスク](docs/screenshots/portfolio/web-tasks.png)](docs/screenshots/portfolio/web-tasks.png) | [![習慣の記録・ストリーク・ヒートマップ](docs/screenshots/portfolio/web-habits.png)](docs/screenshots/portfolio/web-habits.png) |
+| 優先度、期限、繰り返し、タグ、サブタスクをまとめて管理 | 日々の達成、休息日、連続記録を可視化 |
 
----
+| マップ・バトル | 宝箱と報酬 |
+| --- | --- |
+| [![敵とのターン制バトル](docs/screenshots/portfolio/web-battle.png)](docs/screenshots/portfolio/web-battle.png) | [![タスク達成で獲得した宝箱の開封](docs/screenshots/portfolio/web-chest.png)](docs/screenshots/portfolio/web-chest.png) |
+| 装備ステータスとスキルを使って複数エリアを攻略 | 宝箱から装備を獲得し、売却・合成・装備へつなげる |
 
-## ✨ 主な機能
+| キャラクター・インベントリ |
+| --- |
+| [![キャラクターの成長・装備・インベントリ](docs/screenshots/portfolio/web-character.png)](docs/screenshots/portfolio/web-character.png) |
+| 装備によるステータス変化と、宝箱から獲得したアイテムを管理 |
 
-### 🗒️ タスク管理
-- タスクの追加 / 編集 / 削除
-- 優先度設定（高 / 中 / 低）と期限管理
-- タグ・検索・並び替えによる絞り込み
-- 繰り返しタスクとサブタスク管理
-- 完了時のアンドゥ機能（誤操作防止）
+## 主な機能
 
-### 🔁 ハビット（習慣）管理
-- カテゴリ付きのルーティン管理
-- 連続達成ストリーク記録
-- メモ・お休み日・達成率の記録
+- **タスク管理**: 優先度、期限、タグ、検索、並び替え、繰り返し、サブタスク、複製、一括削除、完了取り消し
+- **習慣管理**: カテゴリ、メモ、休息日、ストリーク、達成率、履歴ヒートマップ
+- **ゲーム進行**: タスク・習慣の報酬、レベル、キャラクターステータス、ログインボーナス、実績・称号
+- **装備とインベントリ**: 宝箱、レアリティ、装備変更、売却、3アイテム合成、フィルター・並び替え
+- **マップ・バトル**: 4エリア・40ステージ、ターン制戦闘、スキル、戦闘履歴・リプレイ
+- **統計**: タスク・習慣の推移、XP、ヒートマップ、実績進捗
+- **設定**: ダーク / ライト / システムテーマ、モーション、通知、バックアップ、同期状態、アカウント管理
+- **クロスプラットフォーム**: WebとMobileで共有するアカウント、データ、ゲームルール、画像アセット、デザイントークン
 
-### ⚔️ キャラクター & バトルシステム
-- タスク完了でXP獲得 → レベルアップ（上限なし、Lv.999まで成長）
-- 武器・防具・アクセサリーの装備システム
-- ガチャシステム（タスク消化数に応じて宝箱を獲得）
-- アイテム売却・合成機能
-- **4エリア × 40ステージ**（草原 / 古城 / 天界 / 深海）のマップバトル
+## 技術的な見どころ
 
-### 📊 統計
-- XP推移グラフ
-- タスク完了率の可視化
-- 習慣の達成状況・ベスト記録の確認
+### 1. UIではなくドメインを共有するモノレポ
 
-### ⚙️ 設定・補助機能
-- ダーク / ライト / システム連動テーマ
-- 通知設定・利用統計・データバックアップ
-- ヘルプ画面とPWA対応
+WebはReact DOM、MobileはReact Nativeとして個別のUIを維持しながら、タスク・習慣・成長計算・装備・報酬・バトル・同期を`@life-quest/core`へ集約しています。画像は`@life-quest/assets`、色や余白などは共通デザイントークンを参照し、プラットフォーム固有の操作性を保ったまま結果を揃えています。
 
----
+### 2. Supabaseを正とするWeb / Mobile同期
 
-## 📱 スクリーンショット
+認証にはSupabase Auth、永続化にはPostgreSQLを使用しています。ログイン中の変更は端末内へ即時反映した後、永続outboxから再送されます。Realtimeは変更通知に限定し、実データは`pull_sync_batch` RPCからversion単位で取得することで、テーブル別ページングによる取りこぼしを避けています。
+
+```mermaid
+flowchart LR
+    W["Web / React"] --> C["@life-quest/core"]
+    M["Mobile / Expo"] --> C
+    W --> O["Local cache + outbox"]
+    M --> O
+    O --> E["Supabase Edge Functions / RPC"]
+    E --> D["PostgreSQL + RLS"]
+    D --> P["Versioned pull"]
+    P --> W
+    P --> M
+```
+
+### 3. ゲーム報酬の整合性とサーバー権威
+
+完了状態を繰り返し切り替えて報酬を重複取得できないよう、タスク報酬は生涯1回のルールと冪等キーで保護しています。宝箱、合成、売却、バトル結果などはEdge FunctionsとDB関数を経由し、クライアントの自己申告だけでXPやアイテムが増えない構成です。バトルはattempt単位で再挑戦報酬を許可しつつ、同じ結果の二重送信を防ぎます。
+
+### 4. ユーザー境界と障害復旧
+
+RLSに加えて、service roleを利用するEdge FunctionでもJWT由来のユーザーIDと所有権を検証します。ローカルキャッシュとoutboxはユーザーIDごとのnamespaceへ分離し、ログアウト時にはメモリ状態を破棄します。オフライン時の操作は同じoperation IDで再送され、再起動・再接続後も保留操作を復元します。
+
+設計上の判断と背景は[Architecture Decision Records](docs/adr/README.md)に記録しています。
+
+## 技術スタック
+
+| 領域 | 採用技術 |
+| --- | --- |
+| Web | React 19, React Router 7, Vite 8, Tailwind CSS 4 |
+| Mobile | Expo 57, React Native 0.86, Expo Router |
+| 言語・状態管理 | TypeScript 6, Zustand 5 |
+| Backend | Supabase Auth, PostgreSQL 17, RLS, Realtime, Edge Functions |
+| Test | Vitest, Playwright, pgTAP, Maestro（ローカル画面比較） |
+| Quality | ESLint, TypeScript project references, GitHub Actions, Dependabot |
+
+## リポジトリ構成
+
+```text
+Life-Quest/
+├── src/                 # Webクライアント
+├── apps/mobile/         # Expo / React Nativeクライアント
+├── packages/core/       # プラットフォーム非依存の型・ドメイン・同期ロジック
+├── packages/assets/     # Web / Mobile共有のキャラクター・敵・装備画像
+├── supabase/
+│   ├── migrations/      # スキーマ、RLS、RPC、整合性制約
+│   ├── functions/       # 認可・ゲーム操作を担うEdge Functions
+│   └── integration/     # 2クライアント同期などの統合テスト
+├── e2e/                 # Web操作・ビジュアル回帰テスト
+└── docs/adr/            # アーキテクチャ決定記録
+```
+
+## ローカル起動
+
+### 必要な環境
+
+- Node.js `22.22.2`以上、23未満
+- npm
+- Mobile確認時: Expoを実行できるiOS / Android環境
+- クラウド同期をローカルで確認する場合: DockerとSupabase CLI（npm依存に含まれます）
 
 ### Web
 
-<p align="center">
-  <a href="docs/screenshots/web-tasks.jpg"><img src="docs/screenshots/web-tasks.jpg" alt="Web版タスク画面" width="31%" /></a>
-  <a href="docs/screenshots/web-character.jpg"><img src="docs/screenshots/web-character.jpg" alt="Web版キャラクター画面" width="31%" /></a>
-  <a href="docs/screenshots/web-map.jpg"><img src="docs/screenshots/web-map.jpg" alt="Web版マップ画面" width="31%" /></a>
-</p>
-
-### Mobile
-
-<p align="center">
-  <a href="docs/screenshots/mobile-tasks.jpg"><img src="docs/screenshots/mobile-tasks.jpg" alt="Mobile版タスク画面" width="31%" /></a>
-  <a href="docs/screenshots/mobile-character.jpg"><img src="docs/screenshots/mobile-character.jpg" alt="Mobile版キャラクター画面" width="31%" /></a>
-  <a href="docs/screenshots/mobile-map.jpg"><img src="docs/screenshots/mobile-map.jpg" alt="Mobile版マップ画面" width="31%" /></a>
-</p>
-
----
-
-## 🏗️ 技術スタック
-
-| カテゴリ | 技術 |
-|---|---|
-| フレームワーク | React 19 |
-| 言語 | TypeScript 5.7 |
-| ビルドツール | Vite 6 |
-| スタイリング | Tailwind CSS 4 |
-| 状態管理 | Zustand 5 |
-| ルーティング | React Router DOM 7 |
-| アイコン | Lucide React |
-| PWA | Vite Plugin PWA |
-| テスト | Vitest / jsdom |
-
----
-
-## 🗂️ ディレクトリ構成
-
-```
-src/
-├── assets/         # 画像アセット（キャラクター・敵・背景・装備品）
-├── components/     # 再利用可能なUIコンポーネント
-│   ├── layout/    # BottomNav など
-│   └── ui/        # 設定カード・ダイアログ・オーバーレイなど
-├── config/         # ゲームの各種パラメータ設定（XP・ステージ・ガチャなど）
-├── hooks/          # 共通フック
-├── pages/          # 各画面
-│   ├── TasksPage.tsx
-│   ├── HabitsPage.tsx
-│   ├── CharacterPage.tsx
-│   ├── MapBattlePage.tsx
-│   ├── StatsPage.tsx
-│   ├── SettingsPage.tsx
-│   └── HelpPage.tsx
-├── stores/         # Zustand によるグローバル状態管理
-│   ├── useGameStore.ts   # キャラクター・バトル・インベントリ
-│   ├── useTaskStore.ts   # タスク管理
-│   ├── useHabitStore.ts  # ハビット管理
-│   └── useThemeStore.ts  # テーマ設定
-├── types/          # TypeScript 型定義
-└── utils/          # 日付処理などのユーティリティ
-```
-
----
-
-## 🚀 ローカル起動方法
-
 ```bash
-# リポジトリのクローン
 git clone https://github.com/YuTakane256/Life-Quest.git
 cd Life-Quest
-
-# 依存パッケージのインストール
-npm install
-
-# 開発サーバーの起動
+npm ci
 npm run dev
 ```
 
-ブラウザで `http://localhost:5173` を開いてください。
+`http://localhost:5173`を開きます。Supabaseを設定しない場合も、未ログインのローカルモードで主要機能を確認できます。
 
-### よく使う確認コマンド
-
-```bash
-npm run typecheck
-npm run test
-npm run lint
-npm run build
-```
----
-
-## Github周り
+### Mobile
 
 ```bash
-# メインブランチに切り替え
-git checkout main
-
-# リモートのリポジトリから最新の変更を取り込む
-git pull origin main
-
-# 新しい機能ブランチを作成して切り替え
-# ブランチ名は「feat/issue-number-description」のようにすると分かりやすいです
-git checkout -b feat/2-deep-sea-map
-
-# 変更
-
-# 追加された画像ファイルなどを確認
-git status
-
-# 全ての変更をステージング（または個別にファイルを指定）
-git add .
-
-# コミットメッセージを作成（Issue番号を含めるとGitHub上で紐付きます）
-git commit -m "feat: マップ4「深海エリア」の背景と敵キャラ画像を追加 #2"
-
-# 作成したブランチをリモートにプッシュ
-git push origin feat/2-deep-sea-map
-
+npm ci
+npm run mobile:start
 ```
-| CLI | VS Code GUI での正しい操作 |
-|---|---|
-|git checkout main | 左下のブランチ名をクリック → 一覧から main を選んでクリック（これでmainに戻る） |
-|git pull origin main | 左下のブランチ名の横にある 「くるくるマーク（Sync Changes）」 を押す、またはソース管理パネルの「...」から「Pull」 |
-| git checkout -b feat/ | 左下の main をクリック → Create new branch... を押して名前を入力 |
-| git status & git add . | 左のソース管理パネル（枝マーク）を開き、変更されたファイルの横の 「＋」 を押す（Staged Changesに入る） |
-| git commit -m """ | メッセージ欄に入力して 「✓ Commit」 ボタンを押す |
-| git push origin feat/ | 「Commit」ボタンの場所に出てくる 「Publish Branch」（または「Sync Changes」）を押す |
 
----
+表示されるExpoの案内から、シミュレータまたは実機で起動します。
 
-### コミットメッセージの規則
+### Supabaseを含むローカル環境
 
-| プレフィックス | 意味 |
-|---|---|
-| `feat:` | 新機能の追加 |
-| `fix:` | バグ修正 |
-| `docs:` | ドキュメントの変更 |
-| `style:` | UIやコードスタイルの調整 |
-| `refactor:` | リファクタリング |
-| `chore:` | 設定ファイルや依存関係の更新 |
-| `security:` | セキュリティ修正 |
+```bash
+npm run db:start
+```
+
+出力されたローカルURLとanon keyを`.env.example`に記載されたWeb / Mobile用の環境変数へ設定します。`service_role` keyはクライアント環境へ設定しません。スキーマを初期状態へ戻す場合は`npm run db:reset`を使用します。
+
+## テストと品質確認
+
+```bash
+npm run typecheck          # Web全体の型検査
+npm run typecheck:core     # 共有ドメインの型検査
+npm run mobile:typecheck   # Mobileの型検査
+npm run lint               # 静的解析
+npm test                   # ユニット / コンポーネントテスト
+npm run test:integration   # Supabase統合テスト
+npm run db:test            # RLS・DB関数のpgTAPテスト
+npm run e2e                # Playwright E2E
+npm run e2e:parity         # 390 x 844のWeb画面回帰テスト
+npm run build              # Web本番ビルド
+npm run mobile:export      # Android向けExpo export
+```
+
+Pull Requestでは型検査、lint、テスト、Web build、Mobile export、Playwright E2E、秘密情報の混入検査をGitHub Actionsで実行します。依存関係はDependabotと週次の`npm audit`で監視しています。iOSシミュレータを使うMobileスクリーンショット比較は[チェックリスト](docs/mobile-parity-checklist.md)に沿ってローカルで行います。
+
+## 実装状況
+
+Web / Mobileの主要画面、メール認証、クラウド同期、オフラインoutbox、サーバー権威のゲーム操作まで実装しています。現在は、画面差分の回帰テスト拡充や認証方式の追加など、公開品質を高める作業を継続しています。進行中・検討中の内容は[Issues](https://github.com/YuTakane256/Life-Quest/issues)を参照してください。
+
+## 補足資料
+
+- [ADR一覧](docs/adr/README.md)
+- [Web / Mobile差分監査](docs/mobile-web-parity-audit.md)
+- [Mobile / Web画面比較手順](docs/mobile-parity-checklist.md)
+- [メール認証セットアップ](docs/email-auth-setup.md)
+
+## License
+
+現時点でライセンスは設定していません。ソースコードの再利用・再配布については、リポジトリ所有者へ確認してください。
