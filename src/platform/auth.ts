@@ -30,6 +30,10 @@ const passwordRecoveryListeners = new Set<(state: PasswordRecoveryState) => void
 let recoveryCallbackInProgress = false;
 let suppressRecoverySignOut = false;
 const webRecoveryGateKey = 'life-quest:auth:recovery-pending:v1';
+const processedWebGoogleOAuthCodes = new Set<string>();
+type GoogleOAuthState = { status: 'idle' } | { status: 'success' } | { status: 'error'; message: string };
+let googleOAuthState: GoogleOAuthState = { status: 'idle' };
+const googleOAuthListeners = new Set<(state: GoogleOAuthState) => void>();
 
 function setPasswordRecoveryState(state: PasswordRecoveryState): void {
     passwordRecoveryState = state;
@@ -47,6 +51,24 @@ export function clearPasswordRecoveryState(): void {
 export function subscribePasswordRecoveryState(listener: (state: PasswordRecoveryState) => void): () => void {
     passwordRecoveryListeners.add(listener);
     return () => passwordRecoveryListeners.delete(listener);
+}
+
+function setGoogleOAuthState(state: GoogleOAuthState): void {
+    googleOAuthState = state;
+    googleOAuthListeners.forEach((listener) => listener(state));
+}
+
+export function getGoogleOAuthState(): GoogleOAuthState {
+    return googleOAuthState;
+}
+
+export function clearGoogleOAuthState(): void {
+    setGoogleOAuthState({ status: 'idle' });
+}
+
+export function subscribeGoogleOAuthState(listener: (state: GoogleOAuthState) => void): () => void {
+    googleOAuthListeners.add(listener);
+    return () => googleOAuthListeners.delete(listener);
 }
 
 function notConfigured(): AuthResult {
@@ -97,8 +119,25 @@ export async function signInWithEmail(email: string, password: string): Promise<
     return { ok: true };
 }
 
-function webAuthRedirectUrl(kind: 'recovery' | 'verify'): string {
+function webAuthRedirectUrl(kind: 'recovery' | 'verify' | 'oauth'): string {
     return `${window.location.origin}/settings?auth=${kind}`;
+}
+
+/** Starts the browser-only Google OAuth flow. Session lifecycle remains onAuthStateChange-owned. */
+export async function signInWithGoogle(): Promise<AuthResult> {
+    const client = getWebSupabaseClient();
+    if (!client) return notConfigured();
+    setGoogleOAuthState({ status: 'idle' });
+    const { error } = await client.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: webAuthRedirectUrl('oauth') },
+    });
+    if (error) {
+        const message = '操作を完了できませんでした。入力内容と接続を確認して、時間をおいてもう一度お試しください。';
+        setGoogleOAuthState({ status: 'error', message });
+        return { ok: false, message };
+    }
+    return { ok: true };
 }
 
 /**
@@ -199,6 +238,50 @@ function scrubRecoveryUrl(): void {
     // Recovery callbacks can carry a PKCE code or implicit-flow fragments. Neither
     // should survive in browser history after Supabase has consumed the callback.
     window.history.replaceState(null, '', window.location.pathname);
+}
+
+function isWebGoogleOAuthCallbackUrl(): boolean {
+    const url = new URL(window.location.href);
+    return url.pathname === '/settings' && url.searchParams.get('auth') === 'oauth';
+}
+
+function scrubWebGoogleOAuthUrl(): void {
+    window.history.replaceState(null, '', window.location.pathname);
+}
+
+/**
+ * Consume only our explicit Google PKCE callback. This intentionally does not
+ * call notifyLogin: the normal Supabase auth-state listener owns that work.
+ */
+export async function handleWebGoogleOAuthCallback(): Promise<void> {
+    if (typeof window === 'undefined' || !isWebGoogleOAuthCallbackUrl()) return;
+    const client = getWebSupabaseClient();
+    if (!client) return;
+    const callbackUrl = window.location.href;
+    const url = new URL(callbackUrl);
+    const query = url.searchParams;
+    const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+    try {
+        if (query.has('access_token') || query.has('refresh_token') || fragment.has('access_token') || fragment.has('refresh_token')) {
+            setGoogleOAuthState({ status: 'error', message: 'Googleでログインできませんでした。もう一度お試しください。' });
+            return;
+        }
+        if (query.has('error') || query.has('error_code')) {
+            setGoogleOAuthState({ status: 'error', message: 'Googleでログインを完了できませんでした。もう一度お試しください。' });
+            return;
+        }
+        const code = query.get('code');
+        if (!code || processedWebGoogleOAuthCodes.has(code)) return;
+        processedWebGoogleOAuthCodes.add(code);
+        const { error } = await client.auth.exchangeCodeForSession(code);
+        if (error) setGoogleOAuthState({ status: 'error', message: 'Googleでログインを完了できませんでした。もう一度お試しください。' });
+        else setGoogleOAuthState({ status: 'success' });
+    } catch {
+        setGoogleOAuthState({ status: 'error', message: 'Googleでログインを完了できませんでした。もう一度お試しください。' });
+    } finally {
+        // Authorization codes and provider errors must never remain in browser history.
+        scrubWebGoogleOAuthUrl();
+    }
 }
 
 export async function signOutUser(): Promise<AuthResult> {
@@ -322,5 +405,6 @@ export function startAuthSessionListener(): () => void {
             void notifyLogout();
         }
     });
+    void handleWebGoogleOAuthCallback();
     return () => data.subscription.unsubscribe();
 }

@@ -13,6 +13,7 @@ import {
     requestPasswordReset,
     resendEmailVerification,
     signInWithEmail,
+    signInWithGoogle,
     signOutUser,
     signUpWithEmail,
     subscribePasswordRecoveryState,
@@ -221,6 +222,19 @@ export default function SettingsScreen() {
         setBusy(false);
     };
 
+    const handleGoogleSignIn = async (): Promise<void> => {
+        setBusy(true);
+        setMessage(null);
+        const result = await signInWithGoogle();
+        if (result.ok) {
+            await refreshAccount();
+            setMessage('ログインしました');
+        } else {
+            setMessage(result.message);
+        }
+        setBusy(false);
+    };
+
     const handleResendVerification = async (): Promise<void> => {
         if (!verificationEmail) return;
         setBusy(true);
@@ -385,6 +399,18 @@ export default function SettingsScreen() {
                             </View>
                         ) : (
                             <View style={styles.form}>
+                                {mode === 'signIn' && <>
+                                    <Pressable
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Googleで続ける"
+                                        disabled={busy}
+                                        onPress={() => { void handleGoogleSignIn(); }}
+                                        style={({ pressed }) => [styles.secondaryButton, (busy || pressed) && styles.muted]}
+                                    >
+                                        <Text style={styles.secondaryButtonText}>Googleで続ける</Text>
+                                    </Pressable>
+                                    <Text style={styles.authDivider}>またはメールアドレスで続ける</Text>
+                                </>}
                                 <TextInput
                                     value={email}
                                     onChangeText={setEmail}
@@ -646,6 +672,7 @@ function createStyles(palette: ThemePalette) {
         syncButtonText: { color: palette.accent.primary, fontSize: 13, fontWeight: '800' },
         syncWarning: { color: palette.text.danger },
         linkText: { color: palette.text.muted, fontSize: 12, textDecorationLine: 'underline' },
+        authDivider: { color: palette.text.muted, fontSize: 12, textAlign: 'center' },
         message: { color: palette.text.secondary, fontSize: 12 },
         muted: { opacity: 0.45 },
         segmented: { flexDirection: 'row', backgroundColor: palette.bg.secondary, borderRadius: 8, padding: 2 },
