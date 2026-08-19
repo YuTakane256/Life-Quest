@@ -4,12 +4,15 @@ import {
     deleteCurrentAccount,
     cancelPasswordRecovery,
     getCurrentUser,
+    getGoogleOAuthState,
     getPasswordRecoveryState,
     requestPasswordReset,
     resendEmailVerification,
     signInWithEmail,
+    signInWithGoogle,
     signOutUser,
     signUpWithEmail,
+    subscribeGoogleOAuthState,
     subscribePasswordRecoveryState,
     updatePasswordFromRecovery,
 } from '../../platform/auth';
@@ -30,6 +33,7 @@ export function AccountSettings() {
     const [currentEmail, setCurrentEmail] = useState<string | null>(null);
     const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
+    const [googleOAuthState, setGoogleOAuthState] = useState(getGoogleOAuthState);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [deleteConfirming, setDeleteConfirming] = useState(false);
@@ -44,6 +48,12 @@ export function AccountSettings() {
     }, []);
 
     useEffect(() => subscribePasswordRecoveryState(setRecoveryState), []);
+    useEffect(() => subscribeGoogleOAuthState((state) => {
+        setGoogleOAuthState(state);
+        if (state.status === 'success') {
+            void getCurrentUser().then((user) => setCurrentEmail(user?.email ?? null));
+        }
+    }), []);
 
     const handleSubmit = async () => {
         setBusy(true);
@@ -73,6 +83,14 @@ export function AccountSettings() {
         setMessage(result.ok
             ? '入力したメールアドレスに、パスワード再設定用のリンクを送信しました。'
             : result.message);
+        setBusy(false);
+    };
+
+    const handleGoogleSignIn = async () => {
+        setBusy(true);
+        setMessage(null);
+        const result = await signInWithGoogle();
+        if (!result.ok) setMessage(result.message);
         setBusy(false);
     };
 
@@ -258,6 +276,20 @@ export function AccountSettings() {
                 </div>
             ) : (
                 <div className="flex flex-col gap-2">
+                    {mode === 'signIn' && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={handleGoogleSignIn}
+                                disabled={busy}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all active:scale-95 disabled:opacity-50"
+                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                            >
+                                Googleで続ける
+                            </button>
+                            <p className="text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>またはメールアドレスで続ける</p>
+                        </>
+                    )}
                     <input
                         type="email"
                         value={email}
@@ -302,6 +334,9 @@ export function AccountSettings() {
 
             {message && (
                 <p role="status" className="text-xs mt-3" style={{ color: 'var(--color-text-secondary)' }}>{message}</p>
+            )}
+            {googleOAuthState.status === 'error' && (
+                <p role="alert" className="text-xs mt-3" style={{ color: 'var(--color-text-secondary)' }}>{googleOAuthState.message}</p>
             )}
         </section>
     );
