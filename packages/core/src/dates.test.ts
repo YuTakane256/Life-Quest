@@ -162,6 +162,11 @@ describe('shiftDate', () => {
         expect(() => shiftDate('2025-02-29', 1)).toThrow(RangeError);
         expect(() => shiftDate('not-a-date', 1)).toThrow(RangeError);
     });
+
+    it('互換モードでは暦上無効な日付を従来どおりDate正規化する', () => {
+        expect(shiftDate('2025-02-29', 1, { normalizeInvalid: true })).toBe('2025-03-02');
+        expect(shiftDate('2025-04-31', -1, { normalizeInvalid: true })).toBe('2025-04-30');
+    });
 });
 
 describe('isOverdue', () => {
