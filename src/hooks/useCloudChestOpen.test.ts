@@ -98,4 +98,23 @@ describe('runCloudChestOpen', () => {
 
         expect(outcome).toBe('error');
     });
+
+    it('通信失敗後は同じ冪等キーで再送し、成功結果を一度だけ適用する', async () => {
+        let calls = 0;
+        const deps = makeDeps({
+            openCloudChest: vi.fn(async () => {
+                calls++;
+                if (calls === 1) throw new TypeError('Failed to fetch');
+                return { itemId: 'item-1', templateId: 'wooden_sword', starterCharacter: false };
+            }),
+        });
+
+        await expect(runCloudChestOpen('chest-1', 'retry-key', deps)).resolves.toBe('error');
+        await expect(runCloudChestOpen('chest-1', 'retry-key', deps)).resolves.toBe('applied');
+
+        expect(deps.openCloudChest).toHaveBeenNthCalledWith(1, 'chest-1', 'retry-key');
+        expect(deps.openCloudChest).toHaveBeenNthCalledWith(2, 'chest-1', 'retry-key');
+        expect(deps.applyCloudChestResult).toHaveBeenCalledTimes(1);
+        expect(deps.localOpenChest).not.toHaveBeenCalled();
+    });
 });

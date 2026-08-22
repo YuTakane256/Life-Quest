@@ -96,4 +96,23 @@ describe('runCloudItemSynthesis', () => {
 
         expect(outcome).toEqual({ status: 'error', equipment: null });
     });
+
+    it('通信失敗後は同じ冪等キーで再送し、合成結果を一度だけ適用する', async () => {
+        let calls = 0;
+        const deps = makeDeps({
+            synthesizeCloudItems: vi.fn(async () => {
+                calls++;
+                if (calls === 1) throw new TypeError('Failed to fetch');
+                return { resultId: 'result-1', templateId: 'iron_sword' };
+            }),
+        });
+
+        await expect(runCloudItemSynthesis(['a', 'b', 'c'], 'retry-key', deps)).resolves.toEqual({ status: 'error', equipment: null });
+        await expect(runCloudItemSynthesis(['a', 'b', 'c'], 'retry-key', deps)).resolves.toEqual({ status: 'applied', equipment: dummyEquipment });
+
+        expect(deps.synthesizeCloudItems).toHaveBeenNthCalledWith(1, ['a', 'b', 'c'], 'retry-key');
+        expect(deps.synthesizeCloudItems).toHaveBeenNthCalledWith(2, ['a', 'b', 'c'], 'retry-key');
+        expect(deps.applyCloudSynthesisResult).toHaveBeenCalledTimes(1);
+        expect(deps.localSynthesizeItems).not.toHaveBeenCalled();
+    });
 });

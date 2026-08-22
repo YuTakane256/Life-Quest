@@ -10,7 +10,7 @@
  * canonical統計契約の後続課題（Epic #473）。
  */
 import { areAllHabitsComplete, type Habit, type HabitDailyRecord } from './habits.ts';
-import { isoToJstYmd } from './dates.ts';
+import { isoToJstYmd, shiftDate } from './dates.ts';
 import { XP_CONFIG } from './progression.ts';
 import { getSubtaskRewardXp, type Task } from './tasks.ts';
 
@@ -36,15 +36,6 @@ export function getHabitHeatmapLevel(count: number, allComplete: boolean): numbe
 
 // ─── 日付グリッド ─────────────────────────────────────────────
 
-function shiftYmd(date: string, days: number): string {
-    const [year, month, day] = date.split('-').map(Number);
-    const shifted = new Date(Date.UTC(year, month - 1, day + days));
-    const y = shifted.getUTCFullYear();
-    const m = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(shifted.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
 /** YYYY-MM-DD の曜日 (0=日) をTZ非依存で返す。 */
 function weekdayOf(date: string): number {
     return new Date(`${date}T00:00:00Z`).getUTCDay();
@@ -54,7 +45,7 @@ function weekdayOf(date: string): number {
 export function generateDateRange(days: number, today: string): string[] {
     const dates: string[] = [];
     for (let i = days - 1; i >= 0; i--) {
-        dates.push(shiftYmd(today, -i));
+        dates.push(shiftDate(today, -i, { normalizeInvalid: true }));
     }
     return dates;
 }

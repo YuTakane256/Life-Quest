@@ -84,11 +84,24 @@ export function isoToJstYmd(iso: string | null): string | null {
     return formatYmd(new Date(time + JST_OFFSET_HOURS * 60 * 60 * 1000));
 }
 
+export interface ShiftDateOptions {
+    /**
+     * 旧来の習慣・統計計算と同様に、暦上は無効な YYYY-MM-DD を JavaScript の
+     * Date 正規化へ委ねる。通常の呼び出しは厳格な日付検証を維持する。
+     */
+    normalizeInvalid?: boolean;
+}
+
 /**
  * YYYY-MM-DD の日付を指定日数だけずらして返す (YYYY-MM-DD)。
  * 負の値で過去方向へずらせる。
  */
-export function shiftDate(dateStr: string, days: number): string {
+export function shiftDate(dateStr: string, days: number, options: ShiftDateOptions = {}): string {
+    if (!isValidYmd(dateStr) && options.normalizeInvalid) {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        return formatYmd(new Date(Date.UTC(year, month - 1, day + days)));
+    }
+
     const date = parseYmd(dateStr);
     date.setUTCDate(date.getUTCDate() + days);
     return formatYmd(date);
