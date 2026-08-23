@@ -19,6 +19,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.yutakane.lifequest",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     }

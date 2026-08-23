@@ -1,0 +1,31 @@
+{
+  "cli": {
+    "version": ">= 18.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "environment": "development",
+      "env": {
+        "LIFE_QUEST_APP_VARIANT": "parity"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "environment": "preview",
+      "autoIncrement": true,
+      "env": {
+        "LIFE_QUEST_APP_VARIANT": "preview"
+      }
+    },
+    "production": {
+      "environment": "production",
+      "autoIncrement": true,
+      "env": {
+        "LIFE_QUEST_APP_VARIANT": "release"
+      }
+    }
+  }
+}

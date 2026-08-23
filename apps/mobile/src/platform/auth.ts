@@ -37,7 +37,12 @@ const processedRecoveryUrls = new Set<string>();
 // same time. Keep the PKCE exchange single-flight and share its outcome.
 const mobileGoogleOAuthExchanges = new Map<string, Promise<AuthResult>>();
 const mobileRecoveryGateKey = 'life-quest:auth:recovery-pending:v1';
-const mobileGoogleOAuthRedirectUrl = AuthSession.makeRedirectUri({ scheme: 'lifequest', path: 'auth/callback' });
+// Expo resolves this from the installed app's scheme, which differs for parity
+// and preview builds so their OAuth callbacks cannot open the release app.
+
+function mobileGoogleOAuthRedirectUrl(): string {
+    return AuthSession.makeRedirectUri({ path: 'auth/callback' });
+}
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -126,15 +131,16 @@ export async function signInWithGoogle(): Promise<AuthResult> {
     const client = getMobileSupabaseClient();
     if (!client) return notConfigured();
     try {
+        const redirectUrl = mobileGoogleOAuthRedirectUrl();
         const { data, error } = await client.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: mobileGoogleOAuthRedirectUrl,
+                redirectTo: redirectUrl,
                 skipBrowserRedirect: true,
             },
         });
         if (error || !data.url) return genericAuthFailure();
-        const result = await WebBrowser.openAuthSessionAsync(data.url, mobileGoogleOAuthRedirectUrl);
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
         if (result.type === 'success') return handleMobileGoogleOAuthCallbackUrl(result.url);
         if (result.type === 'cancel' || result.type === 'dismiss') {
             return { ok: false, message: 'Googleログインをキャンセルしました。' };
@@ -291,7 +297,10 @@ export async function handleMobileGoogleOAuthCallbackUrl(url: string): Promise<A
         return genericAuthFailure();
     }
     const { parsed, params } = callback;
-    const isExpectedTarget = parsed.protocol === 'lifequest:' && parsed.hostname === 'auth' && parsed.pathname === '/callback';
+    const expectedCallback = new URL(mobileGoogleOAuthRedirectUrl());
+    const isExpectedTarget = parsed.protocol === expectedCallback.protocol &&
+        parsed.hostname === expectedCallback.hostname &&
+        parsed.pathname === expectedCallback.pathname;
     if (!isExpectedTarget || params.has('access_token') || params.has('refresh_token')) return genericAuthFailure();
     if (params.has('error') || params.has('error_code')) {
         return { ok: false, message: 'Googleでログインを完了できませんでした。もう一度お試しください。' };

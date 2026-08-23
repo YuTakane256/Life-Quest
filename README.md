@@ -152,9 +152,10 @@ npm run e2e                # Playwright E2E
 npm run e2e:parity         # 390 x 844のWeb画面回帰テスト
 npm run build              # Web本番ビルド
 npm run mobile:export      # Android向けExpo export
+npm run mobile:validate-release # EAS profile / 公開Expo設定の静的検査
 ```
 
-Pull Requestでは型検査、lint、テスト、Web build、Mobile export、Playwright E2E、秘密情報の混入検査をGitHub Actionsで実行します。依存関係はDependabotと週次の`npm audit`で監視しています。iOSシミュレータを使うMobileスクリーンショット比較は[チェックリスト](docs/mobile-parity-checklist.md)に沿ってローカルで行います。
+Pull Requestでは型検査、lint、テスト、Web build、Mobile export、Expo公開設定、Playwright E2E、秘密情報の混入検査をGitHub Actionsで実行します。依存関係はDependabotと週次の`npm audit`で監視しています。iOSシミュレータを使うMobileスクリーンショット比較は[チェックリスト](docs/mobile-parity-checklist.md)に沿ってローカルで行います。EASのdevelopment / preview / productionビルド準備は[Mobileリリースチェックリスト](docs/mobile-release-checklist.md)を参照してください。
 
 ## 実装状況
 
@@ -165,6 +166,7 @@ Web / Mobileの主要画面、メール認証、クラウド同期、オフラ�
 - [ADR一覧](docs/adr/README.md)
 - [Web / Mobile差分監査](docs/mobile-web-parity-audit.md)
 - [Mobile / Web画面比較手順](docs/mobile-parity-checklist.md)
+- [Mobileリリースチェックリスト](docs/mobile-release-checklist.md)
 - [メール認証セットアップ](docs/email-auth-setup.md)
 
 ## License
