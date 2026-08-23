@@ -31,10 +31,24 @@ export function getWebSupabaseClient(): SupabaseClient | null {
                 persistSession: true,
                 autoRefreshToken: true,
                 flowType: 'pkce',
+                // Google OAuth is consumed explicitly in auth.ts so it can validate
+                // the callback target and remove the authorization code from history.
+                // Email confirmation and recovery retain Supabase's existing handling.
+                detectSessionInUrl: !isWebGoogleOAuthCallbackUrl(),
             },
         })
         : null;
     return cachedClient;
+}
+
+function isWebGoogleOAuthCallbackUrl(): boolean {
+    if (typeof window === 'undefined') return false;
+    try {
+        const url = new URL(window.location.href);
+        return url.pathname === '/settings' && url.searchParams.get('auth') === 'oauth';
+    } catch {
+        return false;
+    }
 }
 
 /** テスト用: シングルトンを破棄する。 */

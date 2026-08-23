@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({
     resend: vi.fn(async () => ({ error: null })),
     updateUser: vi.fn(async () => ({ error: null })),
     exchangeCodeForSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } }, error: null })),
+    signInWithOAuth: vi.fn(async () => ({ data: { url: 'https://accounts.google.com/example' }, error: null })),
+    openAuthSessionAsync: vi.fn(async () => ({ type: 'success', url: 'lifequest://auth/callback?code=google-code' })),
     signUp: vi.fn(async () => ({ data: { user: { id: 'user-1' }, session: null }, error: null })),
     getSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } } })),
     signInWithPassword: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
@@ -22,6 +24,15 @@ const state = vi.hoisted(() => ({
 vi.mock('expo-linking', () => ({
     getInitialURL: vi.fn(async () => null),
     addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+}));
+
+vi.mock('expo-auth-session', () => ({
+    makeRedirectUri: vi.fn(() => 'lifequest://auth/callback'),
+}));
+
+vi.mock('expo-web-browser', () => ({
+    maybeCompleteAuthSession: vi.fn(),
+    openAuthSessionAsync: state.openAuthSessionAsync,
 }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
@@ -48,6 +59,7 @@ vi.mock('./supabase', () => ({
             resend: state.resend,
             updateUser: state.updateUser,
             exchangeCodeForSession: state.exchangeCodeForSession,
+            signInWithOAuth: state.signInWithOAuth,
             signUp: state.signUp,
             getSession: state.getSession,
             signInWithPassword: state.signInWithPassword,
@@ -77,12 +89,14 @@ vi.mock('./accountDeletion', () => ({
 import {
     getPasswordRecoveryState,
     handleMobileAuthCallbackUrl,
+    handleMobileGoogleOAuthCallbackUrl,
     handleMobilePasswordRecoveryUrl,
     requestPasswordReset,
     resendEmailVerification,
     cancelPasswordRecovery,
     clearPasswordRecoveryState,
     signUpWithEmail,
+    signInWithGoogle,
     startAuthSessionListener,
     updatePasswordFromRecovery,
 } from './auth';
@@ -141,6 +155,54 @@ describe('Mobile auth reward authority', () => {
     it('確認メール再送はSupabaseエラー時も同じ中立的な応答を返す', async () => {
         state.resend.mockResolvedValueOnce({ error: new Error('User not found') } as never);
         await expect(resendEmailVerification('unknown@example.com')).resolves.toEqual({ ok: true });
+    });
+
+    it('Google OAuthはPKCE callbackを指定してブラウザを開き、認証イベントへ同期開始を委譲する', async () => {
+        await expect(signInWithGoogle()).resolves.toEqual({ ok: true });
+        expect(state.signInWithOAuth).toHaveBeenCalledWith({
+            provider: 'google',
+            options: { redirectTo: 'lifequest://auth/callback', skipBrowserRedirect: true },
+        });
+        expect(state.openAuthSessionAsync).toHaveBeenCalledWith('https://accounts.google.com/example', 'lifequest://auth/callback');
+        expect(state.exchangeCodeForSession).toHaveBeenCalledWith('google-code');
+        expect(state.notifyLogin).not.toHaveBeenCalled();
+    });
+
+    it('Google OAuth callbackは専用パスのcodeだけを一度交換し、同じ結果を返す', async () => {
+        const url = 'lifequest://auth/callback?code=one-time-google-code';
+        await expect(handleMobileGoogleOAuthCallbackUrl(url)).resolves.toEqual({ ok: true });
+        await expect(handleMobileGoogleOAuthCallbackUrl(`${url}&repeat=1`)).resolves.toEqual({ ok: true });
+        expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+        expect(state.exchangeCodeForSession).toHaveBeenCalledWith('one-time-google-code');
+    });
+
+    it('Google OAuthのブラウザ復帰とLinking callbackが並行しても一度だけ交換し、両方成功する', async () => {
+        let resolveExchange!: (value: { data: { session: { user: { id: string } } }; error: null }) => void;
+        const exchangePromise = new Promise<{ data: { session: { user: { id: string } } }; error: null }>((resolve) => {
+            resolveExchange = resolve;
+        });
+        state.exchangeCodeForSession.mockImplementationOnce(() => exchangePromise);
+        const url = 'lifequest://auth/callback?code=parallel-google-code';
+        const browserResult = handleMobileGoogleOAuthCallbackUrl(url);
+        const linkingResult = handleMobileGoogleOAuthCallbackUrl(`${url}&source=linking`);
+        expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+        resolveExchange({ data: { session: { user: { id: 'user-1' } } }, error: null });
+        await expect(browserResult).resolves.toEqual({ ok: true });
+        await expect(linkingResult).resolves.toEqual({ ok: true });
+    });
+
+    it('Google OAuth callbackはtoken、provider error、別scheme/pathを拒否する', async () => {
+        await handleMobileGoogleOAuthCallbackUrl('lifequest://auth/callback?access_token=token');
+        await handleMobileGoogleOAuthCallbackUrl('lifequest://auth/callback?error=access_denied');
+        await handleMobileGoogleOAuthCallbackUrl('lifequest://settings?code=wrong-path');
+        await handleMobileGoogleOAuthCallbackUrl('other://auth/callback?code=wrong-scheme');
+        expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
+    });
+
+    it('Google OAuthのブラウザキャンセルは安全な結果として返す', async () => {
+        state.openAuthSessionAsync.mockResolvedValueOnce({ type: 'cancel', url: '' });
+        await expect(signInWithGoogle()).resolves.toEqual({ ok: false, message: 'Googleログインをキャンセルしました。' });
+        expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
     });
 
     it('復旧リンクのcodeをセッションへ交換した後にだけパスワードを更新する', async () => {

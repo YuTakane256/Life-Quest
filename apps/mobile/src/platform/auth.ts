@@ -9,6 +9,8 @@ import { detachPendingRewardOperations, restorePendingRewardOperations } from '.
 import { getMobileEdgeFunctionInvoker } from './edgeFunctions';
 import { cleanupDeletedMobileAccount } from './accountDeletion';
 import * as Linking from 'expo-linking';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type AuthResult =
@@ -31,7 +33,13 @@ let recoveryGateHydrationFailed = false;
 let mobileRecoveryGate = false;
 let deferredAuthEvent: { event: string; session: { user: { id: string } } | null } | null = null;
 const processedRecoveryUrls = new Set<string>();
+// The browser result and Linking listener can receive the same deep link at the
+// same time. Keep the PKCE exchange single-flight and share its outcome.
+const mobileGoogleOAuthExchanges = new Map<string, Promise<AuthResult>>();
 const mobileRecoveryGateKey = 'life-quest:auth:recovery-pending:v1';
+const mobileGoogleOAuthRedirectUrl = AuthSession.makeRedirectUri({ scheme: 'lifequest', path: 'auth/callback' });
+
+WebBrowser.maybeCompleteAuthSession();
 
 function setPasswordRecoveryState(state: PasswordRecoveryState): void {
     passwordRecoveryState = state;
@@ -112,6 +120,30 @@ export async function signInWithEmail(email: string, password: string): Promise<
 
 const mobilePasswordRecoveryRedirectUrl = 'lifequest://settings?auth=recovery';
 const mobileEmailVerificationRedirectUrl = 'lifequest://settings?auth=verify';
+
+/** Starts Google OAuth in the system browser. Auth state events own sync startup. */
+export async function signInWithGoogle(): Promise<AuthResult> {
+    const client = getMobileSupabaseClient();
+    if (!client) return notConfigured();
+    try {
+        const { data, error } = await client.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: mobileGoogleOAuthRedirectUrl,
+                skipBrowserRedirect: true,
+            },
+        });
+        if (error || !data.url) return genericAuthFailure();
+        const result = await WebBrowser.openAuthSessionAsync(data.url, mobileGoogleOAuthRedirectUrl);
+        if (result.type === 'success') return handleMobileGoogleOAuthCallbackUrl(result.url);
+        if (result.type === 'cancel' || result.type === 'dismiss') {
+            return { ok: false, message: 'Googleログインをキャンセルしました。' };
+        }
+        return genericAuthFailure();
+    } catch {
+        return genericAuthFailure();
+    }
+}
 
 /** The visible result is intentionally neutral so an address cannot be enumerated. */
 export async function requestPasswordReset(email: string): Promise<AuthResult> {
@@ -248,6 +280,40 @@ export async function handleMobileAuthCallbackUrl(url: string): Promise<void> {
     }
 }
 
+/** Accept only the dedicated Google PKCE callback, never bearer tokens or recovery URLs. */
+export async function handleMobileGoogleOAuthCallbackUrl(url: string): Promise<AuthResult> {
+    const client = getMobileSupabaseClient();
+    if (!client) return notConfigured();
+    let callback: { parsed: URL; params: URLSearchParams };
+    try {
+        callback = readMobileRecoveryParams(url);
+    } catch {
+        return genericAuthFailure();
+    }
+    const { parsed, params } = callback;
+    const isExpectedTarget = parsed.protocol === 'lifequest:' && parsed.hostname === 'auth' && parsed.pathname === '/callback';
+    if (!isExpectedTarget || params.has('access_token') || params.has('refresh_token')) return genericAuthFailure();
+    if (params.has('error') || params.has('error_code')) {
+        return { ok: false, message: 'Googleでログインを完了できませんでした。もう一度お試しください。' };
+    }
+    const code = params.get('code');
+    if (!code) return genericAuthFailure();
+    const existingExchange = mobileGoogleOAuthExchanges.get(code);
+    if (existingExchange) return existingExchange;
+    const exchange = (async (): Promise<AuthResult> => {
+        try {
+            const { error } = await client.auth.exchangeCodeForSession(code);
+            return error
+                ? { ok: false, message: 'Googleでログインを完了できませんでした。もう一度お試しください。' }
+                : { ok: true };
+        } catch {
+            return genericAuthFailure();
+        }
+    })();
+    mobileGoogleOAuthExchanges.set(code, exchange);
+    return exchange;
+}
+
 /** @deprecated Use handleMobileAuthCallbackUrl; retained for the recovery-only caller contract. */
 export const handleMobilePasswordRecoveryUrl = handleMobileAuthCallbackUrl;
 
@@ -259,6 +325,19 @@ export function startMobilePasswordRecoveryLinkListener(): () => void {
     const subscription = Linking.addEventListener('url', ({ url }) => {
         void handleMobileAuthCallbackUrl(url);
     });
+    return () => subscription.remove();
+}
+
+/** Receive both recovery and Google OAuth deep links without sharing their validation rules. */
+export function startMobileAuthLinkListener(): () => void {
+    const handle = (url: string): void => {
+        void handleMobileAuthCallbackUrl(url);
+        void handleMobileGoogleOAuthCallbackUrl(url);
+    };
+    void Linking.getInitialURL().then((url) => {
+        if (url) handle(url);
+    }).catch(() => undefined);
+    const subscription = Linking.addEventListener('url', ({ url }) => handle(url));
     return () => subscription.remove();
 }
 

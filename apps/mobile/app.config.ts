@@ -14,6 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
     return {
         ...config,
+        plugins: [...(config.plugins ?? []), 'expo-web-browser'],
         ios: {
             ...config.ios,
             bundleIdentifier,
