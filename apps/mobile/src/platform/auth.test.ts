@@ -176,6 +176,13 @@ describe('Mobile auth reward authority', () => {
         expect(state.exchangeCodeForSession).toHaveBeenCalledWith('one-time-google-code');
     });
 
+    it('Google OAuth callbackは成功後の遅延duplicateで使用済みcodeを再交換しない', async () => {
+        const url = 'lifequest://auth/callback?code=completed-google-code';
+        await expect(handleMobileGoogleOAuthCallbackUrl(url)).resolves.toEqual({ ok: true });
+        await expect(handleMobileGoogleOAuthCallbackUrl(`${url}&source=late-linking`)).resolves.toEqual({ ok: true });
+        expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+    });
+
     it('Google OAuthのブラウザ復帰とLinking callbackが並行しても一度だけ交換し、両方成功する', async () => {
         let resolveExchange!: (value: { data: { session: { user: { id: string } } }; error: null }) => void;
         const exchangePromise = new Promise<{ data: { session: { user: { id: string } } }; error: null }>((resolve) => {
@@ -189,6 +196,26 @@ describe('Mobile auth reward authority', () => {
         resolveExchange({ data: { session: { user: { id: 'user-1' } } }, error: null });
         await expect(browserResult).resolves.toEqual({ ok: true });
         await expect(linkingResult).resolves.toEqual({ ok: true });
+    });
+
+    it('Google OAuth callbackは交換失敗後に同じcodeを再試行できる', async () => {
+        const url = 'lifequest://auth/callback?code=retry-google-code';
+        state.exchangeCodeForSession
+            .mockResolvedValueOnce({ data: { session: null }, error: new Error('temporary failure') } as never)
+            .mockResolvedValueOnce({ data: { session: { user: { id: 'user-1' } } }, error: null } as never);
+        await expect(handleMobileGoogleOAuthCallbackUrl(url)).resolves.toMatchObject({ ok: false });
+        await expect(handleMobileGoogleOAuthCallbackUrl(url)).resolves.toEqual({ ok: true });
+        expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(2);
+    });
+
+    it('Google OAuth callbackは交換例外後に同じcodeを再試行できる', async () => {
+        const url = 'lifequest://auth/callback?code=throwing-google-code';
+        state.exchangeCodeForSession
+            .mockRejectedValueOnce(new Error('network failure'))
+            .mockResolvedValueOnce({ data: { session: { user: { id: 'user-1' } } }, error: null } as never);
+        await expect(handleMobileGoogleOAuthCallbackUrl(url)).resolves.toMatchObject({ ok: false });
+        await expect(handleMobileGoogleOAuthCallbackUrl(url)).resolves.toEqual({ ok: true });
+        expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(2);
     });
 
     it('Google OAuth callbackはtoken、provider error、別scheme/pathを拒否する', async () => {
