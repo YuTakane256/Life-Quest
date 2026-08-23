@@ -48,4 +48,23 @@ describe('runCloudBattleResolve', () => {
         expect(applyResolvedCloudBattle).not.toHaveBeenCalled();
         expect(outcome).toEqual({ status: 'error' });
     });
+
+    it('通信失敗後の再送で既に付与済みと返っても、成功応答だけを一度適用する', async () => {
+        let calls = 0;
+        const resolveCloudBattleAttempt = vi.fn(async () => {
+            calls++;
+            if (calls === 1) throw new Error('network error');
+            return { outcome: 'victory' as const, granted: false };
+        });
+        const applyResolvedCloudBattle = vi.fn();
+        const deps = { resolveCloudBattleAttempt, applyResolvedCloudBattle };
+
+        await expect(runCloudBattleResolve('attempt-retry', [{ type: 'attack' }], deps)).resolves.toEqual({ status: 'error' });
+        await expect(runCloudBattleResolve('attempt-retry', [{ type: 'attack' }], deps)).resolves.toEqual({ status: 'done', granted: false });
+
+        expect(resolveCloudBattleAttempt).toHaveBeenNthCalledWith(1, 'attempt-retry', [{ type: 'attack' }]);
+        expect(resolveCloudBattleAttempt).toHaveBeenNthCalledWith(2, 'attempt-retry', [{ type: 'attack' }]);
+        expect(applyResolvedCloudBattle).toHaveBeenCalledTimes(1);
+        expect(applyResolvedCloudBattle).toHaveBeenCalledWith('attempt-retry', 'victory', false);
+    });
 });

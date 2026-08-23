@@ -1,3 +1,4 @@
+import { shiftDate } from './dates.ts';
 import { clampString } from './validation.ts';
 
 export interface Habit {
@@ -212,15 +213,6 @@ export function sanitizeRestDays(value: unknown, maxRestDays: number): RestDay[]
 
 // ─── 連続記録・達成率 ─────────────────────────────────────────
 
-function shiftYmd(date: string, days: number): string {
-    const [year, month, day] = date.split('-').map(Number);
-    const shifted = new Date(Date.UTC(year, month - 1, day + days));
-    const y = shifted.getUTCFullYear();
-    const m = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(shifted.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
 export interface HabitStatsInput {
     habit: Habit;
     records: readonly HabitDailyRecord[];
@@ -246,7 +238,7 @@ export function getHabitStreak(input: HabitStatsInput): number {
         if (createdDate !== null && cursor < createdDate) break;
 
         if (isRestDayOn(restDays, cursor)) {
-            cursor = shiftYmd(cursor, -1);
+            cursor = shiftDate(cursor, -1, { normalizeInvalid: true });
             continue;
         }
 
@@ -258,7 +250,7 @@ export function getHabitStreak(input: HabitStatsInput): number {
         } else if (cursor !== today) {
             break;
         }
-        cursor = shiftYmd(cursor, -1);
+        cursor = shiftDate(cursor, -1, { normalizeInvalid: true });
     }
     return streak;
 }
@@ -274,7 +266,7 @@ export function getHabitCompletionRate(input: HabitStatsInput, windowDays = 30):
     let completed = 0;
 
     for (let i = 0; i < windowDays; i++) {
-        const date = shiftYmd(today, -i);
+        const date = shiftDate(today, -i, { normalizeInvalid: true });
         if (createdDate !== null && date < createdDate) break;
         if (isRestDayOn(restDays, date)) continue;
         total++;

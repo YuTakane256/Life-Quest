@@ -197,4 +197,9 @@ describe('getHabitCompletionRate', () => {
         const future = createHabit('h3', '未来習慣', 'study', '2026-08-01T00:00:00.000Z')!;
         expect(getHabitCompletionRate({ habit: future, records: [], restDays: [], today: TODAY })).toBeNull();
     });
+
+    it('暦上無効なtodayも旧shiftYmdと同じDate正規化で集計する', () => {
+        const oldHabit = createHabit('h4', '継続習慣', 'health', '2024-01-01T00:00:00.000Z')!;
+        expect(getHabitCompletionRate({ habit: oldHabit, records: [], restDays: [], today: '2025-02-29' }, 2)).toBe(0);
+    });
 });

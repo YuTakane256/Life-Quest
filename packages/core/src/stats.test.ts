@@ -33,6 +33,10 @@ describe('日付グリッド', () => {
         expect(generateDateRange(2, '2026-01-01')).toEqual(['2025-12-31', '2026-01-01']);
     });
 
+    it('暦上無効なtodayも旧shiftYmdと同じDate正規化で並べる', () => {
+        expect(generateDateRange(2, '2025-02-29')).toEqual(['2025-02-28', '2025-03-01']);
+    });
+
     it('groupDatesByWeeks は日曜始まりでパディングし、各週7要素にする', () => {
         // 2026-07-01 は水曜 (weekday 3)
         const weeks = groupDatesByWeeks(generateDateRange(10, '2026-07-10'));

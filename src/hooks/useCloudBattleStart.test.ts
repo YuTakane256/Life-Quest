@@ -64,6 +64,40 @@ describe('runCloudBattleStart', () => {
         expect(startCloudBattle).not.toHaveBeenCalled();
     });
 
+    it('通信失敗後は同じ冪等キーで再送し、クラウド戦闘を一度だけ開始する', async () => {
+        let calls = 0;
+        const attempt: CloudBattleAttempt = {
+            battleAttemptId: 'attempt-retry',
+            actors: {
+                player: { attack: 10, defense: 5, maxHp: 50 },
+                enemy: { stage: 2, name: '敵', maxHp: 20, attack: 2, defense: 1, xpReward: 4 },
+                playerLevel: 1,
+                playerName: '勇者',
+            },
+        };
+        const startCloudBattleAttempt = vi.fn(async () => {
+            calls++;
+            if (calls === 1) throw new Error('network error');
+            return attempt;
+        });
+        const startBattle = vi.fn();
+        const startCloudBattle = vi.fn();
+        const deps = {
+            getBattleAuthState: async () => ({ kind: 'authenticated' as const, userId: 'user-1' }),
+            startCloudBattleAttempt,
+            startBattle,
+            startCloudBattle,
+        };
+
+        await expect(runCloudBattleStart(2, 'retry-key', deps)).resolves.toEqual({ kind: 'retryable-error' });
+        await expect(runCloudBattleStart(2, 'retry-key', deps)).resolves.toMatchObject({ kind: 'cloud-started' });
+
+        expect(startCloudBattleAttempt).toHaveBeenNthCalledWith(1, 2, 'retry-key', 'user-1');
+        expect(startCloudBattleAttempt).toHaveBeenNthCalledWith(2, 2, 'retry-key', 'user-1');
+        expect(startCloudBattle).toHaveBeenCalledTimes(1);
+        expect(startBattle).not.toHaveBeenCalled();
+    });
+
     it('匿名利用者だけローカルstartBattleへ進む', async () => {
         const startCloudBattleAttempt = vi.fn();
         const startBattle = vi.fn();
