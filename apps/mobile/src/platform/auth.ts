@@ -36,6 +36,11 @@ const processedRecoveryUrls = new Set<string>();
 // The browser result and Linking listener can receive the same deep link at the
 // same time. Keep the PKCE exchange single-flight and share its outcome.
 const mobileGoogleOAuthExchanges = new Map<string, Promise<AuthResult>>();
+// PKCE authorization codes are single-use. Retain only successful codes briefly
+// so a late duplicate deep link is acknowledged without attempting a second exchange.
+const completedMobileGoogleOAuthCodes = new Map<string, number>();
+const mobileGoogleOAuthCompletedCodeTtlMs = 5 * 60 * 1000;
+const mobileGoogleOAuthCompletedCodeLimit = 50;
 const mobileRecoveryGateKey = 'life-quest:auth:recovery-pending:v1';
 const mobileGoogleOAuthRedirectUrl = AuthSession.makeRedirectUri({ scheme: 'lifequest', path: 'auth/callback' });
 
@@ -300,16 +305,35 @@ export async function handleMobileGoogleOAuthCallbackUrl(url: string): Promise<A
     if (!code) return genericAuthFailure();
     const existingExchange = mobileGoogleOAuthExchanges.get(code);
     if (existingExchange) return existingExchange;
-    const exchange = (async (): Promise<AuthResult> => {
+
+    const now = Date.now();
+    for (const [completedCode, expiresAt] of completedMobileGoogleOAuthCodes) {
+        if (expiresAt <= now) completedMobileGoogleOAuthCodes.delete(completedCode);
+    }
+    if (completedMobileGoogleOAuthCodes.get(code) && completedMobileGoogleOAuthCodes.get(code)! > now) {
+        return { ok: true };
+    }
+
+    const runExchange = async (): Promise<AuthResult> => {
         try {
             const { error } = await client.auth.exchangeCodeForSession(code);
-            return error
-                ? { ok: false, message: 'Googleでログインを完了できませんでした。もう一度お試しください。' }
-                : { ok: true };
+            if (error) return { ok: false, message: 'Googleでログインを完了できませんでした。もう一度お試しください。' };
+            completedMobileGoogleOAuthCodes.set(code, Date.now() + mobileGoogleOAuthCompletedCodeTtlMs);
+            while (completedMobileGoogleOAuthCodes.size > mobileGoogleOAuthCompletedCodeLimit) {
+                const oldestCode = completedMobileGoogleOAuthCodes.keys().next().value;
+                if (!oldestCode) break;
+                completedMobileGoogleOAuthCodes.delete(oldestCode);
+            }
+            return { ok: true };
         } catch {
             return genericAuthFailure();
         }
-    })();
+    };
+    const exchange = runExchange().finally(() => {
+        if (mobileGoogleOAuthExchanges.get(code) === exchange) {
+            mobileGoogleOAuthExchanges.delete(code);
+        }
+    });
     mobileGoogleOAuthExchanges.set(code, exchange);
     return exchange;
 }
