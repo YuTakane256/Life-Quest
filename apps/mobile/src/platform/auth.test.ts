@@ -159,6 +159,8 @@ describe('Mobile auth reward authority', () => {
 
     it('Google OAuthはPKCE callbackを指定してブラウザを開き、認証イベントへ同期開始を委譲する', async () => {
         await expect(signInWithGoogle()).resolves.toEqual({ ok: true });
+        const authSession = await import('expo-auth-session');
+        expect(authSession.makeRedirectUri).toHaveBeenCalledWith({ path: 'auth/callback' });
         expect(state.signInWithOAuth).toHaveBeenCalledWith({
             provider: 'google',
             options: { redirectTo: 'lifequest://auth/callback', skipBrowserRedirect: true },
