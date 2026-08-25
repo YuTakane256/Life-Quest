@@ -13,12 +13,14 @@ import {
     requestPasswordReset,
     resendEmailVerification,
     signInWithEmail,
+    signInWithApple,
     signInWithGoogle,
     signOutUser,
     signUpWithEmail,
     subscribePasswordRecoveryState,
     updatePasswordFromRecovery,
 } from '../platform/auth';
+import { AppleSignInButton } from '../components/AppleSignInButton';
 import {
     approveMobileContentImport,
     getPendingMobileContent,
@@ -105,7 +107,7 @@ export default function SettingsScreen() {
     const [password, setPassword] = useState('');
     const [passwordConfirmation, setPasswordConfirmation] = useState('');
     const [mode, setMode] = useState<Mode>('signIn');
-    const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ userId: string; email: string | null } | null>(null);
     const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [message, setMessage] = useState<string | null>(null);
@@ -142,7 +144,7 @@ export default function SettingsScreen() {
 
     const refreshAccount = useCallback(async (): Promise<void> => {
         const user = await getCurrentUser();
-        setCurrentEmail(user?.email ?? null);
+        setCurrentUser(user);
         if (!user) {
             setPendingContent(null);
             return;
@@ -235,6 +237,19 @@ export default function SettingsScreen() {
         setBusy(false);
     };
 
+    const handleAppleSignIn = async (): Promise<void> => {
+        setBusy(true);
+        setMessage(null);
+        const result = await signInWithApple();
+        if (result.ok) {
+            await refreshAccount();
+            setMessage('ログインしました');
+        } else {
+            setMessage(result.message);
+        }
+        setBusy(false);
+    };
+
     const handleResendVerification = async (): Promise<void> => {
         if (!verificationEmail) return;
         setBusy(true);
@@ -265,7 +280,7 @@ export default function SettingsScreen() {
         if (result.ok) {
             setPassword('');
             setPasswordConfirmation('');
-            setCurrentEmail(null);
+            setCurrentUser(null);
             setVerificationEmail(null);
             setMode(nextMode);
         } else {
@@ -278,7 +293,7 @@ export default function SettingsScreen() {
         setBusy(true);
         const result = await signOutUser();
         if (result.ok) {
-            setCurrentEmail(null);
+            setCurrentUser(null);
             setPendingContent(null);
             setMessage('ログアウトしました（この端末のデータは残ります）');
         } else {
@@ -293,7 +308,7 @@ export default function SettingsScreen() {
         setMessage(null);
         const result = await deleteCurrentAccount();
         if (result.ok) {
-            setCurrentEmail(null);
+            setCurrentUser(null);
             setPendingContent(null);
             setDeleteConfirming(false);
             setDeleteText('');
@@ -352,9 +367,9 @@ export default function SettingsScreen() {
                                 <Text style={styles.hint}>このリンクは無効または期限切れです。もう一度パスワードを再設定してください。</Text>
                                 <Pressable accessibilityRole="button" accessibilityLabel="パスワードを再設定する" disabled={busy} onPress={() => { void handleRecoveryCancel('passwordReset'); }}><Text style={styles.linkText}>パスワードを再設定する</Text></Pressable>
                             </View>
-                        ) : currentEmail ? (
+                        ) : currentUser ? (
                             <View style={styles.loggedIn}>
-                                <Text style={styles.bodyText}>ログイン中: {currentEmail}</Text>
+                                <Text style={styles.bodyText}>ログイン中: {currentUser.email ?? 'Appleアカウント'}</Text>
                                 <Pressable
                                     accessibilityRole="button"
                                     accessibilityLabel="ログアウトする"
@@ -400,6 +415,7 @@ export default function SettingsScreen() {
                         ) : (
                             <View style={styles.form}>
                                 {mode === 'signIn' && <>
+                                    <AppleSignInButton disabled={busy} onPress={() => { void handleAppleSignIn(); }} />
                                     <Pressable
                                         accessibilityRole="button"
                                         accessibilityLabel="Googleで続ける"
@@ -547,7 +563,7 @@ export default function SettingsScreen() {
                         <Text style={styles.helpCardChevron}>›</Text>
                     </Pressable>
 
-                    {currentEmail && pendingContent && (
+                    {currentUser && pendingContent && (
                         <Card title="クラウド統合の確認" styles={styles}>
                             <Text style={styles.hint}>
                                 この端末にはクラウドに無いデータがあります（タスク{pendingContent.tasks.length}件・習慣{pendingContent.habits.length}件）。

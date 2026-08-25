@@ -68,6 +68,7 @@ function validatePublicConfig(config, variant, expectedIdentifier, expectedSchem
     assert(config.android?.package === expectedIdentifier, `${variant} Android package must be ${expectedIdentifier}`);
     assert(config.extra?.appVariant === variant, `${variant} public config must expose its app variant`);
     assert(config.scheme === expectedScheme, `${variant} OAuth scheme must be ${expectedScheme}`);
+    assert(config.ios?.usesAppleSignIn === true, `${variant} must enable iOS Sign in with Apple`);
     assert(!forbiddenSecretPattern.test(JSON.stringify(config)), `${variant} public Expo config contains a secret-like value`);
 }
 
@@ -87,6 +88,7 @@ assert(profiles.preview.distribution === 'internal', 'preview must use internal 
 assert(profiles.preview.autoIncrement === true, 'preview must auto-increment build numbers');
 assert(profiles.production.autoIncrement === true, 'production must auto-increment build numbers');
 assert(appConfigSource.includes("'expo-web-browser'"), 'expo-web-browser plugin must be retained for OAuth callbacks');
+assert(appConfigSource.includes("'expo-apple-authentication'"), 'expo-apple-authentication plugin must be enabled');
 
 validatePublicConfig(expoPublicConfig('release'), 'release', releaseIdentifier, releaseScheme);
 validatePublicConfig(expoPublicConfig('parity'), 'parity', parityIdentifier, parityScheme);

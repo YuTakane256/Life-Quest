@@ -37,6 +37,16 @@ It validates all profiles, public Expo manifests, the release/parity/preview ide
 
 Never add a Supabase `service_role` key, Google client secret, Apple private key, signing credential, or server-only URL to `EXPO_PUBLIC_*`, `VITE_*`, `app.config.ts`, `app.json`, or `eas.json`.
 
+Apple Sign In uses the native iOS capability and Supabase's Apple provider. Configure Apple private keys and client secrets only in Apple Developer and Supabase. Account-deletion token revocation is tracked by #646 and must be complete before App Store submission.
+
+Before testing Apple authentication, the release owner must:
+
+1. Enable **Sign in with Apple** for the release, preview, and parity App IDs in Apple Developer.
+2. Create a web Services ID linked to the primary App ID, and register Supabase's `/auth/v1/callback` as its Return URL.
+3. Configure Supabase's Apple provider with the Apple key only in the Supabase dashboard. List the web Services ID first, followed by the enabled native bundle IDs.
+4. Add the Web callback `https://<web-origin>/settings?auth=apple-oauth` to Supabase Auth redirect URLs.
+5. On real iOS hardware, verify first sign-in, repeat sign-in, private-email sign-in, cancellation, logout, and Web-to-iOS / iOS-to-Web synchronization use the same Supabase user ID. Do not merge game data when the IDs differ.
+
 - `development`: local or staging Supabase only; never production credentials.
 - `preview`: staging only. Do not use production Supabase URL, anon key, or production cloud data in preview builds.
 - `production`: the production Supabase URL and anon key.

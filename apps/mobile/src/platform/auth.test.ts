@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
     storageWriteError: false,
     notifyLogin: vi.fn(async () => undefined),
     notifyLogout: vi.fn(async () => undefined),
+    signInWithAppleNative: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock('expo-linking', () => ({
@@ -86,6 +87,10 @@ vi.mock('./accountDeletion', () => ({
     cleanupDeletedMobileAccount: vi.fn(async () => undefined),
 }));
 
+vi.mock('./appleSignIn', () => ({
+    signInWithAppleNative: state.signInWithAppleNative,
+}));
+
 import {
     getPasswordRecoveryState,
     handleMobileAuthCallbackUrl,
@@ -97,6 +102,7 @@ import {
     clearPasswordRecoveryState,
     signUpWithEmail,
     signInWithGoogle,
+    signInWithApple,
     startAuthSessionListener,
     updatePasswordFromRecovery,
 } from './auth';
@@ -232,6 +238,17 @@ describe('Mobile auth reward authority', () => {
         state.openAuthSessionAsync.mockResolvedValueOnce({ type: 'cancel', url: '' });
         await expect(signInWithGoogle()).resolves.toEqual({ ok: false, message: 'Googleログインをキャンセルしました。' });
         expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
+    });
+
+    it('Apple認証は同時実行を防ぎ、同期開始をAuthイベントへ委譲する', async () => {
+        let finish!: (result: { ok: true }) => void;
+        state.signInWithAppleNative.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+        const first = signInWithApple();
+        await expect(signInWithApple()).resolves.toEqual({ ok: false, message: 'Appleログインを処理中です。' });
+        finish({ ok: true });
+        await expect(first).resolves.toEqual({ ok: true });
+        expect(state.signInWithAppleNative).toHaveBeenCalledTimes(1);
+        expect(state.notifyLogin).not.toHaveBeenCalled();
     });
 
     it('復旧リンクのcodeをセッションへ交換した後にだけパスワードを更新する', async () => {

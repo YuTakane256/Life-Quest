@@ -34,6 +34,10 @@ const processedWebGoogleOAuthCodes = new Set<string>();
 type GoogleOAuthState = { status: 'idle' } | { status: 'success' } | { status: 'error'; message: string };
 let googleOAuthState: GoogleOAuthState = { status: 'idle' };
 const googleOAuthListeners = new Set<(state: GoogleOAuthState) => void>();
+const processedWebAppleOAuthCodes = new Set<string>();
+type AppleOAuthState = { status: 'idle' } | { status: 'success' } | { status: 'error'; message: string };
+let appleOAuthState: AppleOAuthState = { status: 'idle' };
+const appleOAuthListeners = new Set<(state: AppleOAuthState) => void>();
 
 function setPasswordRecoveryState(state: PasswordRecoveryState): void {
     passwordRecoveryState = state;
@@ -69,6 +73,24 @@ export function clearGoogleOAuthState(): void {
 export function subscribeGoogleOAuthState(listener: (state: GoogleOAuthState) => void): () => void {
     googleOAuthListeners.add(listener);
     return () => googleOAuthListeners.delete(listener);
+}
+
+function setAppleOAuthState(state: AppleOAuthState): void {
+    appleOAuthState = state;
+    appleOAuthListeners.forEach((listener) => listener(state));
+}
+
+export function getAppleOAuthState(): AppleOAuthState {
+    return appleOAuthState;
+}
+
+export function clearAppleOAuthState(): void {
+    setAppleOAuthState({ status: 'idle' });
+}
+
+export function subscribeAppleOAuthState(listener: (state: AppleOAuthState) => void): () => void {
+    appleOAuthListeners.add(listener);
+    return () => appleOAuthListeners.delete(listener);
 }
 
 function notConfigured(): AuthResult {
@@ -119,7 +141,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
     return { ok: true };
 }
 
-function webAuthRedirectUrl(kind: 'recovery' | 'verify' | 'oauth'): string {
+function webAuthRedirectUrl(kind: 'recovery' | 'verify' | 'oauth' | 'apple-oauth'): string {
     return `${window.location.origin}/settings?auth=${kind}`;
 }
 
@@ -135,6 +157,23 @@ export async function signInWithGoogle(): Promise<AuthResult> {
     if (error) {
         const message = '操作を完了できませんでした。入力内容と接続を確認して、時間をおいてもう一度お試しください。';
         setGoogleOAuthState({ status: 'error', message });
+        return { ok: false, message };
+    }
+    return { ok: true };
+}
+
+/** Starts the browser-only Apple OAuth flow. Session lifecycle remains onAuthStateChange-owned. */
+export async function signInWithApple(): Promise<AuthResult> {
+    const client = getWebSupabaseClient();
+    if (!client) return notConfigured();
+    setAppleOAuthState({ status: 'idle' });
+    const { error } = await client.auth.signInWithOAuth({
+        provider: 'apple',
+        options: { redirectTo: webAuthRedirectUrl('apple-oauth') },
+    });
+    if (error) {
+        const message = 'Appleでログインを完了できませんでした。もう一度お試しください。';
+        setAppleOAuthState({ status: 'error', message });
         return { ok: false, message };
     }
     return { ok: true };
@@ -249,6 +288,15 @@ function scrubWebGoogleOAuthUrl(): void {
     window.history.replaceState(null, '', window.location.pathname);
 }
 
+function isWebAppleOAuthCallbackUrl(): boolean {
+    const url = new URL(window.location.href);
+    return url.pathname === '/settings' && url.searchParams.get('auth') === 'apple-oauth';
+}
+
+function scrubWebAppleOAuthUrl(): void {
+    window.history.replaceState(null, '', window.location.pathname);
+}
+
 /**
  * Consume only our explicit Google PKCE callback. This intentionally does not
  * call notifyLogin: the normal Supabase auth-state listener owns that work.
@@ -281,6 +329,36 @@ export async function handleWebGoogleOAuthCallback(): Promise<void> {
     } finally {
         // Authorization codes and provider errors must never remain in browser history.
         scrubWebGoogleOAuthUrl();
+    }
+}
+
+/** Consume only our explicit Apple PKCE callback. Auth-state events own sync startup. */
+export async function handleWebAppleOAuthCallback(): Promise<void> {
+    if (typeof window === 'undefined' || !isWebAppleOAuthCallbackUrl()) return;
+    const client = getWebSupabaseClient();
+    if (!client) return;
+    const url = new URL(window.location.href);
+    const query = url.searchParams;
+    const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+    try {
+        if (query.has('access_token') || query.has('refresh_token') || fragment.has('access_token') || fragment.has('refresh_token')) {
+            setAppleOAuthState({ status: 'error', message: 'Appleでログインできませんでした。もう一度お試しください。' });
+            return;
+        }
+        if (query.has('error') || query.has('error_code')) {
+            setAppleOAuthState({ status: 'error', message: 'Appleでログインを完了できませんでした。もう一度お試しください。' });
+            return;
+        }
+        const code = query.get('code');
+        if (!code || processedWebAppleOAuthCodes.has(code)) return;
+        processedWebAppleOAuthCodes.add(code);
+        const { error } = await client.auth.exchangeCodeForSession(code);
+        if (error) setAppleOAuthState({ status: 'error', message: 'Appleでログインを完了できませんでした。もう一度お試しください。' });
+        else setAppleOAuthState({ status: 'success' });
+    } catch {
+        setAppleOAuthState({ status: 'error', message: 'Appleでログインを完了できませんでした。もう一度お試しください。' });
+    } finally {
+        scrubWebAppleOAuthUrl();
     }
 }
 
@@ -406,5 +484,6 @@ export function startAuthSessionListener(): () => void {
         }
     });
     void handleWebGoogleOAuthCallback();
+    void handleWebAppleOAuthCallback();
     return () => data.subscription.unsubscribe();
 }

@@ -12,6 +12,7 @@ import * as Linking from 'expo-linking';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { signInWithAppleNative } from './appleSignIn';
 
 export type AuthResult =
     | { ok: true; emailVerificationPending?: boolean }
@@ -41,6 +42,7 @@ const mobileGoogleOAuthExchanges = new Map<string, Promise<AuthResult>>();
 const completedMobileGoogleOAuthCodes = new Map<string, number>();
 const mobileGoogleOAuthCompletedCodeTtlMs = 5 * 60 * 1000;
 const mobileGoogleOAuthCompletedCodeLimit = 50;
+let appleSignInInProgress = false;
 const mobileRecoveryGateKey = 'life-quest:auth:recovery-pending:v1';
 // Expo resolves this from the installed app's scheme, which differs for parity
 // and preview builds so their OAuth callbacks cannot open the release app.
@@ -153,6 +155,19 @@ export async function signInWithGoogle(): Promise<AuthResult> {
         return genericAuthFailure();
     } catch {
         return genericAuthFailure();
+    }
+}
+
+/** Starts native Apple Sign In on iOS. Supabase auth-state events own sync startup. */
+export async function signInWithApple(): Promise<AuthResult> {
+    const client = getMobileSupabaseClient();
+    if (!client) return notConfigured();
+    if (appleSignInInProgress) return { ok: false, message: 'Appleログインを処理中です。' };
+    appleSignInInProgress = true;
+    try {
+        return await signInWithAppleNative(client);
+    } finally {
+        appleSignInInProgress = false;
     }
 }
 
