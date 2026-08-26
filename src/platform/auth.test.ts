@@ -55,9 +55,12 @@ import {
     cancelPasswordRecovery,
     clearPasswordRecoveryState,
     clearGoogleOAuthState,
+    clearAppleOAuthState,
+    handleWebAppleOAuthCallback,
     handleWebGoogleOAuthCallback,
     signUpWithEmail,
     signInWithGoogle,
+    signInWithApple,
     startAuthSessionListener,
     updatePasswordFromRecovery,
 } from './auth';
@@ -70,6 +73,7 @@ describe('Web auth pending reward ownership', () => {
         localStorage.clear();
         clearPasswordRecoveryState();
         clearGoogleOAuthState();
+        clearAppleOAuthState();
         window.history.replaceState(null, '', '/settings');
         vi.clearAllMocks();
     });
@@ -138,6 +142,37 @@ describe('Web auth pending reward ownership', () => {
         await handleWebGoogleOAuthCallback();
         window.history.replaceState(null, '', '/tasks?auth=oauth&code=wrong-target');
         await handleWebGoogleOAuthCallback();
+        expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
+    });
+
+    it('Apple OAuthは専用callbackを使い、同期通知を直接開始しない', async () => {
+        await expect(signInWithApple()).resolves.toEqual({ ok: true });
+        expect(state.signInWithOAuth).toHaveBeenCalledWith({
+            provider: 'apple',
+            options: { redirectTo: 'http://localhost:3000/settings?auth=apple-oauth' },
+        });
+        expect(state.notifyLogin).not.toHaveBeenCalled();
+    });
+
+    it('Apple callbackはcodeだけを一度交換して履歴を消去する', async () => {
+        window.history.replaceState(null, '', '/settings?auth=apple-oauth&code=apple-code');
+        await handleWebAppleOAuthCallback();
+        window.history.replaceState(null, '', '/settings?auth=apple-oauth&code=apple-code&repeat=1');
+        await handleWebAppleOAuthCallback();
+        expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+        expect(state.exchangeCodeForSession).toHaveBeenCalledWith('apple-code');
+        expect(state.notifyLogin).not.toHaveBeenCalled();
+        expect(window.location.pathname).toBe('/settings');
+        expect(window.location.search).toBe('');
+    });
+
+    it('Apple callbackはtoken、provider error、異なる画面を拒否する', async () => {
+        window.history.replaceState(null, '', '/settings?auth=apple-oauth&access_token=token');
+        await handleWebAppleOAuthCallback();
+        window.history.replaceState(null, '', '/settings?auth=apple-oauth&error=access_denied');
+        await handleWebAppleOAuthCallback();
+        window.history.replaceState(null, '', '/tasks?auth=apple-oauth&code=wrong-target');
+        await handleWebAppleOAuthCallback();
         expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
     });
 

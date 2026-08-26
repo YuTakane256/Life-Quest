@@ -30,12 +30,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
     return {
         ...config,
-        plugins: [...(config.plugins ?? []), 'expo-web-browser'],
+        plugins: [...(config.plugins ?? []), 'expo-web-browser', 'expo-apple-authentication'],
         name: isParity ? 'Life Quest Parity' : isPreview ? 'Life Quest Preview' : config.name,
         scheme,
         ios: {
             ...config.ios,
             bundleIdentifier: isParity ? PARITY_BUNDLE_ID : isPreview ? PREVIEW_BUNDLE_ID : RELEASE_BUNDLE_ID,
+            usesAppleSignIn: true,
         },
         android: {
             ...config.android,

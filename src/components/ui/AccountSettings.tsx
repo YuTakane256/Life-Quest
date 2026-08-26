@@ -9,10 +9,12 @@ import {
     requestPasswordReset,
     resendEmailVerification,
     signInWithEmail,
+    signInWithApple,
     signInWithGoogle,
     signOutUser,
     signUpWithEmail,
     subscribeGoogleOAuthState,
+    subscribeAppleOAuthState,
     subscribePasswordRecoveryState,
     updatePasswordFromRecovery,
 } from '../../platform/auth';
@@ -30,7 +32,7 @@ export function AccountSettings() {
     const [password, setPassword] = useState('');
     const [passwordConfirmation, setPasswordConfirmation] = useState('');
     const [mode, setMode] = useState<Mode>('signIn');
-    const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ userId: string; email: string | null } | null>(null);
     const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [googleOAuthState, setGoogleOAuthState] = useState(getGoogleOAuthState);
@@ -42,7 +44,7 @@ export function AccountSettings() {
     useEffect(() => {
         let cancelled = false;
         void getCurrentUser().then((user) => {
-            if (!cancelled) setCurrentEmail(user?.email ?? null);
+            if (!cancelled) setCurrentUser(user);
         });
         return () => { cancelled = true; };
     }, []);
@@ -51,8 +53,12 @@ export function AccountSettings() {
     useEffect(() => subscribeGoogleOAuthState((state) => {
         setGoogleOAuthState(state);
         if (state.status === 'success') {
-            void getCurrentUser().then((user) => setCurrentEmail(user?.email ?? null));
+            void getCurrentUser().then((user) => setCurrentUser(user));
         }
+    }), []);
+    useEffect(() => subscribeAppleOAuthState((state) => {
+        if (state.status === 'success') void getCurrentUser().then(setCurrentUser);
+        if (state.status === 'error') setMessage(state.message);
     }), []);
 
     const handleSubmit = async () => {
@@ -62,7 +68,7 @@ export function AccountSettings() {
         const result = await action(email.trim(), password);
         if (result.ok) {
             const user = await getCurrentUser();
-            setCurrentEmail(user?.email ?? null);
+            setCurrentUser(user);
             if (mode === 'signUp' && result.emailVerificationPending) {
                 setVerificationEmail(email.trim());
                 setMessage('登録を受け付けました。確認が必要な場合は受信箱の案内をご確認ください。');
@@ -90,6 +96,14 @@ export function AccountSettings() {
         setBusy(true);
         setMessage(null);
         const result = await signInWithGoogle();
+        if (!result.ok) setMessage(result.message);
+        setBusy(false);
+    };
+
+    const handleAppleSignIn = async () => {
+        setBusy(true);
+        setMessage(null);
+        const result = await signInWithApple();
         if (!result.ok) setMessage(result.message);
         setBusy(false);
     };
@@ -124,7 +138,7 @@ export function AccountSettings() {
         if (result.ok) {
             setPassword('');
             setPasswordConfirmation('');
-            setCurrentEmail(null);
+            setCurrentUser(null);
             setVerificationEmail(null);
             setMode(nextMode);
         } else {
@@ -137,7 +151,7 @@ export function AccountSettings() {
         setBusy(true);
         const result = await signOutUser();
         if (result.ok) {
-            setCurrentEmail(null);
+            setCurrentUser(null);
             setMessage('ログアウトしました（この端末のデータは残ります）');
         } else {
             setMessage(result.message);
@@ -151,7 +165,7 @@ export function AccountSettings() {
         setMessage(null);
         const result = await deleteCurrentAccount();
         if (result.ok) {
-            setCurrentEmail(null);
+            setCurrentUser(null);
             setDeleteConfirming(false);
             setDeleteText('');
             setMessage('アカウントとクラウドデータを削除しました');
@@ -218,10 +232,10 @@ export function AccountSettings() {
                     <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>このリンクは無効または期限切れです。もう一度パスワードを再設定してください。</p>
                     <button type="button" onClick={() => { void handleRecoveryCancel('passwordReset'); }} disabled={busy} className="self-start text-xs underline disabled:opacity-50" style={{ color: 'var(--color-text-muted)' }}>パスワードを再設定する</button>
                 </div>
-            ) : currentEmail ? (
+            ) : currentUser ? (
                 <div className="flex flex-col gap-3">
                     <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                        ログイン中: <span style={{ color: 'var(--color-text-primary)' }}>{currentEmail}</span>
+                        ログイン中: <span style={{ color: 'var(--color-text-primary)' }}>{currentUser.email ?? 'Appleアカウント'}</span>
                     </p>
                     <button
                         type="button"
@@ -280,6 +294,15 @@ export function AccountSettings() {
                         <>
                             <button
                                 type="button"
+                                onClick={handleAppleSignIn}
+                                disabled={busy}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all active:scale-95 disabled:opacity-50"
+                                style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+                            >
+                                Appleで続ける
+                            </button>
+                            <button
+                                type="button"
                                 onClick={handleGoogleSignIn}
                                 disabled={busy}
                                 className="px-4 py-2 rounded-lg text-sm font-semibold transition-all active:scale-95 disabled:opacity-50"
@@ -287,7 +310,7 @@ export function AccountSettings() {
                             >
                                 Googleで続ける
                             </button>
-                            <p className="text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>またはメールアドレスで続ける</p>
+                            <p className="text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>またはGoogle・メールアドレスで続ける</p>
                         </>
                     )}
                     <input

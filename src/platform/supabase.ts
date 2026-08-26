@@ -31,21 +31,22 @@ export function getWebSupabaseClient(): SupabaseClient | null {
                 persistSession: true,
                 autoRefreshToken: true,
                 flowType: 'pkce',
-                // Google OAuth is consumed explicitly in auth.ts so it can validate
+                // Google and Apple OAuth are consumed explicitly in auth.ts so they can validate
                 // the callback target and remove the authorization code from history.
                 // Email confirmation and recovery retain Supabase's existing handling.
-                detectSessionInUrl: !isWebGoogleOAuthCallbackUrl(),
+                detectSessionInUrl: !isWebOAuthCallbackUrl(),
             },
         })
         : null;
     return cachedClient;
 }
 
-function isWebGoogleOAuthCallbackUrl(): boolean {
+function isWebOAuthCallbackUrl(): boolean {
     if (typeof window === 'undefined') return false;
     try {
         const url = new URL(window.location.href);
-        return url.pathname === '/settings' && url.searchParams.get('auth') === 'oauth';
+        return url.pathname === '/settings' &&
+            (url.searchParams.get('auth') === 'oauth' || url.searchParams.get('auth') === 'apple-oauth');
     } catch {
         return false;
     }
