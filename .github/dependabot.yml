@@ -20,6 +20,20 @@ updates:
           - minor
           - patch
     ignore:
+      # Expo SDK upgrades coordinate these native packages. Keep receiving patch
+      # fixes, but do not let the generic production group cross SDK boundaries.
+      - dependency-name: react-native
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+      - dependency-name: react-native-safe-area-context
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+      - dependency-name: react-native-screens
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
       # typescript-eslintがpeer dependencyでtypescript <6.1.0を要求しており、
       # TypeScript 7系（ネイティブGoコンパイラへの移行を伴うメジャーリリース）への
       # 単独更新はnpm ci自体が失敗する（#553）。typescript-eslint側がTS7へ
