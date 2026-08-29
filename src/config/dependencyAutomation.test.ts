@@ -12,11 +12,25 @@ describe('dependency automation policy', () => {
     });
 
     it('groups routine updates but leaves major upgrades isolated', () => {
-        // グループ化ポリシー用2件 + typescriptメジャー更新の除外用1件
-        expect(dependabotConfig.match(/update-types:/g)).toHaveLength(3);
         expect(dependabotConfig.match(/- minor/g)).toHaveLength(2);
         expect(dependabotConfig.match(/- patch/g)).toHaveLength(2);
         expect(dependabotConfig).not.toContain('- major');
+    });
+
+    it('keeps Expo-coupled native packages on their current minor versions', () => {
+        for (const dependency of [
+            'react-native',
+            'react-native-safe-area-context',
+            'react-native-screens',
+        ]) {
+            const block = dependabotConfig
+                .split(`dependency-name: ${dependency}`)[1]
+                ?.split('- dependency-name:')[0];
+
+            expect(block).toContain('version-update:semver-minor');
+            expect(block).toContain('version-update:semver-major');
+            expect(block).not.toContain('version-update:semver-patch');
+        }
     });
 
     it('excludes typescript major upgrades until typescript-eslint supports them (#553)', () => {
