@@ -20,6 +20,8 @@ vi.mock('expo-crypto', () => ({
     CryptoDigestAlgorithm: { SHA256: 'SHA256' },
 }));
 
+vi.mock('expo-constants', () => ({ default: { expoConfig: { ios: { bundleIdentifier: 'com.yutakane.lifequest' } } } }));
+
 import { signInWithAppleNative } from './appleSignIn.ios';
 
 const client = { auth: { signInWithIdToken: state.signInWithIdToken, updateUser: state.updateUser } };
@@ -42,9 +44,22 @@ describe('iOS Apple Sign In', () => {
         await expect(signInWithAppleNative(client)).resolves.toEqual({ ok: true });
         expect(state.digestStringAsync).toHaveBeenCalledWith('SHA256', expect.any(String));
         expect(state.signInWithIdToken).toHaveBeenCalledWith(expect.objectContaining({
-            provider: 'apple', token: 'identity-token', nonce: expect.any(String), access_token: 'authorization-code',
+            provider: 'apple', token: 'identity-token', nonce: expect.any(String),
         }));
         expect(state.updateUser).toHaveBeenCalledWith({ data: { full_name: 'Ada Lovelace' } });
+    });
+
+    it('authorization codeは端末へ保存せず、サーバー記録コールバックへ一度だけ渡す', async () => {
+        state.getRandomBytesAsync.mockResolvedValue(new Uint8Array(32).fill(4));
+        state.digestStringAsync.mockResolvedValue('hashed-nonce');
+        state.signInAsync.mockImplementation(async ({ state: expectedState }) => ({
+            state: expectedState, identityToken: 'identity-token', authorizationCode: 'one-time-code', fullName: null,
+        }));
+        const record = vi.fn(async () => undefined);
+
+        await expect(signInWithAppleNative(client, record)).resolves.toEqual({ ok: true, appleAuthorizationRecorded: true });
+        expect(record).toHaveBeenCalledTimes(1);
+        expect(record).toHaveBeenCalledWith('one-time-code', 'com.yutakane.lifequest');
     });
 
     it('state不一致またはidentity token欠落ではSupabaseを呼ばない', async () => {

@@ -17,8 +17,10 @@ const state = vi.hoisted(() => ({
     signInWithOAuth: vi.fn(async () => ({ data: { url: 'https://accounts.google.com/example' }, error: null })),
     signUp: vi.fn(async () => ({ data: { user: { id: 'user-1' }, session: null }, error: null })),
     getSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } } })),
+    refreshSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } }, error: null })),
     signInWithPassword: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
     signOut: vi.fn(async () => ({ error: null })),
+    invoke: vi.fn(async () => ({ recorded: true })),
     notifyLogin: vi.fn(async () => undefined),
     notifyLogout: vi.fn(async () => undefined),
 }));
@@ -33,6 +35,7 @@ vi.mock('./supabase', () => ({
             signUp: state.signUp,
             signInWithOAuth: state.signInWithOAuth,
             getSession: state.getSession,
+            refreshSession: state.refreshSession,
             signInWithPassword: state.signInWithPassword,
             signOut: state.signOut,
             onAuthStateChange: vi.fn((listener: typeof state.listener) => {
@@ -46,6 +49,10 @@ vi.mock('./supabase', () => ({
 vi.mock('@life-quest/core/authLifecycle', () => ({
     notifyLogin: state.notifyLogin,
     notifyLogout: state.notifyLogout,
+}));
+
+vi.mock('./edgeFunctions', () => ({
+    getWebEdgeFunctionInvoker: vi.fn(() => state.invoke),
 }));
 
 import {
@@ -155,12 +162,16 @@ describe('Web auth pending reward ownership', () => {
     });
 
     it('Apple callbackはcodeだけを一度交換して履歴を消去する', async () => {
+        state.exchangeCodeForSession.mockResolvedValueOnce({
+            data: { session: { provider_refresh_token: 'provider-refresh-token' } }, error: null,
+        } as never);
         window.history.replaceState(null, '', '/settings?auth=apple-oauth&code=apple-code');
         await handleWebAppleOAuthCallback();
         window.history.replaceState(null, '', '/settings?auth=apple-oauth&code=apple-code&repeat=1');
         await handleWebAppleOAuthCallback();
         expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(1);
         expect(state.exchangeCodeForSession).toHaveBeenCalledWith('apple-code');
+        expect(state.invoke).toHaveBeenCalledWith('record_apple_refresh_token', { refresh_token: 'provider-refresh-token' });
         expect(state.notifyLogin).not.toHaveBeenCalled();
         expect(window.location.pathname).toBe('/settings');
         expect(window.location.search).toBe('');

@@ -15,7 +15,7 @@ import { getWebEdgeFunctionInvoker } from './edgeFunctions';
 import { cleanupDeletedWebAccount } from './accountDeletion';
 
 export type AuthResult =
-    | { ok: true; emailVerificationPending?: boolean }
+    | { ok: true; emailVerificationPending?: boolean; manualAppleRevocationRequired?: boolean }
     | { ok: false; message: string };
 
 export interface AuthUserInfo {
@@ -352,9 +352,30 @@ export async function handleWebAppleOAuthCallback(): Promise<void> {
         const code = query.get('code');
         if (!code || processedWebAppleOAuthCodes.has(code)) return;
         processedWebAppleOAuthCodes.add(code);
-        const { error } = await client.auth.exchangeCodeForSession(code);
-        if (error) setAppleOAuthState({ status: 'error', message: 'Appleでログインを完了できませんでした。もう一度お試しください。' });
-        else setAppleOAuthState({ status: 'success' });
+        const { data, error } = await client.auth.exchangeCodeForSession(code);
+        if (error) {
+            setAppleOAuthState({ status: 'error', message: 'Appleでログインを完了できませんでした。もう一度お試しください。' });
+        } else {
+            // Supabase supplies this only for the just-completed provider flow.
+            // Forward it once to the server; it is never written by app code.
+            const providerRefreshToken = data.session?.provider_refresh_token;
+            const invoke = getWebEdgeFunctionInvoker();
+            if (!providerRefreshToken || !invoke) {
+                await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
+                setAppleOAuthState({ status: 'error', message: 'Appleログインの安全設定を完了できませんでした。もう一度お試しください。' });
+            } else {
+                try {
+                    await invoke('record_apple_refresh_token', { refresh_token: providerRefreshToken });
+                    // Replace the in-memory OAuth session too. The storage adapter
+                    // already removes provider tokens from persistent localStorage.
+                    await client.auth.refreshSession();
+                    setAppleOAuthState({ status: 'success' });
+                } catch {
+                    await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
+                    setAppleOAuthState({ status: 'error', message: 'Appleログインの安全設定を完了できませんでした。もう一度お試しください。' });
+                }
+            }
+        }
     } catch {
         setAppleOAuthState({ status: 'error', message: 'Appleでログインを完了できませんでした。もう一度お試しください。' });
     } finally {
@@ -387,8 +408,9 @@ export async function deleteCurrentAccount(): Promise<AuthResult> {
     const { data } = await client.auth.getSession();
     const userId = data.session?.user.id;
     if (!userId) return { ok: false, message: 'ログインが必要です' };
+    let deletion: { apple_revocation?: unknown };
     try {
-        await invoke('delete_account');
+        deletion = await invoke<{ apple_revocation?: unknown }>('delete_account');
     } catch {
         return { ok: false, message: '退会処理に失敗しました。データはそのまま保持されています。' };
     }
@@ -401,7 +423,7 @@ export async function deleteCurrentAccount(): Promise<AuthResult> {
     setGameRewardAuthorityState('anonymous');
     return cleanupFailed
         ? { ok: false, message: 'アカウントは削除されました。一部の端末データを削除できませんでした。アプリを再起動してください。' }
-        : { ok: true };
+        : { ok: true, manualAppleRevocationRequired: deletion.apple_revocation === 'manual_required' };
 }
 
 /** 現在のセッションのユーザー。未ログイン・未設定なら null。 */

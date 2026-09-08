@@ -4,7 +4,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(60);
+select plan(71);
 
 -- 1. テーブル存在
 select has_table('public', 'sync_versions',  'sync_versions exists');
@@ -84,6 +84,28 @@ select ok(not has_function_privilege('authenticated', 'public.complete_task_appl
     'authenticated cannot execute complete_task_apply');
 select ok(has_function_privilege('service_role', 'public.complete_task_apply(uuid, uuid, integer, date, jsonb, text)', 'execute'),
     'service_role can execute complete_task_apply');
+
+-- 5b. Apple revoke material is private and only Edge Functions (service_role) can use its RPCs.
+select has_schema('private', 'private schema exists for server-only Apple revocation material');
+select has_table('private', 'apple_refresh_tokens', 'private Apple refresh-token table exists');
+select ok(not has_table_privilege('authenticated', 'private.apple_refresh_tokens', 'select'),
+    'authenticated cannot SELECT Apple refresh tokens');
+select ok(not has_function_privilege('authenticated', 'public.store_apple_refresh_token(uuid, text, text, text, text)', 'execute'),
+    'authenticated cannot store Apple refresh tokens directly');
+select ok(not has_function_privilege('authenticated', 'public.get_apple_refresh_tokens(uuid)', 'execute'),
+    'authenticated cannot read Apple refresh tokens');
+select ok(has_function_privilege('service_role', 'public.store_apple_refresh_token(uuid, text, text, text, text)', 'execute'),
+    'service_role can store Apple refresh tokens');
+select ok(has_function_privilege('service_role', 'public.get_apple_refresh_tokens(uuid)', 'execute'),
+    'service_role can read Apple refresh tokens for revocation');
+select ok(not has_function_privilege('authenticated', 'public.mark_apple_refresh_token_revoked(uuid, text)', 'execute'),
+    'authenticated cannot mark Apple refresh tokens revoked');
+select ok(has_function_privilege('service_role', 'public.mark_apple_refresh_token_revoked(uuid, text)', 'execute'),
+    'service_role can erase Apple refresh tokens after revocation');
+select ok(not has_function_privilege('authenticated', 'public.mark_apple_refresh_token_manual_required(uuid, text)', 'execute'),
+    'authenticated cannot mark Apple refresh tokens manual-required');
+select ok(has_function_privilege('service_role', 'public.mark_apple_refresh_token_manual_required(uuid, text)', 'execute'),
+    'service_role can preserve the Apple manual-required marker');
 
 -- 6. 複合FK違反の拒否（親と異なるユーザーの子行は作れない）
 --    2ユーザーと親行をsuperuserとして直接用意する。
