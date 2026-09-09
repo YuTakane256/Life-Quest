@@ -168,7 +168,9 @@ export function AccountSettings() {
             setCurrentUser(null);
             setDeleteConfirming(false);
             setDeleteText('');
-            setMessage('アカウントとクラウドデータを削除しました');
+            setMessage(result.manualAppleRevocationRequired
+                ? 'アカウントとクラウドデータを削除しました。Appleの「Apple IDを使用中のApp」からもLife Questの連携を削除してください。'
+                : 'アカウントとクラウドデータを削除しました');
         } else setMessage(result.message);
         setBusy(false);
     };

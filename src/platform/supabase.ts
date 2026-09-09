@@ -21,6 +21,31 @@ export function readWebSupabaseEnv(): SupabaseEnv | null {
 
 let cachedClient: SupabaseClient | null | undefined;
 
+/**
+ * Supabase returns provider tokens transiently after OAuth. Keep them available
+ * to the callback long enough to hand off to the Edge Function, but never put
+ * them in browser storage with the durable Life Quest session.
+ */
+export const webSessionStorageAdapter = {
+    getItem: (key: string): string | null => typeof window === 'undefined' ? null : window.localStorage.getItem(key),
+    setItem: (key: string, value: string): void => {
+        if (typeof window === 'undefined') return;
+        try {
+            const parsed = JSON.parse(value) as Record<string, unknown>;
+            if (parsed && typeof parsed === 'object') {
+                delete parsed.provider_token;
+                delete parsed.provider_refresh_token;
+                window.localStorage.setItem(key, JSON.stringify(parsed));
+                return;
+            }
+        } catch {
+            // Auth-js owns the serialized shape. Preserve non-session values.
+        }
+        window.localStorage.setItem(key, value);
+    },
+    removeItem: (key: string): void => { if (typeof window !== 'undefined') window.localStorage.removeItem(key); },
+};
+
 /** シングルトンのSupabaseクライアント。環境未設定なら null。 */
 export function getWebSupabaseClient(): SupabaseClient | null {
     if (cachedClient !== undefined) return cachedClient;
@@ -28,6 +53,7 @@ export function getWebSupabaseClient(): SupabaseClient | null {
     cachedClient = env
         ? createClient(env.url, env.anonKey, {
             auth: {
+                storage: webSessionStorageAdapter,
                 persistSession: true,
                 autoRefreshToken: true,
                 flowType: 'pkce',
