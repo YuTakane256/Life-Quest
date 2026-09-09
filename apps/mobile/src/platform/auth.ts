@@ -15,7 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signInWithAppleNative } from './appleSignIn';
 
 export type AuthResult =
-    | { ok: true; emailVerificationPending?: boolean }
+    | { ok: true; emailVerificationPending?: boolean; manualAppleRevocationRequired?: boolean }
     | { ok: false; message: string };
 
 export interface AuthUserInfo {
@@ -165,7 +165,18 @@ export async function signInWithApple(): Promise<AuthResult> {
     if (appleSignInInProgress) return { ok: false, message: 'Appleログインを処理中です。' };
     appleSignInInProgress = true;
     try {
-        return await signInWithAppleNative(client);
+        const invoke = getMobileEdgeFunctionInvoker();
+        const result = await signInWithAppleNative(client, async (authorizationCode, clientId) => {
+            if (!invoke) throw new Error('edge_functions_not_configured');
+            await invoke('record_apple_authorization', { authorization_code: authorizationCode, client_id: clientId });
+        });
+        if (result.ok && result.appleAuthorizationRecorded === false) {
+            // Do not leave an Apple session active when its server-side deletion
+            // safety material could not be registered. The one-time code is not retained.
+            await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
+            return { ok: false, message: 'Appleログインの安全設定を完了できませんでした。接続を確認してもう一度お試しください。' };
+        }
+        return result;
     } finally {
         appleSignInInProgress = false;
     }
@@ -414,8 +425,9 @@ export async function deleteCurrentAccount(): Promise<AuthResult> {
     const { data } = await client.auth.getSession();
     const userId = data.session?.user.id;
     if (!userId) return { ok: false, message: 'ログインが必要です' };
+    let deletion: { apple_revocation?: unknown };
     try {
-        await invoke('delete_account');
+        deletion = await invoke<{ apple_revocation?: unknown }>('delete_account');
     } catch {
         return { ok: false, message: '退会処理に失敗しました。データはそのまま保持されています。' };
     }
@@ -428,7 +440,7 @@ export async function deleteCurrentAccount(): Promise<AuthResult> {
     setGameRewardAuthorityState('anonymous');
     return cleanupFailed
         ? { ok: false, message: 'アカウントは削除されました。一部の端末データを削除できませんでした。アプリを再起動してください。' }
-        : { ok: true };
+        : { ok: true, manualAppleRevocationRequired: deletion.apple_revocation === 'manual_required' };
 }
 
 export async function getCurrentUser(): Promise<AuthUserInfo | null> {

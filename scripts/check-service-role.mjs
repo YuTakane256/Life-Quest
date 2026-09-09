@@ -3,7 +3,7 @@
  *
  * service_role はEdge Function実行環境・CIのシークレットにのみ存在してよい。
  * クライアントバンドルに含まれるソース（Web src/、Mobile apps/mobile/、共有 packages/）に
- * `service_role` への参照や SUPABASE_SERVICE_ROLE 系の環境変数参照が現れたら失敗させる。
+ * `service_role` への参照や、Apple/Supabaseのサーバー専用秘密値参照が現れたら失敗させる。
  * サーバー専用コード（supabase/functions/）とこのスクリプト自身、ドキュメントは対象外。
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -13,7 +13,7 @@ const ROOT = process.cwd();
 const TARGET_DIRS = ['src', 'apps/mobile/src', 'apps/mobile/app', 'packages'];
 const IGNORED_DIR_NAMES = new Set(['node_modules', 'dist', '.expo', 'coverage']);
 const TARGET_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json']);
-const PATTERN = /service_role|SERVICE_ROLE/;
+const PATTERN = /service_role|SERVICE_ROLE|APPLE_(?:PRIVATE_KEY|TEAM_ID|KEY_ID|CLIENT_ID)/;
 
 function* walk(dir) {
     for (const entry of readdirSync(dir)) {
@@ -56,4 +56,4 @@ if (violations.length > 0) {
     for (const violation of violations) console.error(`  ${violation}`);
     process.exit(1);
 }
-console.log('check:secrets OK — クライアントコードに service_role の参照はありません');
+console.log('check:secrets OK — クライアントコードにサーバー専用秘密値の参照はありません');

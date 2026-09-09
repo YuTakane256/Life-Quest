@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({
     storageWriteError: false,
     notifyLogin: vi.fn(async () => undefined),
     notifyLogout: vi.fn(async () => undefined),
-    signInWithAppleNative: vi.fn(async () => ({ ok: true })),
+    signInWithAppleNative: vi.fn(async (): Promise<{ ok: boolean; appleAuthorizationRecorded?: boolean }> => ({ ok: true })),
 }));
 
 vi.mock('expo-linking', () => ({
@@ -249,6 +249,12 @@ describe('Mobile auth reward authority', () => {
         await expect(first).resolves.toEqual({ ok: true });
         expect(state.signInWithAppleNative).toHaveBeenCalledTimes(1);
         expect(state.notifyLogin).not.toHaveBeenCalled();
+    });
+
+    it('Apple認可情報の記録に失敗したログインは端末セッションを残さない', async () => {
+        state.signInWithAppleNative.mockResolvedValueOnce({ ok: true, appleAuthorizationRecorded: false });
+        await expect(signInWithApple()).resolves.toMatchObject({ ok: false });
+        expect(state.signOut).toHaveBeenCalledWith({ scope: 'local' });
     });
 
     it('復旧リンクのcodeをセッションへ交換した後にだけパスワードを更新する', async () => {

@@ -37,7 +37,9 @@ It validates all profiles, public Expo manifests, the release/parity/preview ide
 
 Never add a Supabase `service_role` key, Google client secret, Apple private key, signing credential, or server-only URL to `EXPO_PUBLIC_*`, `VITE_*`, `app.config.ts`, `app.json`, or `eas.json`.
 
-Apple Sign In uses the native iOS capability and Supabase's Apple provider. Configure Apple private keys and client secrets only in Apple Developer and Supabase. Account-deletion token revocation is tracked by #646 and must be complete before App Store submission.
+Apple Sign In uses the native iOS capability and Supabase's Apple provider. Configure Apple private keys and client secrets only in Apple Developer and Supabase. For account deletion, configure the Edge Function secrets `APPLE_CLIENT_IDS` (comma-separated allowed bundle/Services IDs), `APPLE_WEB_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `APPLE_TOKEN_ENCRYPTION_KEY` (32-byte base64url value), and an optional `APPLE_TOKEN_KEY_VERSION`; never prefix them with `EXPO_PUBLIC_` or commit their values. A successful Apple sign-in gives the server a short-lived code to create encrypted, server-only revocation material. Stored material must revoke successfully before deletion; users created before this feature have no material and receive the `manual_required` deletion outcome, which the release owner must document with Apple’s manual revocation guidance.
+
+Do not change `APPLE_TOKEN_KEY_VERSION` or its key independently: existing encrypted rows intentionally fail closed on a version mismatch. Rotate by deploying code that can decrypt both versions, re-encrypting active rows, and only then retiring the old key/version.
 
 Before testing Apple authentication, the release owner must:
 
