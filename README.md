@@ -9,7 +9,9 @@
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?logo=supabase)](https://supabase.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
-Life Questは、日々のタスクや習慣の達成を、キャラクター育成・装備収集・マップ攻略へつなげる個人開発プロジェクトです。単なる演出付きToDoアプリに留めず、React製WebクライアントとExpo / React Native製Mobileクライアントを、共有ドメインロジックとSupabaseバックエンドで接続しています。
+Life Questは、日々のタスクや習慣の達成を、義務として消化するのではなく、ゲーム内の報酬、装備収集、キャラクター育成、マップ攻略へつなげることで、前向きに継続できる体験を目指している個人開発プロジェクトです。
+
+単なる演出付きToDoアプリに留めず、React製WebクライアントとExpo / React Native製Mobileクライアントを、共有ドメインロジックとSupabaseバックエンドで接続しています。
 
 ログイン中はタスク、習慣、キャラクター、インベントリ、報酬、バトル進行をユーザー単位で同期します。未ログインでも端末内で利用でき、既存ローカルデータからクラウドへ移行する経路を備えています。
 
