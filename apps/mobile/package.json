@@ -17,8 +17,8 @@
     "@life-quest/core": "*",
     "@react-native-async-storage/async-storage": "3.1.1",
     "@react-native-community/netinfo": "12.0.1",
-    "@supabase/supabase-js": "^2.115.0",
-    "expo": "~57.0.19",
+    "@supabase/supabase-js": "^2.116.0",
+    "expo": "~57.0.21",
     "expo-apple-authentication": "~57.0.1",
     "expo-auth-session": "~57.0.11",
     "expo-crypto": "~57.0.2",
@@ -30,14 +30,14 @@
     "expo-secure-store": "^57.0.3",
     "expo-status-bar": "~57.0.1",
     "expo-web-browser": "~57.0.2",
-    "react": "19.2.8",
+    "react": "19.3.0",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.8.1",
     "react-native-screens": "4.26.2",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@types/react": "~19.2.18",
+    "@types/react": "~19.3.0",
     "typescript": "~6.0.3"
   }
 }
