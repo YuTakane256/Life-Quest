@@ -14,7 +14,8 @@ function idToken(payload: Record<string, unknown>, tamper = false): string {
     const signed = `${encode({ alg: 'RS256', kid: 'apple-test-key' })}.${encode(payload)}`;
     const signer = createSign('RSA-SHA256'); signer.update(signed); signer.end();
     const signature = signer.sign(rsa.privateKey).toString('base64url');
-    return `${signed}.${tamper ? `${signature.slice(0, -1)}x` : signature}`;
+    const tamperedSignature = `${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`;
+    return `${signed}.${tamper ? tamperedSignature : signature}`;
 }
 
 function configure(): void {

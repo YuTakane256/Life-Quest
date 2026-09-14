@@ -41,6 +41,7 @@ Life Questは、日々のタスクや習慣の達成を、義務として消化�
 - **マップ・バトル**: 4エリア・40ステージ、ターン制戦闘、スキル、戦闘履歴・リプレイ
 - **統計**: タスク・習慣の推移、XP、ヒートマップ、実績進捗
 - **設定**: ダーク / ライト / システムテーマ、モーション、通知、バックアップ、同期状態、アカウント管理
+- **認証とアカウント**: メール認証、Google OAuth、iOSのAppleログイン、データを残さない退会フロー
 - **クロスプラットフォーム**: WebとMobileで共有するアカウント、データ、ゲームルール、画像アセット、デザイントークン
 
 ## 技術的な見どころ
@@ -72,7 +73,7 @@ flowchart LR
 
 ### 4. ユーザー境界と障害復旧
 
-RLSに加えて、service roleを利用するEdge FunctionでもJWT由来のユーザーIDと所有権を検証します。ローカルキャッシュとoutboxはユーザーIDごとのnamespaceへ分離し、ログアウト時にはメモリ状態を破棄します。オフライン時の操作は同じoperation IDで再送され、再起動・再接続後も保留操作を復元します。
+RLSに加えて、service roleを利用するEdge FunctionでもJWT由来のユーザーIDと所有権を検証します。ローカルキャッシュとoutboxはユーザーIDごとのnamespaceへ分離し、ログアウト時にはメモリ状態を破棄します。オフライン時の操作は同じoperation IDで再送され、再起動・再接続後も保留操作を復元します。Apple連携ユーザーの退会時は、サーバー側でAppleの認可を失効してからアカウントを削除し、外部処理の失敗時にユーザーデータだけが先に消えないよう保護しています。
 
 設計上の判断と背景は[Architecture Decision Records](docs/adr/README.md)に記録しています。
 
@@ -161,7 +162,7 @@ Pull Requestでは型検査、lint、テスト、Web build、Mobile export、Exp
 
 ## 実装状況
 
-Web / Mobileの主要画面、メール認証、クラウド同期、オフラインoutbox、サーバー権威のゲーム操作まで実装しています。現在は、画面差分の回帰テスト拡充や認証方式の追加など、公開品質を高める作業を継続しています。進行中・検討中の内容は[Issues](https://github.com/YuTakane256/Life-Quest/issues)を参照してください。
+Web / Mobileの主要画面、メール・Google・Apple認証、クラウド同期、オフラインoutbox、サーバー権威のゲーム操作まで実装しています。現在は、画面差分の回帰テスト、実機検証、配布・公開に向けた設定など、ゲーム体験を安定して届けるための品質向上を継続しています。進行中・検討中の内容は[Issues](https://github.com/YuTakane256/Life-Quest/issues)を参照してください。
 
 ## 補足資料
 
@@ -170,6 +171,7 @@ Web / Mobileの主要画面、メール認証、クラウド同期、オフラ�
 - [Mobile / Web画面比較手順](docs/mobile-parity-checklist.md)
 - [Mobileリリースチェックリスト](docs/mobile-release-checklist.md)
 - [メール認証セットアップ](docs/email-auth-setup.md)
+- [Google OAuthセットアップ](docs/google-oauth-setup.md)
 
 ## License
 
