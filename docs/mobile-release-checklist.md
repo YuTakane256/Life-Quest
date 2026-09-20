@@ -23,6 +23,26 @@ npm run mobile:validate-release
 
 It validates all profiles, public Expo manifests, the release/parity/preview identifiers, OAuth scheme, and the absence of secret-like values in the public manifest. This check is also part of pull-request CI.
 
+## Local anonymous smoke regression
+
+Before a release candidate, run the local behavior regression after starting
+the isolated development build with `npm run mobile:ios`:
+
+```bash
+npm run mobile:parity:smoke
+```
+
+It runs only on the fixed `com.yutakane.lifequest.parity` bundle after checking
+Maestro, a booted iOS simulator, and the installed bundle. It clears that
+bundle's local state, remains anonymous, creates/completes a task and a habit,
+visits the enabled primary tabs, then restarts without clearing state and
+asserts both completed records through accessibility labels. Map is expected to
+remain locked on a fresh anonymous profile and is asserted as locked rather
+than navigated to. This is a local booted iOS Simulator check only: it
+does not use production authentication or Supabase data, EAS, GitHub Actions,
+or pixel-diff tooling. If no compatible booted iOS Simulator is available,
+record that fact and the manual command/result in the release evidence.
+
 ## One-time EAS setup
 
 1. Install the EAS CLI and authenticate with the team-owned Expo account.

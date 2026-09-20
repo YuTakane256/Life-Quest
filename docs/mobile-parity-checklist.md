@@ -54,6 +54,31 @@ After launch, the flow waits up to 10 seconds for the first-run
 closes its backdrop and waits for the modal to disappear before it starts the
 capture actions. This avoids missing a delayed hydration-time modal.
 
+## Run the anonymous critical-path smoke regression
+
+With the same local parity build and Metro process, run:
+
+```bash
+npm run mobile:parity:smoke
+```
+
+This runs only `.maestro/mobile-parity/anonymous-critical-path.yaml`; the
+screenshot command continues to run only its capture flow. The smoke flow
+clears the parity app's local anonymous state, waits for hydration, creates and
+completes `スモーク タスク 永続化`, creates and achieves `スモーク 習慣 永続化`,
+and asserts the state-transition accessibility labels. It visits Tasks, Habits,
+Statistics, Character, and Settings; a fresh anonymous profile's Map tab is
+intentionally locked, so the flow asserts its public locked label instead of
+trying to bypass it. Finally it stops and launches the app with
+`clearState: false`, then asserts the completed task (using the completed
+filter) and achieved habit are still present. This validates the public UI
+through the AsyncStorage restart boundary, not just in-memory Zustand state.
+
+The smoke regression is local-only and anonymous. It is not a GitHub Actions
+job, pixel-diff test, EAS build, or production authentication/Supabase test.
+If a compatible booted iOS Simulator is unavailable, state that it was not run
+and use the command above for the manual verification evidence.
+
 To inspect the two resolved configurations without building an app:
 
 ```bash
