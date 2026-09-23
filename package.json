@@ -41,10 +41,10 @@
   "dependencies": {
     "@life-quest/core": "file:packages/core",
     "@supabase/supabase-js": "^2.116.0",
-    "lucide-react": "^1.44.0",
+    "lucide-react": "^1.47.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^7.18.3",
+    "react-router-dom": "^7.18.4",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
