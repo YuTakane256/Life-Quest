@@ -1,0 +1,96 @@
+appId: com.yutakane.lifequest.parity
+name: Smoke anonymous Mobile task and habit persistence
+---
+# This is intentionally the only destructive step. The runner preflights the
+# fixed parity-only bundle before Maestro starts, so a normal app profile can
+# never be cleared by this flow. Do not sign in while it runs.
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "タスク"
+    timeout: 10000
+
+# A fresh anonymous state gets the daily-login overlay after hydration.
+- extendedWaitUntil:
+    visible: "ログインボーナス"
+    timeout: 10000
+- tapOn:
+    point: "50%,90%"
+- extendedWaitUntil:
+    notVisible: "ログインボーナス"
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "保存済み"
+    timeout: 10000
+
+# Task creation and completion use public labels. The completed filter makes
+# the state transition explicit instead of merely asserting that the row exists.
+- tapOn: "新しいタスク"
+- inputText: "スモーク タスク 永続化"
+- tapOn: "タスクを追加"
+- extendedWaitUntil:
+    visible: "スモーク タスク 永続化を完了にする"
+    timeout: 5000
+- tapOn: "スモーク タスク 永続化を完了にする"
+- tapOn: "完了"
+- extendedWaitUntil:
+    visible: "スモーク タスク 永続化を未完了にする"
+    timeout: 5000
+
+# Habit creation and completion similarly assert the stateful public label.
+- tapOn: "習慣"
+- extendedWaitUntil:
+    visible: "続けたい習慣"
+    timeout: 5000
+- tapOn: "続けたい習慣"
+- inputText: "スモーク 習慣 永続化"
+- tapOn: "習慣を追加"
+- extendedWaitUntil:
+    visible: "スモーク 習慣 永続化を達成にする"
+    timeout: 5000
+- tapOn: "スモーク 習慣 永続化を達成にする"
+- extendedWaitUntil:
+    visible: "スモーク 習慣 永続化を未達成にする"
+    timeout: 5000
+
+# Traverse every enabled primary tab. Fresh anonymous data intentionally leaves
+# Map locked, so check its public locked label without attempting navigation.
+- tapOn: "統計"
+- extendedWaitUntil:
+    visible: "今日のXP"
+    timeout: 5000
+- tapOn: "キャラ"
+- extendedWaitUntil:
+    visible: "キャラクター"
+    timeout: 5000
+- assertVisible: "マップ（未解放）"
+- tapOn: "設定"
+- extendedWaitUntil:
+    visible: "アカウント"
+    timeout: 5000
+- tapOn: "習慣"
+- extendedWaitUntil:
+    visible: "スモーク 習慣 永続化を未達成にする"
+    timeout: 5000
+- tapOn: "タスク"
+- tapOn: "完了"
+- extendedWaitUntil:
+    visible: "スモーク タスク 永続化を未完了にする"
+    timeout: 5000
+
+# Do not clear state here: this is the actual AsyncStorage persistence check.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "保存済み"
+    timeout: 10000
+- assertNotVisible: "ログインボーナス"
+- tapOn: "完了"
+- extendedWaitUntil:
+    visible: "スモーク タスク 永続化を未完了にする"
+    timeout: 5000
+- tapOn: "習慣"
+- extendedWaitUntil:
+    visible: "スモーク 習慣 永続化を未達成にする"
+    timeout: 5000

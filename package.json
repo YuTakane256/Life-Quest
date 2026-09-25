@@ -30,6 +30,7 @@
     "mobile:export": "npm run export:android --workspace @life-quest/mobile",
     "mobile:ios": "npm run ios:parity --workspace @life-quest/mobile",
     "mobile:parity:screenshots": "node scripts/run-mobile-parity-screenshots.mjs",
+    "mobile:parity:smoke": "node scripts/run-mobile-parity-screenshots.mjs smoke",
     "mobile:typecheck": "npm run typecheck --workspace @life-quest/mobile",
     "mobile:validate-release": "npm run validate:release-config --workspace @life-quest/mobile",
     "preview": "vite preview",
