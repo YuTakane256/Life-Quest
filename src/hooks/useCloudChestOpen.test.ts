@@ -29,7 +29,7 @@ describe('runCloudChestOpen', () => {
         await runCloudChestOpen('chest-1', 'same-key', deps);
         expect(deps.applyCloudChestResult).not.toHaveBeenCalled();
         await runCloudChestOpen('chest-1', 'same-key', deps);
-        expect(deps.openCloudChest.mock.calls).toEqual([['chest-1', 'same-key'], ['chest-1', 'same-key']]);
+        expect(vi.mocked(deps.openCloudChest).mock.calls).toEqual([['chest-1', 'same-key'], ['chest-1', 'same-key']]);
         expect(deps.applyCloudChestResult).toHaveBeenCalledTimes(1);
         expect(deps.discardSyncedChest).not.toHaveBeenCalled();
     });
