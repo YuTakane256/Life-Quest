@@ -423,9 +423,10 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
 
         // 同一レアリティ3点（core SYNTHESIS_CONFIG.REQUIRED_COUNT）は成功し、
         // 素材が墓標化され上位レアリティの結果1点が生まれる
-        const ok = await callFn('synthesize_items', { itemIds: commons, idempotencyKey: uuid() });
+        const synthesisKey = uuid();
+        const ok = await callFn('synthesize_items', { itemIds: commons, idempotencyKey: synthesisKey });
         expect(ok.status).toBe(200);
-        const body = (await ok.json()) as { result_id: string; template_id: string };
+        const body = (await ok.json()) as { result_id: string; template_id: string; version: number };
         const { rows } = await pg.query(
             'select template_id from inventory_items where id=$1 and deleted_at is null', [body.result_id]);
         expect(rows).toHaveLength(1);
@@ -435,13 +436,37 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         const { rows: gone } = await pg.query(
             'select count(*) from inventory_items where id = any($1) and deleted_at is null', [commons]);
         expect(gone[0].count).toBe('0');
+
+        const beforeReplay = await pg.query('select count(*) from inventory_items where user_id=$1', [user.id]);
+        const replay = await callFn('synthesize_items', { itemIds: commons, idempotencyKey: synthesisKey });
+        expect(replay.status).toBe(200);
+        expect(await replay.json()).toEqual(body);
+        const afterReplay = await pg.query('select count(*) from inventory_items where user_id=$1', [user.id]);
+        expect(afterReplay.rows).toEqual(beforeReplay.rows);
+        const ingredientVersions = await pg.query('select distinct version from inventory_items where id=any($1)', [commons]);
+        expect(ingredientVersions.rows).toHaveLength(1);
+        expect(Number(ingredientVersions.rows[0].version)).toBe(body.version);
+
+        // 同じキーでも別JWT所有者の確定結果にはアクセスできない。
+        const otherReplay = await callFn('synthesize_items', { itemIds: commons, idempotencyKey: synthesisKey }, other.token);
+        expect(otherReplay.status).toBe(409);
+
+        const foreignKey = uuid();
+        await pg.query("insert into idempotency_keys (user_id, key, operation, result) values ($1, $2, 'sell_item', '{}'::jsonb)", [user.id, foreignKey]);
+        const mismatch = await callFn('synthesize_items', { itemIds: commons, idempotencyKey: foreignKey });
+        expect(mismatch.status).toBe(409);
+        expect(await mismatch.json()).toEqual({ error: 'idempotency_key_operation_mismatch' });
+
+        const pendingKey = uuid();
+        await pg.query("insert into idempotency_keys (user_id, key, operation) values ($1, $2, 'synthesize_items')", [user.id, pendingKey]);
+        for (const key of [uuid(), pendingKey]) {
+            expect((await callFn('synthesize_items', { itemIds: commons, idempotencyKey: key })).status).toBe(409);
+        }
     });
 
     it('冪等キー再送: open_chest_apply/synthesize_items_applyは同一キーなら同一のtemplate_idを返す（DB関数直接呼び出し）', async () => {
-        // EF層はchest.opened/inventory在庫を事前チェックしてから apply を呼ぶため、
-        // HTTP経由で「成功後に同じキーで送り直す」場合はEF層の事前チェックで拒否され
-        // DB関数のreserve_idempotency_keyまで到達しない（EFの事前チェックはタイミング
-        // 依存でHTTPレベルの同時実行テストはflakyになる）。DB関数が保証する冪等性
+        // open_chestのHTTP再送はopened事前チェックで拒否される。
+        // synthesizeのHTTP再送は上のテストで検証し、ここではDB関数が保証する冪等性
         // （reserve_idempotency_keyが同一キーの2回目呼び出しで最初のv_resultを
         // そのまま返す）自体はDB関数を直接2回呼び出すことで決定的に検証できる。
         const chestId = uuid();

@@ -257,6 +257,24 @@ describe('useMobileGameStore', () => {
             expect(state.equipment.some((e) => e.id === 'kept')).toBe(true);
             expect(state.equipment.some((e) => e.id === 'server-result-1')).toBe(true);
         });
+
+        it('カノニカルpullが先に結果装備を反映した後のretryで重複させない', () => {
+            const pulledResult = item('server-result-1', someTemplate.id, true);
+            const staleIngredient = item('i1', 'wooden_sword');
+            useMobileGameStore.setState({ equipment: [staleIngredient, pulledResult] });
+
+            const result = useMobileGameStore.getState().applyCloudSynthesisResult(
+                ['i1', 'i2', 'i3'], 'server-result-1', someTemplate.id,
+            );
+            const repeatedResult = useMobileGameStore.getState().applyCloudSynthesisResult(
+                ['i1', 'i2', 'i3'], 'server-result-1', 'not-a-real-template',
+            );
+
+            expect(result).toBe(pulledResult);
+            expect(repeatedResult).toBe(pulledResult);
+            expect(useMobileGameStore.getState().equipment).toEqual([pulledResult]);
+            expect(useMobileGameStore.getState().equipment[0].equipped).toBe(true);
+        });
     });
 
     describe('バトル', () => {

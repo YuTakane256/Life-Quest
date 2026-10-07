@@ -469,14 +469,19 @@ export const useMobileGameStore = create<MobileGameStore>()(
             applyCloudSynthesisResult: (ingredientIds, resultId, templateId) => {
                 if (!get().hasHydrated) return null;
                 const template = getEquipmentTemplateById(templateId);
-                const newItem = template ? createEquipmentFromTemplate(resultId, template) : null;
-                set((state) => ({
-                    equipment: capEquipmentCollection([
-                        ...state.equipment.filter((candidate) => !ingredientIds.includes(candidate.id)),
-                        ...(newItem ? [newItem] : []),
-                    ]),
-                }));
-                return newItem;
+                const generatedItem = template ? createEquipmentFromTemplate(resultId, template) : null;
+                let appliedItem: Equipment | null = null;
+                set((state) => {
+                    const existingItem = state.equipment.find((equipment) => equipment.id === resultId) ?? null;
+                    appliedItem = existingItem ?? generatedItem;
+                    return {
+                        equipment: capEquipmentCollection([
+                            ...state.equipment.filter((equipment) => !ingredientIds.includes(equipment.id)),
+                            ...(!existingItem && generatedItem ? [generatedItem] : []),
+                        ]),
+                    };
+                });
+                return appliedItem;
             },
 
             getEffectiveStats: () => {

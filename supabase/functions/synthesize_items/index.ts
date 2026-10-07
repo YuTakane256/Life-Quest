@@ -9,15 +9,33 @@ import {
     type Equipment,
 } from '../../../packages/core/src/equipment.ts';
 import { EQUIPMENT_POOL, SYNTHESIS_CONFIG } from '../../../packages/core/src/rewards.ts';
-import { BadRequestError, callApply, json, serveGameFunction, requireString } from '../_shared/handler.ts';
+import { BadRequestError, callApply, json, serveGameFunction, requireString, type HandlerContext } from '../_shared/handler.ts';
 
-serveGameFunction(async (ctx) => {
+export async function synthesizeItems(ctx: HandlerContext): Promise<Response> {
     const idempotencyKey = requireString(ctx.body, 'idempotencyKey');
     const itemIds = ctx.body.itemIds;
     if (!Array.isArray(itemIds) || itemIds.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT
         || itemIds.some((id) => typeof id !== 'string')) {
         throw new BadRequestError('invalid ingredients: wrong count');
     }
+
+    // 消費済み素材の検証より先に、JWT所有者の確定結果を再生する。
+    const readReplay = async (): Promise<Response | null> => {
+        const { data: replay, error: replayError } = await ctx.service
+            .from('idempotency_keys')
+            .select('operation, result')
+            .eq('user_id', ctx.userId)
+            .eq('key', idempotencyKey)
+            .maybeSingle<{ operation: string; result: unknown | null }>();
+        if (replayError) return json(500, { error: replayError.message });
+        if (replay && replay.operation !== 'synthesize_items') {
+            return json(409, { error: 'idempotency_key_operation_mismatch' });
+        }
+        if (replay && replay.result !== null) return json(200, replay.result);
+        return null;
+    };
+    const replay = await readReplay();
+    if (replay) return replay;
 
     const { data: rows, error } = await ctx.service
         .from('inventory_items')
@@ -34,9 +52,12 @@ serveGameFunction(async (ctx) => {
         return [{ ...item, equipped: row.equipped }];
     });
 
-    // core共有ルール: 同一レアリティ5点・非装備・上位レアリティ存在の検証
+    // core共有ルール: 必要数の同一レアリティ・非装備・上位レアリティ存在の検証
     const selection = selectSynthesisIngredients(itemIds as string[], inventory, SYNTHESIS_CONFIG.REQUIRED_COUNT);
-    if (!selection) return json(409, { error: 'invalid ingredients: synthesis rules not satisfied' });
+    if (!selection) {
+        // 最初の台帳読取り後に並行リクエストが素材を消費・確定した場合も再生する。
+        return await readReplay() ?? json(409, { error: 'invalid ingredients: synthesis rules not satisfied' });
+    }
 
     const slot = selection.dominantSlots[Math.floor(Math.random() * selection.dominantSlots.length)];
     const candidates = EQUIPMENT_POOL.filter(
@@ -51,4 +72,6 @@ serveGameFunction(async (ctx) => {
         p_result_item: { id: crypto.randomUUID(), template_id: resultTemplate.id },
         p_key: idempotencyKey,
     });
-});
+}
+
+serveGameFunction(synthesizeItems);

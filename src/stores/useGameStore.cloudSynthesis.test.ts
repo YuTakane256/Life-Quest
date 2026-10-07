@@ -72,4 +72,26 @@ describe('useGameStore.applyCloudSynthesisResult', () => {
         expect(state.equipment.some((e) => e.id === 'kept')).toBe(true);
         expect(state.equipment.some((e) => e.id === 'server-result-1')).toBe(true);
     });
+
+    it('カノニカルpullが先に結果装備を反映した後のretryで重複させない', () => {
+        const pulledResult = makeEquipment({ id: 'server-result-1', templateId: someTemplate.id, equipped: true });
+        const staleIngredient = makeEquipment({ id: 'i1' });
+        useGameStore.setState({ equipment: [staleIngredient, pulledResult] });
+
+        const result = useGameStore.getState().applyCloudSynthesisResult(
+            ['i1', 'i2', 'i3'],
+            'server-result-1',
+            someTemplate.id,
+        );
+        const repeatedResult = useGameStore.getState().applyCloudSynthesisResult(
+            ['i1', 'i2', 'i3'],
+            'server-result-1',
+            'not-a-real-template',
+        );
+
+        expect(result).toBe(pulledResult);
+        expect(repeatedResult).toBe(pulledResult);
+        expect(useGameStore.getState().equipment).toEqual([pulledResult]);
+        expect(useGameStore.getState().equipment[0].equipped).toBe(true);
+    });
 });
