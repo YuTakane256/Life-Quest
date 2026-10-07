@@ -44,6 +44,20 @@ const someTemplate = EQUIPMENT_POOL[0];
 describe('useGameStore.applyCloudChestResult', () => {
     beforeEach(() => reset());
 
+    it('pull済みの装備を保持し、同じ確定結果を二重追加・二重演出しない', () => {
+        useGameStore.setState({ chestQueue: [makeChest({ id: 'c1' })] });
+        useGameStore.getState().applyCloudChestResult('c1', 'item', someTemplate.id, false);
+        const item = { ...useGameStore.getState().equipment[0], equipped: true };
+        useGameStore.setState({ equipment: [item], chestQueue: [makeChest({ id: 'c1' })], pendingChestReveal: null });
+        useGameStore.getState().applyCloudChestResult('c1', 'item', someTemplate.id, false);
+        const reveal = useGameStore.getState().pendingChestReveal;
+        expect(useGameStore.getState().equipment).toEqual([item]);
+        expect(reveal?.equipment).toBe(item);
+        useGameStore.getState().applyCloudChestResult('c1', 'item', someTemplate.id, false);
+        expect(useGameStore.getState().pendingChestReveal).toBe(reveal);
+        expect(useGameStore.getState().equipment).toEqual([item]);
+    });
+
     it('サーバーのitemId/templateIdからequipmentを生成し、equipmentIdはサーバーのitem_idと一致する', () => {
         const chest = makeChest({ id: 'c1', chestType: 'wood' });
         useGameStore.setState({ chestQueue: [chest] });

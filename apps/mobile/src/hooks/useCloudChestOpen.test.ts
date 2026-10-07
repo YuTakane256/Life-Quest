@@ -42,6 +42,28 @@ function makeDeps(overrides: Partial<Parameters<typeof runCloudChestOpen>[2]> = 
 }
 
 describe('runCloudChestOpen', () => {
+    it('応答喪失後も同じキーで再送し確定結果を一度だけ適用する', async () => {
+        const deps = makeDeps({
+            openCloudChest: vi.fn()
+                .mockRejectedValueOnce(new TypeError('response lost'))
+                .mockResolvedValueOnce({ itemId: 'item', templateId: 'wooden_sword', starterCharacter: false }),
+        });
+        await runCloudChestOpen('chest-1', 'same-key', deps);
+        expect(deps.applyCloudChestResult).not.toHaveBeenCalled();
+        await runCloudChestOpen('chest-1', 'same-key', deps);
+        expect(deps.openCloudChest.mock.calls).toEqual([['chest-1', 'same-key'], ['chest-1', 'same-key']]);
+        expect(deps.applyCloudChestResult).toHaveBeenCalledTimes(1);
+        expect(deps.discardSyncedChest).not.toHaveBeenCalled();
+    });
+    it.each(['{"error":"idempotency_key_operation_mismatch"}', '{"error":"other conflict"}', 'broken'])('開封済み以外の409は再送待ちを維持する: %s', async (body) => {
+        const deps = makeDeps({
+            openCloudChest: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'open_chest failed: 409 ' + body, 409); }),
+        });
+        const outcome = await runCloudChestOpen('chest-1', 'key-1', deps);
+        expect(outcome.tag).toBe('error');
+        expect(deps.discardSyncedChest).not.toHaveBeenCalled();
+        expect(deps.localOpenChest).not.toHaveBeenCalled();
+    });
     it('クラウドが結果を返せばapplyCloudChestResultへ適用し、appliedを返す', async () => {
         const deps = makeDeps({
             openCloudChest: vi.fn(async () => ({ itemId: 'item-1', templateId: 'wooden_sword', starterCharacter: false })),
@@ -89,7 +111,7 @@ describe('runCloudChestOpen', () => {
 
     it('409（既に開封済み）ならdiscardSyncedChestを呼び、equipmentはnull', async () => {
         const deps = makeDeps({
-            openCloudChest: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'chest_already_opened', 409); }),
+            openCloudChest: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'open_chest failed: 409 {"error":"chest_already_opened"}', 409); }),
         });
 
         const result = await runCloudChestOpen('chest-1', 'key-1', deps);
