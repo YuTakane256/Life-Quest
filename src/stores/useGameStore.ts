@@ -515,7 +515,9 @@ export const useGameStore = create<GameStoreState>()(
                 const chest = chestQueue.find((c) => c.id === chestId);
                 if (!chest || chest.opened) return;
                 const template = templateId ? getEquipmentTemplateById(templateId) : null;
-                const equipment = template && itemId ? createEquipmentFromTemplate(itemId, template) : null;
+                // canonical pullが先に装備を取り込んでいても、装備状態を保持する。
+                const existingItem = get().equipment.find((item) => item.id === itemId);
+                const equipment = existingItem ?? (template && itemId ? createEquipmentFromTemplate(itemId, template) : null);
                 const reveal: ChestRevealEvent = {
                     id: generateId(),
                     chestId: chest.id,
@@ -528,7 +530,7 @@ export const useGameStore = create<GameStoreState>()(
                     chestQueue: capChestQueue(state.chestQueue.map((c) =>
                         c.id === chestId ? { ...c, opened: true, equipment } : c
                     )),
-                    equipment: equipment
+                    equipment: equipment && !existingItem
                         ? capEquipmentCollection([...state.equipment, equipment])
                         : state.equipment,
                     battle: starterCharacter ? { ...state.battle, battleUnlocked: true } : state.battle,

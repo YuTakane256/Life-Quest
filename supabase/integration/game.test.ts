@@ -199,8 +199,13 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         expect(chests[0].chest_type).toBe('blue');
         expect(chests[0].is_starter_character).toBe(true);
 
-        const open = await callFn('open_chest', { chestId: chests[0].id, idempotencyKey: uuid() });
+        const chestKey = uuid();
+        const open = await callFn('open_chest', { chestId: chests[0].id, idempotencyKey: chestKey });
         expect(open.status).toBe(200);
+        const openedResult = await open.json();
+        const replay = await callFn('open_chest', { chestId: chests[0].id, idempotencyKey: chestKey });
+        expect(replay.status).toBe(200);
+        expect(await replay.json()).toEqual(openedResult);
         expect((await getCharacter()).battle_unlocked).toBe(true);
 
         // blue宝箱は装備を排出しない（core共有ルール）
@@ -465,8 +470,7 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
     });
 
     it('冪等キー再送: open_chest_apply/synthesize_items_applyは同一キーなら同一のtemplate_idを返す（DB関数直接呼び出し）', async () => {
-        // open_chestのHTTP再送はopened事前チェックで拒否される。
-        // synthesizeのHTTP再送は上のテストで検証し、ここではDB関数が保証する冪等性
+        // open_chest/synthesizeのHTTP再送は上のテストで検証し、ここではDB関数が保証する冪等性
         // （reserve_idempotency_keyが同一キーの2回目呼び出しで最初のv_resultを
         // そのまま返す）自体はDB関数を直接2回呼び出すことで決定的に検証できる。
         const chestId = uuid();
@@ -773,6 +777,40 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
             p_habit_id: habitId, p_date: date, p_completed: true, p_memo: '', p_key: uuid(),
         });
         expect(afterDelete.error?.message).toContain('not_found_or_forbidden');
+    });
+
+    it('宝箱HTTP再送: 同一キーの並行開封・応答喪失後retryは同じ装備結果を返す', async () => {
+        const chestId = uuid();
+        await insertWithVersion(async (v) => {
+            await pg.query("insert into chests (id, user_id, chest_type, label, version) values ($1, $2, 'wood', '木の宝箱', $3)", [chestId, user.id, v]);
+        });
+        const before = await getCharacter();
+        const key = uuid();
+        const responses = await Promise.all([
+            callFn('open_chest', { chestId, idempotencyKey: key }),
+            callFn('open_chest', { chestId, idempotencyKey: key }),
+        ]);
+        expect(responses.map((response) => response.status)).toEqual([200, 200]);
+        const result = await responses[0].json();
+        expect(await responses[1].json()).toEqual(result);
+        const after = await getCharacter();
+        const retry = await callFn('open_chest', { chestId, idempotencyKey: key });
+        expect(retry.status).toBe(200);
+        expect(await retry.json()).toEqual(result);
+        expect(await getCharacter()).toEqual(after);
+        expect(after.gacha_count).toBe(before.gacha_count);
+        const { rows } = await pg.query('select id from inventory_items where user_id=$1 and id=$2', [user.id, result.item_id]);
+        expect(rows).toHaveLength(1);
+        const foreign = await callFn('open_chest', { chestId, idempotencyKey: key }, other.token);
+        expect(foreign.status).toBe(404);
+        const mismatchKey = uuid();
+        await pg.query("insert into idempotency_keys (user_id, key, operation, result) values ($1, $2, 'sell_item', '{}'::jsonb)", [user.id, mismatchKey]);
+        const mismatch = await callFn('open_chest', { chestId, idempotencyKey: mismatchKey });
+        expect(mismatch.status).toBe(409);
+        expect(await mismatch.json()).toEqual({ error: 'idempotency_key_operation_mismatch' });
+        const pendingKey = uuid();
+        await pg.query("insert into idempotency_keys (user_id, key, operation) values ($1, $2, 'open_chest')", [user.id, pendingKey]);
+        expect((await callFn('open_chest', { chestId, idempotencyKey: pendingKey })).status).toBe(409);
     });
 
     it('並行実行: 同じ宝箱を2本の別キーで同時に開いてもアイテムは1個だけ', async () => {

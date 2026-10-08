@@ -349,12 +349,14 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 if (!chest || chest.opened) return null;
 
                 const template = templateId ? getEquipmentTemplateById(templateId) : null;
-                const equipment = template && itemId ? createEquipmentFromTemplate(itemId, template) : null;
+                // canonical pullが先に装備を取り込んでいても、装備状態を保持する。
+                const existingItem = get().equipment.find((item) => item.id === itemId);
+                const equipment = existingItem ?? (template && itemId ? createEquipmentFromTemplate(itemId, template) : null);
                 set((state) => ({
                     chestQueue: state.chestQueue.map((candidate) =>
                         candidate.id === chestId ? { ...candidate, opened: true, equipment } : candidate
                     ),
-                    equipment: equipment
+                    equipment: equipment && !existingItem
                         ? capEquipmentCollection([...state.equipment, equipment])
                         : state.equipment,
                     battleProgress: starterCharacter
