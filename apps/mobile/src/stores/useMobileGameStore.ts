@@ -349,12 +349,14 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 if (!chest || chest.opened) return null;
 
                 const template = templateId ? getEquipmentTemplateById(templateId) : null;
-                const equipment = template && itemId ? createEquipmentFromTemplate(itemId, template) : null;
+                // canonical pullが先に装備を取り込んでいても、装備状態を保持する。
+                const existingItem = get().equipment.find((item) => item.id === itemId);
+                const equipment = existingItem ?? (template && itemId ? createEquipmentFromTemplate(itemId, template) : null);
                 set((state) => ({
                     chestQueue: state.chestQueue.map((candidate) =>
                         candidate.id === chestId ? { ...candidate, opened: true, equipment } : candidate
                     ),
-                    equipment: equipment
+                    equipment: equipment && !existingItem
                         ? capEquipmentCollection([...state.equipment, equipment])
                         : state.equipment,
                     battleProgress: starterCharacter
@@ -469,14 +471,19 @@ export const useMobileGameStore = create<MobileGameStore>()(
             applyCloudSynthesisResult: (ingredientIds, resultId, templateId) => {
                 if (!get().hasHydrated) return null;
                 const template = getEquipmentTemplateById(templateId);
-                const newItem = template ? createEquipmentFromTemplate(resultId, template) : null;
-                set((state) => ({
-                    equipment: capEquipmentCollection([
-                        ...state.equipment.filter((candidate) => !ingredientIds.includes(candidate.id)),
-                        ...(newItem ? [newItem] : []),
-                    ]),
-                }));
-                return newItem;
+                const generatedItem = template ? createEquipmentFromTemplate(resultId, template) : null;
+                let appliedItem: Equipment | null = null;
+                set((state) => {
+                    const existingItem = state.equipment.find((equipment) => equipment.id === resultId) ?? null;
+                    appliedItem = existingItem ?? generatedItem;
+                    return {
+                        equipment: capEquipmentCollection([
+                            ...state.equipment.filter((equipment) => !ingredientIds.includes(equipment.id)),
+                            ...(!existingItem && generatedItem ? [generatedItem] : []),
+                        ]),
+                    };
+                });
+                return appliedItem;
             },
 
             getEffectiveStats: () => {

@@ -144,6 +144,18 @@ describe('useMobileGameStore', () => {
     describe('applyCloudChestResult', () => {
         const someTemplate = EQUIPMENT_POOL[0];
 
+        it('pull済み装備の状態を保持し再送で二重追加しない', () => {
+            const chest = { id: 'chest-1', chestType: 'wood' as const, label: '木の宝箱', opened: false, equipment: null };
+            useMobileGameStore.setState({ chestQueue: [chest] });
+            const generated = useMobileGameStore.getState().applyCloudChestResult('chest-1', 'item', someTemplate.id, false)!;
+            const item = { ...generated, equipped: true };
+            useMobileGameStore.setState({ equipment: [item], chestQueue: [chest] });
+            expect(useMobileGameStore.getState().applyCloudChestResult('chest-1', 'item', someTemplate.id, false)).toBe(item);
+            expect(useMobileGameStore.getState().equipment).toEqual([item]);
+            expect(useMobileGameStore.getState().applyCloudChestResult('chest-1', 'item', someTemplate.id, false)).toBeNull();
+            expect(useMobileGameStore.getState().equipment).toEqual([item]);
+        });
+
         it('サーバーのitemId/templateIdから装備を生成し、装備IDはサーバーのitemIdと一致する', () => {
             useMobileGameStore.setState({
                 chestQueue: [{ id: 'chest-1', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null }],
@@ -256,6 +268,24 @@ describe('useMobileGameStore', () => {
             const state = useMobileGameStore.getState();
             expect(state.equipment.some((e) => e.id === 'kept')).toBe(true);
             expect(state.equipment.some((e) => e.id === 'server-result-1')).toBe(true);
+        });
+
+        it('カノニカルpullが先に結果装備を反映した後のretryで重複させない', () => {
+            const pulledResult = item('server-result-1', someTemplate.id, true);
+            const staleIngredient = item('i1', 'wooden_sword');
+            useMobileGameStore.setState({ equipment: [staleIngredient, pulledResult] });
+
+            const result = useMobileGameStore.getState().applyCloudSynthesisResult(
+                ['i1', 'i2', 'i3'], 'server-result-1', someTemplate.id,
+            );
+            const repeatedResult = useMobileGameStore.getState().applyCloudSynthesisResult(
+                ['i1', 'i2', 'i3'], 'server-result-1', 'not-a-real-template',
+            );
+
+            expect(result).toBe(pulledResult);
+            expect(repeatedResult).toBe(pulledResult);
+            expect(useMobileGameStore.getState().equipment).toEqual([pulledResult]);
+            expect(useMobileGameStore.getState().equipment[0].equipped).toBe(true);
         });
     });
 

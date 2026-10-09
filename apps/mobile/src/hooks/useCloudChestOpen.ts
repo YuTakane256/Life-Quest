@@ -6,7 +6,7 @@
  *   宝箱だけをローカル`openChest`へフォールバック
  * - canonical pull由来（`origin: 'cloud'`）の宝箱はnull/404でもフォールバックせず
  *   再送・次回pullへ委ねる
- * - status 409（`chest_already_opened`。サーバー側は既に正常）→ エラー扱い
+ * - `chest_already_opened`を返すstatus 409（サーバー側は既に正常）→ エラー扱い
  *   せず`discardSyncedChest`で演出無しにローカル未開封表示だけ消す
  * - それ以外（ネットワーク断・5xx等）→ フォールバックせず`errorChestId`を
  *   セットし、呼び出し元に再送させる
@@ -84,11 +84,22 @@ export async function runCloudChestOpen(
             if (deps.allowLocalFallback === false) return { tag: 'error', equipment: null };
             return { tag: 'not-found-fallback', equipment: deps.localOpenChest(chestId) };
         }
-        if (error instanceof EdgeFunctionError && error.status === 409) {
+        if (error instanceof EdgeFunctionError && error.status === 409 && isAlreadyOpened(error)) {
             deps.discardSyncedChest(chestId);
             return { tag: 'discarded', equipment: null };
         }
         return { tag: 'error', equipment: null };
+    }
+}
+
+/** 409のキー衝突等を開封済みと取り違えない。 */
+function isAlreadyOpened(error: EdgeFunctionError): boolean {
+    const prefix = 'open_chest failed: 409 ';
+    if (!error.message.startsWith(prefix)) return false;
+    try {
+        return JSON.parse(error.message.slice(prefix.length))?.error === 'chest_already_opened';
+    } catch {
+        return false;
     }
 }
 

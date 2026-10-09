@@ -515,7 +515,9 @@ export const useGameStore = create<GameStoreState>()(
                 const chest = chestQueue.find((c) => c.id === chestId);
                 if (!chest || chest.opened) return;
                 const template = templateId ? getEquipmentTemplateById(templateId) : null;
-                const equipment = template && itemId ? createEquipmentFromTemplate(itemId, template) : null;
+                // canonical pullが先に装備を取り込んでいても、装備状態を保持する。
+                const existingItem = get().equipment.find((item) => item.id === itemId);
+                const equipment = existingItem ?? (template && itemId ? createEquipmentFromTemplate(itemId, template) : null);
                 const reveal: ChestRevealEvent = {
                     id: generateId(),
                     chestId: chest.id,
@@ -528,7 +530,7 @@ export const useGameStore = create<GameStoreState>()(
                     chestQueue: capChestQueue(state.chestQueue.map((c) =>
                         c.id === chestId ? { ...c, opened: true, equipment } : c
                     )),
-                    equipment: equipment
+                    equipment: equipment && !existingItem
                         ? capEquipmentCollection([...state.equipment, equipment])
                         : state.equipment,
                     battle: starterCharacter ? { ...state.battle, battleUnlocked: true } : state.battle,
@@ -557,14 +559,19 @@ export const useGameStore = create<GameStoreState>()(
              */
             applyCloudSynthesisResult: (ingredientIds, resultId, templateId) => {
                 const template = getEquipmentTemplateById(templateId);
-                const newItem = template ? createEquipmentFromTemplate(resultId, template) : null;
-                set((state) => ({
-                    equipment: capEquipmentCollection([
-                        ...state.equipment.filter((e) => !ingredientIds.includes(e.id)),
-                        ...(newItem ? [newItem] : []),
-                    ]),
-                }));
-                return newItem;
+                const generatedItem = template ? createEquipmentFromTemplate(resultId, template) : null;
+                let appliedItem: Equipment | null = null;
+                set((state) => {
+                    const existingItem = state.equipment.find((equipment) => equipment.id === resultId) ?? null;
+                    appliedItem = existingItem ?? generatedItem;
+                    return {
+                        equipment: capEquipmentCollection([
+                            ...state.equipment.filter((equipment) => !ingredientIds.includes(equipment.id)),
+                            ...(!existingItem && generatedItem ? [generatedItem] : []),
+                        ]),
+                    };
+                });
+                return appliedItem;
             },
 
             equipItem: (equipmentId: string) => {
