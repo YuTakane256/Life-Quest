@@ -40,6 +40,8 @@ capture用Metroを停止し、フラグなしの`npm run mobile:ios`等で再起
 
 ## 現在の差分（#689の棚卸し）
 
+比較基盤で発見したWeb余白不具合 #701 の修正後は、[修正後の両テーマ画像](screenshots/web-spacing-fix/README.md)をMobileの基準にする。修正前の画像は履歴として残し、潰れた余白をMobileへ再現しない。
+
 | 領域 | Mobileの現状 | 次のIssue |
 | --- | --- | --- |
 | 共通 | 大きい見出し/余白、異なるアイコン・タブ選択表示 | #690 |
