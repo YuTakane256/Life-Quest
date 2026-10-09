@@ -4,6 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./parityFixture": {
+      "types": "./src/parityFixture.ts",
+      "import": "./src/parityFixture.ts"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"

@@ -7,7 +7,10 @@ test.beforeEach(async ({ page }) => {
 
 async function capture(page: Page, name: string): Promise<void> {
     await waitForWebParityRender(page);
-    await expect(page).toHaveScreenshot(name, { animations: 'disabled', caret: 'hide', scale: 'css' });
+    // macOS font rasterization changed 1/14 pixels on inventory/character even
+    // in the unchanged base checkout. Keep the baseline and a tiny absolute
+    // allowance, not a percentage that could hide actual layout regressions.
+    await expect(page).toHaveScreenshot(name, { animations: 'disabled', caret: 'hide', scale: 'css', maxDiffPixels: 20 });
 }
 
 test('renders the deterministic dark habits reference at 390x844', async ({ page }) => {

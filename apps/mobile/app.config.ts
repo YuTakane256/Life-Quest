@@ -26,6 +26,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     const variant = readAppVariant();
     const isParity = variant === 'parity';
     const isPreview = variant === 'preview';
+    const captureTheme = process.env.LIFE_QUEST_PARITY_CAPTURE;
+    if (captureTheme && (!isParity || !['light', 'dark'].includes(captureTheme))) {
+        throw new Error('LIFE_QUEST_PARITY_CAPTURE must be light/dark and requires LIFE_QUEST_APP_VARIANT=parity.');
+    }
     const scheme = isParity ? PARITY_SCHEME : isPreview ? PREVIEW_SCHEME : RELEASE_SCHEME;
 
     return {
@@ -54,6 +58,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         extra: {
             ...config.extra,
             appVariant: variant,
+            parityCaptureTheme: captureTheme || undefined,
         },
     } as ExpoConfig;
 };

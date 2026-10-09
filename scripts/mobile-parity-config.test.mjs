@@ -25,6 +25,16 @@ async function nativeEntitlements(variant, existing = {}) {
 }
 
 describe('anonymous parity iOS signing configuration', () => {
+    it.each(['release', 'preview'])('rejects fixture flags for %s, even during development', (variant) => {
+        vi.stubEnv('LIFE_QUEST_APP_VARIANT', variant);
+        vi.stubEnv('LIFE_QUEST_PARITY_CAPTURE', 'dark');
+        expect(() => appConfig({ config: baseConfig })).toThrow(/requires LIFE_QUEST_APP_VARIANT=parity/);
+    });
+    it.each(['light', 'dark'])('only exposes explicit %s capture for parity', (theme) => {
+        vi.stubEnv('LIFE_QUEST_APP_VARIANT', 'parity');
+        vi.stubEnv('LIFE_QUEST_PARITY_CAPTURE', theme);
+        expect(appConfig({ config: baseConfig }).extra.parityCaptureTheme).toBe(theme);
+    });
     it('removes Apple sign-in even from an existing native project, preserving other entitlements', async () => {
         const { config, entitlements } = await nativeEntitlements('parity', {
             'com.apple.developer.applesignin': ['Default'],

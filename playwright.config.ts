@@ -27,13 +27,25 @@ export default defineConfig({
         },
         {
             name: 'web-parity-390x844',
-            testMatch: /visual-parity\/.*\.spec\.ts/,
+            testMatch: /visual-parity\/(tasks|remaining-pages)-web\.spec\.ts/,
             testIgnore: process.env.RUN_WEB_PARITY === '1' ? undefined : /visual-parity\/.*\.spec\.ts/,
             use: {
                 browserName: 'chromium',
                 viewport: { width: 390, height: 844 },
                 deviceScaleFactor: 1,
                 colorScheme: 'dark',
+                reducedMotion: 'reduce',
+                timezoneId: 'Asia/Tokyo',
+            },
+        },
+        {
+            name: 'web-reference-402x874',
+            testMatch: /visual-parity\/paired-reference-web\.spec\.ts/,
+            testIgnore: isWebParityRun ? undefined : /visual-parity\/.*\.spec\.ts/,
+            use: {
+                browserName: 'chromium',
+                viewport: { width: 402, height: 874 },
+                deviceScaleFactor: 1,
                 reducedMotion: 'reduce',
                 timezoneId: 'Asia/Tokyo',
             },
