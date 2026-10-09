@@ -30,6 +30,9 @@ and starts Metro. The anonymous parity variant removes the Apple sign-in
 entitlement, including one left by a previous prebuild, so this simulator
 check does not require an Apple development certificate. Release and preview
 variants retain Apple sign-in. Do not use parity to verify Apple authentication.
+For Xcode 27 / iOS 27, parity also opts into Expo SDK 57's supported scene
+life cycle using `expo-build-properties` (`ios.enableSceneSupport: true`).
+This does not upgrade the Expo SDK or migrate the normal release/preview apps.
 If Expo chooses a physical device, select a simulator explicitly:
 
 ```bash

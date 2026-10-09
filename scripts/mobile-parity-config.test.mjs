@@ -32,6 +32,7 @@ describe('anonymous parity iOS signing configuration', () => {
         });
         expect(config.ios.usesAppleSignIn).toBe(false);
         expect(config.ios.bundleIdentifier).toBe('com.yutakane.lifequest.parity');
+        expect(config.plugins).toContainEqual(['expo-build-properties', { ios: { enableSceneSupport: true } }]);
         expect(entitlements).not.toHaveProperty('com.apple.developer.applesignin');
         expect(entitlements['aps-environment']).toBe('development');
     });
@@ -41,6 +42,7 @@ describe('anonymous parity iOS signing configuration', () => {
         expect(config.ios.usesAppleSignIn).toBe(true);
         expect(entitlements['com.apple.developer.applesignin']).toEqual(['Default']);
         expect(config.plugins).not.toContain('./plugins/with-parity-ios.cjs');
+        expect(config.plugins.some((plugin) => Array.isArray(plugin) && plugin[0] === 'expo-build-properties')).toBe(false);
     });
 
     it('refuses to remove the entitlement from a normal app', () => {

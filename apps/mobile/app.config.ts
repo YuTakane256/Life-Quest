@@ -38,6 +38,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             ...(config.plugins ?? []),
             'expo-web-browser',
             'expo-apple-authentication',
+            ...(isParity ? [['expo-build-properties', { ios: { enableSceneSupport: true } }]] : []),
         ],
         name: isParity ? 'Life Quest Parity' : isPreview ? 'Life Quest Preview' : config.name,
         scheme,
