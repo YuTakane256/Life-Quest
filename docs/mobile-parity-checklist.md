@@ -19,7 +19,8 @@ Run:
 npm run mobile:ios
 ```
 
-`mobile:ios` explicitly prebuilds iOS without cleaning the native directory,
+`mobile:ios` refreshes the generated iOS project with `expo prebuild` (no
+explicit `--clean`),
 then runs `LIFE_QUEST_APP_VARIANT=parity expo run:ios` for
 the local development bundle identifier `com.yutakane.lifequest.parity`. The
 default app configuration and the existing `ios` script retain the normal
@@ -42,7 +43,7 @@ npm run ios:parity --workspace @life-quest/mobile -- --device "iPhone 18 Pro"
 Use the name of an available simulator on your Mac. iPhone 13/14 are only
 required for the 390 x 844 screenshot comparison; the anonymous smoke flow
 can run on other iPhone simulators. Keep the Metro terminal running. In a
-second terminal, run:
+second terminal, run (Metro must use the default port 8081):
 
 ```bash
 npm run mobile:parity:screenshots
@@ -66,10 +67,14 @@ and settings. Keep the resulting Maestro output local or attach it only to a
 review artifact. Never use a signed-in build or include account addresses,
 tokens, notification identifiers, or production data in screenshots.
 
-After launch, the flow waits up to 10 seconds for the first-run
-`ログインボーナス` modal, which is guaranteed by the fresh anonymous state, then
-closes its backdrop and waits for the modal to disappear before it starts the
-capture actions. This avoids missing a delayed hydration-time modal.
+After clearing state, both flows reconnect through the parity-only URL scheme
+to Metro at `http://127.0.0.1:8081`. This avoids getting stuck at Expo's
+development-server picker after its remembered server is reset. They suppress
+the development-menu onboarding/overlay for that launch and allow up to 60
+seconds for the first bundle load and first-run `ログインボーナス` modal, which
+is guaranteed by the fresh anonymous state. The flow closes its backdrop and
+waits for the modal to disappear before asserting the underlying task tab or
+starting capture actions. Modal accessibility hides the background elements.
 
 ## Run the anonymous critical-path smoke regression
 
@@ -85,11 +90,13 @@ clears the parity app's local anonymous state, waits for hydration, creates and
 completes `スモーク タスク 永続化`, creates and achieves `スモーク 習慣 永続化`,
 and asserts the state-transition accessibility labels. It visits Tasks, Habits,
 Statistics, Character, and Settings; a fresh anonymous profile's Map tab is
-intentionally locked, so the flow asserts its public locked label instead of
+intentionally locked, so the flow asserts its disabled accessibility state instead of
 trying to bypass it. Finally it stops and launches the app with
 `clearState: false`, then asserts the completed task (using the completed
 filter) and achieved habit are still present. This validates the public UI
 through the AsyncStorage restart boundary, not just in-memory Zustand state.
+Tab selectors allow iOS's added `tab, n of 6` accessibility suffix. The flows
+also dismiss the keyboard after creating records so the tab bar is reachable.
 
 The smoke regression is local-only and anonymous. It is not a GitHub Actions
 job, pixel-diff test, EAS build, or production authentication/Supabase test.

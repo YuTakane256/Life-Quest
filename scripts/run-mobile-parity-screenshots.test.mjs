@@ -1,4 +1,6 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
     getMaestroEnvironment,
     getMaestroTestCommand,
@@ -70,6 +72,24 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it.each(['screenshots', 'smoke'])('reconnects %s only to the isolated app and local Metro after clearing state', (name) => {
+        const flow = getMobileParityFlow(name);
+        const yaml = readFileSync(new URL(`../${flow.path}`, import.meta.url), 'utf8');
+        expect(yaml).toMatch(/^appId: com\.yutakane\.lifequest\.parity\n/);
+        expect(yaml).toContain('- launchApp:\n    clearState: true');
+        expect(yaml).toContain('- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"');
+        expect(yaml.indexOf('- openLink:')).toBeGreaterThan(yaml.indexOf('clearState: true'));
+        expect(yaml).not.toContain('lifequest://');
+        expect(yaml).not.toContain('exp+life-quest://');
+        expect(yaml).toContain('visible: "ログインボーナス.*"');
+        expect(yaml.indexOf('notVisible: "ログインボーナス.*"')).toBeLessThan(yaml.indexOf('visible: "タスク"'));
+    });
+    it('checks the disabled map tab and restarts smoke without clearing persistence', () => {
+        const yaml = readFileSync(new URL('../.maestro/mobile-parity/anonymous-critical-path.yaml', import.meta.url), 'utf8');
+        expect(yaml).toContain('- assertVisible:\n    text: ".*マップ.*"\n    enabled: false');
+        expect(yaml).toContain('- stopApp\n- launchApp:\n    clearState: false');
+        expect(yaml.match(/clearState: true/g)).toHaveLength(1);
+    });
     it('keeps the screenshot command pinned to its single capture YAML', () => {
         const flow = getMobileParityFlow();
 
