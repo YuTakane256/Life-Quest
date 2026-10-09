@@ -19,13 +19,27 @@ Run:
 npm run mobile:ios
 ```
 
-`mobile:ios` explicitly runs `LIFE_QUEST_APP_VARIANT=parity expo run:ios` for
+`mobile:ios` explicitly prebuilds iOS without cleaning the native directory,
+then runs `LIFE_QUEST_APP_VARIANT=parity expo run:ios` for
 the local development bundle identifier `com.yutakane.lifequest.parity`. The
 default app configuration and the existing `ios` script retain the normal
 release identifier `com.yutakane.lifequest`; this separation means the capture
 command can only clear its dedicated local app. On the first run Expo creates
 the native iOS project as needed, installs the app on the selected simulator,
-and starts Metro. Keep that terminal running. In a second terminal, run:
+and starts Metro. The anonymous parity variant removes the Apple sign-in
+entitlement, including one left by a previous prebuild, so this simulator
+check does not require an Apple development certificate. Release and preview
+variants retain Apple sign-in. Do not use parity to verify Apple authentication.
+If Expo chooses a physical device, select a simulator explicitly:
+
+```bash
+npm run ios:parity --workspace @life-quest/mobile -- --device "iPhone 18 Pro"
+```
+
+Use the name of an available simulator on your Mac. iPhone 13/14 are only
+required for the 390 x 844 screenshot comparison; the anonymous smoke flow
+can run on other iPhone simulators. Keep the Metro terminal running. In a
+second terminal, run:
 
 ```bash
 npm run mobile:parity:screenshots
