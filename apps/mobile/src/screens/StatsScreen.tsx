@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { ThemePalette } from '@life-quest/core/designTokens';
+import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
+import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
 import {
     generateDateRange,
     getHabitHeatmapLevel,
@@ -78,7 +79,7 @@ export default function StatsScreen() {
     const selectedTitle = activeTitle && unlockedTitles.includes(activeTitle) ? activeTitle : null;
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
             <ScrollView contentContainerStyle={styles.scroll}>
                 <View style={styles.content}>
                     <Text style={styles.title}>統計</Text>
@@ -272,13 +273,13 @@ function createStyles(palette: ThemePalette) {
     return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     scroll: { paddingBottom: 32 },
-    content: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, gap: 12 },
-    title: { color: palette.text.primary, fontSize: 28, fontWeight: '800', paddingTop: 20 },
+    content: { width: '100%', maxWidth: LAYOUT_TOKENS.page.maxWidth, alignSelf: 'center', paddingHorizontal: LAYOUT_TOKENS.page.horizontal, gap: 12 },
+    title: { color: palette.text.primary, ...PAGE_HEADING, paddingTop: LAYOUT_TOKENS.page.top },
     summaryRow: { flexDirection: 'row', gap: 12 },
     summaryCard: { flex: 1, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, paddingVertical: 14, alignItems: 'center', gap: 4 },
     summaryLabel: { color: palette.text.muted, fontSize: 11, fontWeight: '700' },
     summaryValue: { color: palette.text.primary, fontSize: 20, fontWeight: '800' },
-    card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 14, gap: 8 },
+    card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, gap: 8 },
     cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     sectionTitle: { color: palette.text.primary, fontSize: 15, fontWeight: '800' },
     modeSwitch: { flexDirection: 'row', backgroundColor: palette.bg.secondary, borderRadius: 8, padding: 2 },

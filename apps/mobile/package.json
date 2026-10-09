@@ -35,10 +35,12 @@
     "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-web-browser": "~57.0.3",
+    "lucide-react-native": "^1.49.0",
     "react": "19.3.0",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.8.1",
     "react-native-screens": "4.26.2",
+    "react-native-svg": "15.15.4",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

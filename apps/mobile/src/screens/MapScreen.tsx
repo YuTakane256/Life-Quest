@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { ThemePalette } from '@life-quest/core/designTokens';
+import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
+import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
 import {
     BATTLE_CONFIG,
     MAP_CONFIG,
@@ -110,7 +111,7 @@ export default function MapScreen() {
 
     if (!hasHydrated) {
         return (
-            <SafeAreaView style={styles.safeArea}>
+            <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
                 <View style={styles.loading}>
                     <Text style={styles.loadingText}>保存データを読み込み中…</Text>
                 </View>
@@ -119,7 +120,7 @@ export default function MapScreen() {
     }
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
             <FlatList
                 data={BATTLE_CONFIG.STAGES}
                 keyExtractor={(stage) => String(stage.stage)}
@@ -401,9 +402,9 @@ function createStyles(palette: ThemePalette) {
     loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     loadingText: { color: palette.text.secondary, fontSize: 14 },
     listContent: { paddingBottom: 36 },
-    headerContent: { padding: 20, gap: 12 },
-    title: { color: palette.text.primary, fontSize: 26, fontWeight: '800' },
-    heroCard: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: 10, padding: 16, gap: 12 },
+    headerContent: { paddingHorizontal: LAYOUT_TOKENS.page.detailHorizontal, paddingTop: LAYOUT_TOKENS.page.top, paddingBottom: 20, gap: 12 },
+    title: { color: palette.text.primary, ...PAGE_HEADING },
+    heroCard: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, gap: 12 },
     heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
     areaName: { color: palette.text.primary, fontSize: 18, fontWeight: '800' },
     statusPill: { borderRadius: 999, borderWidth: 1, borderColor: palette.border.active, paddingHorizontal: 10, paddingVertical: 5 },
@@ -411,7 +412,7 @@ function createStyles(palette: ThemePalette) {
     hint: { color: palette.text.muted, fontSize: 12, lineHeight: 17 },
     mutedText: { color: palette.text.muted, fontSize: 12, lineHeight: 17 },
     sectionTitle: { color: palette.text.primary, fontSize: 15, fontWeight: '800' },
-    card: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: 10, padding: 16, gap: 12 },
+    card: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, gap: 12 },
     stageDetailTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
     statsRow: { flexDirection: 'row', gap: 8 },
     statCell: { flex: 1, minHeight: 58, borderRadius: 8, backgroundColor: palette.bg.secondary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
@@ -426,7 +427,7 @@ function createStyles(palette: ThemePalette) {
     noticeText: { color: palette.text.secondary, fontSize: 13, lineHeight: 18 },
     noticeRetryButton: { alignSelf: 'flex-start', minHeight: 32, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.active },
     noticeRetryText: { color: palette.text.primary, fontSize: 12, fontWeight: '800' },
-    battleCard: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: 10, padding: 16, gap: 12 },
+    battleCard: { backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, gap: 12 },
     battleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
     closeButton: { minHeight: 34, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: palette.border.default, justifyContent: 'center' },
     closeButtonText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
