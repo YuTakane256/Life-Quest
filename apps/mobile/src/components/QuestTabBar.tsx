@@ -1,8 +1,8 @@
-import type { ComponentProps } from 'react';
+import { useContext, type ComponentProps } from 'react';
 import type { Tabs } from 'expo-router';
+import { BottomTabBarHeightCallbackContext } from 'expo-router/js-tabs';
 import { CheckSquare, Repeat, BarChart3, User, Map, Settings, LockKeyhole } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS } from '@life-quest/core/designTokens';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
@@ -21,16 +21,16 @@ const ITEMS = {
 } as const;
 const metrics = LAYOUT_TOKENS.navigation;
 
-export function QuestTabBar({ state, navigation }: TabBarProps) {
+export function QuestTabBar({ state, navigation, insets }: TabBarProps) {
     const { palette } = usePalette();
-    const insets = useSafeAreaInsets();
+    const reportHeight = useContext(BottomTabBarHeightCallbackContext);
     const { width, fontScale } = useWindowDimensions();
     const battleUnlocked = useMobileGameStore((store) => store.battleProgress.battleUnlocked);
     const pendingCount = useMobileTaskStore((store) => store.tasks.filter((task) => !task.completed).length);
     const height = getTabBarHeight(width - insets.left - insets.right, fontScale);
 
     return (
-        <View style={{ backgroundColor: palette.bg.secondary, borderTopColor: palette.border.default, borderTopWidth: 1, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }}>
+        <View onLayout={(event) => reportHeight?.(event.nativeEvent.layout.height)} style={{ backgroundColor: palette.bg.secondary, borderTopColor: palette.border.default, borderTopWidth: 1, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }}>
             <View style={[styles.row, { height }]}>
                 {state.routes.map((route, index) => {
                     const item = ITEMS[route.name as keyof typeof ITEMS];
