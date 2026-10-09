@@ -87,6 +87,7 @@ describe('Mobile parity flow selection', () => {
         expect(yaml).not.toContain('clearState: true');
         expect(yaml).not.toContain('inputText:');
         expect(yaml).toContain('visible: "今週の計画を整理する.*"');
+        expect(yaml).toContain('element: "インベントリ（7）"\n    direction: DOWN\n    centerElement: true');
     });
     it.each(['screenshots', 'smoke'])('reconnects %s only to the isolated app and local Metro after clearing state', (name) => {
         const flow = getMobileParityFlow(name);

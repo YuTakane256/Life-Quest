@@ -41,6 +41,7 @@ name: Capture shared fictional Web/Mobile reference (no persistent writes)
 - scrollUntilVisible:
     element: "インベントリ（7）"
     direction: DOWN
+    centerElement: true
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 5000
