@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { ThemePalette } from '@life-quest/core/designTokens';
+import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
+import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
 import { EQUIPMENT_SLOTS, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
 import { calculateNextLevelXp, calculateXpProgress } from '@life-quest/core/progression';
@@ -147,7 +148,7 @@ export default function CharacterScreen() {
 
     if (!hasHydrated) {
         return (
-            <SafeAreaView style={styles.safeArea}>
+            <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
                 <View style={styles.loading}>
                     <Text style={styles.loadingText}>保存データを読み込み中…</Text>
                 </View>
@@ -374,7 +375,7 @@ export default function CharacterScreen() {
     );
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
             <FlatList
                 data={inventory}
                 keyExtractor={(item) => item.id}
@@ -529,14 +530,14 @@ function createStyles(palette: ThemePalette) {
     loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     loadingText: { color: palette.text.muted, fontSize: 14, fontWeight: '600' },
     // タブレット幅でも読みやすいよう本文幅を制限して中央寄せする
-    listContent: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 32, gap: 8 },
+    listContent: { width: '100%', maxWidth: LAYOUT_TOKENS.page.maxWidth, alignSelf: 'center', paddingHorizontal: LAYOUT_TOKENS.page.detailHorizontal, paddingBottom: 32, gap: 8 },
     headerContent: { gap: 14, marginBottom: 6 },
-    title: { color: palette.text.primary, fontSize: 28, fontWeight: '800' },
-    titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20 },
+    title: { color: palette.text.primary, ...PAGE_HEADING },
+    titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: LAYOUT_TOKENS.page.top },
     banner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.bg.tertiary, borderColor: palette.accent.emerald, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
     bannerText: { flex: 1, color: palette.text.primary, fontSize: 13, fontWeight: '600', lineHeight: 19 },
     bannerClose: { color: palette.text.secondary, fontSize: 21, lineHeight: 23 },
-    card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 16, gap: 10 },
+    card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, gap: 10 },
     profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     avatarCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: palette.bg.cardHover, alignItems: 'center', justifyContent: 'center' },
     avatarImage: { width: 56, height: 56, borderRadius: 28 },

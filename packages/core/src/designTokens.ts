@@ -154,6 +154,19 @@ export const LIGHT_THEME: ThemePalette = {
 
 export const FONT_SANS = "'Inter', system-ui, -apple-system, sans-serif";
 
+/** Latest Web at phone width: px-4/px-5, pt-6, text-2xl, rounded-xl, h-16. */
+export const LAYOUT_TOKENS = {
+    page: { horizontal: 16, detailHorizontal: 20, top: 24, maxWidth: 512 },
+    heading: { size: 24, lineHeight: 32, weight: '700' },
+    card: { radius: 12, padding: 16 },
+    navigation: {
+        height: 64, horizontal: 8, iconSize: 22, activeScale: 1.1,
+        labelSize: 10, labelLineHeight: 15, gap: 2,
+        indicatorWidth: 32, indicatorHeight: 2,
+        badgeSize: 16, badgeFontSize: 9, lockSize: 12,
+    },
+} as const;
+
 /**
  * テーマをCSS変数名→値のフラットなマップへ展開する。
  * Web側のintegrityテストが index.css との一致検証に使う。
