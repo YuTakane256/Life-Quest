@@ -5,47 +5,58 @@ name: Capture anonymous Mobile parity reference screens
 # this flow: its screenshots are intended to be shareable review artifacts.
 - launchApp:
     clearState: true
+# Clear state forgets the development server; use only the parity URL scheme.
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+# Accept the OS confirmation if present, including a queued launch prompt.
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
 - extendedWaitUntil:
-    visible: "タスク"
-    timeout: 10000
+    visible: "ログインボーナス.*"
+    timeout: 60000
 
 # A fresh state always gets the daily-login modal after hydration. Wait for it
 # instead of testing immediately, then wait until its fade-out finishes.
-- extendedWaitUntil:
-    visible: "ログインボーナス"
-    timeout: 10000
 - tapOn:
     point: "50%,90%"
 - extendedWaitUntil:
-    notVisible: "ログインボーナス"
+    notVisible: "ログインボーナス.*"
     timeout: 5000
+- extendedWaitUntil:
+    visible: "タスク"
+    timeout: 10000
 
 # Tasks: create a deterministic sample task through the public UI.
 - tapOn: "新しいタスク"
 - inputText: "デモ: 朝の振り返り"
 - tapOn: "タスクを追加"
+- hideKeyboard
 - takeScreenshot: "01-tasks"
 
 # Habits: create and complete one deterministic sample habit.
-- tapOn: "習慣"
+- tapOn: "習慣(, tab,.*)?"
 - extendedWaitUntil:
     visible: "続けたい習慣"
     timeout: 5000
 - tapOn: "続けたい習慣"
 - inputText: "デモ: 読書"
 - tapOn: "習慣を追加"
+- hideKeyboard
 - tapOn: "デモ: 読書を達成にする"
 - takeScreenshot: "02-habits"
 
 # Statistics uses the same anonymous task and habit records created above.
-- tapOn: "統計"
+- tapOn: "統計(, tab,.*)?"
 - extendedWaitUntil:
     visible: "統計"
     timeout: 5000
 - takeScreenshot: "03-stats"
 
 # Character is the anonymous initial profile; no personal profile is recorded.
-- tapOn: "キャラ"
+- tapOn: "キャラ(, tab,.*)?"
 - extendedWaitUntil:
     visible: "キャラクター"
     timeout: 5000
@@ -59,7 +70,7 @@ name: Capture anonymous Mobile parity reference screens
 - takeScreenshot: "05-inventory"
 
 # Settings is captured while logged out, so no account address or cloud data appears.
-- tapOn: "設定"
+- tapOn: "設定(, tab,.*)?"
 - extendedWaitUntil:
     visible: "設定"
     timeout: 5000

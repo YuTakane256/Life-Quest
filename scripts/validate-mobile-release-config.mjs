@@ -68,7 +68,7 @@ function validatePublicConfig(config, variant, expectedIdentifier, expectedSchem
     assert(config.android?.package === expectedIdentifier, `${variant} Android package must be ${expectedIdentifier}`);
     assert(config.extra?.appVariant === variant, `${variant} public config must expose its app variant`);
     assert(config.scheme === expectedScheme, `${variant} OAuth scheme must be ${expectedScheme}`);
-    assert(config.ios?.usesAppleSignIn === true, `${variant} must enable iOS Sign in with Apple`);
+    assert(config.ios?.usesAppleSignIn === (variant !== 'parity'), `${variant} has an incorrect iOS Sign in with Apple setting`);
     assert(!forbiddenSecretPattern.test(JSON.stringify(config)), `${variant} public Expo config contains a secret-like value`);
 }
 

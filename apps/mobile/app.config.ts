@@ -30,13 +30,22 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
     return {
         ...config,
-        plugins: [...(config.plugins ?? []), 'expo-web-browser', 'expo-apple-authentication'],
+        // Mods run in reverse registration order: parity cleanup must be
+        // registered before Apple authentication so it removes stale native
+        // entitlements after that plugin has run, without a destructive clean.
+        plugins: [
+            ...(isParity ? ['./plugins/with-parity-ios.cjs'] : []),
+            ...(config.plugins ?? []),
+            'expo-web-browser',
+            'expo-apple-authentication',
+            ...(isParity ? [['expo-build-properties', { ios: { enableSceneSupport: true } }]] : []),
+        ],
         name: isParity ? 'Life Quest Parity' : isPreview ? 'Life Quest Preview' : config.name,
         scheme,
         ios: {
             ...config.ios,
             bundleIdentifier: isParity ? PARITY_BUNDLE_ID : isPreview ? PREVIEW_BUNDLE_ID : RELEASE_BUNDLE_ID,
-            usesAppleSignIn: true,
+            usesAppleSignIn: !isParity,
         },
         android: {
             ...config.android,

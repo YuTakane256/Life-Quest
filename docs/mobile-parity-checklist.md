@@ -19,13 +19,31 @@ Run:
 npm run mobile:ios
 ```
 
-`mobile:ios` explicitly runs `LIFE_QUEST_APP_VARIANT=parity expo run:ios` for
+`mobile:ios` refreshes the generated iOS project with `expo prebuild` (no
+explicit `--clean`),
+then runs `LIFE_QUEST_APP_VARIANT=parity expo run:ios` for
 the local development bundle identifier `com.yutakane.lifequest.parity`. The
 default app configuration and the existing `ios` script retain the normal
 release identifier `com.yutakane.lifequest`; this separation means the capture
 command can only clear its dedicated local app. On the first run Expo creates
 the native iOS project as needed, installs the app on the selected simulator,
-and starts Metro. Keep that terminal running. In a second terminal, run:
+and starts Metro. The anonymous parity variant removes the Apple sign-in
+entitlement, including one left by a previous prebuild, so this simulator
+check does not require an Apple development certificate. Release and preview
+variants retain Apple sign-in. Do not use parity to verify Apple authentication.
+For Xcode 27 / iOS 27, parity also opts into Expo SDK 57's supported scene
+life cycle using `expo-build-properties` (`ios.enableSceneSupport: true`).
+This does not upgrade the Expo SDK or migrate the normal release/preview apps.
+If Expo chooses a physical device, select a simulator explicitly:
+
+```bash
+npm run ios:parity --workspace @life-quest/mobile -- --device "iPhone 18 Pro"
+```
+
+Use the name of an available simulator on your Mac. iPhone 13/14 are only
+required for the 390 x 844 screenshot comparison; the anonymous smoke flow
+can run on other iPhone simulators. Keep the Metro terminal running. In a
+second terminal, run (Metro must use the default port 8081):
 
 ```bash
 npm run mobile:parity:screenshots
@@ -49,10 +67,41 @@ and settings. Keep the resulting Maestro output local or attach it only to a
 review artifact. Never use a signed-in build or include account addresses,
 tokens, notification identifiers, or production data in screenshots.
 
-After launch, the flow waits up to 10 seconds for the first-run
-`ログインボーナス` modal, which is guaranteed by the fresh anonymous state, then
-closes its backdrop and waits for the modal to disappear before it starts the
-capture actions. This avoids missing a delayed hydration-time modal.
+After clearing state, both flows reconnect through the parity-only URL scheme
+to Metro at `http://127.0.0.1:8081`. This avoids getting stuck at Expo's
+development-server picker after its remembered server is reset. They suppress
+the development-menu onboarding/overlay for that launch and allow up to 60
+seconds for the first bundle load and first-run `ログインボーナス` modal, which
+is guaranteed by the fresh anonymous state. The flow closes its backdrop and
+waits for the modal to disappear before asserting the underlying task tab or
+starting capture actions. Modal accessibility hides the background elements.
+
+## Run the anonymous critical-path smoke regression
+
+With the same local parity build and Metro process, run:
+
+```bash
+npm run mobile:parity:smoke
+```
+
+This runs only `.maestro/mobile-parity/anonymous-critical-path.yaml`; the
+screenshot command continues to run only its capture flow. The smoke flow
+clears the parity app's local anonymous state, waits for hydration, creates and
+completes `スモーク タスク 永続化`, creates and achieves `スモーク 習慣 永続化`,
+and asserts the state-transition accessibility labels. It visits Tasks, Habits,
+Statistics, Character, and Settings; a fresh anonymous profile's Map tab is
+intentionally locked, so the flow asserts its disabled accessibility state instead of
+trying to bypass it. Finally it stops and launches the app with
+`clearState: false`, then asserts the completed task (using the completed
+filter) and achieved habit are still present. This validates the public UI
+through the AsyncStorage restart boundary, not just in-memory Zustand state.
+Tab selectors allow iOS's added `tab, n of 6` accessibility suffix. The flows
+also dismiss the keyboard after creating records so the tab bar is reachable.
+
+The smoke regression is local-only and anonymous. It is not a GitHub Actions
+job, pixel-diff test, EAS build, or production authentication/Supabase test.
+If a compatible booted iOS Simulator is unavailable, state that it was not run
+and use the command above for the manual verification evidence.
 
 To inspect the two resolved configurations without building an app:
 

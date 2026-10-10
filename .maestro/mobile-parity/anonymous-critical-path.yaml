@@ -1,0 +1,113 @@
+appId: com.yutakane.lifequest.parity
+name: Smoke anonymous Mobile task and habit persistence
+---
+# This is intentionally the only destructive step. The runner preflights the
+# fixed parity-only bundle before Maestro starts, so a normal app profile can
+# never be cleared by this flow. Do not sign in while it runs.
+- launchApp:
+    clearState: true
+# Clearing state also clears Expo's most-recent development server. Reconnect
+# only the isolated parity scheme to the local Metro process, not a release app.
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+# Accept only the OS launch confirmation if present. A second optional tap
+# handles a queued confirmation as the development build finishes launching.
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "ログインボーナス.*"
+    timeout: 60000
+
+# Modal accessibility hides the underlying tab labels. Dismiss it before
+# asserting Tasks, rather than waiting on an inaccessible background element.
+- tapOn:
+    point: "50%,90%"
+- extendedWaitUntil:
+    notVisible: "ログインボーナス.*"
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "タスク"
+    timeout: 10000
+- extendedWaitUntil:
+    visible: "保存済み"
+    timeout: 10000
+
+# Task creation and completion use public labels. The completed filter makes
+# the state transition explicit instead of merely asserting that the row exists.
+- tapOn: "新しいタスク"
+- inputText: "スモーク タスク 永続化"
+- tapOn: "タスクを追加"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "スモーク タスク 永続化を完了にする"
+    timeout: 5000
+- tapOn: "スモーク タスク 永続化を完了にする"
+- tapOn: "完了"
+- extendedWaitUntil:
+    visible: "スモーク タスク 永続化を未完了にする"
+    timeout: 5000
+
+# Habit creation and completion similarly assert the stateful public label.
+- tapOn: "習慣(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "続けたい習慣"
+    timeout: 5000
+- tapOn: "続けたい習慣"
+- inputText: "スモーク 習慣 永続化"
+- tapOn: "習慣を追加"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "スモーク 習慣 永続化を達成にする"
+    timeout: 5000
+- tapOn: "スモーク 習慣 永続化を達成にする"
+- extendedWaitUntil:
+    visible: "スモーク 習慣 永続化を未達成にする"
+    timeout: 5000
+
+# Traverse every enabled primary tab. Fresh anonymous data intentionally leaves
+# Map locked, so check its disabled accessibility state without navigation.
+# React Navigation appends "tab, n of 6" to the standard iOS tab labels.
+- tapOn: "統計(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "今日のXP"
+    timeout: 5000
+- tapOn: "キャラ(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "キャラクター"
+    timeout: 5000
+- assertVisible:
+    text: ".*マップ.*"
+    enabled: false
+- tapOn: "設定(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "アカウント"
+    timeout: 5000
+- tapOn: "習慣(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "スモーク 習慣 永続化を未達成にする"
+    timeout: 5000
+- tapOn: "タスク"
+- tapOn: "完了"
+- extendedWaitUntil:
+    visible: "スモーク タスク 永続化を未完了にする"
+    timeout: 5000
+
+# Do not clear state here: this is the actual AsyncStorage persistence check.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "保存済み"
+    timeout: 10000
+- assertNotVisible: "ログインボーナス.*"
+- tapOn: "完了"
+- extendedWaitUntil:
+    visible: "スモーク タスク 永続化を未完了にする"
+    timeout: 5000
+- tapOn: "習慣(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "スモーク 習慣 永続化を未達成にする"
+    timeout: 5000
