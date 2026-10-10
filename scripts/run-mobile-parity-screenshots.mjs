@@ -11,10 +11,11 @@ const appId = 'com.yutakane.lifequest.parity';
 export const mobileParityFlows = Object.freeze({
     screenshots: '.maestro/mobile-parity/capture-major-screens.yaml',
     smoke: '.maestro/mobile-parity/anonymous-critical-path.yaml',
+    reference: '.maestro/mobile-parity/capture-reference-screens.yaml',
 });
 
 export function getMobileParityFlow(name = 'screenshots') {
-    const path = mobileParityFlows[name];
+    const path = Object.hasOwn(mobileParityFlows, name) ? mobileParityFlows[name] : undefined;
     if (!path) {
         return {
             ok: false,
@@ -115,6 +116,15 @@ function commandExists(command, args = ['--version'], environment, spawn = spawn
     return !result.error && result.status === 0;
 }
 
+export function getReferenceTheme(manifest) {
+    const extra = manifest?.extra?.expoClient?.extra ?? manifest?.extra;
+    const theme = extra?.parityCaptureTheme;
+    if (extra?.appVariant !== 'parity' || (theme !== 'light' && theme !== 'dark')) {
+        throw new Error('Reference flow requires npm run mobile:reference:dark (or :light), not normal Metro.');
+    }
+    return theme;
+}
+
 /**
  * Check every prerequisite before running Maestro. Kept pure enough for unit
  * tests so a missing simulator or parity build demonstrably fails before an
@@ -161,7 +171,7 @@ export function getMobileParityPreflight({
     return { ok: true };
 }
 
-function main(flowName = process.argv[2] ?? 'screenshots') {
+async function main(flowName = process.argv[2] ?? 'screenshots') {
     const flow = getMobileParityFlow(flowName);
     if (!flow.ok) {
         printSetup(flow.message);
@@ -180,7 +190,22 @@ function main(flowName = process.argv[2] ?? 'screenshots') {
         process.exit(1);
     }
 
-    const result = spawnSync('maestro', getMaestroTestCommand(flow), { stdio: 'inherit', env: java.environment });
+    let args = getMaestroTestCommand(flow);
+    if (flow.name === 'reference') {
+        try {
+            const response = await fetch('http://127.0.0.1:8081', {
+                headers: { accept: 'application/expo+json', 'expo-platform': 'ios' },
+                signal: AbortSignal.timeout(10000),
+            });
+            if (!response.ok) throw new Error('Local Metro is not ready.');
+            const theme = getReferenceTheme(await response.json());
+            args = ['test', '-e', `REFERENCE_THEME=${theme}`, flow.path];
+        } catch (error) {
+            printSetup(error.message);
+            process.exit(1);
+        }
+    }
+    const result = spawnSync('maestro', args, { stdio: 'inherit', env: java.environment });
 
     if (result.error) {
         console.error(`Could not start Maestro: ${result.error.message}`);
