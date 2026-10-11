@@ -1,0 +1,54 @@
+appId: com.yutakane.lifequest.parity
+name: Capture shared fictional Web/Mobile reference (no persistent writes)
+---
+# Unlike smoke, never delete the dedicated app's existing anonymous data.
+- launchApp:
+    clearState: false
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "今週の計画を整理する.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-tasks"
+- tapOn: "習慣(, tab,.*)?"
+- extendedWaitUntil:
+    visible: ".*読書を20分続ける.*"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-habits"
+- tapOn: "統計(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "今日のXP"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-stats"
+- tapOn: "キャラ(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "星見ユウ"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-character"
+- scrollUntilVisible:
+    element: "インベントリ（7）"
+    direction: DOWN
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-inventory"
+- tapOn: "設定(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "設定"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-settings"

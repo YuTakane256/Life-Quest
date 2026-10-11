@@ -1,5 +1,8 @@
 # Mobile / Web parity screenshot checklist
 
+同条件・402×874・両テーマの比較は[新しい比較手順](mobile-visual-reference.md)を使用する。
+以下の匿名操作smoke/旧390px手順も維持する。画面統一の順序は[実装ロードマップ](mobile-web-implementation-roadmap.md)。
+
 This document makes the visual and behavioral comparison in Issue #507
 repeatable on a macOS development machine. It is intentionally local-only:
 CI does not boot iOS simulators or retain screenshots.

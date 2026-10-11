@@ -6,6 +6,7 @@ import {
     getMaestroTestCommand,
     getMobileParityFlow,
     getMobileParityPreflight,
+    getReferenceTheme,
 } from './run-mobile-parity-screenshots.mjs';
 
 describe('getMaestroEnvironment', () => {
@@ -72,6 +73,21 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it.each(['__proto__', 'constructor', '../other.yaml'])('rejects non-allowlisted flow %s', (name) => {
+        expect(getMobileParityFlow(name).ok).toBe(false);
+    });
+    it('allows reference only on an explicit parity capture manifest and never clears its data', () => {
+        expect(getReferenceTheme({ extra: { expoClient: { extra: { appVariant: 'parity', parityCaptureTheme: 'light' } } } })).toBe('light');
+        expect(getReferenceTheme({ extra: { appVariant: 'parity', parityCaptureTheme: 'dark' } })).toBe('dark');
+        for (const extra of [{ appVariant: 'parity' }, { appVariant: 'release', parityCaptureTheme: 'dark' }, { appVariant: 'preview', parityCaptureTheme: 'light' }, { appVariant: 'parity', parityCaptureTheme: 'system' }]) {
+            expect(() => getReferenceTheme({ extra })).toThrow(/Reference flow requires/);
+        }
+        const yaml = readFileSync(new URL('../.maestro/mobile-parity/capture-reference-screens.yaml', import.meta.url), 'utf8');
+        expect(yaml).toContain('clearState: false');
+        expect(yaml).not.toContain('clearState: true');
+        expect(yaml).not.toContain('inputText:');
+        expect(yaml).toContain('visible: "今週の計画を整理する.*"');
+    });
     it.each(['screenshots', 'smoke'])('reconnects %s only to the isolated app and local Metro after clearing state', (name) => {
         const flow = getMobileParityFlow(name);
         const yaml = readFileSync(new URL(`../${flow.path}`, import.meta.url), 'utf8');
