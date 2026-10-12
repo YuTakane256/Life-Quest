@@ -27,7 +27,7 @@ export default defineConfig({
         },
         {
             name: 'web-parity-390x844',
-            testMatch: /visual-parity\/(tasks|remaining-pages)-web\.spec\.ts/,
+            testMatch: /visual-parity\/((tasks|remaining-pages)-web|web-spacing)\.spec\.ts/,
             testIgnore: process.env.RUN_WEB_PARITY === '1' ? undefined : /visual-parity\/.*\.spec\.ts/,
             use: {
                 browserName: 'chromium',

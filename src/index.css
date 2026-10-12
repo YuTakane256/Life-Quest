@@ -132,12 +132,9 @@
     --color-rarity-legendary: #d97706;
 }
 
-/* Base styles */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+/* Tailwind's base-layer preflight already resets margin/padding/box sizing.
+   An unlayered universal reset would override layered px/py/margin utilities
+   regardless of selector specificity, collapsing the product's spacing. */
 
 body {
     font-family: var(--font-sans);
