@@ -69,7 +69,7 @@ name: Smoke anonymous Mobile task and habit persistence
 
 # Traverse every enabled primary tab. Fresh anonymous data intentionally leaves
 # Map locked, so check its disabled accessibility state without navigation.
-# React Navigation appends "tab, n of 6" to the standard iOS tab labels.
+# Accept legacy React Navigation labels as well as the custom accessible tabs.
 - tapOn: "統計(, tab,.*)?"
 - extendedWaitUntil:
     visible: "今日のXP"

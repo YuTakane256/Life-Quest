@@ -51,7 +51,6 @@ export default function RootLayout() {
             <StatusBar style={resolvedTheme === 'light' ? 'dark' : 'light'} />
             <Stack screenOptions={{ contentStyle: { backgroundColor: palette.bg.primary } }}>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="settings" options={{ headerShown: false }} />
                 <Stack.Screen name="help" options={{ headerShown: false }} />
             </Stack>
             <LoginBonusOverlay />

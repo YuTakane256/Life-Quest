@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { ThemePalette } from '@life-quest/core/designTokens';
+import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
+import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
 import { addRecurrenceInterval, TASK_LIMITS, TASK_UNDO_DURATION_MS, type Priority, type Recurrence, type Task } from '@life-quest/core/tasks';
 import { UndoToast } from '../components/UndoToast';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
@@ -148,7 +149,7 @@ export default function TasksScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
             <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <View style={styles.header}>
                     <View>
@@ -667,35 +668,35 @@ function createStyles(palette: ThemePalette) {
     return StyleSheet.create({
     flex: { flex: 1 },
     safeArea: { flex: 1, backgroundColor: palette.bg.primary },
-    header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    title: { color: palette.text.primary, fontSize: 28, fontWeight: '800' },
+    header: { paddingHorizontal: LAYOUT_TOKENS.page.horizontal, paddingTop: LAYOUT_TOKENS.page.top, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    title: { color: palette.text.primary, ...PAGE_HEADING },
     summary: { color: palette.text.secondary, fontSize: 13, marginTop: 3 },
     badge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, height: 30, borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
     dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: palette.text.muted },
     dotReady: { backgroundColor: palette.accent.emerald },
     badgeText: { color: palette.text.secondary, fontSize: 11, fontWeight: '700' },
-    composer: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 10 },
+    composer: { flexDirection: 'row', gap: 8, paddingHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 10 },
     input: { flex: 1, height: 46, borderRadius: 8, paddingHorizontal: 14, color: palette.text.primary, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, fontSize: 15 },
     addButton: { width: 46, height: 46, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.emerald },
     addSymbol: { color: palette.bg.primary, fontSize: 25, fontWeight: '700', lineHeight: 28 },
     muted: { opacity: 0.45 },
-    chipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, marginBottom: 10, flexWrap: 'wrap' },
+    chipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 10, flexWrap: 'wrap' },
     rowCaption: { color: palette.text.muted, fontSize: 12, fontWeight: '700', marginRight: 2 },
     chip: { height: 30, paddingHorizontal: 14, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
     chipActive: { backgroundColor: palette.bg.cardHover, borderColor: palette.border.active },
     chipText: { color: palette.text.muted, fontSize: 12, fontWeight: '800' },
     chipTextActive: { color: palette.text.primary, fontSize: 12, fontWeight: '800' },
-    detailsPanel: { marginHorizontal: 20, marginBottom: 10, padding: 12, gap: 10, borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
+    detailsPanel: { marginHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 10, padding: 12, gap: 10, borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
     detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
     tagInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 13 },
-    segmented: { marginHorizontal: 20, marginBottom: 12, padding: 3, borderRadius: 8, flexDirection: 'row', backgroundColor: palette.bg.secondary },
+    segmented: { marginHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 12, padding: 3, borderRadius: 8, flexDirection: 'row', backgroundColor: palette.bg.secondary },
     segment: { flex: 1, height: 34, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
     segmentActive: { backgroundColor: palette.bg.cardHover },
     segmentText: { color: palette.text.muted, fontSize: 12, fontWeight: '700' },
     segmentTextActive: { color: palette.text.primary },
-    list: { paddingHorizontal: 20, paddingBottom: 28, gap: 8 },
+    list: { paddingHorizontal: LAYOUT_TOKENS.page.horizontal, paddingBottom: 28, gap: 8 },
     emptyList: { flexGrow: 1 },
-    rowContainer: { borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
+    rowContainer: { borderRadius: LAYOUT_TOKENS.card.radius, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
     row: { minHeight: 58, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
     checkbox: { width: 23, height: 23, borderRadius: 6, borderWidth: 2, borderColor: palette.text.muted, alignItems: 'center', justifyContent: 'center' },
     checkboxDone: { backgroundColor: palette.accent.emerald, borderColor: palette.accent.emerald },
@@ -716,7 +717,7 @@ function createStyles(palette: ThemePalette) {
     subtaskInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 13 },
     empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
     emptyTitle: { color: palette.text.secondary, fontSize: 16, fontWeight: '700' },
-    bulkDeleteButton: { marginHorizontal: 20, marginBottom: 8, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.text.danger },
+    bulkDeleteButton: { marginHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 8, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.text.danger },
     bulkDeleteText: { color: palette.text.danger, fontSize: 13, fontWeight: '700' },
     modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.55)', justifyContent: 'flex-end' },
     actionSheet: { backgroundColor: palette.bg.card, borderTopLeftRadius: 14, borderTopRightRadius: 14, paddingVertical: 10, paddingHorizontal: 14, paddingBottom: 28, gap: 2 },

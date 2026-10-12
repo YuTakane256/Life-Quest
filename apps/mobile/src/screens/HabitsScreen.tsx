@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { ThemePalette } from '@life-quest/core/designTokens';
+import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
+import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
 import {
     getHabitCategoryByIdOrDefault,
     getHabitCompletionRate,
@@ -54,7 +55,7 @@ export default function HabitsScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
             <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <View style={styles.header}>
                     <View>
@@ -239,25 +240,25 @@ function createStyles(palette: ThemePalette) {
     return StyleSheet.create({
     flex: { flex: 1 },
     safeArea: { flex: 1, backgroundColor: palette.bg.primary },
-    header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    title: { color: palette.text.primary, fontSize: 28, fontWeight: '800' },
+    header: { paddingHorizontal: LAYOUT_TOKENS.page.horizontal, paddingTop: LAYOUT_TOKENS.page.top, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    title: { color: palette.text.primary, ...PAGE_HEADING },
     summary: { color: palette.accent.gold, fontSize: 13, fontWeight: '700', marginTop: 3 },
     restButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
     restButtonText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
     restBadge: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.cardHover, borderWidth: 1, borderColor: palette.accent.sky },
     restBadgeText: { color: palette.accent.sky, fontSize: 12, fontWeight: '800' },
-    composer: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 10 },
+    composer: { flexDirection: 'row', gap: 8, paddingHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 10 },
     input: { flex: 1, height: 46, borderRadius: 8, paddingHorizontal: 14, color: palette.text.primary, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, fontSize: 15 },
     addButton: { width: 46, height: 46, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.gold },
     addSymbol: { color: palette.bg.primary, fontSize: 25, fontWeight: '700' },
     muted: { opacity: 0.45 },
     categoryList: { flexGrow: 0, marginBottom: 12 },
-    categoryListContent: { paddingHorizontal: 20, gap: 8 },
+    categoryListContent: { paddingHorizontal: LAYOUT_TOKENS.page.horizontal, gap: 8 },
     categoryChip: { height: 32, paddingHorizontal: 12, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
     categoryChipText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
-    list: { paddingHorizontal: 20, paddingBottom: 28, gap: 8 },
+    list: { paddingHorizontal: LAYOUT_TOKENS.page.horizontal, paddingBottom: 28, gap: 8 },
     emptyList: { flexGrow: 1 },
-    rowContainer: { borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
+    rowContainer: { borderRadius: LAYOUT_TOKENS.card.radius, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
     row: { minHeight: 66, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
     check: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.cardHover },
     checkDone: { backgroundColor: palette.accent.gold },

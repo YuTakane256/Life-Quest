@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import type { ThemePalette } from '@life-quest/core/designTokens';
+import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
+import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
 import type { CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
 import {
     deleteCurrentAccount,
@@ -320,7 +321,7 @@ export default function SettingsScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
             <ScrollView contentContainerStyle={styles.scroll}>
                 <View style={styles.header}>
                     <Text style={styles.title}>設定</Text>
@@ -661,13 +662,13 @@ function createStyles(palette: ThemePalette) {
     return StyleSheet.create({
         safeArea: { flex: 1, backgroundColor: palette.bg.primary },
         scroll: { paddingBottom: 32 },
-        header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
+        header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: LAYOUT_TOKENS.page.detailHorizontal, paddingTop: LAYOUT_TOKENS.page.top, paddingBottom: 16 },
         backButton: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
         backSymbol: { color: palette.text.secondary, fontSize: 20 },
-        title: { color: palette.text.primary, fontSize: 24, fontWeight: '800' },
-        stack: { width: '100%', maxWidth: 640, alignSelf: 'center', gap: 12 },
-        card: { marginHorizontal: 20, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 16, gap: 10 },
-        helpCard: { marginHorizontal: 20, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+        title: { color: palette.text.primary, ...PAGE_HEADING },
+        stack: { width: '100%', maxWidth: LAYOUT_TOKENS.page.maxWidth, alignSelf: 'center', gap: 12 },
+        card: { marginHorizontal: LAYOUT_TOKENS.page.detailHorizontal, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, gap: 10 },
+        helpCard: { marginHorizontal: LAYOUT_TOKENS.page.detailHorizontal, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
         helpCardText: { flex: 1, gap: 4 },
         helpCardChevron: { color: palette.text.muted, fontSize: 22, lineHeight: 22 },
         sectionTitle: { color: palette.text.primary, fontSize: 15, fontWeight: '800' },
