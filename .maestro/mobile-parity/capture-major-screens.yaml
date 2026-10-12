@@ -30,22 +30,26 @@ name: Capture anonymous Mobile parity reference screens
     timeout: 10000
 
 # Tasks: create a deterministic sample task through the public UI.
-- tapOn: "新しいタスク"
+- tapOn: "新しいタスクを追加"
+- tapOn: "タスク名"
 - inputText: "デモ: 朝の振り返り"
-- tapOn: "タスクを追加"
-- hideKeyboard
+- pressKey: enter
+- scrollUntilVisible:
+    element: "追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "追加"
 - takeScreenshot: "01-tasks"
 
 # Habits: create and complete one deterministic sample habit.
 - tapOn: "習慣(, tab,.*)?"
-- extendedWaitUntil:
-    visible: "続けたい習慣"
-    timeout: 5000
-- tapOn: "続けたい習慣"
+- tapOn: "新しい習慣を追加"
+- tapOn: "習慣名"
 - inputText: "デモ: 読書"
-- tapOn: "習慣を追加"
-- hideKeyboard
+- pressKey: enter
+- tapOn: "追加"
 - tapOn: "デモ: 読書を達成にする"
+- tapOn: "スキップ"
 - takeScreenshot: "02-habits"
 
 # Statistics uses the same anonymous task and habit records created above.

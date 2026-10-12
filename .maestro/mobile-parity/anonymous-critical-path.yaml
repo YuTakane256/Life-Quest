@@ -31,38 +31,38 @@ name: Smoke anonymous Mobile task and habit persistence
 - extendedWaitUntil:
     visible: "タスク"
     timeout: 10000
-- extendedWaitUntil:
-    visible: "保存済み"
-    timeout: 10000
 
 # Task creation and completion use public labels. The completed filter makes
 # the state transition explicit instead of merely asserting that the row exists.
-- tapOn: "新しいタスク"
+- tapOn: "新しいタスクを追加"
+- tapOn: "タスク名"
 - inputText: "スモーク タスク 永続化"
-- tapOn: "タスクを追加"
-- hideKeyboard
+- pressKey: enter
+- scrollUntilVisible:
+    element: "追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "追加"
 - extendedWaitUntil:
     visible: "スモーク タスク 永続化を完了にする"
     timeout: 5000
 - tapOn: "スモーク タスク 永続化を完了にする"
-- tapOn: "完了"
 - extendedWaitUntil:
     visible: "スモーク タスク 永続化を未完了にする"
     timeout: 5000
 
 # Habit creation and completion similarly assert the stateful public label.
 - tapOn: "習慣(, tab,.*)?"
-- extendedWaitUntil:
-    visible: "続けたい習慣"
-    timeout: 5000
-- tapOn: "続けたい習慣"
+- tapOn: "新しい習慣を追加"
+- tapOn: "習慣名"
 - inputText: "スモーク 習慣 永続化"
-- tapOn: "習慣を追加"
-- hideKeyboard
+- pressKey: enter
+- tapOn: "追加"
 - extendedWaitUntil:
     visible: "スモーク 習慣 永続化を達成にする"
     timeout: 5000
 - tapOn: "スモーク 習慣 永続化を達成にする"
+- tapOn: "スキップ"
 - extendedWaitUntil:
     visible: "スモーク 習慣 永続化を未達成にする"
     timeout: 5000
@@ -90,7 +90,6 @@ name: Smoke anonymous Mobile task and habit persistence
     visible: "スモーク 習慣 永続化を未達成にする"
     timeout: 5000
 - tapOn: "タスク"
-- tapOn: "完了"
 - extendedWaitUntil:
     visible: "スモーク タスク 永続化を未完了にする"
     timeout: 5000
@@ -100,10 +99,10 @@ name: Smoke anonymous Mobile task and habit persistence
 - launchApp:
     clearState: false
 - extendedWaitUntil:
-    visible: "保存済み"
+    visible: "新しいタスクを追加"
     timeout: 10000
 - assertNotVisible: "ログインボーナス.*"
-- tapOn: "完了"
+- tapOn: "完了タスク .*"
 - extendedWaitUntil:
     visible: "スモーク タスク 永続化を未完了にする"
     timeout: 5000

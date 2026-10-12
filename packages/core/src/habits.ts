@@ -1,5 +1,6 @@
 import { shiftDate } from './dates.ts';
 import { clampString } from './validation.ts';
+export { buildHabitHeatmapData, type HabitHeatmapData, type HabitHeatmapDay, type HabitHeatmapStatus } from './habitHeatmap.ts';
 
 export interface Habit {
     id: string;

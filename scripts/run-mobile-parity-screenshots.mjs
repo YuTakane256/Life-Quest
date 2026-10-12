@@ -12,6 +12,7 @@ export const mobileParityFlows = Object.freeze({
     screenshots: '.maestro/mobile-parity/capture-major-screens.yaml',
     smoke: '.maestro/mobile-parity/anonymous-critical-path.yaml',
     reference: '.maestro/mobile-parity/capture-reference-screens.yaml',
+    daily: '.maestro/mobile-parity/daily-screen-interactions.yaml',
 });
 
 export function getMobileParityFlow(name = 'screenshots') {
@@ -27,6 +28,10 @@ export function getMobileParityFlow(name = 'screenshots') {
 
 export function getMaestroTestCommand(flow) {
     return ['test', flow.path];
+}
+
+export function requiresReferenceRuntime(name) {
+    return name === 'reference' || name === 'daily';
 }
 
 function isExecutable(filePath) {
@@ -191,7 +196,7 @@ async function main(flowName = process.argv[2] ?? 'screenshots') {
     }
 
     let args = getMaestroTestCommand(flow);
-    if (flow.name === 'reference') {
+    if (requiresReferenceRuntime(flow.name)) {
         try {
             const response = await fetch('http://127.0.0.1:8081', {
                 headers: { accept: 'application/expo+json', 'expo-platform': 'ios' },

@@ -17,10 +17,22 @@ Life Questは、日々のタスクや習慣の達成を、義務として消化�
 
 ## Screenshots
 
-| タスク管理 | 習慣管理 |
+### Web / Mobileで共通の画面設計
+
+React製Web版とReact Native製Mobile版で、タスク・習慣の主要画面に共通のデザイン方針を適用しています。情報の順番、検索・絞り込み、追加フォームの入口、カード、カテゴリ表示、配色、アイコンを揃え、WebViewではなくそれぞれのUIとして実装しています。
+
+以下は同じ架空データ・ダークテーマで撮影した比較です。Webは402×874のスマホ幅、Mobileは同じ論理サイズのiPhone 18 Proシミュレーターです。OSのステータスバー・安全領域・フォント描画の差は残しています。
+
+| Web（スマホ幅） | Mobile（iOSシミュレーター） |
 | --- | --- |
-| [![タスクの作成・優先度・期限・サブタスク](docs/screenshots/portfolio/web-tasks.png)](docs/screenshots/portfolio/web-tasks.png) | [![習慣の記録・ストリーク・ヒートマップ](docs/screenshots/portfolio/web-habits.png)](docs/screenshots/portfolio/web-habits.png) |
-| 優先度、期限、繰り返し、タグ、サブタスクをまとめて管理 | 日々の達成、休息日、連続記録を可視化 |
+| <img src="docs/screenshots/daily-parity/web-dark-tasks.png" width="220" alt="Web版タスク：検索、絞り込み、サブタスク、完了一覧"> | <img src="docs/screenshots/daily-parity/mobile-dark-tasks.png" width="220" alt="Mobile版タスク：Webと共通の情報順序と操作導線"> |
+| <img src="docs/screenshots/daily-parity/web-dark-habits.png" width="220" alt="Web版習慣：達成バー、カテゴリ別一覧、連続記録"> | <img src="docs/screenshots/daily-parity/mobile-dark-habits.png" width="220" alt="Mobile版習慣：Webと共通の達成状況、カテゴリ、メモ表示"> |
+
+ライトテーマの比較、再現手順、残る差分は[比較ギャラリー](docs/screenshots/daily-parity/README.md)にまとめています。スクショは匿名の専用比較環境で撮影し、実ユーザーのデータは含めていません。
+
+**UI統一は段階的に進めています。** 今回の比較はタスク・習慣の主要一覧が対象で、全画面・全操作の一致やストア公開済みを示すものではありません。選択・確認・共有にはOS固有の操作を使い、日付入力やCSVの保存方法など一部の操作差も残っています。Androidは共通コードのビルド確認までで、実機の見た目・操作検証は今後の工程です。
+
+### ゲーム体験（Web版）
 
 | マップ・バトル | 宝箱と報酬 |
 | --- | --- |
@@ -43,6 +55,12 @@ Life Questは、日々のタスクや習慣の達成を、義務として消化�
 - **設定**: ダーク / ライト / システムテーマ、モーション、通知、バックアップ、同期状態、アカウント管理
 - **認証とアカウント**: メール認証、Google OAuth、iOSのAppleログイン、データを残さない退会フロー
 - **クロスプラットフォーム**: WebとMobileで共有するアカウント、データ、ゲームルール、画像アセット、デザイントークン
+
+## 体験設計の狙い
+
+日々の「達成」を、XP・宝箱・装備・キャラクターの成長へつなぎ、育てたキャラクターでマップを進める循環を設計しています。短期の達成感と、収集・攻略という次の目標を組み合わせることが狙いです。
+
+習慣では連続記録と達成率を見えるようにする一方、休息日や完了の取り消しも用意し、毎日の入力を義務にしすぎない体験を目指しています。これらは設計上の意図であり、継続率向上などの効果をユーザー調査で実証したという主張ではありません。
 
 ## 技術的な見どころ
 
@@ -162,7 +180,7 @@ Pull Requestでは型検査、lint、テスト、Web build、Mobile export、Exp
 
 ## 実装状況
 
-Web / Mobileの主要画面、メール・Google・Apple認証、クラウド同期、オフラインoutbox、サーバー権威のゲーム操作まで実装しています。現在は、画面差分の回帰テスト、実機検証、配布・公開に向けた設定など、ゲーム体験を安定して届けるための品質向上を継続しています。進行中・検討中の内容は[Issues](https://github.com/YuTakane256/Life-Quest/issues)を参照してください。
+Web / Mobileの主要機能、メール・Google・Apple認証のコード、クラウド同期、オフラインoutbox、サーバー権威のゲーム操作まで実装しています。現在はタスク・習慣を起点に画面をWeb準拠へ揃え、残る画面差分・実機検証・配布設定の確認を進めている開発段階です。署名済み実機での認証・通知・退会などの確認と、ストア提出は別工程です。進行中・検討中の内容は[Issues](https://github.com/YuTakane256/Life-Quest/issues)と[全体計画](docs/mobile-web-implementation-roadmap.md)を参照してください。
 
 ## 補足資料
 

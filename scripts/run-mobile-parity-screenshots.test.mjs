@@ -7,6 +7,7 @@ import {
     getMobileParityFlow,
     getMobileParityPreflight,
     getReferenceTheme,
+    requiresReferenceRuntime,
 } from './run-mobile-parity-screenshots.mjs';
 
 describe('getMaestroEnvironment', () => {
@@ -73,6 +74,18 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('isolates daily form interactions to the guarded memory-only reference runtime', () => {
+        expect(requiresReferenceRuntime('daily')).toBe(true);
+        expect(requiresReferenceRuntime('reference')).toBe(true);
+        expect(requiresReferenceRuntime('smoke')).toBe(false);
+        const flow = getMobileParityFlow('daily');
+        expect(flow.ok).toBe(true);
+        const yaml = readFileSync(new URL(`../${flow.path}`, import.meta.url), 'utf8');
+        expect(yaml).toMatch(/^appId: com\.yutakane\.lifequest\.parity\n/);
+        expect(yaml).toContain('clearState: false');
+        expect(yaml).not.toContain('clearState: true');
+        expect(yaml).toContain('入力してください。');
+    });
     it.each(['__proto__', 'constructor', '../other.yaml'])('rejects non-allowlisted flow %s', (name) => {
         expect(getMobileParityFlow(name).ok).toBe(false);
     });
