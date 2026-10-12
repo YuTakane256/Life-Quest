@@ -17,7 +17,29 @@ Life Questは、日々のタスクや習慣の達成を、義務として消化�
 
 ## Screenshots
 
-### Web / Mobileで共通の画面設計
+### Web：PC幅とスマホ幅に合わせたレイアウト
+
+Web版は一つの実装で画面幅に応じてレイアウトを切り替えます。PCでは広い一覧を見ながら整理・振り返りができ、スマホ幅では縦に読み進めながら日々の達成を記録できる構成です。同じデータ・機能を維持し、画面全体を単に拡大・縮小するだけにはしていません。
+
+PC幅のタスク画面（1440×900）：画像を押すと原寸で確認できます。
+
+[<img src="docs/screenshots/web-responsive/web-dark-tasks-desktop.png" width="960" alt="Web版PC幅のタスク画面：左サイドメニューと広い一覧">](docs/screenshots/web-responsive/web-dark-tasks-desktop.png)
+
+| 違い | Web：PC幅 | Web：スマホ幅 |
+| --- | --- | --- |
+| 画面移動 | 左のサイドメニュー。Alt＋1〜6でも移動可能 | 下部の6タブから移動 |
+| 統計の配置 | 集計カードを4列、今週のXPと自己ベストを横並びに表示 | 集計カードを2列、グラフや記録を縦に表示 |
+| タスクの操作 | 編集・複製・削除を行にマウスを重ねると表示 | ホバーなしで操作できるよう常時表示 |
+
+以下は同じ架空データ・日時・ダークテーマの統計画面です。PCでは複数の指標を同時に見渡せ、スマホ幅ではスクロールして順に確認できます。
+
+| Web：PC幅（1440×900） | Web：スマホ幅（402×874） |
+| --- | --- |
+| [<img src="docs/screenshots/web-responsive/web-dark-stats-desktop.png" width="480" alt="Web版PC幅の統計：4列の集計カードと横並びのグラフ・自己ベスト">](docs/screenshots/web-responsive/web-dark-stats-desktop.png) | [<img src="docs/screenshots/web-responsive/web-dark-stats-phone.png" width="200" alt="Web版スマホ幅の統計：2列の集計カードと縦に並ぶグラフ・自己ベスト">](docs/screenshots/web-responsive/web-dark-stats-phone.png) |
+
+タスク・習慣・統計の両テーマ比較と撮影手順は[Webレスポンシブ比較](docs/screenshots/web-responsive/README.md)をご覧ください。この統計比較はWeb版内の画面幅による違いであり、Mobile版の統計画面も統一済みという意味ではありません。
+
+### Web（スマホ幅）/ Mobileで共通の画面設計
 
 React製Web版とReact Native製Mobile版で、タスク・習慣の主要画面に共通のデザイン方針を適用しています。情報の順番、検索・絞り込み、追加フォームの入口、カード、カテゴリ表示、配色、アイコンを揃え、WebViewではなくそれぞれのUIとして実装しています。
 

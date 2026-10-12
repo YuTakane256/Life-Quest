@@ -50,6 +50,17 @@ export default defineConfig({
                 timezoneId: 'Asia/Tokyo',
             },
         },
+        {
+            name: 'web-responsive-showcase',
+            testMatch: /visual-parity\/responsive-showcase-web\.spec\.ts/,
+            testIgnore: isWebParityRun ? undefined : /visual-parity\/.*\.spec\.ts/,
+            use: {
+                browserName: 'chromium',
+                deviceScaleFactor: 1,
+                reducedMotion: 'reduce',
+                timezoneId: 'Asia/Tokyo',
+            },
+        },
     ],
     webServer: {
         command: 'npm run dev -- --host 127.0.0.1 --port 4174',
