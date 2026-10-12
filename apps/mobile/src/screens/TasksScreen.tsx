@@ -1,738 +1,1019 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+    Alert,
+    FlatList,
+    Keyboard,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    Share,
+    Text,
+    View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
-import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
-import { addRecurrenceInterval, TASK_LIMITS, TASK_UNDO_DURATION_MS, type Priority, type Recurrence, type Task } from '@life-quest/core/tasks';
+import { useRouter } from 'expo-router';
+import {
+    ArrowUpDown,
+    CalendarClock,
+    Check,
+    CheckSquare,
+    ChevronDown,
+    ChevronRight,
+    Copy,
+    Download,
+    Edit3,
+    Flag,
+    HelpCircle,
+    ListPlus,
+    Plus,
+    Repeat,
+    Search,
+    Tag,
+    Trash2,
+    X,
+} from 'lucide-react-native';
+import { isValidYmd, shiftDate } from '@life-quest/core/dates';
+import {
+    TASK_LIMITS,
+    TASK_UNDO_DURATION_MS,
+    tasksToCsv,
+    type Priority,
+    type Recurrence,
+    type Task,
+} from '@life-quest/core/tasks';
 import { UndoToast } from '../components/UndoToast';
+import {
+    Chip,
+    Choice,
+    EmptyDaily,
+    Field,
+    FormActions,
+    IconButton,
+} from '../components/DailyScreenUI';
+import { dailyStyles, ui } from '../theme/dailyScreenStyles';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { getTodayJst } from '../utils/date';
+import { TAB_SCREEN_EDGES } from '../theme/layout';
 import { usePalette } from '../theme/usePalette';
+import {
+    dueLabel,
+    selectTasks,
+    TASK_SORT_OPTIONS,
+    type DueFilter,
+    type TaskSort,
+} from './dailyScreenModel';
 
-type TaskFilter = 'open' | 'all' | 'done';
-type DueChoice = 'none' | 'today' | 'tomorrow' | 'nextWeek';
-
-// 優先度はXP報酬（低10 / 中20 / 高30）に対応する
-function getPriorityOptions(palette: ThemePalette): readonly { value: Priority; label: string; color: string }[] {
-    return [
-        { value: 'low', label: '低', color: palette.priority.low },
-        { value: 'medium', label: '中', color: palette.priority.medium },
-        { value: 'high', label: '高', color: palette.priority.high },
-    ];
-}
-
-const DUE_OPTIONS: readonly { value: DueChoice; label: string }[] = [
-    { value: 'none', label: 'なし' },
-    { value: 'today', label: '今日' },
-    { value: 'tomorrow', label: '明日' },
-    { value: 'nextWeek', label: '来週' },
-];
-
-const RECURRENCE_OPTIONS: readonly { value: Recurrence; label: string }[] = [
-    { value: 'none', label: 'なし' },
-    { value: 'daily', label: '毎日' },
-    { value: 'weekly', label: '毎週' },
-    { value: 'monthly', label: '毎月' },
-];
-
-const RECURRENCE_LABELS: Record<Recurrence, string> = {
-    none: '', daily: '毎日', weekly: '毎週', monthly: '毎月',
-};
-
-function resolveDueDate(choice: DueChoice): string | null {
-    const today = getTodayJst();
-    if (choice === 'today') return today;
-    if (choice === 'tomorrow') return addRecurrenceInterval(today, 'daily');
-    if (choice === 'nextWeek') return addRecurrenceInterval(today, 'weekly');
-    return null;
-}
+const priorities = [
+    ['low', '低'],
+    ['medium', '中'],
+    ['high', '高'],
+] as const;
+const recurrences = [
+    ['none', 'なし'],
+    ['daily', '毎日'],
+    ['weekly', '毎週'],
+    ['monthly', '毎月'],
+] as const;
 
 export default function TasksScreen() {
-    const tasks = useMobileTaskStore((state) => state.tasks);
-    const hasHydrated = useMobileTaskStore((state) => state.hasHydrated);
-    const pendingCompletions = useMobileTaskStore((state) => state.pendingCompletions);
-    const addTask = useMobileTaskStore((state) => state.addTask);
-    const toggleTask = useMobileTaskStore((state) => state.toggleTask);
-    const deleteTask = useMobileTaskStore((state) => state.deleteTask);
-    const duplicateTask = useMobileTaskStore((state) => state.duplicateTask);
-    const deleteCompletedTasks = useMobileTaskStore((state) => state.deleteCompletedTasks);
-    const cancelPendingCompletion = useMobileTaskStore((state) => state.cancelPendingCompletion);
-
-    const { palette } = usePalette();
-    const styles = useMemo(() => createStyles(palette), [palette]);
-    const priorityOptions = useMemo(() => getPriorityOptions(palette), [palette]);
-
-    const [draft, setDraft] = useState('');
-    const [priority, setPriority] = useState<Priority>('medium');
-    const [filter, setFilter] = useState<TaskFilter>('open');
-    const [detailsOpen, setDetailsOpen] = useState(false);
-    const [dueChoice, setDueChoice] = useState<DueChoice>('none');
-    const [recurrence, setRecurrence] = useState<Recurrence>('none');
-    const [tagDraft, setTagDraft] = useState('');
-    const [tags, setTags] = useState<readonly string[]>([]);
-    const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-    const [actionTask, setActionTask] = useState<Task | null>(null);
-    const [editTask, setEditTask] = useState<Task | null>(null);
-    const [toast, setToast] = useState<{ message: string; onUndo: () => void } | null>(null);
+    const store = useMobileTaskStore();
+    const { palette: p } = usePalette();
+    const s = dailyStyles(p);
+    const router = useRouter();
+    const list = useRef<FlatList<Task>>(null);
+    const [query, setQuery] = useState('');
+    const [due, setDue] = useState<DueFilter>('all');
+    const [priority, setPriority] = useState<'all' | Priority>('all');
+    const [tags, setTags] = useState<string[]>([]);
+    const [sort, setSort] = useState<TaskSort>('dueDate');
+    const [showForm, setShowForm] = useState(false);
+    const [editing, setEditing] = useState<Task | null>(null);
+    const [completedOpen, setCompletedOpen] = useState(false);
+    const [expandOverrides, setExpandOverrides] = useState<
+        Record<string, boolean>
+    >({});
+    const [toast, setToast] = useState<{
+        message: string;
+        onUndo: () => void;
+    } | null>(null);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    // 取消トーストはUndo猶予と同じ時間で自動消滅する
-    const showUndoToast = (message: string, onUndo: () => void) => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast({ message, onUndo });
-        toastTimer.current = setTimeout(() => setToast(null), TASK_UNDO_DURATION_MS);
-    };
-    useEffect(() => () => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-    }, []);
-
-    const visibleTasks = useMemo(
-        () => tasks.filter((task) => filter === 'all' || (filter === 'done' ? task.completed : !task.completed)),
-        [filter, tasks],
+    useEffect(
+        () => () => {
+            if (toastTimer.current) clearTimeout(toastTimer.current);
+        },
+        [],
     );
-    const openCount = tasks.filter((task) => !task.completed).length;
-    const pendingIds = useMemo(() => new Set(pendingCompletions.map((pending) => pending.taskId)), [pendingCompletions]);
-    // Undo待機中は削除対象から除外する（Webと同一計算）
-    const deletableDoneCount = tasks.filter((task) => task.completed && !pendingIds.has(task.id)).length;
-
-    const handleToggle = (task: Task) => {
-        toggleTask(task.id);
-        if (!task.completed) {
-            showUndoToast(`「${task.name}」を完了しました`, () => {
-                cancelPendingCompletion(task.id);
+    const undo = (message: string, onUndo: () => void) => {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        setToast({
+            message,
+            onUndo: () => {
+                onUndo();
                 setToast(null);
-            });
-        }
-    };
-
-    const handleDuplicate = (task: Task) => {
-        const newId = duplicateTask(task.id);
-        setActionTask(null);
-        if (!newId) return;
-        showUndoToast(`「${task.name}」を複製しました`, () => {
-            deleteTask(newId);
-            setToast(null);
+            },
         });
-    };
-
-    const handleBulkDelete = () => {
-        Alert.alert(
-            '完了タスクを削除しますか？',
-            `完了済みのタスク${deletableDoneCount}件を削除します。この操作は取り消せません。`,
-            [
-                { text: 'キャンセル', style: 'cancel' },
-                { text: '削除', style: 'destructive', onPress: () => { deleteCompletedTasks(); } },
-            ],
+        toastTimer.current = setTimeout(
+            () => setToast(null),
+            TASK_UNDO_DURATION_MS,
         );
     };
-
-    const handleAdd = () => {
-        if (!hasHydrated) return;
-        const added = addTask(draft, priority, {
-            dueDate: resolveDueDate(dueChoice),
-            tags: [...tags],
-            recurrence,
-        });
-        if (!added) return;
-        setDraft('');
-        setDueChoice('none');
-        setRecurrence('none');
-        setTags([]);
-        setTagDraft('');
+    const today = getTodayJst();
+    const selected = useMemo(
+        () => selectTasks(store.tasks, query, due, priority, tags, sort, today),
+        [store.tasks, query, due, priority, tags, sort, today],
+    );
+    const open = selected.filter((task) => !task.completed);
+    const done = selected.filter((task) => task.completed);
+    const allTags = [
+        ...new Set(store.tasks.flatMap((task) => task.tags)),
+    ].sort();
+    const pending = new Set(
+        store.pendingCompletions.map((entry) => entry.taskId),
+    );
+    const deletable = store.tasks.filter(
+        (task) => task.completed && !pending.has(task.id),
+    ).length;
+    const edit = (task: Task) => {
+        setEditing(task);
+        setShowForm(true);
+        list.current?.scrollToOffset({ offset: 0, animated: true });
     };
-
-    const handleAddTag = () => {
-        const tag = tagDraft.trim();
-        if (!tag || tags.includes(tag) || tags.length >= TASK_LIMITS.maxTags) return;
-        setTags((current) => [...current, tag]);
-        setTagDraft('');
+    const toggle = (task: Task) => {
+        if (task.subtasks.length > 0) {
+            setExpandOverrides((current) => ({ ...current, [task.id]: true }));
+            return;
+        }
+        store.toggleTask(task.id);
+        if (!task.completed) {
+            setCompletedOpen(true);
+            undo(`「${task.name}」を完了しました`, () =>
+                store.cancelPendingCompletion(task.id),
+            );
+        }
     };
-
-    return (
-        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
-            <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                <View style={styles.header}>
-                    <View>
-                        <Text style={styles.title}>タスク</Text>
-                        <Text style={styles.summary}>{openCount}件の未完了タスク</Text>
-                    </View>
-                    <StorageBadge ready={hasHydrated} styles={styles} />
-                </View>
-
-                <View style={styles.composer}>
-                    <TextInput
-                        value={draft}
-                        onChangeText={setDraft}
-                        onSubmitEditing={handleAdd}
-                        placeholder="新しいタスク"
-                        placeholderTextColor={palette.text.muted}
-                        returnKeyType="done"
-                        style={styles.input}
-                        maxLength={200}
+    const duplicate = (task: Task) => {
+        const id = store.duplicateTask(task.id);
+        if (id)
+            undo(`「${task.name}」を複製しました`, () => store.deleteTask(id));
+        else
+            Alert.alert(
+                '複製できませんでした',
+                'タスク数の上限に達している可能性があります。',
+            );
+    };
+    const renderTask = (task: Task) => {
+        const expanded = expandOverrides[task.id] ?? task.subtasks.length > 0;
+        const overdue =
+            !task.completed && task.dueDate !== null && task.dueDate < today;
+        return (
+            <View
+                key={task.id}
+                style={[
+                    s.card,
+                    {
+                        marginBottom: 8,
+                        backgroundColor: task.completed
+                            ? p.bg.secondary
+                            : p.bg.card,
+                        borderColor: overdue ? p.text.danger : p.border.default,
+                        opacity:
+                            task.completed && !pending.has(task.id) ? 0.6 : 1,
+                    },
+                ]}
+            >
+                <View
+                    style={[
+                        ui.row,
+                        { paddingHorizontal: 12, paddingVertical: 12 },
+                    ]}
+                >
+                    <IconButton
+                        icon={expanded ? ChevronDown : ChevronRight}
+                        label={`タスク「${task.name}」を${expanded ? '折りたたむ' : '展開'}`}
+                        onPress={() =>
+                            setExpandOverrides((current) => ({
+                                ...current,
+                                [task.id]: !expanded,
+                            }))
+                        }
                     />
                     <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="タスクを追加"
-                        disabled={!hasHydrated || !draft.trim()}
-                        onPress={handleAdd}
-                        style={({ pressed }) => [styles.addButton, (!hasHydrated || !draft.trim() || pressed) && styles.muted]}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: task.completed }}
+                        accessibilityLabel={`${task.name}を${task.completed ? '未完了' : '完了'}にする`}
+                        onPress={() => toggle(task)}
+                        hitSlop={5}
+                        style={[
+                            s.checkbox,
+                            {
+                                borderColor: task.completed
+                                    ? p.accent.emerald
+                                    : p.priority[task.priority],
+                                backgroundColor: task.completed
+                                    ? p.accent.emerald
+                                    : 'transparent',
+                            },
+                        ]}
                     >
-                        <Text style={styles.addSymbol}>＋</Text>
+                        {task.completed && <Check size={12} color="#fff" />}
                     </Pressable>
-                </View>
-
-                <View style={styles.chipRow}>
-                    <Text style={styles.rowCaption}>優先度</Text>
-                    {priorityOptions.map((option) => (
-                        <Pressable
-                            key={option.value}
-                            accessibilityRole="radio"
-                            accessibilityState={{ selected: priority === option.value }}
-                            accessibilityLabel={`優先度を${option.label}にする`}
-                            onPress={() => setPriority(option.value)}
-                            style={[styles.chip, priority === option.value && styles.chipActive]}
-                        >
-                            <Text style={[styles.chipText, priority === option.value && { color: option.color }]}>{option.label}</Text>
-                        </Pressable>
-                    ))}
                     <Pressable
-                        accessibilityRole="button"
-                        accessibilityState={{ expanded: detailsOpen }}
-                        accessibilityLabel="期限・繰り返し・タグの詳細設定を開閉する"
-                        onPress={() => setDetailsOpen((open) => !open)}
-                        style={[styles.chip, detailsOpen && styles.chipActive]}
+                        onLongPress={() => edit(task)}
+                        accessibilityLabel={task.name}
+                        style={{ flex: 1 }}
                     >
-                        <Text style={styles.chipText}>{detailsOpen ? '詳細 ▲' : '詳細 ▼'}</Text>
-                    </Pressable>
-                </View>
-
-                {detailsOpen && (
-                    <View style={styles.detailsPanel}>
-                        <View style={styles.detailRow}>
-                            <Text style={styles.rowCaption}>期限</Text>
-                            {DUE_OPTIONS.map((option) => (
-                                <Pressable
-                                    key={option.value}
-                                    accessibilityRole="radio"
-                                    accessibilityState={{ selected: dueChoice === option.value }}
-                                    accessibilityLabel={`期限を${option.label}にする`}
-                                    onPress={() => setDueChoice(option.value)}
-                                    style={[styles.chip, dueChoice === option.value && styles.chipActive]}
+                        <Text
+                            style={[
+                                s.name,
+                                {
+                                    color: overdue
+                                        ? p.text.danger
+                                        : p.text.primary,
+                                    textDecorationLine: task.completed
+                                        ? 'line-through'
+                                        : 'none',
+                                },
+                            ]}
+                        >
+                            {task.name}
+                        </Text>
+                        <View style={[ui.wrap, { marginTop: 2 }]}>
+                            {task.dueDate && (
+                                <Text
+                                    style={{
+                                        fontSize: 11,
+                                        color: overdue
+                                            ? p.text.danger
+                                            : p.text.muted,
+                                    }}
                                 >
-                                    <Text style={[styles.chipText, dueChoice === option.value && styles.chipTextActive]}>{option.label}</Text>
-                                </Pressable>
-                            ))}
-                        </View>
-                        <View style={styles.detailRow}>
-                            <Text style={styles.rowCaption}>繰り返し</Text>
-                            {RECURRENCE_OPTIONS.map((option) => (
-                                <Pressable
-                                    key={option.value}
-                                    accessibilityRole="radio"
-                                    accessibilityState={{ selected: recurrence === option.value }}
-                                    accessibilityLabel={`繰り返しを${option.label}にする`}
-                                    onPress={() => setRecurrence(option.value)}
-                                    style={[styles.chip, recurrence === option.value && styles.chipActive]}
-                                >
-                                    <Text style={[styles.chipText, recurrence === option.value && styles.chipTextActive]}>{option.label}</Text>
-                                </Pressable>
-                            ))}
-                        </View>
-                        <View style={styles.detailRow}>
-                            <Text style={styles.rowCaption}>タグ</Text>
-                            <TextInput
-                                value={tagDraft}
-                                onChangeText={setTagDraft}
-                                onSubmitEditing={handleAddTag}
-                                placeholder="タグを追加"
-                                placeholderTextColor={palette.text.muted}
-                                returnKeyType="done"
-                                style={styles.tagInput}
-                                maxLength={50}
-                            />
-                            <Pressable
-                                accessibilityRole="button"
-                                accessibilityLabel="タグを追加する"
-                                disabled={!tagDraft.trim()}
-                                onPress={handleAddTag}
-                                style={[styles.chip, !tagDraft.trim() && styles.muted]}
+                                    📅 {dueLabel(task.dueDate, today)}
+                                </Text>
+                            )}
+                            <Text
+                                style={[
+                                    s.badge,
+                                    {
+                                        color: p.priority[task.priority],
+                                        backgroundColor: `${p.priority[task.priority]}22`,
+                                    },
+                                ]}
                             >
-                                <Text style={styles.chipText}>追加</Text>
-                            </Pressable>
-                        </View>
-                        {tags.length > 0 && (
-                            <View style={styles.detailRow}>
-                                {tags.map((tag) => (
-                                    <Pressable
-                                        key={tag}
-                                        accessibilityRole="button"
-                                        accessibilityLabel={`タグ${tag}を外す`}
-                                        onPress={() => setTags((current) => current.filter((candidate) => candidate !== tag))}
-                                        style={[styles.chip, styles.chipActive]}
+                                {
+                                    priorities.find(
+                                        ([key]) => key === task.priority,
+                                    )?.[1]
+                                }
+                            </Text>
+                            {task.recurrence !== 'none' && (
+                                <View style={ui.row}>
+                                    <Repeat
+                                        size={10}
+                                        color={p.accent.primary}
+                                    />
+                                    <Text
+                                        style={[
+                                            s.badge,
+                                            { color: p.accent.primary },
+                                        ]}
                                     >
-                                        <Text style={styles.chipTextActive}>#{tag} ×</Text>
-                                    </Pressable>
+                                        {
+                                            recurrences.find(
+                                                ([key]) =>
+                                                    key === task.recurrence,
+                                            )?.[1]
+                                        }
+                                    </Text>
+                                </View>
+                            )}
+                            {task.subtasks.length > 0 && (
+                                <Text
+                                    style={[
+                                        s.badge,
+                                        {
+                                            color: p.accent.emerald,
+                                            backgroundColor: p.bg.secondary,
+                                        },
+                                    ]}
+                                >
+                                    {
+                                        task.subtasks.filter(
+                                            (subtask) => subtask.completed,
+                                        ).length
+                                    }
+                                    /{task.subtasks.length}
+                                </Text>
+                            )}
+                            {task.tags.map((tag) => (
+                                <Text
+                                    key={tag}
+                                    style={[
+                                        s.badge,
+                                        {
+                                            color: p.text.muted,
+                                            backgroundColor: p.bg.secondary,
+                                            borderWidth: 1,
+                                            borderColor: p.border.default,
+                                        },
+                                    ]}
+                                >
+                                    {tag}
+                                </Text>
+                            ))}
+                        </View>
+                    </Pressable>
+                    <View style={{ flexDirection: 'row', gap: 1 }}>
+                        <IconButton
+                            icon={Copy}
+                            label={`${task.name}を複製`}
+                            onPress={() => duplicate(task)}
+                        />
+                        <IconButton
+                            icon={Edit3}
+                            label={`${task.name}を編集`}
+                            onPress={() => edit(task)}
+                        />
+                        <IconButton
+                            icon={Trash2}
+                            label={`${task.name}を削除`}
+                            color={p.text.danger}
+                            onPress={() => store.deleteTask(task.id)}
+                        />
+                    </View>
+                </View>
+                {expanded && <Subtasks task={task} />}
+            </View>
+        );
+    };
+    return (
+        <SafeAreaView edges={TAB_SCREEN_EDGES} style={s.safe}>
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+                <FlatList
+                    ref={list}
+                    data={open}
+                    keyExtractor={(task) => task.id}
+                    renderItem={({ item }) => renderTask(item)}
+                    contentContainerStyle={s.page}
+                    keyboardShouldPersistTaps="handled"
+                    ListHeaderComponent={
+                        <>
+                            <View style={s.header}>
+                                <View>
+                                    <Text style={s.title}>タスク</Text>
+                                    <Text style={s.summary}>
+                                        {
+                                            store.tasks.filter(
+                                                (task) => !task.completed,
+                                            ).length
+                                        }
+                                        件の未完了タスク
+                                    </Text>
+                                </View>
+                                <View style={ui.row}>
+                                    <IconButton
+                                        round
+                                        icon={Download}
+                                        label="タスクをCSVで共有"
+                                        color={p.accent.emerald}
+                                        disabled={!store.tasks.length}
+                                        onPress={() => {
+                                            void Share.share({
+                                                title: 'Life Quest タスク',
+                                                message: tasksToCsv(
+                                                    store.tasks,
+                                                ),
+                                            }).catch(() =>
+                                                Alert.alert(
+                                                    '共有できませんでした',
+                                                    'もう一度お試しください。',
+                                                ),
+                                            );
+                                        }}
+                                    />
+                                    <IconButton
+                                        round
+                                        icon={HelpCircle}
+                                        label="使い方"
+                                        color={p.accent.primary}
+                                        onPress={() => router.push('/help')}
+                                    />
+                                </View>
+                            </View>
+                            {!store.hasHydrated && (
+                                <Text style={s.summary}>読込中</Text>
+                            )}
+                            <View
+                                style={[
+                                    ui.row,
+                                    {
+                                        marginBottom: 12,
+                                        backgroundColor: p.bg.secondary,
+                                        borderRadius: 8,
+                                        borderWidth: 1,
+                                        borderColor: p.border.default,
+                                        paddingHorizontal: 12,
+                                    },
+                                ]}
+                            >
+                                <Search size={15} color={p.text.muted} />
+                                <Field
+                                    accessibilityLabel="タスクを検索"
+                                    placeholder="タスクを検索..."
+                                    value={query}
+                                    onChangeText={setQuery}
+                                    style={{
+                                        flex: 1,
+                                        borderWidth: 0,
+                                        paddingHorizontal: 0,
+                                        paddingVertical: 8,
+                                        minHeight: 36,
+                                    }}
+                                />
+                                {query !== '' && (
+                                    <IconButton
+                                        icon={X}
+                                        label="検索をクリア"
+                                        onPress={() => setQuery('')}
+                                    />
+                                )}
+                            </View>
+                            <View style={[ui.row, { marginBottom: 12 }]}>
+                                <CalendarClock size={14} color={p.text.muted} />
+                                {(
+                                    [
+                                        ['all', 'すべて'],
+                                        ['dueSoon', '今日まで'],
+                                        ['overdue', '期限切れ'],
+                                    ] as const
+                                ).map(([key, label]) => (
+                                    <Chip
+                                        key={key}
+                                        label={label}
+                                        accessibilityLabel={`期限フィルター ${label}`}
+                                        selected={due === key}
+                                        onPress={() => setDue(key)}
+                                    />
                                 ))}
                             </View>
-                        )}
-                    </View>
-                )}
-
-                <View style={styles.segmented}>
-                    {([['open', '未完了'], ['all', 'すべて'], ['done', '完了']] as const).map(([value, label]) => (
-                        <Pressable key={value} onPress={() => setFilter(value)} style={[styles.segment, filter === value && styles.segmentActive]}>
-                            <Text style={[styles.segmentText, filter === value && styles.segmentTextActive]}>{label}</Text>
-                        </Pressable>
-                    ))}
-                </View>
-
-                {filter === 'done' && deletableDoneCount > 0 && (
-                    <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`完了済みのタスク${deletableDoneCount}件をまとめて削除する`}
-                        onPress={handleBulkDelete}
-                        style={({ pressed }) => [styles.bulkDeleteButton, pressed && styles.muted]}
-                    >
-                        <Text style={styles.bulkDeleteText}>完了済みをまとめて削除（{deletableDoneCount}件）</Text>
-                    </Pressable>
-                )}
-
-                <FlatList
-                    data={visibleTasks}
-                    keyExtractor={(task) => task.id}
-                    extraData={expandedTaskId}
-                    renderItem={({ item }) => (
-                        <TaskRow
-                            task={item}
-                            expanded={expandedTaskId === item.id}
-                            onToggle={() => handleToggle(item)}
-                            onDelete={deleteTask}
-                            onExpand={() => setExpandedTaskId((current) => current === item.id ? null : item.id)}
-                            onLongPress={() => setActionTask(item)}
-                            styles={styles}
-                            palette={palette}
-                        />
-                    )}
-                    contentContainerStyle={[styles.list, visibleTasks.length === 0 && styles.emptyList]}
-                    keyboardShouldPersistTaps="handled"
-                    ListEmptyComponent={hasHydrated ? (
-                        <EmptyState
-                            title={filter === 'done' ? '完了したタスクはありません' : 'タスクがありません'}
-                            body="上の入力欄から追加しましょう！"
-                            styles={styles}
-                        />
-                    ) : null}
+                            <View style={[ui.row, { marginBottom: 12 }]}>
+                                <Flag size={14} color={p.text.muted} />
+                                {(
+                                    [
+                                        ['all', 'すべて'],
+                                        ...priorities.slice().reverse(),
+                                    ] as const
+                                ).map(([key, label]) => (
+                                    <Chip
+                                        key={key}
+                                        label={label}
+                                        accessibilityLabel={`優先度フィルター ${label}`}
+                                        selected={priority === key}
+                                        color={
+                                            key === 'all'
+                                                ? undefined
+                                                : p.priority[key]
+                                        }
+                                        onPress={() => setPriority(key)}
+                                    />
+                                ))}
+                            </View>
+                            <View style={[ui.row, { marginBottom: 16 }]}>
+                                <ArrowUpDown size={14} color={p.text.muted} />
+                                <Choice
+                                    label="並び替え"
+                                    value={sort}
+                                    options={TASK_SORT_OPTIONS}
+                                    onChange={setSort}
+                                />
+                                {deletable > 0 && (
+                                    <Pressable
+                                        accessibilityRole="button"
+                                        onPress={() =>
+                                            Alert.alert(
+                                                '完了タスクを削除しますか？',
+                                                `完了済み${deletable}件を削除します。この操作は取り消せません。`,
+                                                [
+                                                    {
+                                                        text: 'キャンセル',
+                                                        style: 'cancel',
+                                                    },
+                                                    {
+                                                        text: '削除する',
+                                                        style: 'destructive',
+                                                        onPress: () =>
+                                                            store.deleteCompletedTasks(),
+                                                    },
+                                                ],
+                                            )
+                                        }
+                                        style={[
+                                            ui.row,
+                                            {
+                                                marginLeft: 'auto',
+                                                borderWidth: 1,
+                                                borderColor: p.border.default,
+                                                borderRadius: 8,
+                                                paddingHorizontal: 10,
+                                                paddingVertical: 6,
+                                                backgroundColor: p.bg.secondary,
+                                            },
+                                        ]}
+                                    >
+                                        <Trash2
+                                            size={13}
+                                            color={p.text.danger}
+                                        />
+                                        <Text
+                                            style={{
+                                                color: p.text.danger,
+                                                fontSize: 12,
+                                            }}
+                                        >
+                                            完了{deletable}件を削除
+                                        </Text>
+                                    </Pressable>
+                                )}
+                            </View>
+                            {allTags.length > 0 && (
+                                <View style={[ui.wrap, { marginBottom: 16 }]}>
+                                    <Tag size={14} color={p.text.muted} />
+                                    {allTags.map((tag) => (
+                                        <Chip
+                                            key={tag}
+                                            label={tag}
+                                            accessibilityLabel={`タグ絞り込み ${tag}`}
+                                            selected={tags.includes(tag)}
+                                            onPress={() =>
+                                                setTags((current) =>
+                                                    current.includes(tag)
+                                                        ? current.filter(
+                                                              (value) =>
+                                                                  value !== tag,
+                                                          )
+                                                        : [...current, tag],
+                                                )
+                                            }
+                                        />
+                                    ))}
+                                    {tags.length > 0 && (
+                                        <IconButton
+                                            icon={X}
+                                            label="タグ絞り込みをクリア"
+                                            onPress={() => setTags([])}
+                                        />
+                                    )}
+                                </View>
+                            )}
+                            {showForm && (
+                                <TaskComposer
+                                    key={editing?.id ?? 'new'}
+                                    task={editing}
+                                    onClose={() => {
+                                        setEditing(null);
+                                        setShowForm(false);
+                                        Keyboard.dismiss();
+                                    }}
+                                />
+                            )}
+                            {store.hasHydrated && selected.length === 0 && (
+                                <EmptyDaily
+                                    icon={CheckSquare}
+                                    text={
+                                        query.trim() ||
+                                        tags.length ||
+                                        due !== 'all' ||
+                                        priority !== 'all'
+                                            ? '該当するタスクがありません'
+                                            : 'タスクがありません。\n+ボタンから追加しましょう！'
+                                    }
+                                />
+                            )}
+                        </>
+                    }
+                    ListFooterComponent={
+                        done.length > 0 ? (
+                            <View
+                                style={[
+                                    s.card,
+                                    {
+                                        backgroundColor: p.bg.secondary,
+                                        marginTop: 8,
+                                    },
+                                ]}
+                            >
+                                <Pressable
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`完了タスク (${done.length})`}
+                                    accessibilityState={{
+                                        expanded: completedOpen,
+                                    }}
+                                    onPress={() =>
+                                        setCompletedOpen((value) => !value)
+                                    }
+                                    style={[
+                                        ui.row,
+                                        {
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 10,
+                                        },
+                                    ]}
+                                >
+                                    {completedOpen ? (
+                                        <ChevronDown
+                                            size={14}
+                                            color={p.text.muted}
+                                        />
+                                    ) : (
+                                        <ChevronRight
+                                            size={14}
+                                            color={p.text.muted}
+                                        />
+                                    )}
+                                    <Text
+                                        style={{
+                                            fontSize: 12,
+                                            color: p.text.muted,
+                                            fontWeight: '500',
+                                        }}
+                                    >
+                                        完了タスク ({done.length})
+                                    </Text>
+                                </Pressable>
+                                {completedOpen && (
+                                    <View style={{ paddingHorizontal: 8 }}>
+                                        {done.map(renderTask)}
+                                    </View>
+                                )}
+                            </View>
+                        ) : null
+                    }
                 />
-
-                {toast && <UndoToast message={toast.message} onAction={toast.onUndo} />}
-            </KeyboardAvoidingView>
-
-            {/* 長押しアクションメニュー（編集/複製/削除） */}
-            <Modal visible={actionTask !== null} transparent animationType="fade" onRequestClose={() => setActionTask(null)}>
-                <Pressable style={styles.modalBackdrop} onPress={() => setActionTask(null)}>
-                    <View style={styles.actionSheet}>
-                        <Text style={styles.actionSheetTitle} numberOfLines={1}>{actionTask?.name}</Text>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="タスクを編集する"
-                            onPress={() => { setEditTask(actionTask); setActionTask(null); }}
-                            style={({ pressed }) => [styles.actionItem, pressed && styles.muted]}
-                        >
-                            <Text style={styles.actionItemText}>編集</Text>
-                        </Pressable>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="タスクを複製する"
-                            onPress={() => actionTask && handleDuplicate(actionTask)}
-                            style={({ pressed }) => [styles.actionItem, pressed && styles.muted]}
-                        >
-                            <Text style={styles.actionItemText}>複製</Text>
-                        </Pressable>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="タスクを削除する"
-                            onPress={() => { if (actionTask) deleteTask(actionTask.id); setActionTask(null); }}
-                            style={({ pressed }) => [styles.actionItem, pressed && styles.muted]}
-                        >
-                            <Text style={[styles.actionItemText, styles.actionItemDanger]}>削除</Text>
-                        </Pressable>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="メニューを閉じる"
-                            onPress={() => setActionTask(null)}
-                            style={({ pressed }) => [styles.actionItem, pressed && styles.muted]}
-                        >
-                            <Text style={styles.actionItemCancel}>キャンセル</Text>
-                        </Pressable>
-                    </View>
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                        showForm
+                            ? 'タスク追加フォームを閉じる'
+                            : '新しいタスクを追加'
+                    }
+                    onPress={() => {
+                        setEditing(null);
+                        setShowForm((value) => !value);
+                        list.current?.scrollToOffset({
+                            offset: 0,
+                            animated: true,
+                        });
+                    }}
+                    style={{
+                        position: 'absolute',
+                        right: 16,
+                        bottom: 12,
+                        width: 44,
+                        height: 44,
+                        borderRadius: 22,
+                        backgroundColor: p.accent.primary,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px #0005',
+                    }}
+                >
+                    <Plus size={22} color="#fff" />
                 </Pressable>
-            </Modal>
-
-            {editTask && (
-                <TaskEditModal
-                    task={editTask}
-                    onClose={() => setEditTask(null)}
-                    styles={styles}
-                    palette={palette}
-                />
-            )}
+                {toast && (
+                    <UndoToast
+                        message={toast.message}
+                        onAction={toast.onUndo}
+                    />
+                )}
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
-function TaskRow({ task, expanded, onToggle, onDelete, onExpand, onLongPress, styles, palette }: {
-    task: Task;
-    expanded: boolean;
-    onToggle: (id: string) => void;
-    onDelete: (id: string) => void;
-    onExpand: () => void;
-    onLongPress: () => void;
-    styles: Styles;
-    palette: ThemePalette;
+function TaskComposer({
+    task,
+    onClose,
+}: {
+    task: Task | null;
+    onClose: () => void;
 }) {
-    const today = getTodayJst();
-    const overdue = task.dueDate !== null && task.dueDate < today && !task.completed;
-    const doneSubtasks = task.subtasks.filter((subtask) => subtask.completed).length;
-    const metaParts: string[] = [];
-    if (task.dueDate) metaParts.push(`期限 ${task.dueDate.slice(5).replace('-', '/')}`);
-    if (task.recurrence !== 'none') metaParts.push(RECURRENCE_LABELS[task.recurrence]);
-    if (task.subtasks.length > 0) metaParts.push(`サブ ${doneSubtasks}/${task.subtasks.length}`);
-    if (task.tags.length > 0) metaParts.push(task.tags.map((tag) => `#${tag}`).join(' '));
-
+    const { palette: p } = usePalette();
+    const s = dailyStyles(p);
+    const hydrated = useMobileTaskStore((state) => state.hasHydrated);
+    const [name, setName] = useState(task?.name ?? '');
+    const [dueDate, setDueDate] = useState(task?.dueDate ?? '');
+    const [priority, setPriority] = useState<Priority>(
+        task?.priority ?? 'medium',
+    );
+    const [recurrence, setRecurrence] = useState<Recurrence>(
+        task?.recurrence ?? 'none',
+    );
+    const [tags, setTags] = useState(task?.tags ?? []);
+    const [tagDraft, setTagDraft] = useState('');
+    const [subtasks, setSubtasks] = useState<{ id?: string; name: string }[]>(
+        task?.subtasks ?? [],
+    );
+    const [subDraft, setSubDraft] = useState('');
+    const [error, setError] = useState('');
+    const addTag = () => {
+        const value = tagDraft.trim();
+        if (value && !tags.includes(value) && tags.length < TASK_LIMITS.maxTags)
+            setTags((current) => [...current, value]);
+        setTagDraft('');
+    };
+    const addSub = () => {
+        if (subDraft.trim() && subtasks.length < TASK_LIMITS.maxSubtasks) {
+            setSubtasks((current) => [...current, { name: subDraft.trim() }]);
+            setSubDraft('');
+        }
+    };
+    const save = () => {
+        if (!name.trim()) {
+            setError('タスク名を入力してください。');
+            return;
+        }
+        if (dueDate && !isValidYmd(dueDate)) {
+            setError('期限をYYYY-MM-DD形式の実在する日付で入力してください。');
+            return;
+        }
+        const store = useMobileTaskStore.getState();
+        let id = task?.id;
+        if (task) {
+            if (!store.tasks.some((current) => current.id === task.id)) {
+                setError('このタスクは削除されています。');
+                return;
+            }
+            if (
+                !store.saveTaskEdits(
+                    task.id,
+                    { name, dueDate: dueDate || null, priority, tags, subtasks },
+                    task.subtasks.map((subtask) => subtask.id),
+                )
+            ) {
+                setError(
+                    '更新できませんでした。読み込み・同期状態やサブタスク数を確認してください。',
+                );
+                return;
+            }
+        } else {
+            const before = new Set(store.tasks.map((current) => current.id));
+            if (
+                !store.addTask(name, priority, {
+                    dueDate: dueDate || null,
+                    recurrence,
+                    tags,
+                })
+            ) {
+                setError(
+                    '追加できませんでした。読み込み状態やタスク数の上限を確認してください。',
+                );
+                return;
+            }
+            id = useMobileTaskStore
+                .getState()
+                .tasks.find((current) => !before.has(current.id))?.id;
+        }
+        if (id && !task)
+            subtasks
+                .filter((subtask) => !subtask.id)
+                .forEach((subtask) => store.addSubtask(id!, subtask.name));
+        onClose();
+    };
     return (
-        <View style={styles.rowContainer}>
-            <View style={styles.row}>
-                <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: task.completed }}
-                    accessibilityLabel={`${task.name}を${task.completed ? '未完了' : '完了'}にする`}
-                    onPress={() => onToggle(task.id)}
-                    style={[styles.checkbox, task.completed && styles.checkboxDone]}
-                >
-                    {task.completed && <Text style={styles.checkmark}>✓</Text>}
-                </Pressable>
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded }}
-                    accessibilityLabel={`${task.name}のサブタスクを開閉する。長押しで編集メニュー`}
-                    onPress={onExpand}
-                    onLongPress={onLongPress}
-                    delayLongPress={350}
-                    style={styles.rowBody}
-                >
-                    <Text numberOfLines={2} style={[styles.rowName, task.completed && styles.rowNameDone]}>{task.name}</Text>
-                    {metaParts.length > 0 && (
-                        <Text numberOfLines={1} style={[styles.rowMeta, overdue && styles.rowMetaOverdue]}>
-                            {metaParts.join(' ・ ')}
-                        </Text>
-                    )}
-                </Pressable>
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${task.name}を削除`}
-                    onPress={() => onDelete(task.id)}
-                    hitSlop={10}
-                    style={({ pressed }) => [styles.deleteButton, pressed && styles.muted]}
-                >
-                    <Text style={styles.deleteSymbol}>×</Text>
-                </Pressable>
+        <View style={[s.form, { marginBottom: 24 }]}>
+            <Field
+                accessibilityLabel="タスク名"
+                placeholder="タスク名を入力..."
+                value={name}
+                onChangeText={setName}
+                maxLength={TASK_LIMITS.maxNameLength}
+            />
+            <View style={ui.row}>
+                <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={s.label}>📅 期限</Text>
+                    <Field
+                        accessibilityLabel="期限 YYYY-MM-DD"
+                        placeholder="YYYY-MM-DD"
+                        value={dueDate}
+                        onChangeText={setDueDate}
+                        maxLength={10}
+                        keyboardType="numbers-and-punctuation"
+                    />
+                </View>
+                <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={s.label}>⚑ 重要度</Text>
+                    <Choice
+                        label="重要度"
+                        value={priority}
+                        options={priorities}
+                        onChange={setPriority}
+                    />
+                </View>
             </View>
-            {expanded && <SubtaskPanel task={task} styles={styles} palette={palette} />}
+            <View style={ui.wrap}>
+                {(
+                    [
+                        ['なし', ''],
+                        ['今日', getTodayJst()],
+                        ['明日', shiftDate(getTodayJst(), 1)],
+                    ] as const
+                ).map(([label, value]) => (
+                    <Chip
+                        key={label}
+                        label={label}
+                        accessibilityLabel={`期限を${label}にする`}
+                        selected={dueDate === value}
+                        onPress={() => setDueDate(value)}
+                    />
+                ))}
+            </View>
+            <Text style={s.label}>繰り返し</Text>
+            {task ? (
+                <Text style={s.name}>
+                    {recurrences.find(([key]) => key === recurrence)?.[1]}
+                    （作成時の設定）
+                </Text>
+            ) : (
+                <Choice
+                    label="繰り返し"
+                    value={recurrence}
+                    options={recurrences}
+                    onChange={setRecurrence}
+                />
+            )}
+            <Text style={s.label}>タグ</Text>
+            <View style={ui.wrap}>
+                {tags.map((tag) => (
+                    <Chip
+                        key={tag}
+                        label={`${tag} ×`}
+                        selected
+                        onPress={() =>
+                            setTags((current) =>
+                                current.filter((value) => value !== tag),
+                            )
+                        }
+                    />
+                ))}
+            </View>
+            <View style={ui.row}>
+                <Field
+                    accessibilityLabel="タグを入力"
+                    placeholder="タグを入力"
+                    value={tagDraft}
+                    onChangeText={setTagDraft}
+                    onSubmitEditing={addTag}
+                    maxLength={TASK_LIMITS.maxTagLength}
+                    style={{ flex: 1 }}
+                />
+                <IconButton
+                    icon={Plus}
+                    label="タグを追加する"
+                    onPress={addTag}
+                />
+            </View>
+            <Text style={s.label}>サブタスク</Text>
+            {subtasks.map((subtask, index) => (
+                <View key={subtask.id ?? index} style={ui.row}>
+                    <Text style={[s.name, { flex: 1 }]}>{subtask.name}</Text>
+                    <IconButton
+                        icon={X}
+                        label={`サブタスク${subtask.name}をフォームから削除`}
+                        onPress={() =>
+                            setSubtasks((current) =>
+                                current.filter((_, i) => i !== index),
+                            )
+                        }
+                    />
+                </View>
+            ))}
+            <View style={ui.row}>
+                <Field
+                    accessibilityLabel="サブタスクを入力"
+                    placeholder="サブタスクを入力"
+                    value={subDraft}
+                    onChangeText={setSubDraft}
+                    onSubmitEditing={addSub}
+                    maxLength={TASK_LIMITS.maxSubtaskNameLength}
+                    style={{ flex: 1 }}
+                />
+                <IconButton
+                    icon={ListPlus}
+                    label="フォームにサブタスクを追加"
+                    onPress={addSub}
+                />
+            </View>
+            {error !== '' && (
+                <Text accessibilityRole="alert" style={s.error}>
+                    {error}
+                </Text>
+            )}
+            <FormActions
+                label={task ? '更新' : '追加'}
+                onSave={save}
+                onCancel={onClose}
+                disabled={!hydrated}
+            />
         </View>
     );
 }
 
-type EditDueChoice = 'keep' | DueChoice;
-
-/** タスク編集モーダル（#512）。名前・期限・優先度・繰り返し・タグをWebの編集フォームと同じ項目で更新する。 */
-function TaskEditModal({ task, onClose, styles, palette }: { task: Task; onClose: () => void; styles: Styles; palette: ThemePalette }) {
-    const updateTask = useMobileTaskStore((state) => state.updateTask);
-    const priorityOptions = useMemo(() => getPriorityOptions(palette), [palette]);
-    const [name, setName] = useState(task.name);
-    const [priority, setPriority] = useState<Priority>(task.priority);
-    const [dueChoice, setDueChoice] = useState<EditDueChoice>('keep');
-    const [tags, setTags] = useState<readonly string[]>(task.tags);
-    const [tagDraft, setTagDraft] = useState('');
-
-    const dueOptions: readonly { value: EditDueChoice; label: string }[] = [
-        { value: 'keep', label: task.dueDate ? `現在 ${task.dueDate.slice(5).replace('-', '/')}` : '現在 なし' },
-        ...DUE_OPTIONS,
-    ];
-
-    const handleAddTag = () => {
-        const tag = tagDraft.trim();
-        if (!tag || tags.includes(tag) || tags.length >= TASK_LIMITS.maxTags) return;
-        setTags((current) => [...current, tag]);
-        setTagDraft('');
+function Subtasks({ task }: { task: Task }) {
+    const store = useMobileTaskStore();
+    const { palette: p } = usePalette();
+    const s = dailyStyles(p);
+    const [draft, setDraft] = useState('');
+    const add = () => {
+        if (store.addSubtask(task.id, draft)) setDraft('');
     };
-
-    const handleSave = () => {
-        const trimmed = name.trim();
-        if (!trimmed) return;
-        updateTask(task.id, {
-            name: trimmed.slice(0, TASK_LIMITS.maxNameLength),
-            priority,
-            dueDate: dueChoice === 'keep' ? task.dueDate : resolveDueDate(dueChoice),
-            tags: [...tags],
-        });
-        onClose();
-    };
-
     return (
-        <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-            <View style={styles.modalBackdrop}>
-                <View style={styles.editSheet}>
-                    <Text style={styles.editTitle}>タスクを編集</Text>
-                    <TextInput
-                        value={name}
-                        onChangeText={setName}
-                        accessibilityLabel="タスク名"
-                        placeholder="タスク名"
-                        placeholderTextColor={palette.text.muted}
-                        style={styles.input}
-                        maxLength={TASK_LIMITS.maxNameLength}
-                    />
-                    <View style={styles.detailRow}>
-                        <Text style={styles.rowCaption}>優先度</Text>
-                        {priorityOptions.map((option) => (
-                            <Pressable
-                                key={option.value}
-                                accessibilityRole="radio"
-                                accessibilityState={{ selected: priority === option.value }}
-                                accessibilityLabel={`優先度を${option.label}にする`}
-                                onPress={() => setPriority(option.value)}
-                                style={[styles.chip, priority === option.value && styles.chipActive]}
-                            >
-                                <Text style={[styles.chipText, priority === option.value && { color: option.color }]}>{option.label}</Text>
-                            </Pressable>
-                        ))}
-                    </View>
-                    <View style={styles.detailRow}>
-                        <Text style={styles.rowCaption}>期限</Text>
-                        {dueOptions.map((option) => (
-                            <Pressable
-                                key={option.value}
-                                accessibilityRole="radio"
-                                accessibilityState={{ selected: dueChoice === option.value }}
-                                accessibilityLabel={`期限を${option.label}にする`}
-                                onPress={() => setDueChoice(option.value)}
-                                style={[styles.chip, dueChoice === option.value && styles.chipActive]}
-                            >
-                                <Text style={[styles.chipText, dueChoice === option.value && styles.chipTextActive]}>{option.label}</Text>
-                            </Pressable>
-                        ))}
-                    </View>
-                    <View style={styles.detailRow}>
-                        <Text style={styles.rowCaption}>タグ</Text>
-                        <TextInput
-                            value={tagDraft}
-                            onChangeText={setTagDraft}
-                            onSubmitEditing={handleAddTag}
-                            placeholder="タグを追加"
-                            placeholderTextColor={palette.text.muted}
-                            returnKeyType="done"
-                            style={styles.tagInput}
-                            maxLength={TASK_LIMITS.maxTagLength}
-                        />
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="タグを追加する"
-                            disabled={!tagDraft.trim()}
-                            onPress={handleAddTag}
-                            style={[styles.chip, !tagDraft.trim() && styles.muted]}
-                        >
-                            <Text style={styles.chipText}>追加</Text>
-                        </Pressable>
-                    </View>
-                    {tags.length > 0 && (
-                        <View style={styles.detailRow}>
-                            {tags.map((tag) => (
-                                <Pressable
-                                    key={tag}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={`タグ${tag}を外す`}
-                                    onPress={() => setTags((current) => current.filter((candidate) => candidate !== tag))}
-                                    style={[styles.chip, styles.chipActive]}
-                                >
-                                    <Text style={styles.chipTextActive}>#{tag} ×</Text>
-                                </Pressable>
-                            ))}
-                        </View>
-                    )}
-                    <View style={styles.editActions}>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="編集をキャンセルする"
-                            onPress={onClose}
-                            style={({ pressed }) => [styles.editCancel, pressed && styles.muted]}
-                        >
-                            <Text style={styles.editCancelText}>キャンセル</Text>
-                        </Pressable>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="編集を保存する"
-                            disabled={!name.trim()}
-                            onPress={handleSave}
-                            style={({ pressed }) => [styles.editSave, (!name.trim() || pressed) && styles.muted]}
-                        >
-                            <Text style={styles.editSaveText}>保存</Text>
-                        </Pressable>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-    );
-}
-
-function SubtaskPanel({ task, styles, palette }: { task: Task; styles: Styles; palette: ThemePalette }) {
-    const addSubtask = useMobileTaskStore((state) => state.addSubtask);
-    const deleteSubtask = useMobileTaskStore((state) => state.deleteSubtask);
-    const toggleSubtaskComplete = useMobileTaskStore((state) => state.toggleSubtaskComplete);
-    const [subtaskDraft, setSubtaskDraft] = useState('');
-
-    const handleAdd = () => {
-        if (addSubtask(task.id, subtaskDraft)) setSubtaskDraft('');
-    };
-
-    return (
-        <View style={styles.subtaskPanel}>
+        <View
+            style={{
+                paddingLeft: 48,
+                paddingRight: 16,
+                paddingBottom: 16,
+                gap: 8,
+            }}
+        >
             {task.subtasks.map((subtask) => (
-                <View key={subtask.id} style={styles.subtaskRow}>
+                <View
+                    key={subtask.id}
+                    style={[
+                        ui.row,
+                        {
+                            backgroundColor: p.bg.secondary,
+                            borderWidth: 1,
+                            borderColor: p.border.default,
+                            borderRadius: 8,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                        },
+                    ]}
+                >
                     <Pressable
                         accessibilityRole="checkbox"
                         accessibilityState={{ checked: subtask.completed }}
                         accessibilityLabel={`サブタスク${subtask.name}を${subtask.completed ? '未完了' : '完了'}にする`}
-                        onPress={() => toggleSubtaskComplete(task.id, subtask.id)}
-                        style={[styles.subtaskCheckbox, subtask.completed && styles.checkboxDone]}
+                        onPress={() =>
+                            store.toggleSubtaskComplete(task.id, subtask.id)
+                        }
+                        style={[
+                            s.checkbox,
+                            {
+                                width: 16,
+                                height: 16,
+                                borderColor: subtask.completed
+                                    ? p.accent.emerald
+                                    : p.text.muted,
+                                backgroundColor: subtask.completed
+                                    ? p.accent.emerald
+                                    : 'transparent',
+                            },
+                        ]}
                     >
-                        {subtask.completed && <Text style={styles.subtaskCheckmark}>✓</Text>}
+                        {subtask.completed && <Check size={10} color="#fff" />}
                     </Pressable>
-                    <Text numberOfLines={1} style={[styles.subtaskName, subtask.completed && styles.rowNameDone]}>{subtask.name}</Text>
-                    <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`サブタスク${subtask.name}を削除`}
-                        onPress={() => deleteSubtask(task.id, subtask.id)}
-                        hitSlop={8}
-                        style={({ pressed }) => [styles.deleteButton, pressed && styles.muted]}
+                    <Text
+                        style={[
+                            s.name,
+                            {
+                                flex: 1,
+                                color: p.text.secondary,
+                                textDecorationLine: subtask.completed
+                                    ? 'line-through'
+                                    : 'none',
+                            },
+                        ]}
                     >
-                        <Text style={styles.deleteSymbol}>×</Text>
-                    </Pressable>
+                        {subtask.name}
+                    </Text>
+                    <IconButton
+                        icon={X}
+                        label={`サブタスク${subtask.name}を削除`}
+                        color={p.text.danger}
+                        onPress={() => store.deleteSubtask(task.id, subtask.id)}
+                    />
                 </View>
             ))}
-            <View style={styles.subtaskComposer}>
-                <TextInput
-                    value={subtaskDraft}
-                    onChangeText={setSubtaskDraft}
-                    onSubmitEditing={handleAdd}
-                    placeholder="サブタスクを追加"
-                    placeholderTextColor={palette.text.muted}
-                    returnKeyType="done"
-                    style={styles.subtaskInput}
-                    maxLength={200}
+            <View style={ui.row}>
+                <Field
+                    accessibilityLabel="サブタスクを追加"
+                    placeholder="サブタスクを追加..."
+                    value={draft}
+                    onChangeText={setDraft}
+                    onSubmitEditing={add}
+                    maxLength={TASK_LIMITS.maxSubtaskNameLength}
+                    style={{ flex: 1, minHeight: 36, paddingVertical: 8 }}
                 />
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="サブタスクを追加する"
-                    disabled={!subtaskDraft.trim()}
-                    onPress={handleAdd}
-                    style={[styles.chip, !subtaskDraft.trim() && styles.muted]}
-                >
-                    <Text style={styles.chipText}>追加</Text>
-                </Pressable>
+                <IconButton
+                    icon={ListPlus}
+                    label={`${task.name}にサブタスクを追加`}
+                    color={p.accent.primary}
+                    onPress={add}
+                />
             </View>
         </View>
     );
-}
-
-function StorageBadge({ ready, styles }: { ready: boolean; styles: Styles }) {
-    return (
-        <View style={styles.badge}>
-            <View style={[styles.dot, ready && styles.dotReady]} />
-            <Text style={styles.badgeText}>{ready ? '保存済み' : '読込中'}</Text>
-        </View>
-    );
-}
-
-function EmptyState({ title, body, styles }: { title: string; body: string; styles: Styles }) {
-    return (
-        <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{title}</Text>
-            <Text style={styles.emptyBody}>{body}</Text>
-        </View>
-    );
-}
-
-type Styles = ReturnType<typeof createStyles>;
-
-function createStyles(palette: ThemePalette) {
-    return StyleSheet.create({
-    flex: { flex: 1 },
-    safeArea: { flex: 1, backgroundColor: palette.bg.primary },
-    header: { paddingHorizontal: LAYOUT_TOKENS.page.horizontal, paddingTop: LAYOUT_TOKENS.page.top, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    title: { color: palette.text.primary, ...PAGE_HEADING },
-    summary: { color: palette.text.secondary, fontSize: 13, marginTop: 3 },
-    badge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, height: 30, borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
-    dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: palette.text.muted },
-    dotReady: { backgroundColor: palette.accent.emerald },
-    badgeText: { color: palette.text.secondary, fontSize: 11, fontWeight: '700' },
-    composer: { flexDirection: 'row', gap: 8, paddingHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 10 },
-    input: { flex: 1, height: 46, borderRadius: 8, paddingHorizontal: 14, color: palette.text.primary, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default, fontSize: 15 },
-    addButton: { width: 46, height: 46, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.emerald },
-    addSymbol: { color: palette.bg.primary, fontSize: 25, fontWeight: '700', lineHeight: 28 },
-    muted: { opacity: 0.45 },
-    chipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 10, flexWrap: 'wrap' },
-    rowCaption: { color: palette.text.muted, fontSize: 12, fontWeight: '700', marginRight: 2 },
-    chip: { height: 30, paddingHorizontal: 14, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
-    chipActive: { backgroundColor: palette.bg.cardHover, borderColor: palette.border.active },
-    chipText: { color: palette.text.muted, fontSize: 12, fontWeight: '800' },
-    chipTextActive: { color: palette.text.primary, fontSize: 12, fontWeight: '800' },
-    detailsPanel: { marginHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 10, padding: 12, gap: 10, borderRadius: 8, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
-    detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-    tagInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 13 },
-    segmented: { marginHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 12, padding: 3, borderRadius: 8, flexDirection: 'row', backgroundColor: palette.bg.secondary },
-    segment: { flex: 1, height: 34, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-    segmentActive: { backgroundColor: palette.bg.cardHover },
-    segmentText: { color: palette.text.muted, fontSize: 12, fontWeight: '700' },
-    segmentTextActive: { color: palette.text.primary },
-    list: { paddingHorizontal: LAYOUT_TOKENS.page.horizontal, paddingBottom: 28, gap: 8 },
-    emptyList: { flexGrow: 1 },
-    rowContainer: { borderRadius: LAYOUT_TOKENS.card.radius, backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.border.default },
-    row: { minHeight: 58, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
-    checkbox: { width: 23, height: 23, borderRadius: 6, borderWidth: 2, borderColor: palette.text.muted, alignItems: 'center', justifyContent: 'center' },
-    checkboxDone: { backgroundColor: palette.accent.emerald, borderColor: palette.accent.emerald },
-    checkmark: { color: palette.bg.primary, fontSize: 14, fontWeight: '900' },
-    rowBody: { flex: 1 },
-    rowName: { color: palette.text.primary, fontSize: 15, lineHeight: 21 },
-    rowNameDone: { color: palette.text.muted, textDecorationLine: 'line-through' },
-    rowMeta: { color: palette.text.muted, fontSize: 11, marginTop: 3 },
-    rowMetaOverdue: { color: palette.text.danger },
-    deleteButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-    deleteSymbol: { color: palette.text.danger, fontSize: 23, lineHeight: 25 },
-    subtaskPanel: { borderTopWidth: 1, borderTopColor: palette.border.default, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
-    subtaskRow: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 36 },
-    subtaskCheckbox: { width: 19, height: 19, borderRadius: 5, borderWidth: 2, borderColor: palette.text.muted, alignItems: 'center', justifyContent: 'center' },
-    subtaskCheckmark: { color: palette.bg.primary, fontSize: 11, fontWeight: '900' },
-    subtaskName: { flex: 1, color: palette.text.primary, fontSize: 13 },
-    subtaskComposer: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
-    subtaskInput: { flex: 1, height: 34, borderRadius: 8, paddingHorizontal: 10, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 13 },
-    empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
-    emptyTitle: { color: palette.text.secondary, fontSize: 16, fontWeight: '700' },
-    bulkDeleteButton: { marginHorizontal: LAYOUT_TOKENS.page.horizontal, marginBottom: 8, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderWidth: 1, borderColor: palette.text.danger },
-    bulkDeleteText: { color: palette.text.danger, fontSize: 13, fontWeight: '700' },
-    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.55)', justifyContent: 'flex-end' },
-    actionSheet: { backgroundColor: palette.bg.card, borderTopLeftRadius: 14, borderTopRightRadius: 14, paddingVertical: 10, paddingHorizontal: 14, paddingBottom: 28, gap: 2 },
-    actionSheetTitle: { color: palette.text.muted, fontSize: 12, fontWeight: '700', paddingVertical: 8, textAlign: 'center' },
-    actionItem: { height: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, marginTop: 6 },
-    actionItemText: { color: palette.text.primary, fontSize: 15, fontWeight: '700' },
-    actionItemDanger: { color: palette.text.danger },
-    actionItemCancel: { color: palette.text.muted, fontSize: 14, fontWeight: '700' },
-    editSheet: { backgroundColor: palette.bg.card, borderTopLeftRadius: 14, borderTopRightRadius: 14, padding: 16, paddingBottom: 30, gap: 10 },
-    editTitle: { color: palette.text.primary, fontSize: 16, fontWeight: '800' },
-    editActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-    editCancel: { flex: 1, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
-    editCancelText: { color: palette.text.secondary, fontSize: 14, fontWeight: '700' },
-    editSave: { flex: 1, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.primary },
-    editSaveText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
-    emptyBody: { color: palette.text.muted, fontSize: 13, marginTop: 7 },
-    });
 }

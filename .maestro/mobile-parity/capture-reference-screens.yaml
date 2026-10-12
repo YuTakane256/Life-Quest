@@ -16,7 +16,12 @@ name: Capture shared fictional Web/Mobile reference (no persistent writes)
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 5000
+- tapOn: "完了タスク .*"
 - takeScreenshot: "reference-${REFERENCE_THEME}-tasks"
+- tapOn: "並び替え"
+- tapOn: "優先度順"
+- tapOn: "並び替え"
+- tapOn: "期限順"
 - tapOn: "習慣(, tab,.*)?"
 - extendedWaitUntil:
     visible: ".*読書を20分続ける.*"
@@ -24,6 +29,10 @@ name: Capture shared fictional Web/Mobile reference (no persistent writes)
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: "reference-${REFERENCE_THEME}-habits"
+- tapOn: "習慣の並び替え"
+- tapOn: "達成率順"
+- tapOn: "習慣の並び替え"
+- tapOn: "作成順"
 - tapOn: "統計(, tab,.*)?"
 - extendedWaitUntil:
     visible: "今日のXP"

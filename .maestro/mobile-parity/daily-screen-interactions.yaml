@@ -1,0 +1,115 @@
+appId: com.yutakane.lifequest.parity
+name: Daily screen forms, filters, history and memo (memory only)
+---
+# The runner requires the guarded in-memory reference runtime. No clearState.
+- launchApp:
+    clearState: false
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+# Replace an incomplete child while retaining a completed child through the real edit form.
+# Reward/recurrence/outbox invariants are covered separately by store regression tests.
+- scrollUntilVisible:
+    element: "今週の計画を整理するを編集"
+    direction: DOWN
+    centerElement: true
+- tapOn: "今週の計画を整理するを編集"
+- scrollUntilVisible:
+    element: "サブタスク予定を確認するをフォームから削除"
+    direction: DOWN
+    centerElement: true
+- tapOn: "サブタスク予定を確認するをフォームから削除"
+- tapOn: "サブタスクを入力"
+- inputText: "Replacement step"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "更新"
+    direction: DOWN
+    centerElement: true
+- tapOn: "更新"
+- scrollUntilVisible:
+    element: "サブタスクReplacement stepを完了にする"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "サブタスク優先順位を書き出すを未完了にする"
+- assertNotVisible: "サブタスク予定を確認するを完了にする"
+- scrollUntilVisible:
+    element: "タスクを検索"
+    direction: UP
+    centerElement: true
+- tapOn: "新しいタスクを追加"
+- tapOn: "タスク名"
+- inputText: "Portfolio task"
+- tapOn: "期限 YYYY-MM-DD"
+- inputText: "2026-02-30"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "追加"
+- assertVisible: "期限をYYYY-MM-DD形式の実在する日付で入力してください。"
+- scrollUntilVisible:
+    element: "期限 YYYY-MM-DD"
+    direction: UP
+    centerElement: true
+- tapOn: "期限 YYYY-MM-DD"
+- eraseText
+- inputText: "2026-08-11"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "追加"
+- scrollUntilVisible:
+    element: "タスクを検索"
+    direction: UP
+    centerElement: true
+- tapOn: "タスクを検索"
+- inputText: "Portfolio"
+- pressKey: enter
+- assertVisible: "Portfolio taskを完了にする"
+- assertNotVisible: "メールを返信するを完了にする"
+- tapOn: "Portfolio taskを編集"
+- tapOn: "タスク名"
+- eraseText
+- inputText: "Portfolio updated"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "更新"
+    direction: DOWN
+    centerElement: true
+- tapOn: "更新"
+- scrollUntilVisible:
+    element: "Portfolio updatedを完了にする"
+    direction: UP
+    centerElement: true
+- tapOn: "Portfolio updatedを完了にする"
+- assertVisible: "Portfolio updatedを未完了にする"
+- tapOn: "習慣(, tab,.*)?"
+- tapOn: "新しい習慣を追加"
+- tapOn: "習慣名"
+- inputText: "Portfolio habit"
+- pressKey: enter
+- tapOn: "カテゴリを健康にする"
+- tapOn: "追加"
+- tapOn: "Portfolio habitを達成にする"
+- tapOn: "今日の一言"
+- inputText: "Recorded on native"
+- pressKey: enter
+- tapOn: "「Portfolio habit」の達成履歴を表示"
+- assertVisible: "過去180日の達成履歴"
+- tapOn: "2026-08-10: 達成"
+- assertVisible: ".*Recorded on native.*"
+- tapOn: "閉じる"
+- tapOn: "今日をお休みにする"
+- tapOn: "お休みにする"
+- assertVisible: ".*お休み中.*"

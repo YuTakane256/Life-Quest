@@ -245,6 +245,135 @@ describe('useMobileTaskStore', () => {
     });
 
     describe('サブタスク', () => {
+        it.each(['done-first', 'incomplete-first'])('編集で未完了サブタスクを置換しても親報酬・次回分・中間完了は発生しない (%s)', (order) => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('毎日の編集対象', 'medium', { recurrence: 'daily' });
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            store.addSubtask(id, order === 'done-first' ? '完了済み' : '置換対象');
+            store.addSubtask(id, order === 'done-first' ? '置換対象' : '完了済み');
+            const done = useMobileTaskStore.getState().tasks[0].subtasks.find((subtask) => subtask.name === '完了済み')!;
+            store.toggleSubtaskComplete(id, done.id);
+            const completedChild = useMobileTaskStore.getState().tasks[0].subtasks.find((subtask) => subtask.id === done.id)!;
+            const xpBefore = useMobileGameStore.getState().character.totalXp;
+            const logBefore = { ...useMobileStatsStore.getState().taskXpLog };
+            const observed: boolean[] = [];
+            const unsubscribe = useMobileTaskStore.subscribe((state) => observed.push(state.tasks.find((task) => task.id === id)!.completed));
+            try {
+                expect(store.saveTaskEdits(id, {
+                    name: '編集後',
+                    subtasks: [{ id: done.id, name: done.name }, { name: '新しい未完了' }],
+                })).toBe(true);
+            } finally {
+                unsubscribe();
+            }
+            const updated = useMobileTaskStore.getState().tasks[0];
+            expect(updated).toMatchObject({ name: '編集後', completed: false, completedAt: null });
+            expect(updated.subtasks).toHaveLength(2);
+            expect(updated.subtasks[0]).toEqual(completedChild);
+            expect(updated.subtasks[1]).toMatchObject({ name: '新しい未完了', completed: false, completedAt: null });
+            expect(observed).toEqual([false]);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(xpBefore);
+            expect(useMobileStatsStore.getState().taskXpLog).toEqual(logBefore);
+            expect(useMobileTaskStore.getState().tasks).toHaveLength(1);
+            // 編集で報酬台帳を消費せず、その後の本当の完了で一度だけ親報酬を得る。
+            store.toggleSubtaskComplete(id, updated.subtasks[1].id);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(xpBefore + getSubtaskRewardXp('medium') + XP_CONFIG.REWARD_BY_PRIORITY.medium);
+            expect(useMobileTaskStore.getState().tasks).toHaveLength(2);
+        });
+
+        it('編集で全サブタスクを削除しても途中の完了や報酬は発生しない', () => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('全削除対象', 'medium', { recurrence: 'daily' });
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            store.addSubtask(id, '先に削除される未完了');
+            store.addSubtask(id, '完了済み');
+            store.toggleSubtaskComplete(id, useMobileTaskStore.getState().tasks[0].subtasks[1].id);
+            const xpBefore = useMobileGameStore.getState().character.totalXp;
+            expect(store.saveTaskEdits(id, { subtasks: [] })).toBe(true);
+            expect(useMobileTaskStore.getState().tasks[0]).toMatchObject({ completed: false, subtasks: [] });
+            expect(useMobileGameStore.getState().character.totalXp).toBe(xpBefore);
+            expect(useMobileTaskStore.getState().tasks).toHaveLength(1);
+        });
+
+        it('編集後の最終状態が全完了なら親報酬と次回分は一度だけ発生する', () => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('最終状態で完了', 'medium', { recurrence: 'daily' });
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            store.addSubtask(id, '完了済み');
+            store.addSubtask(id, '削除対象');
+            const done = useMobileTaskStore.getState().tasks[0].subtasks[0];
+            store.toggleSubtaskComplete(id, done.id);
+            const xpBefore = useMobileGameStore.getState().character.totalXp;
+            const edits = { subtasks: [{ id: done.id, name: done.name }] };
+            expect(store.saveTaskEdits(id, edits)).toBe(true);
+            expect(store.saveTaskEdits(id, edits)).toBe(true);
+            expect(useMobileTaskStore.getState().tasks[0].completed).toBe(true);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(xpBefore + XP_CONFIG.REWARD_BY_PRIORITY.medium);
+            expect(useMobileTaskStore.getState().tasks).toHaveLength(2);
+        });
+
+        it('完了Undo待機中の編集で新しい未完了作業を追加したらタイマーも取り消す', () => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('Undo中の編集', 'medium', { recurrence: 'daily' });
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            store.toggleTask(id);
+            expect(store.saveTaskEdits(id, { subtasks: [{ name: '未完了作業' }] })).toBe(true);
+            vi.advanceTimersByTime(10_000);
+            expect(useMobileTaskStore.getState().pendingCompletions).toEqual([]);
+            expect(useMobileTaskStore.getState().tasks[0].completed).toBe(false);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+            expect(useMobileTaskStore.getState().tasks).toHaveLength(1);
+        });
+
+        it('編集中に変更された完了状態は現在のストアから引き継ぎ、削除された子は復活させない', () => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('同期中の編集');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            store.addSubtask(id, '子1');
+            store.addSubtask(id, '子2');
+            const [first, second] = useMobileTaskStore.getState().tasks[0].subtasks;
+            store.toggleSubtaskComplete(id, first.id);
+            expect(store.saveTaskEdits(id, { subtasks: [{ id: first.id, name: first.name }, { id: second.id, name: second.name }] })).toBe(true);
+            expect(useMobileTaskStore.getState().tasks[0].subtasks[0].completed).toBe(true);
+            store.deleteSubtask(id, second.id);
+            const before = useMobileTaskStore.getState().tasks;
+            expect(store.saveTaskEdits(id, { name: '失敗時に保存しない', subtasks: [{ id: second.id, name: second.name }] })).toBe(false);
+            expect(useMobileTaskStore.getState().tasks).toBe(before);
+        });
+
+        it('フォームを開いた後に同期で追加された子は編集で削除しない', () => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('同期追加の保護');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            store.addSubtask(id, 'フォームで削除する子');
+            const originalIds = useMobileTaskStore.getState().tasks[0].subtasks.map((subtask) => subtask.id);
+            store.addSubtask(id, '同期で増えた子');
+            const added = useMobileTaskStore.getState().tasks[0].subtasks[1];
+            expect(store.saveTaskEdits(id, { subtasks: [] }, originalIds)).toBe(true);
+            expect(useMobileTaskStore.getState().tasks[0].subtasks).toEqual([added]);
+        });
+
+        it('編集の入力不備・上限・未復元では一部だけ保存せず、状態を維持する', () => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('検証対象');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            store.addSubtask(id, '既存の子');
+            const child = useMobileTaskStore.getState().tasks[0].subtasks[0];
+            const before = useMobileTaskStore.getState().tasks;
+            for (const subtasks of [
+                [{ name: ' ' }],
+                [{ id: child.id, name: child.name }, { id: child.id, name: child.name }],
+                Array.from({ length: TASK_LIMITS.maxSubtasks + 1 }, () => ({ name: '上限超過' })),
+            ]) {
+                expect(store.saveTaskEdits(id, { name: '保存しない', subtasks })).toBe(false);
+                expect(useMobileTaskStore.getState().tasks).toBe(before);
+            }
+            expect(store.saveTaskEdits('missing', { subtasks: [] })).toBe(false);
+            useMobileTaskStore.setState({ hasHydrated: false });
+            expect(store.saveTaskEdits(id, { subtasks: [] })).toBe(false);
+            expect(useMobileTaskStore.getState().tasks).toBe(before);
+        });
+
         it('追加すると親が未完了へ戻る', () => {
             useMobileTaskStore.getState().addTask('親タスク');
             const id = useMobileTaskStore.getState().tasks[0].id;
