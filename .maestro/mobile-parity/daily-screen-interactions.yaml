@@ -14,6 +14,36 @@ name: Daily screen forms, filters, history and memo (memory only)
 - extendedWaitUntil:
     visible: "新しいタスクを追加"
     timeout: 60000
+# Replace an incomplete child while retaining a completed child through the real edit form.
+# Reward/recurrence/outbox invariants are covered separately by store regression tests.
+- scrollUntilVisible:
+    element: "今週の計画を整理するを編集"
+    direction: DOWN
+    centerElement: true
+- tapOn: "今週の計画を整理するを編集"
+- scrollUntilVisible:
+    element: "サブタスク予定を確認するをフォームから削除"
+    direction: DOWN
+    centerElement: true
+- tapOn: "サブタスク予定を確認するをフォームから削除"
+- tapOn: "サブタスクを入力"
+- inputText: "Replacement step"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "更新"
+    direction: DOWN
+    centerElement: true
+- tapOn: "更新"
+- scrollUntilVisible:
+    element: "サブタスクReplacement stepを完了にする"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "サブタスク優先順位を書き出すを未完了にする"
+- assertNotVisible: "サブタスク予定を確認するを完了にする"
+- scrollUntilVisible:
+    element: "タスクを検索"
+    direction: UP
+    centerElement: true
 - tapOn: "新しいタスクを追加"
 - tapOn: "タスク名"
 - inputText: "Portfolio task"

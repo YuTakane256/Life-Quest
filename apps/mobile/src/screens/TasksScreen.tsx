@@ -745,20 +745,18 @@ function TaskComposer({
                 setError('このタスクは削除されています。');
                 return;
             }
-            store.updateTask(task.id, {
-                name,
-                dueDate: dueDate || null,
-                priority,
-                tags,
-            });
-            task.subtasks
-                .filter(
-                    (subtask) =>
-                        !subtasks.some(
-                            (candidate) => candidate.id === subtask.id,
-                        ),
+            if (
+                !store.saveTaskEdits(
+                    task.id,
+                    { name, dueDate: dueDate || null, priority, tags, subtasks },
+                    task.subtasks.map((subtask) => subtask.id),
                 )
-                .forEach((subtask) => store.deleteSubtask(task.id, subtask.id));
+            ) {
+                setError(
+                    '更新できませんでした。読み込み・同期状態やサブタスク数を確認してください。',
+                );
+                return;
+            }
         } else {
             const before = new Set(store.tasks.map((current) => current.id));
             if (
@@ -777,7 +775,7 @@ function TaskComposer({
                 .getState()
                 .tasks.find((current) => !before.has(current.id))?.id;
         }
-        if (id)
+        if (id && !task)
             subtasks
                 .filter((subtask) => !subtask.id)
                 .forEach((subtask) => store.addSubtask(id!, subtask.name));

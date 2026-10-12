@@ -21,6 +21,7 @@ import {
     type Recurrence,
 } from '@life-quest/core/tasks';
 import { XP_CONFIG } from '@life-quest/core/progression';
+import { clampString } from '@life-quest/core/validation';
 import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
@@ -43,6 +44,10 @@ export interface MobilePendingCompletion {
     completedAt: string;
 }
 
+export type TaskEditUpdates = Omit<TaskFieldUpdates, 'subtasks'> & {
+    subtasks: readonly { id?: string; name: string }[];
+};
+
 interface MobileTaskStore {
     tasks: Task[];
     hasHydrated: boolean;
@@ -55,6 +60,8 @@ interface MobileTaskStore {
     /** 待機中の完了を全て即時確定する（バックグラウンド遷移時の取りこぼし防止） */
     flushPendingCompletions: () => void;
     updateTask: (taskId: string, updates: TaskFieldUpdates) => void;
+    /** 編集後のサブタスク一覧を一括反映し、最終状態だけで完了を判定する。 */
+    saveTaskEdits: (taskId: string, updates: TaskEditUpdates, originalSubtaskIds?: readonly string[]) => boolean;
     /** タスクを複製し、新IDを返す（上限到達・元なしはnull） */
     duplicateTask: (taskId: string) => string | null;
     deleteTask: (taskId: string) => void;
@@ -94,7 +101,10 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
             };
 
             /** 待機中の完了を確定する: 報酬付与・繰り返し生成・complete_task送信 */
-            const confirmCompletion = (pending: MobilePendingCompletion): void => {
+            const confirmCompletion = (
+                pending: Pick<MobilePendingCompletion, 'taskId' | 'completedAt'>,
+                dependsOnEntityIds: string[] = [pending.taskId],
+            ): void => {
                 const task = get().tasks.find((candidate) => candidate.id === pending.taskId);
                 set((state) => ({
                     pendingCompletions: state.pendingCompletions.filter((candidate) => candidate.taskId !== pending.taskId),
@@ -112,7 +122,7 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 if (getGameRewardAuthorityState() === 'resolving') {
                     deferTaskCompletion(task.id);
                 } else {
-                    void enqueueCloudOperation('complete_task', { taskId: task.id }, { dependsOnEntityIds: [task.id] });
+                    void enqueueCloudOperation('complete_task', { taskId: task.id }, { dependsOnEntityIds });
                 }
             };
 
@@ -229,6 +239,65 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                         p_recurrence: updated.recurrence,
                         p_tags: updated.tags,
                     }, { dependsOnEntityIds: [taskId] });
+                },
+
+                saveTaskEdits: (taskId, updates, originalSubtaskIds) => {
+                    if (!get().hasHydrated) return false;
+                    const task = get().tasks.find((candidate) => candidate.id === taskId);
+                    if (!task || updates.subtasks.length > TASK_LIMITS.maxSubtasks) return false;
+                    if (updates.name !== undefined && !updates.name.trim()) return false;
+                    const now = new Date().toISOString();
+                    const existing = new Map(task.subtasks.map((subtask) => [subtask.id, subtask]));
+                    const retainedIds = new Set<string>();
+                    const nextSubtasks: Task['subtasks'] = [];
+                    for (const draft of updates.subtasks) {
+                        const name = clampString(draft.name.trim(), TASK_LIMITS.maxSubtaskNameLength);
+                        if (!name) return false;
+                        if (draft.id !== undefined) {
+                            const current = existing.get(draft.id);
+                            // 編集中に同期・別操作で削除された子を復活させない。
+                            if (!current || retainedIds.has(draft.id)) return false;
+                            retainedIds.add(draft.id);
+                            nextSubtasks.push({ ...current, name });
+                        } else {
+                            nextSubtasks.push({ id: createMobileId(), name, completed: false, completedAt: null, createdAt: now });
+                        }
+                    }
+                    // フォームを開いた後に同期で追加された子は、編集時の削除対象にしない。
+                    if (originalSubtaskIds) {
+                        const originalIds = new Set(originalSubtaskIds);
+                        nextSubtasks.push(...task.subtasks.filter((subtask) => !originalIds.has(subtask.id) && !retainedIds.has(subtask.id)));
+                    }
+                    if (nextSubtasks.length > TASK_LIMITS.maxSubtasks) return false;
+                    const nextIds = new Set(nextSubtasks.map((subtask) => subtask.id));
+                    const removed = task.subtasks.filter((subtask) => !nextIds.has(subtask.id));
+                    const hadPending = get().pendingCompletions.some((pending) => pending.taskId === taskId);
+
+                    // deleteSubtask→addSubtask の逐次呼び出しでは途中で報酬・次回分が
+                    // 発生する。一度の更新で最終状態を反映し、その後に差分だけを送信する。
+                    get().updateTask(taskId, {
+                        ...updates,
+                        ...(updates.name !== undefined ? { name: clampString(updates.name.trim(), TASK_LIMITS.maxNameLength) } : {}),
+                        subtasks: nextSubtasks,
+                    });
+                    for (const subtask of nextSubtasks) {
+                        const previous = existing.get(subtask.id);
+                        if (!previous || previous.name !== subtask.name) {
+                            void enqueueCloudOperation('upsert_subtask', {
+                                p_id: subtask.id, p_task_id: taskId, p_name: subtask.name,
+                            }, { dependsOnEntityIds: [taskId, subtask.id], trackEntityId: subtask.id });
+                        }
+                    }
+                    for (const subtask of removed) {
+                        void enqueueCloudOperation('delete_subtask', { p_id: subtask.id }, { dependsOnEntityIds: [subtask.id] });
+                    }
+                    const updated = get().tasks.find((candidate) => candidate.id === taskId)!;
+                    if (updated.completed && (!task.completed || hadPending)) {
+                        confirmCompletion({ taskId, completedAt: updated.completedAt ?? now }, [taskId, ...removed.map((subtask) => subtask.id)]);
+                    } else if (task.completed && !updated.completed && !hadPending) {
+                        void enqueueCloudOperation('uncomplete_task', { p_id: taskId }, { dependsOnEntityIds: [taskId] });
+                    }
+                    return true;
                 },
 
                 duplicateTask: (taskId) => {
