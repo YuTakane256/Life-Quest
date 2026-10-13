@@ -52,7 +52,17 @@ React製Web版とReact Native製Mobile版で、タスク・習慣の主要画面
 
 ライトテーマの比較、再現手順、残る差分は[比較ギャラリー](docs/screenshots/daily-parity/README.md)にまとめています。スクショは匿名の専用比較環境で撮影し、実ユーザーのデータは含めていません。
 
-**UI統一は段階的に進めています。** 今回の比較はタスク・習慣の主要一覧が対象で、全画面・全操作の一致やストア公開済みを示すものではありません。選択・確認・共有にはOS固有の操作を使い、日付入力やCSVの保存方法など一部の操作差も残っています。Androidは共通コードのビルド確認までで、実機の見た目・操作検証は今後の工程です。
+### 達成が成長につながるキャラクター画面
+
+タスクを達成して得たXP・レベル・装備による能力値と、「次の宝箱まであと何個か」を一画面で確認できます。日々の入力だけで終わらず、成長と次の目標が見えることを重視し、Web/Mobileでプロフィール、XP、宝箱ロードマップ、装備中の情報順序と素材を揃えています。
+
+| Web（スマホ幅） | Mobile（iOSシミュレーター） |
+| --- | --- |
+| [<img src="docs/screenshots/character-parity/web-dark-character.png" width="220" alt="Webキャラクター：XP、次の宝箱目標、装備による成長">](docs/screenshots/character-parity/web-dark-character.png) | [<img src="docs/screenshots/character-parity/mobile-dark-character.png" width="220" alt="Mobileキャラクター：Webと共通のプロフィール、宝箱ロードマップ、装備カード">](docs/screenshots/character-parity/mobile-dark-character.png) |
+
+同じ架空データ・日時・テーマの比較です。両テーマの画像と、下部インベントリなどに残る差分は[キャラクター比較](docs/screenshots/character-parity/README.md)をご覧ください。
+
+**UI統一は段階的に進めています。** 掲載比較はタスク・習慣の主要一覧とキャラクターの主要部分が対象で、全画面・全操作の一致やストア公開済みを示すものではありません。インベントリの独立画面化、マップ・バトル、宝箱の開封演出などは継続課題です。選択・確認・共有にはOS固有の操作を使い、日付入力やCSVの保存方法など一部の操作差も残っています。Androidは共通コードのビルド確認までで、実機の見た目・操作検証は今後の工程です。
 
 ### ゲーム体験（Web版）
 
@@ -60,11 +70,6 @@ React製Web版とReact Native製Mobile版で、タスク・習慣の主要画面
 | --- | --- |
 | [![敵とのターン制バトル](docs/screenshots/portfolio/web-battle.png)](docs/screenshots/portfolio/web-battle.png) | [![タスク達成で獲得した宝箱の開封](docs/screenshots/portfolio/web-chest.png)](docs/screenshots/portfolio/web-chest.png) |
 | 装備ステータスとスキルを使って複数エリアを攻略 | 宝箱から装備を獲得し、売却・合成・装備へつなげる |
-
-| キャラクター・インベントリ |
-| --- |
-| [![キャラクターの成長・装備・インベントリ](docs/screenshots/portfolio/web-character.png)](docs/screenshots/portfolio/web-character.png) |
-| 装備によるステータス変化と、宝箱から獲得したアイテムを管理 |
 
 ## 主な機能
 

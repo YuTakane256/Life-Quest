@@ -157,6 +157,20 @@ export function getMilestoneAtCount(count: number): GachaMilestone | null {
     return milestone ? { count, chestType: milestone.chestType, label: milestone.label } : null;
 }
 
+/** 表示専用: 達成済みを除いた次の宝箱目標。報酬の付与や抽選は行わない。 */
+export function getUpcomingMilestones(currentCount: number, limit = 3): GachaMilestone[] {
+    if (!Number.isSafeInteger(currentCount) || currentCount < 0 || !Number.isFinite(limit)) return [];
+    const upcoming: GachaMilestone[] = [];
+    const requested = Math.max(0, Math.floor(limit));
+    for (let offset = 1; offset < 1000 && upcoming.length < requested; offset += 1) {
+        const count = currentCount + offset;
+        if (!Number.isSafeInteger(count)) break;
+        const milestone = getMilestoneAtCount(count);
+        if (milestone) upcoming.push(milestone);
+    }
+    return upcoming;
+}
+
 /**
  * 宝箱タイプの排出確率に従って装備テンプレートを抽選する。
  * スターターキャラ確定の宝箱（blue）は装備を排出しないため null を返す。

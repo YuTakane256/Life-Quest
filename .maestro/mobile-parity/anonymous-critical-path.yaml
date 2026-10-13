@@ -76,8 +76,15 @@ name: Smoke anonymous Mobile task and habit persistence
     timeout: 5000
 - tapOn: "キャラ(, tab,.*)?"
 - extendedWaitUntil:
-    visible: "キャラクター"
+    visible: "プロフィールを編集"
     timeout: 5000
+- tapOn: "プロフィールを編集"
+- tapOn: "キャラクター名"
+- eraseText
+- inputText: "Smoke hero"
+- pressKey: enter
+- tapOn: "保存する"
+- assertVisible: "Smoke hero"
 - assertVisible:
     text: ".*マップ.*"
     enabled: false
@@ -109,4 +116,8 @@ name: Smoke anonymous Mobile task and habit persistence
 - tapOn: "習慣(, tab,.*)?"
 - extendedWaitUntil:
     visible: "スモーク 習慣 永続化を未達成にする"
+    timeout: 5000
+- tapOn: "キャラ(, tab,.*)?"
+- extendedWaitUntil:
+    visible: "Smoke hero"
     timeout: 5000

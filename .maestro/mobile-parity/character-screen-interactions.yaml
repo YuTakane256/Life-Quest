@@ -1,0 +1,58 @@
+appId: com.yutakane.lifequest.parity
+name: Character profile and equipment (memory only)
+---
+# Guarded development/parity runtime, never clears or overwrites persistent storage.
+- launchApp:
+    clearState: false
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "キャラ(, tab,.*)?"
+- assertVisible: "宝箱ロードマップ"
+- assertVisible: "25個目 木の宝箱まで残り13"
+- tapOn: "プロフィールを編集"
+- tapOn: "キャラクター名"
+- eraseText
+- inputText: "Cancelled draft"
+- pressKey: enter
+- tapOn: "アバターを男性にする"
+- tapOn: "閉じる"
+- assertVisible: "星見ユウ"
+- assertNotVisible: "Cancelled draft"
+- tapOn: "プロフィールを編集"
+- tapOn: "キャラクター名"
+- eraseText
+- inputText: "Portfolio hero"
+- pressKey: enter
+- tapOn: "アバターを男性にする"
+- tapOn: "保存する"
+- assertVisible: "Portfolio hero"
+- tapOn: "プロフィールを編集"
+- assertVisible: "Portfolio hero"
+- tapOn: "キャラクター名"
+- eraseText
+- inputText: "星見ユウ"
+- pressKey: enter
+- tapOn: "アバターを女性にする"
+- tapOn: "保存する"
+- assertVisible: "星見ユウ"
+- tapOn: "武器の鋼の刃を外す"
+- assertNotVisible: "武器の鋼の刃を外す"
+- tapOn: "最強装備を自動装着"
+- assertVisible: "武器の鋼の刃を外す"
+# Keep the existing inventory usable until its independent-screen work is prioritized.
+- scrollUntilVisible:
+    element: "インベントリ（7）"
+    direction: DOWN
+    centerElement: true
+- tapOn: "種類を武器にする"
+- assertVisible: "インベントリ（3）"
+- tapOn: "種類をすべてにする"
+- assertVisible: "インベントリ（7）"

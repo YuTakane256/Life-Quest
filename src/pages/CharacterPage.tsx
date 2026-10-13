@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Check, Edit2, History, Milestone, Package, Sparkles, X } from 'lucide-react';
 import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stores/useGameStore';
 import { getProgressBarA11y } from '../utils/progressBar';
-import { GACHA_CONFIG } from '../config/gameConfig';
+import { getUpcomingMilestones } from '@life-quest/core/rewards';
+import { GAME_STATE_LIMITS } from '@life-quest/core/gameState';
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS } from '../config/equipmentAssets';
 import type { Equipment, EquipmentSlot } from '../types';
 import heroImg from '@life-quest/assets/images/hero.png';
@@ -14,29 +15,6 @@ import { InventorySection } from '../components/character/InventorySection';
 import { SLOT_ICONS, SLOT_LABELS } from '../components/character/equipmentPresentation';
 
 export { InventoryPage } from '../components/character/InventorySection';
-
-function getUpcomingMilestones(currentCount: number, limit: number = 3) {
-    const upcoming: { count: number; chestType: string; label: string }[] = [];
-    let checkCount = currentCount + 1;
-
-    while (upcoming.length < limit && checkCount < currentCount + 1000) {
-        const specialKeys = Object.keys(GACHA_CONFIG.SPECIAL_MILESTONES).map(Number);
-        if (specialKeys.includes(checkCount)) {
-            const special = GACHA_CONFIG.SPECIAL_MILESTONES[checkCount as keyof typeof GACHA_CONFIG.SPECIAL_MILESTONES];
-            upcoming.push({ count: checkCount, chestType: special.chestType, label: special.label });
-            checkCount += 1;
-            continue;
-        }
-
-        const posInCycle = checkCount <= 100 ? checkCount : ((checkCount - 1) % GACHA_CONFIG.CYCLE_LENGTH) + 1;
-        const milestone = GACHA_CONFIG.MILESTONES.find((candidate) => candidate.count === posInCycle);
-        if (milestone) {
-            upcoming.push({ count: checkCount, chestType: milestone.chestType, label: milestone.label });
-        }
-        checkCount += 1;
-    }
-    return upcoming;
-}
 
 function calculateEffectiveStats(
     character: { baseAttack: number; baseDefense: number; baseMaxHp: number },
@@ -254,7 +232,7 @@ export function CharacterPage() {
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>名前</label>
-                            <input type="text" value={editName} onChange={(event) => setEditName(event.target.value)} className="w-full px-3 py-2.5 rounded-xl text-base outline-none" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} placeholder="名前を入力" maxLength={12} />
+                            <input type="text" value={editName} onChange={(event) => setEditName(event.target.value)} className="w-full px-3 py-2.5 rounded-xl text-base outline-none" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} placeholder="名前を入力" maxLength={GAME_STATE_LIMITS.maxCharacterNameLength} />
                         </div>
                         <div className="mb-6">
                             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>アバター</label>
@@ -263,7 +241,7 @@ export function CharacterPage() {
                                 <AvatarOption avatar="male" selected={editAvatar === 'male'} image={heroMaleImg} label="男性" onSelect={setEditAvatar} />
                             </div>
                         </div>
-                        <button onClick={() => { updateCharacter({ name: editName || '名無し', avatar: editAvatar }); setIsEditingProfile(false); }} className="w-full py-3 rounded-xl text-base font-bold flex flex-col items-center gap-2 transition-transform active:scale-95" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
+                        <button onClick={() => { updateCharacter({ name: editName.trim() || '名無し', avatar: editAvatar }); setIsEditingProfile(false); }} className="w-full py-3 rounded-xl text-base font-bold flex flex-col items-center gap-2 transition-transform active:scale-95" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                             保存する
                         </button>
                     </div>
@@ -294,7 +272,7 @@ function AvatarOption({ avatar, selected, image, label, onSelect }: {
 function StatBadge({ label, value, icon }: { label: string; value: number; icon: string }) {
     return (
         <div className="rounded-lg px-2 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
-            <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{icon} {label}</div>
+            <div className="text-[10px] whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{icon} {label}</div>
             <div className="text-base font-bold" style={{ color: 'var(--color-text-primary)' }}>{value}</div>
         </div>
     );
