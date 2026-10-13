@@ -35,3 +35,32 @@ for and dismiss the first-run bonus modal before checking background tabs.
 Both flows clear local app state before creating their anonymous sample task
 and habit data. Do not run either against an app installation that contains
 data you want to keep.
+
+## Anonymous progression / persistence
+
+Stop any reference Metro first, then start an anonymous, persistent runtime:
+
+```bash
+npm run mobile:start:anonymous
+# In another terminal:
+npm run mobile:parity:progression
+```
+
+This clears only the fixed parity app's disposable local data. It earns five
+task rewards through public UI, opens the starter chest, unlocks Map, wins
+stage 1, then restarts without clearing data. It compares the visible XP and
+task count before/after re-completing the same task and after restart, and
+checks that the starter chest cannot be reopened and stage 2 remains unlocked.
+Replaying a stage is intentionally allowed to earn a new battle reward; this
+test does not treat a new battle as a duplicate result.
+
+The runner now checks Metro's manifest **before any clearing flow starts**
+(screenshots, smoke, progression). It requires `appVariant=parity`, the boolean
+`parityLocalOnly=true`, and no capture theme/profile. Missing metadata,
+release/preview, cloud configuration, and memory-only reference mode fail
+closed. The flag contains no URL/key. Normal and preview app storage are not
+targets. Use the same anonymous Metro for the existing smoke/screenshots flows.
+
+This is local anonymous evidence, not signed-in synchronization, real-device
+authentication, Android behavior, or release approval. See
+[progression quality checks](../../docs/anonymous-progression-quality.md).

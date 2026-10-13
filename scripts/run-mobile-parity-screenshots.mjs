@@ -11,6 +11,7 @@ const appId = 'com.yutakane.lifequest.parity';
 export const mobileParityFlows = Object.freeze({
     screenshots: '.maestro/mobile-parity/capture-major-screens.yaml',
     smoke: '.maestro/mobile-parity/anonymous-critical-path.yaml',
+    progression: '.maestro/mobile-parity/anonymous-progression.yaml',
     reference: '.maestro/mobile-parity/capture-reference-screens.yaml',
     daily: '.maestro/mobile-parity/daily-screen-interactions.yaml',
     character: '.maestro/mobile-parity/character-screen-interactions.yaml',
@@ -35,6 +36,15 @@ export function getMaestroTestCommand(flow) {
 
 export function requiresReferenceRuntime(name) {
     return name === 'reference' || name === 'daily' || name === 'character' || name === 'map' || name === 'battle';
+}
+
+/** Never mistake seeded in-memory screenshots for persistence evidence. */
+export function assertPersistentParityRuntime(manifest) {
+    const extra = manifest?.extra?.expoClient?.extra ?? manifest?.extra;
+    if (extra?.appVariant !== 'parity' || extra?.parityLocalOnly !== true
+        || extra?.parityCaptureTheme || extra?.parityCaptureProfile) {
+        throw new Error('Persistent flows require npm run mobile:start:anonymous: parity only, no Supabase, no reference fixtures.');
+    }
 }
 
 function isExecutable(filePath) {
@@ -208,21 +218,23 @@ async function main(flowName = process.argv[2] ?? 'screenshots') {
     }
 
     let args = getMaestroTestCommand(flow);
-    if (requiresReferenceRuntime(flow.name)) {
-        try {
-            const response = await fetch('http://127.0.0.1:8081', {
-                headers: { accept: 'application/expo+json', 'expo-platform': 'ios' },
-                signal: AbortSignal.timeout(10000),
-            });
-            if (!response.ok) throw new Error('Local Metro is not ready.');
-            const manifest = await response.json();
+    try {
+        const response = await fetch('http://127.0.0.1:8081', {
+            headers: { accept: 'application/expo+json', 'expo-platform': 'ios' },
+            signal: AbortSignal.timeout(10000),
+        });
+        if (!response.ok) throw new Error('Local Metro is not ready.');
+        const manifest = await response.json();
+        if (requiresReferenceRuntime(flow.name)) {
             const theme = getReferenceTheme(manifest);
             assertReferenceProfile(manifest, flow.name);
             args = ['test', '-e', `REFERENCE_THEME=${theme}`, flow.path];
-        } catch (error) {
-            printSetup(error.message);
-            process.exit(1);
+        } else {
+            assertPersistentParityRuntime(manifest);
         }
+    } catch (error) {
+        printSetup(error.message);
+        process.exit(1);
     }
     const result = spawnSync('maestro', args, { stdio: 'inherit', env: java.environment });
 

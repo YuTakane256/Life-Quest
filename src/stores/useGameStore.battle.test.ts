@@ -124,6 +124,68 @@ describe('useGameStore battle start guards', () => {
     });
 });
 
+describe('local victory persists cleared progress before choosing next', () => {
+    beforeEach(resetStore);
+
+    it.each(['attack', 'skill'])('commits a %s victory, survives map return/reload and rewards it only once', async (action) => {
+        useGameStore.setState((state) => ({
+            character: { ...state.character, baseAttack: 100 },
+            battle: { ...state.battle, battleUnlocked: true },
+        }));
+        useGameStore.getState().startBattle(1);
+        const win = () => action === 'attack'
+            ? useGameStore.getState().processBattleTurn()
+            : useGameStore.getState().activateBattleSkill('power_strike');
+        win();
+        expect(useGameStore.getState().battle).toMatchObject({ status: 'victory', maxClearedStage: 1 });
+        expect(useGameStore.getState().character.totalXp).toBe(firstStage.xpReward);
+        win();
+        expect(useGameStore.getState().character.totalXp).toBe(firstStage.xpReward);
+        useGameStore.getState().resetBattle();
+        expect(useGameStore.getState().battle.maxClearedStage).toBe(1);
+        expect(JSON.parse(localStorage.getItem('quest-board-game')!).state.battle.maxClearedStage).toBe(1);
+        await useGameStore.persist.rehydrate();
+        expect(useGameStore.getState().battle.maxClearedStage).toBe(1);
+        useGameStore.getState().startBattle(2);
+        expect(useGameStore.getState().battle).toMatchObject({ status: 'fighting', currentStage: 2 });
+        expect(useGameStore.getState().character.totalXp).toBe(firstStage.xpReward);
+    });
+
+    it('does not lower cleared progress when replaying an earlier stage', () => {
+        useGameStore.setState((state) => ({
+            character: { ...state.character, baseAttack: 100 },
+            battle: { ...state.battle, battleUnlocked: true, maxClearedStage: 10 },
+        }));
+        useGameStore.getState().startBattle(1);
+        useGameStore.getState().processBattleTurn();
+        expect(useGameStore.getState().battle.maxClearedStage).toBe(10);
+    });
+
+    it.each(['attack', 'skill'])('does not grant cloud progress or XP for client-only %s victory', (action) => {
+        useGameStore.setState((state) => ({
+            character: { ...state.character, baseAttack: 100 },
+            battle: { ...state.battle, battleUnlocked: true },
+        }));
+        useGameStore.getState().startBattle(1);
+        useGameStore.setState((state) => ({ battle: { ...state.battle, rewardMode: 'cloud', battleAttemptId: 'unresolved-attempt' } }));
+        if (action === 'attack') useGameStore.getState().processBattleTurn();
+        else useGameStore.getState().activateBattleSkill('power_strike');
+        expect(useGameStore.getState().battle).toMatchObject({ status: 'victory', maxClearedStage: 0 });
+        expect(useGameStore.getState().character.totalXp).toBe(0);
+    });
+
+    it('does not advance progress or grant victory XP on defeat', () => {
+        useGameStore.setState((state) => ({ battle: { ...state.battle, battleUnlocked: true } }));
+        useGameStore.getState().startBattle(1);
+        useGameStore.setState((state) => ({
+            battle: { ...state.battle, playerHp: 1, playerSnapshot: { ...state.battle.playerSnapshot!, defense: 0 } },
+        }));
+        useGameStore.getState().processBattleTurn();
+        expect(useGameStore.getState().battle).toMatchObject({ status: 'defeat', maxClearedStage: 0 });
+        expect(useGameStore.getState().character.totalXp).toBe(0);
+    });
+});
+
 describe('useGameStore battle skills', () => {
     beforeEach(() => {
         resetStore();

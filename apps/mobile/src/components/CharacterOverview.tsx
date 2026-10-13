@@ -115,6 +115,7 @@ export function CharacterOverview({
                                 </Text>
                             </View>
                             <View
+                                testID="character-xp-value"
                                 accessibilityRole="progressbar"
                                 accessibilityLabel={`${character.name} の経験値`}
                                 accessibilityValue={{
@@ -158,7 +159,7 @@ export function CharacterOverview({
                 </View>
                 <View style={s.countRow}>
                     <Text style={s.countLabel}>タスク消化数</Text>
-                    <Text style={s.count}>{gachaCount}</Text>
+                    <Text testID="character-task-count" style={s.count}>{gachaCount}</Text>
                 </View>
             </View>
             <View style={s.roadmap}>

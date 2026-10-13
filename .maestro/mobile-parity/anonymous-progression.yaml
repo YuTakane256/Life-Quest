@@ -1,0 +1,160 @@
+appId: com.yutakane.lifequest.parity
+name: Earn starter chest, unlock battle and retain rewards across restart
+---
+# Only the fixed anonymous parity app, after the runner checks real storage mode.
+# This clears disposable local test data, never preview/release or cloud data.
+- launchApp:
+    clearState: true
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "ログインボーナス.*"
+    timeout: 60000
+- tapOn:
+    point: "50%,90%"
+- extendedWaitUntil:
+    notVisible: "ログインボーナス.*"
+    timeout: 5000
+- assertVisible:
+    text: ".*マップ.*"
+    enabled: false
+- runFlow:
+    file: progression-create-task.yaml
+    env:
+      TASK_NAME: "Progression 1"
+- runFlow:
+    file: progression-create-task.yaml
+    env:
+      TASK_NAME: "Progression 2"
+- runFlow:
+    file: progression-create-task.yaml
+    env:
+      TASK_NAME: "Progression 3"
+- runFlow:
+    file: progression-create-task.yaml
+    env:
+      TASK_NAME: "Progression 4"
+- runFlow:
+    file: progression-create-task.yaml
+    env:
+      TASK_NAME: "Progression 5"
+- tapOn: "キャラ(, tab,.*)?"
+- extendedWaitUntil:
+    visible:
+      id: "character-task-count"
+      text: "5"
+    timeout: 10000
+- copyTextFrom:
+    id: "character-xp-value"
+- evalScript: ${output.earnedXp = maestro.copiedText}
+- assertVisible:
+    text: ".*マップ.*"
+    enabled: false
+- scrollUntilVisible:
+    element: "青色の宝箱を開封する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "青色の宝箱を開封する"
+- assertVisible: "青色の宝箱を開封した！"
+- assertNotVisible: "青色の宝箱を開封する"
+- assertVisible:
+    text: "マップ(, tab,.*)?"
+    enabled: true
+
+# Undo/re-complete the same rewarded task: no extra XP, count or chest.
+- tapOn: "タスク"
+# Completing a task already expanded this list. Do not collapse it here.
+- scrollUntilVisible:
+    element: "Progression 5を未完了にする"
+    direction: DOWN
+- tapOn: "Progression 5を未完了にする"
+- scrollUntilVisible:
+    element: "Progression 5を完了にする"
+    direction: UP
+- tapOn: "Progression 5を完了にする"
+- extendedWaitUntil:
+    notVisible: "取消する"
+    timeout: 10000
+- tapOn: "キャラ(, tab,.*)?"
+- scrollUntilVisible:
+    element:
+      id: "character-xp-value"
+    direction: UP
+- assertVisible:
+    id: "character-task-count"
+    text: "5"
+- copyTextFrom:
+    id: "character-xp-value"
+- assertTrue: ${maestro.copiedText == output.earnedXp}
+- assertNotVisible: "青色の宝箱を開封する"
+
+- tapOn: "マップ(, tab,.*)?"
+- tapOn: "ステージ 1 スタート"
+- extendedWaitUntil:
+    visible: "通常攻撃"
+    timeout: 10000
+- repeat:
+    times: 4
+    commands:
+      - tapOn: "通常攻撃"
+- assertVisible: "勝利！"
+- assertVisible: "5 XP を獲得！"
+- tapOn: "マップへ"
+- assertVisible: "最高到達: ステージ 1"
+- assertVisible: "ステージ 2 スタート"
+- tapOn: "キャラ(, tab,.*)?"
+- scrollUntilVisible:
+    element:
+      id: "character-xp-value"
+    direction: UP
+- copyTextFrom:
+    id: "character-xp-value"
+- evalScript: ${output.victoryXp = maestro.copiedText}
+- assertTrue: ${parseInt(output.victoryXp) == parseInt(output.earnedXp) + 5}
+
+# AsyncStorage reload, not fixture seeding. Do not begin a new battle here:
+# replaying an old stage is allowed to earn XP under the existing game rules.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 10000
+- assertNotVisible: "ログインボーナス.*"
+- tapOn: "キャラ(, tab,.*)?"
+- copyTextFrom:
+    id: "character-xp-value"
+- assertTrue: ${maestro.copiedText == output.victoryXp}
+- assertVisible:
+    id: "character-task-count"
+    text: "5"
+- assertNotVisible: "青色の宝箱を開封する"
+- tapOn: "タスク"
+- tapOn: "完了タスク .*"
+- scrollUntilVisible:
+    element: "Progression 5を未完了にする"
+    direction: DOWN
+- tapOn: "Progression 5を未完了にする"
+- scrollUntilVisible:
+    element: "Progression 5を完了にする"
+    direction: UP
+- tapOn: "Progression 5を完了にする"
+- extendedWaitUntil:
+    notVisible: "取消する"
+    timeout: 10000
+- tapOn: "キャラ(, tab,.*)?"
+- copyTextFrom:
+    id: "character-xp-value"
+- assertTrue: ${maestro.copiedText == output.victoryXp}
+- assertVisible:
+    id: "character-task-count"
+    text: "5"
+- tapOn: "マップ(, tab,.*)?"
+- assertVisible: "最高到達: ステージ 1"
+- assertVisible: "ステージ 1 再挑戦"
+- assertVisible: "ステージ 2 スタート"
