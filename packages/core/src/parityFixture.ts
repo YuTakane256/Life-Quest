@@ -170,16 +170,25 @@ const parityStatsState = {
     version: 1,
 };
 
+export type ParityProfile = 'daily' | 'battle';
+
+function getParityGame(profile: ParityProfile) {
+    return profile === 'daily' ? parityGameState : {
+        ...parityGameState,
+        state: { ...parityGameState.state, battle: { ...parityGameState.state.battle, maxClearedStage: 9 } },
+    };
+}
+
 function envelope(state: unknown, version = 1): string {
     return JSON.stringify({ state, version });
 }
 
 /** Fictional, anonymous reference data; no production store imports or side effects. */
-export function createWebParityStorage(theme: ParityTheme = 'dark'): Record<string, string> {
+export function createWebParityStorage(theme: ParityTheme = 'dark', profile: ParityProfile = 'daily'): Record<string, string> {
     return {
         'quest-board-tasks': JSON.stringify(taskParityState),
         'quest-board-habits': JSON.stringify(parityHabitState),
-        'quest-board-game': JSON.stringify(parityGameState),
+        'quest-board-game': JSON.stringify(getParityGame(profile)),
         'quest-board-stats': JSON.stringify(parityStatsState),
         'quest-board-title': envelope({ activeTitle: '駆け出し冒険者' }),
         'quest-board-battle-history': envelope({ history: [] }),
@@ -193,8 +202,8 @@ export function createWebParityStorage(theme: ParityTheme = 'dark'): Record<stri
 }
 
 /** Same domain state, adapted only to Mobile's existing persistence envelopes. */
-export function createMobileParityStorage(theme: ParityTheme = 'dark'): Record<string, string> {
-    const game = convertLegacyGameSnapshot({ game: parityGameState, tasks: taskParityState, habits: parityHabitState });
+export function createMobileParityStorage(theme: ParityTheme = 'dark', profile: ParityProfile = 'daily'): Record<string, string> {
+    const game = convertLegacyGameSnapshot({ game: getParityGame(profile), tasks: taskParityState, habits: parityHabitState });
     return {
         'quest-board-tasks': JSON.stringify(taskParityState),
         'quest-board-habits': envelope({ habits: parityHabitState.state.habits, records: parityHabitState.state.dailyRecords, restDays: [], rewardEligibleDates: [] }, 0),

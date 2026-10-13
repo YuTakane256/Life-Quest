@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { createWebParityStorage, PARITY_FIXED_NOW, type ParityTheme } from '@life-quest/core/parityFixture';
+import { createWebParityStorage, PARITY_FIXED_NOW, type ParityProfile, type ParityTheme } from '@life-quest/core/parityFixture';
 
 export const taskParitySnapshotName = 'task-page-dark.png';
 
@@ -8,8 +8,8 @@ export async function installWebParityState(page: Page, theme: ParityTheme = 'da
     currentStage: number;
     maxClearedStage: number;
     battleUnlocked?: boolean;
-}): Promise<void> {
-    const storage = createWebParityStorage(theme);
+}, profile: ParityProfile = 'daily'): Promise<void> {
+    const storage = createWebParityStorage(theme, profile);
     if (battleProgress) {
         // Isolated Playwright browser only; never writes a running user's store.
         const game = JSON.parse(storage['quest-board-game']);

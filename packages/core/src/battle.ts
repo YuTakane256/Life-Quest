@@ -228,6 +228,11 @@ export interface BattleTurnLog {
 
 export type BattleOutcome = 'ongoing' | 'victory' | 'defeat';
 
+/** Keep the terminal attempt reachable until its authoritative result is applied. */
+export function hasPendingBattleResult(outcome: BattleOutcome, rewardMode: 'local' | 'cloud', attemptId: string | null): boolean {
+    return outcome !== 'ongoing' && rewardMode === 'cloud' && attemptId !== null;
+}
+
 export interface BattleEngineState {
     enemyHp: number;
     playerHp: number;

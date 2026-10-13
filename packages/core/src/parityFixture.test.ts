@@ -5,6 +5,15 @@ import { convertLegacyGameSnapshot, convertLegacyHabitSnapshot, convertLegacyTas
 const state = (storage: Record<string, string>, key: string) => JSON.parse(storage[key]);
 
 describe('shared anonymous reference fixture', () => {
+    it.each(['light', 'dark'] as const)('battle profile only changes fictional progress, equally on both platforms (%s)', (theme) => {
+        const web = createWebParityStorage(theme, 'battle');
+        const mobile = createMobileParityStorage(theme, 'battle');
+        const game = convertLegacyGameSnapshot({ game: state(web, 'quest-board-game'), tasks: state(web, 'quest-board-tasks'), habits: state(web, 'quest-board-habits') });
+        expect(state(mobile, 'quest-board-game').state).toEqual(game);
+        expect(game.battleProgress).toMatchObject({ maxClearedStage: 9, currentStage: 3 });
+        expect(game.character.totalXp).toBe(330);
+        expect(state(createWebParityStorage(theme), 'quest-board-game').state.battle.maxClearedStage).toBe(2);
+    });
     it.each(['light', 'dark'] as const)('uses equivalent domain data and %s on both platforms', (theme) => {
         const web = createWebParityStorage(theme);
         const mobile = createMobileParityStorage(theme);

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { BATTLE_CONFIG, MAP_CONFIG, getMapForStage, getMapStages, isMapUnlocked } from './battle';
+import { BATTLE_CONFIG, MAP_CONFIG, getMapForStage, getMapStages, hasPendingBattleResult, isMapUnlocked } from './battle';
 
 describe('shared map presentation', () => {
+    it('retains terminal cloud attempts until applied, but permits ongoing exits and already-applied restoration', () => {
+        expect(hasPendingBattleResult('victory', 'cloud', 'attempt')).toBe(true);
+        expect(hasPendingBattleResult('defeat', 'cloud', 'attempt')).toBe(true);
+        expect(hasPendingBattleResult('ongoing', 'cloud', 'attempt')).toBe(false);
+        expect(hasPendingBattleResult('victory', 'cloud', null)).toBe(false);
+        expect(hasPendingBattleResult('victory', 'local', null)).toBe(false);
+    });
     it.each(MAP_CONFIG)('$name unlocks at its previous area boundary, not before', (map) => {
         const boundary = map.stageRange[0] - 1;
         expect(isMapUnlocked(map, boundary, true)).toBe(true);

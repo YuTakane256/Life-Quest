@@ -27,8 +27,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     const isParity = variant === 'parity';
     const isPreview = variant === 'preview';
     const captureTheme = process.env.LIFE_QUEST_PARITY_CAPTURE;
+    const captureProfile = process.env.LIFE_QUEST_PARITY_PROFILE;
     if (captureTheme && (!isParity || !['light', 'dark'].includes(captureTheme))) {
         throw new Error('LIFE_QUEST_PARITY_CAPTURE must be light/dark and requires LIFE_QUEST_APP_VARIANT=parity.');
+    }
+    if (captureProfile && (!captureTheme || !isParity || !['daily', 'battle'].includes(captureProfile))) {
+        throw new Error('LIFE_QUEST_PARITY_PROFILE requires parity capture and must be daily/battle.');
     }
     const scheme = isParity ? PARITY_SCHEME : isPreview ? PREVIEW_SCHEME : RELEASE_SCHEME;
 
@@ -59,6 +63,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             ...config.extra,
             appVariant: variant,
             parityCaptureTheme: captureTheme || undefined,
+            parityCaptureProfile: captureProfile || undefined,
         },
     } as ExpoConfig;
 };

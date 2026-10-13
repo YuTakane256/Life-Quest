@@ -15,6 +15,7 @@ export const mobileParityFlows = Object.freeze({
     daily: '.maestro/mobile-parity/daily-screen-interactions.yaml',
     character: '.maestro/mobile-parity/character-screen-interactions.yaml',
     map: '.maestro/mobile-parity/map-screen-interactions.yaml',
+    battle: '.maestro/mobile-parity/battle-screen-interactions.yaml',
 });
 
 export function getMobileParityFlow(name = 'screenshots') {
@@ -33,7 +34,7 @@ export function getMaestroTestCommand(flow) {
 }
 
 export function requiresReferenceRuntime(name) {
-    return name === 'reference' || name === 'daily' || name === 'character' || name === 'map';
+    return name === 'reference' || name === 'daily' || name === 'character' || name === 'map' || name === 'battle';
 }
 
 function isExecutable(filePath) {
@@ -132,6 +133,15 @@ export function getReferenceTheme(manifest) {
     return theme;
 }
 
+export function assertReferenceProfile(manifest, flowName) {
+    getReferenceTheme(manifest);
+    const extra = manifest?.extra?.expoClient?.extra ?? manifest?.extra;
+    const profile = extra?.parityCaptureProfile ?? 'daily';
+    if (profile !== (flowName === 'battle' ? 'battle' : 'daily')) {
+        throw new Error('Battle flow requires LIFE_QUEST_PARITY_PROFILE=battle; other reference flows require the daily profile.');
+    }
+}
+
 /**
  * Check every prerequisite before running Maestro. Kept pure enough for unit
  * tests so a missing simulator or parity build demonstrably fails before an
@@ -205,7 +215,9 @@ async function main(flowName = process.argv[2] ?? 'screenshots') {
                 signal: AbortSignal.timeout(10000),
             });
             if (!response.ok) throw new Error('Local Metro is not ready.');
-            const theme = getReferenceTheme(await response.json());
+            const manifest = await response.json();
+            const theme = getReferenceTheme(manifest);
+            assertReferenceProfile(manifest, flow.name);
             args = ['test', '-e', `REFERENCE_THEME=${theme}`, flow.path];
         } catch (error) {
             printSetup(error.message);

@@ -1,0 +1,77 @@
+appId: com.yutakane.lifequest.parity
+name: Battle portraits skills HP victory and defeat (memory only)
+---
+# The runner requires the guarded battle profile, never clears persistent data.
+- launchApp:
+    clearState: false
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "マップ(, tab,.*)?"
+- assertVisible: "最高到達: ステージ 9"
+- tapOn: "ステージ 3 再挑戦"
+- extendedWaitUntil:
+    visible: "通常攻撃"
+    timeout: 10000
+- tapOn: "通常攻撃"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-battle"
+- repeat:
+    times: 2
+    commands:
+      - tapOn: "通常攻撃"
+- assertVisible: "勝利！"
+- assertVisible: "15 XP を獲得！"
+- assertNotVisible: "通常攻撃"
+- assertVisible: "次へ"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-victory"
+- tapOn: "マップへ"
+- scrollUntilVisible:
+    element: "ステージ 10 スタート"
+    direction: DOWN
+- tapOn: "ステージ 10 スタート"
+- extendedWaitUntil:
+    visible: "通常攻撃"
+    timeout: 10000
+- repeat:
+    times: 8
+    commands:
+      - tapOn: "通常攻撃"
+- assertVisible: "敗北..."
+- assertVisible: "レベルを上げて再挑戦しましょう！"
+- assertNotVisible: "通常攻撃"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-defeat"
+- tapOn: "リトライ"
+- assertVisible: "通常攻撃"
+# Guard/cooldown/invalid re-use retains the existing action engine.
+- tapOn: "防御態勢"
+- assertVisible: "防御 1T"
+- assertVisible:
+    text: "防御態勢 クールダウン3"
+    enabled: false
+- tapOn: "応急手当"
+- assertVisible:
+    text: "応急手当 クールダウン4"
+    enabled: false
+- tapOn: "強撃"
+- assertVisible:
+    text: "強撃 クールダウン2"
+    enabled: false
+- tapOn: "通常攻撃"
+- assertVisible:
+    text: "強撃 クールダウン1"
+    enabled: false
+- tapOn: "戦闘を閉じる"
+- assertVisible: "最高到達: ステージ 9"

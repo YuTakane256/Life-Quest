@@ -7,6 +7,7 @@ import {
     getMobileParityFlow,
     getMobileParityPreflight,
     getReferenceTheme,
+    assertReferenceProfile,
     requiresReferenceRuntime,
 } from './run-mobile-parity-screenshots.mjs';
 
@@ -74,6 +75,19 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('requires the explicit battle profile and rejects mismatched capture flows', () => {
+        const manifest = (profile) => ({ extra: { appVariant: 'parity', parityCaptureTheme: 'dark', parityCaptureProfile: profile } });
+        expect(() => assertReferenceProfile(manifest('battle'), 'battle')).not.toThrow();
+        expect(() => assertReferenceProfile(manifest(undefined), 'reference')).not.toThrow();
+        expect(() => assertReferenceProfile(manifest(undefined), 'battle')).toThrow(/Battle flow/);
+        expect(() => assertReferenceProfile(manifest('battle'), 'map')).toThrow(/Battle flow/);
+        expect(() => assertReferenceProfile(manifest('other'), 'battle')).toThrow(/Battle flow/);
+        expect(requiresReferenceRuntime('battle')).toBe(true);
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('battle').path}`, import.meta.url), 'utf8');
+        expect(yaml).toContain('clearState: false');
+        expect(yaml).not.toContain('clearState: true');
+        expect(yaml).toContain('リトライ');
+    });
     it('isolates map combat checks to the guarded memory-only runtime', () => {
         expect(requiresReferenceRuntime('map')).toBe(true);
         const flow = getMobileParityFlow('map');
