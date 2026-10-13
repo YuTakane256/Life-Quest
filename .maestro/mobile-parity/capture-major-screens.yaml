@@ -62,7 +62,7 @@ name: Capture anonymous Mobile parity reference screens
 # Character is the anonymous initial profile; no personal profile is recorded.
 - tapOn: "キャラ(, tab,.*)?"
 - extendedWaitUntil:
-    visible: "キャラクター"
+    visible: "プロフィールを編集"
     timeout: 5000
 - takeScreenshot: "04-character"
 

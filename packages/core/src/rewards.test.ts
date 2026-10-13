@@ -4,6 +4,7 @@ import {
     GACHA_CONFIG,
     getEquipmentTemplateById,
     getMilestoneAtCount,
+    getUpcomingMilestones,
     rollEquipmentTemplate,
     SELL_XP_BY_RARITY,
     type ChestType,
@@ -42,6 +43,28 @@ describe('getMilestoneAtCount', () => {
         expect(getMilestoneAtCount(-5)).toBeNull();
         expect(getMilestoneAtCount(5.5)).toBeNull();
         expect(getMilestoneAtCount(Number.NaN)).toBeNull();
+    });
+});
+
+describe('getUpcomingMilestones', () => {
+    it.each([
+        [0, [5, 10, 25]],
+        [12, [25, 50, 100]],
+        [100, [105, 110, 125]],
+        [499, [500, 505, 510]],
+        [999, [1000, 1005, 1010]],
+    ] as const)('消化数%sから次の3目標を昇順で表示する', (count, expected) => {
+        expect(getUpcomingMilestones(count).map((milestone) => milestone.count)).toEqual(expected);
+        for (const milestone of getUpcomingMilestones(count)) expect(milestone).toEqual(getMilestoneAtCount(milestone.count));
+    });
+    it('特殊宝箱・表示数の指定・達成済みの除外を維持する', () => {
+        expect(getUpcomingMilestones(499, 1)).toEqual([{ count: 500, chestType: 'red_gold', label: '赤と金の宝箱' }]);
+        expect(getUpcomingMilestones(1000, 1)[0].count).toBe(1005);
+        expect(getUpcomingMilestones(0, 0)).toEqual([]);
+    });
+    it('不正値・安全な整数上限では終了し、目標を生成しない', () => {
+        for (const count of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER]) expect(getUpcomingMilestones(count)).toEqual([]);
+        expect(getUpcomingMilestones(0, Number.POSITIVE_INFINITY)).toEqual([]);
     });
 });
 
