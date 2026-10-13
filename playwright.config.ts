@@ -40,7 +40,7 @@ export default defineConfig({
         },
         {
             name: 'web-reference-402x874',
-            testMatch: /visual-parity\/paired-reference-web\.spec\.ts/,
+            testMatch: /visual-parity\/(paired-reference-web|battle-reference-web)\.spec\.ts/,
             testIgnore: isWebParityRun ? undefined : /visual-parity\/.*\.spec\.ts/,
             use: {
                 browserName: 'chromium',

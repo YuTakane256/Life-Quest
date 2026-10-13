@@ -72,14 +72,23 @@ React製Web版とReact Native製Mobile版で、タスク・習慣の主要画面
 
 同じ架空データ・日時・テーマで、最高クリアはステージ2、次の敵は大コウモリです。両テーマの画像、撮影手順、戦闘中に残る違いは[マップ比較](docs/screenshots/map-parity/README.md)をご覧ください。
 
-**UI統一は段階的に進めています。** 掲載比較はタスク・習慣の主要一覧、キャラクターの主要部分、戦闘前のマップ/ステージ選択が対象で、全画面・全操作の一致やストア公開済みを示すものではありません。インベントリの独立画面化、戦闘中の配置・進行操作、履歴/リプレイ、宝箱の開封演出などは継続課題です。選択・確認・共有にはOS固有の操作を使い、日付入力やCSVの保存方法など一部の操作差も残っています。Androidは共通コードのビルド確認までで、実機の見た目・操作検証は今後の工程です。
+### 成長を攻略につなげる戦闘画面
+
+共通のキャラクター・敵画像、HP、スキル、ログ、勝敗表示をWeb/Mobileで揃えています。以下は同じ架空データで大コウモリに通常攻撃を1回行った状態です。Mobileは手動攻撃の操作を維持し、Webは自動でターンが進みます。
+
+| Web（スマホ幅） | Mobile（iOSシミュレーター） |
+| --- | --- |
+| [<img src="docs/screenshots/battle-parity/web-dark-battle.png" width="220" alt="Web戦闘：キャラクターと敵、HP、3種類のスキル、ログ">](docs/screenshots/battle-parity/web-dark-battle.png) | [<img src="docs/screenshots/battle-parity/mobile-dark-battle.png" width="220" alt="Mobile戦闘：共通の画像・HP・スキルと手動攻撃">](docs/screenshots/battle-parity/mobile-dark-battle.png) |
+
+両テーマと勝利・敗北の比較、撮影手順、残る操作差は[戦闘比較](docs/screenshots/battle-parity/README.md)をご覧ください。
+
+**UI統一は段階的に進めています。** 掲載比較はタスク・習慣の主要一覧、キャラクターの主要部分、マップ/ステージ選択と戦闘・勝敗の代表画面が対象で、全画面・全操作の一致やストア公開済みを示すものではありません。インベントリの独立画面化、自動/手動の戦闘進行、履歴/リプレイ、宝箱の開封演出などは継続課題です。選択・確認・共有にはOS固有の操作を使い、日付入力やCSVの保存方法など一部の操作差も残っています。Androidは共通コードのビルド確認までで、実機の見た目・操作検証は今後の工程です。
 
 ### ゲーム体験（Web版）
 
-| マップ・バトル | 宝箱と報酬 |
-| --- | --- |
-| [![敵とのターン制バトル](docs/screenshots/portfolio/web-battle.png)](docs/screenshots/portfolio/web-battle.png) | [![タスク達成で獲得した宝箱の開封](docs/screenshots/portfolio/web-chest.png)](docs/screenshots/portfolio/web-chest.png) |
-| 装備ステータスとスキルを使って複数エリアを攻略 | 宝箱から装備を獲得し、売却・合成・装備へつなげる |
+宝箱から装備を獲得し、売却・合成・装備へつなげます。開封演出は現在Web版の画像のみを掲載しています。
+
+[<img src="docs/screenshots/portfolio/web-chest.png" width="420" alt="Web版：タスク達成で獲得した宝箱の開封">](docs/screenshots/portfolio/web-chest.png)
 
 ## 主な機能
 

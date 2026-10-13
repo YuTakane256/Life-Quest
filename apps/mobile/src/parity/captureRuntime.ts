@@ -1,4 +1,4 @@
-import { createMobileParityStorage, PARITY_FIXED_NOW, type ParityTheme } from '@life-quest/core/parityFixture';
+import { createMobileParityStorage, PARITY_FIXED_NOW, type ParityProfile, type ParityTheme } from '@life-quest/core/parityFixture';
 
 export interface CaptureContext {
     development: boolean;
@@ -32,13 +32,20 @@ export interface CaptureStorage {
     clear(): Promise<void>;
 }
 
+export function getCaptureProfile(context: CaptureContext, profile: unknown): ParityProfile {
+    if (!getCaptureTheme(context) || (profile !== undefined && profile !== '' && profile !== 'daily' && profile !== 'battle')) {
+        throw new Error('Capture profile requires a guarded reference runtime and must be daily/battle.');
+    }
+    return profile === 'battle' ? 'battle' : 'daily';
+}
+
 /**
  * Intercept the shared AsyncStorage singleton BEFORE the router imports stores.
  * All capture writes stay in memory. Even clear() never touches the real DB.
  * SecureStore is not changed, and cloud configuration is forbidden by the guard.
  */
-export function installCaptureRuntime(storage: CaptureStorage, theme: ParityTheme): () => void {
-    const values = new Map(Object.entries(createMobileParityStorage(theme)));
+export function installCaptureRuntime(storage: CaptureStorage, theme: ParityTheme, profile: ParityProfile = 'daily'): () => void {
+    const values = new Map(Object.entries(createMobileParityStorage(theme, profile)));
     const overrides: CaptureStorage = {
         getItem: async (key) => values.get(key) ?? null,
         setItem: async (key, value) => { values.set(key, value); },

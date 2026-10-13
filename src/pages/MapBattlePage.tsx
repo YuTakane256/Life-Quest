@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import { BATTLE_CONFIG, MAP_CONFIG, ENEMY_IMAGE_KEYS } from '../config/gameConfig';
-import { getMapForStage, getMapStages, isMapUnlocked } from '@life-quest/core/battle';
+import { getMapForStage, getMapStages, hasPendingBattleResult, isMapUnlocked } from '@life-quest/core/battle';
 import { Swords, Trophy, Skull, RotateCcw, ChevronRight } from 'lucide-react';
 import { BattleReplayModal } from '../components/ui/BattleReplayModal';
 import { HpBar } from '../components/ui/HpBar';
@@ -47,7 +47,8 @@ export function MapBattlePage() {
     const logEndRef = useRef<HTMLDivElement>(null);
     const effectiveStats = getEffectiveStats();
     const { resolveState, granted, retry } = useCloudBattleResolve();
-    const isSyncingResult = battle.rewardMode === 'cloud' && resolveState === 'syncing';
+    const isSyncingResult = hasPendingBattleResult(battle.status === 'victory' || battle.status === 'defeat' ? battle.status : 'ongoing', battle.rewardMode, battle.battleAttemptId)
+        || (battle.rewardMode === 'cloud' && resolveState === 'syncing');
     const { isStarting, startError, startStage, retry: retryStart } = useCloudBattleStart();
 
     const handleNextStage = async () => {
@@ -104,7 +105,9 @@ export function MapBattlePage() {
     if (battle.status === 'fighting' || battle.status === 'victory' || battle.status === 'defeat') {
         const currentMap = getMapForStage(battle.currentStage);
         const enemyVisual = getEnemyImage(battle.currentStage);
-        const unlockedSkills = getUnlockedBattleSkills(character.level);
+        const unlockedSkills = getUnlockedBattleSkills(battle.playerSnapshot?.level ?? character.level);
+        const playerName = battle.playerSnapshot?.name ?? character.name;
+        const playerLevel = battle.playerSnapshot?.level ?? character.level;
 
         return (
             <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-4 relative z-0">
@@ -128,8 +131,8 @@ export function MapBattlePage() {
                                 <img src={character.avatar === 'male' ? heroMaleImg : heroImg} alt="Player" className="w-full h-full object-cover" />
                             </div>
                         </div>
-                        <div className="text-sm font-bold mb-1 text-center truncate" style={{ color: 'var(--color-text-primary)' }}>{character.name} <span style={{ color: 'var(--color-accent-gold)' }}>Lv.{character.level}</span></div>
-                        <HpBar current={battle.playerHp} max={effectiveStats.maxHp} color="player" height="md" label={`${character.name} のHP`} />
+                        <div className="text-sm font-bold mb-1 text-center truncate" style={{ color: 'var(--color-text-primary)' }}>{playerName} <span style={{ color: 'var(--color-accent-gold)' }}>Lv.{playerLevel}</span></div>
+                        <HpBar current={battle.playerHp} max={battle.playerSnapshot?.maxHp ?? effectiveStats.maxHp} color="player" height="md" label={`${playerName} のHP`} />
                     </div>
 
                     {/* 敵 */}
@@ -192,7 +195,7 @@ export function MapBattlePage() {
                 <BattleLogList
                     logs={battle.logs}
                     autoScroll={true}
-                    className="rounded-xl p-4 mb-4 h-52"
+                    className={`rounded-xl p-4 mb-4 ${battle.status === 'fighting' ? 'h-52' : 'h-32'}`}
                     style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
                 />
 
@@ -211,6 +214,7 @@ export function MapBattlePage() {
                         {battle.rewardMode === 'cloud' ? (
                             <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
                                 {resolveState === 'syncing' && '報酬を同期中…'}
+                                {resolveState === 'idle' && (battle.battleAttemptId ? '報酬を同期中…' : '同期済み')}
                                 {resolveState === 'done' && (granted
                                     ? `${battle.enemy?.xpReward} XP を獲得！`
                                     : '同期済み（既に付与済みです）')}
@@ -229,7 +233,7 @@ export function MapBattlePage() {
                                 disabled={isSyncingResult || isStarting}
                                 className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
-                                <ChevronRight size={18} /> 次へ
+                                <ChevronRight size={18} /> {battle.currentStage < BATTLE_CONFIG.STAGES.length ? '次へ' : '再挑戦'}
                             </button>
                             <button onClick={() => { resetBattle(); setShowVictoryDialog(false); }}
                                 disabled={isSyncingResult}
@@ -258,7 +262,7 @@ export function MapBattlePage() {
                                     結果の同期に失敗しました。
                                     <button onClick={retry} className="underline ml-1" style={{ color: 'var(--color-accent-primary)' }}>再送</button>
                                 </span>
-                            ) : 'レベルを上げて再挑戦しましょう！'}
+                            ) : isSyncingResult ? '結果を同期中…' : 'レベルを上げて再挑戦しましょう！'}
                         </p>
                         <div className="flex gap-2">
                             <button onClick={() => void startStage(battle.currentStage)}

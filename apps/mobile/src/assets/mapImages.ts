@@ -43,6 +43,10 @@ import grassland from "@life-quest/assets/images/bg_grassland.png";
 import castle from "@life-quest/assets/images/bg_castle.png";
 import heaven from "@life-quest/assets/images/bg_heaven.png";
 import deepSea from "@life-quest/assets/images/bg_deep_sea.png";
+import battleGrassland from '@life-quest/assets/images/bg_battle_grassland.png';
+import battleCastle from '@life-quest/assets/images/bg_battle_castle.png';
+import battleHeaven from '@life-quest/assets/images/bg_battle_heaven.png';
+import battleDeepSea from '@life-quest/assets/images/bg_battle_deep_sea.png';
 
 // Static imports keep Metro and Web on the same existing shared assets.
 export const ENEMY_IMAGES: Record<string, ImageSourcePropType> = {
@@ -90,6 +94,13 @@ export const ENEMY_IMAGES: Record<string, ImageSourcePropType> = {
 
 
 const MAP_IMAGES: Record<string, ImageSourcePropType> = { grassland, castle, heaven, deep_sea: deepSea };
+const BATTLE_IMAGES: Record<string, ImageSourcePropType> = {
+    grassland: battleGrassland, castle: battleCastle, heaven: battleHeaven, deep_sea: battleDeepSea,
+};
+
+export function getBattleImage(theme: string): ImageSourcePropType {
+    return BATTLE_IMAGES[theme] ?? battleGrassland;
+}
 
 export function getMapImage(theme: string): ImageSourcePropType {
     return MAP_IMAGES[theme] ?? grassland;

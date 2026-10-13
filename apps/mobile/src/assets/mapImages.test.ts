@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ENEMY_IMAGE_KEYS, MAP_CONFIG } from '@life-quest/core/battle';
-import { getEnemyImage, getMapImage } from './mapImages';
+import { getBattleImage, getEnemyImage, getMapImage } from './mapImages';
 
 describe('Mobile map shared assets', () => {
     it('covers every stage, including deep-sea aliases', () => {
@@ -10,7 +10,11 @@ describe('Mobile map shared assets', () => {
         expect(getEnemyImage('unknown')).toBeNull();
     });
     it('covers every area with a grassland fallback', () => {
-        for (const map of MAP_CONFIG) expect(getMapImage(map.theme)).toBeTruthy();
+        for (const map of MAP_CONFIG) {
+            expect(getMapImage(map.theme)).toBeTruthy();
+            expect(getBattleImage(map.theme)).toBeTruthy();
+        }
         expect(getMapImage('unknown')).toEqual(getMapImage('grassland'));
+        expect(getBattleImage('unknown')).toEqual(getBattleImage('grassland'));
     });
 });

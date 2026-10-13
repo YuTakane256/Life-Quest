@@ -32,25 +32,25 @@ name: Map selection and existing combat (memory only)
 - takeScreenshot: "reference-${REFERENCE_THEME}-map"
 - tapOn: "ステージ 1 再挑戦"
 - extendedWaitUntil:
-    visible: "戦闘中"
+    visible: "通常攻撃"
     timeout: 10000
 - tapOn: "通常攻撃"
 - tapOn: "通常攻撃"
-- assertVisible: "勝利"
+- assertVisible: "勝利！"
 - assertNotVisible:
     text: "通常攻撃"
     enabled: true
-- tapOn: "戦闘を閉じる"
+- tapOn: "マップへ"
 - assertVisible: "ステージ 3 スタート"
 - tapOn: "ステージ 3 スタート"
 - extendedWaitUntil:
-    visible: "戦闘中"
+    visible: "通常攻撃"
     timeout: 10000
 - repeat:
     times: 3
     commands:
       - tapOn: "通常攻撃"
-- assertVisible: "勝利"
-- tapOn: "戦闘を閉じる"
+- assertVisible: "勝利！"
+- tapOn: "マップへ"
 - assertVisible: "最高到達: ステージ 3"
 - assertVisible: "ステージ 4 スタート"
