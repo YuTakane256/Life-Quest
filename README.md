@@ -4,6 +4,10 @@
 
 [![CI](https://github.com/YuTakane256/Life-Quest/actions/workflows/ci.yml/badge.svg)](https://github.com/YuTakane256/Life-Quest/actions/workflows/ci.yml)
 [![E2E](https://github.com/YuTakane256/Life-Quest/actions/workflows/e2e.yml/badge.svg)](https://github.com/YuTakane256/Life-Quest/actions/workflows/e2e.yml)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
+[![Expo](https://img.shields.io/badge/Expo-57-000020?logo=expo)](https://expo.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?logo=supabase)](https://supabase.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
 Life Questは、日々のタスクや習慣の達成を、装備収集・キャラクター育成・マップ攻略へつなげる個人開発プロジェクトです。「やるべきことを管理する」だけでなく、「今日の達成が冒険を進めた」と感じ、次の行動も楽しみにできる体験を目指しています。Web / Mobileで開発中です。
 
@@ -183,11 +187,6 @@ RLSに加えて、service roleを利用するEdge FunctionでもJWT由来のユ�
 設計上の判断と背景は[Architecture Decision Records](docs/adr/README.md)に記録しています。
 
 ## 技術スタック
-
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
-[![Expo](https://img.shields.io/badge/Expo-57-000020?logo=expo)](https://expo.dev/)
-[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?logo=supabase)](https://supabase.com/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
 | 領域 | 採用技術 |
 | --- | --- |
