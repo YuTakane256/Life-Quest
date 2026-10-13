@@ -5,8 +5,8 @@
  * キーは packages/assets/manifest.ts と同一（Webと同じ画像を同じキーで参照する）。
  * 未知のキー・template_id は null を返し、呼び出し側がプレースホルダーを出す。
  *
- * ここではキャラクター画面・宝箱・装備アイコンに必要な分だけを束ねる
- * （マップ・バトル画面の敵/背景画像は#509系で拡張する）。
+ * ここではキャラクター画面・宝箱・装備アイコンに必要な分を束ねる。
+ * マップの敵/背景画像は mapImages.ts で同じ共有素材を参照する。
  */
 import type { ImageSourcePropType } from 'react-native';
 import heroImg from '@life-quest/assets/images/hero.png';

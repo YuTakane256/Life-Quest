@@ -4,7 +4,18 @@ import { createWebParityStorage, PARITY_FIXED_NOW, type ParityTheme } from '@lif
 export const taskParitySnapshotName = 'task-page-dark.png';
 
 /** The existing 390px regression defaults to dark; paired references select either theme. */
-export async function installWebParityState(page: Page, theme: ParityTheme = 'dark'): Promise<void> {
+export async function installWebParityState(page: Page, theme: ParityTheme = 'dark', battleProgress?: {
+    currentStage: number;
+    maxClearedStage: number;
+    battleUnlocked?: boolean;
+}): Promise<void> {
+    const storage = createWebParityStorage(theme);
+    if (battleProgress) {
+        // Isolated Playwright browser only; never writes a running user's store.
+        const game = JSON.parse(storage['quest-board-game']);
+        Object.assign(game.state.battle, battleProgress);
+        storage['quest-board-game'] = JSON.stringify(game);
+    }
     await page.clock.install({ time: new Date(PARITY_FIXED_NOW) });
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
     await page.addInitScript((storage) => {
@@ -17,7 +28,7 @@ export async function installWebParityState(page: Page, theme: ParityTheme = 'da
         }
         Object.defineProperty(window, 'Notification', { configurable: true, value: ParityNotification });
         Math.random = () => 0.123456789;
-    }, createWebParityStorage(theme));
+    }, storage);
 }
 
 export async function waitForWebParityRender(page: Page): Promise<void> {
