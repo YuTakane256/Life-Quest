@@ -11,6 +11,12 @@
 
 Life Questは、日々のタスクや習慣の達成を、装備収集・キャラクター育成・マップ攻略へつなげる個人開発プロジェクトです。「やるべきことを管理する」だけでなく、「今日の達成が冒険を進めた」と感じ、次の行動も楽しみにできる体験を目指しています。Web / Mobileで開発中です。
 
+| タスクの達成 | キャラクター育成 | マップ攻略 |
+| --- | --- | --- |
+| [<img src="docs/screenshots/daily-parity/web-dark-tasks.png" width="220" alt="タスクを整理し、日々の達成を記録するWeb画面">](docs/screenshots/daily-parity/web-dark-tasks.png) | [<img src="docs/screenshots/character-parity/web-dark-character.png" width="220" alt="XP、装備、次の宝箱の目標で成長を確認するWeb画面">](docs/screenshots/character-parity/web-dark-character.png) | [<img src="docs/screenshots/map-parity/web-dark-map.png" width="220" alt="育てたキャラクターで挑むステージを選ぶWeb画面">](docs/screenshots/map-parity/web-dark-map.png) |
+
+Web版（スマホ幅）の代表画面です。架空のサンプルデータを使用しており、詳しい画面説明とWeb / Mobileの比較は[以下のScreenshots](#screenshots)にまとめています。
+
 [画面を見る](#screenshots) · [ローカルで試す](#ローカル起動) · [技術・設計を見る](#技術的な見どころ)
 
 ## 企画の背景：管理の便利さに、続けたくなる楽しさを加える
@@ -60,7 +66,7 @@ PCでは予定の整理や振り返りを、スマホでは日々の達成の記
 
 ## 制作で担当していること
 
-個人開発として、開発者が企画意図・体験設計・機能の優先順位を整理し、Web / Mobileの画面・ゲームルール・データ連携の開発を進めています。生成AIを実装・検証の支援に利用し、提案された変更を確認しながら採用・修正しています。
+個人開発として、企画・体験設計、機能の優先順位付けから、Web / Mobileの画面・ゲームルール・データ連携の開発まで、一貫して取り組んでいます。
 
 現在は、タスク・習慣から成長・攻略までの主要体験を実装し、代表画面の比較と品質確認を進めている段階です。ストア公開や利用者への効果検証は未完了です。詳細は[実装状況](#実装状況)、設計・実装の裏付けは[技術的な見どころ](#技術的な見どころ)をご覧ください。
 
