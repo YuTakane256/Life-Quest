@@ -107,6 +107,20 @@ export const MAP_CONFIG: readonly MapDefinition[] = [
     { id: 4, name: '深海エリア', theme: 'deep_sea', stageRange: [31, 40] },
 ] as const;
 
+/** Map presentation only: no battle state or reward mutations. */
+export function getMapForStage(stage: number): MapDefinition {
+    return MAP_CONFIG.find((map) => stage >= map.stageRange[0] && stage <= map.stageRange[1]) ?? MAP_CONFIG[0];
+}
+
+export function isMapUnlocked(map: MapDefinition, maxClearedStage: number, battleUnlocked: boolean): boolean {
+    return battleUnlocked && Number.isSafeInteger(maxClearedStage)
+        && maxClearedStage >= map.stageRange[0] - 1;
+}
+
+export function getMapStages(map: MapDefinition): readonly StageDefinition[] {
+    return BATTLE_CONFIG.STAGES.filter((stage) => stage.stage >= map.stageRange[0] && stage.stage <= map.stageRange[1]);
+}
+
 /** ステージ番号 → 敵画像キーのマッピング */
 export const ENEMY_IMAGE_KEYS: Record<number, string> = {
     // マップ1: 草原

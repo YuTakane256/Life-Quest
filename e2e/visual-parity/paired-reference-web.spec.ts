@@ -7,6 +7,7 @@ const screens = [
     ['stats', '/stats', '⚡ 合計 245 XP'],
     ['character', '/character', '星見ユウ'],
     ['inventory', '/character/inventory', 'インベントリ (4/4)'],
+    ['map', '/map', '最高到達: ステージ 2'],
     ['settings', '/settings', '設定'],
 ] as const;
 

@@ -1,0 +1,56 @@
+appId: com.yutakane.lifequest.parity
+name: Map selection and existing combat (memory only)
+---
+# Only the guarded fictional runtime. No clearState or real account writes.
+- launchApp:
+    clearState: false
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "マップ(, tab,.*)?"
+- assertVisible: "最高到達: ステージ 2"
+- assertVisible:
+    text: "古城エリア（未開放）"
+    enabled: false
+- assertVisible:
+    text: "天界エリア（未開放）"
+    enabled: false
+- assertVisible:
+    text: "深海エリア（未開放）"
+    enabled: false
+- assertVisible: "ステージ 3 スタート"
+- assertNotVisible: "ステージ 4 スタート"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "reference-${REFERENCE_THEME}-map"
+- tapOn: "ステージ 1 再挑戦"
+- extendedWaitUntil:
+    visible: "戦闘中"
+    timeout: 10000
+- tapOn: "通常攻撃"
+- tapOn: "通常攻撃"
+- assertVisible: "勝利"
+- assertNotVisible:
+    text: "通常攻撃"
+    enabled: true
+- tapOn: "戦闘を閉じる"
+- assertVisible: "ステージ 3 スタート"
+- tapOn: "ステージ 3 スタート"
+- extendedWaitUntil:
+    visible: "戦闘中"
+    timeout: 10000
+- repeat:
+    times: 3
+    commands:
+      - tapOn: "通常攻撃"
+- assertVisible: "勝利"
+- tapOn: "戦闘を閉じる"
+- assertVisible: "最高到達: ステージ 3"
+- assertVisible: "ステージ 4 スタート"

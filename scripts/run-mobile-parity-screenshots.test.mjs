@@ -74,6 +74,16 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('isolates map combat checks to the guarded memory-only runtime', () => {
+        expect(requiresReferenceRuntime('map')).toBe(true);
+        const flow = getMobileParityFlow('map');
+        expect(flow.ok).toBe(true);
+        const yaml = readFileSync(new URL(`../${flow.path}`, import.meta.url), 'utf8');
+        expect(yaml).toMatch(/^appId: com\.yutakane\.lifequest\.parity\n/);
+        expect(yaml).toContain('clearState: false');
+        expect(yaml).not.toContain('clearState: true');
+        expect(yaml).toContain('ステージ 4 スタート');
+    });
     it('isolates character edits and equipment checks to the guarded memory-only runtime', () => {
         expect(requiresReferenceRuntime('character')).toBe(true);
         const flow = getMobileParityFlow('character');

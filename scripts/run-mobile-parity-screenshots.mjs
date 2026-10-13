@@ -14,6 +14,7 @@ export const mobileParityFlows = Object.freeze({
     reference: '.maestro/mobile-parity/capture-reference-screens.yaml',
     daily: '.maestro/mobile-parity/daily-screen-interactions.yaml',
     character: '.maestro/mobile-parity/character-screen-interactions.yaml',
+    map: '.maestro/mobile-parity/map-screen-interactions.yaml',
 });
 
 export function getMobileParityFlow(name = 'screenshots') {
@@ -32,7 +33,7 @@ export function getMaestroTestCommand(flow) {
 }
 
 export function requiresReferenceRuntime(name) {
-    return name === 'reference' || name === 'daily' || name === 'character';
+    return name === 'reference' || name === 'daily' || name === 'character' || name === 'map';
 }
 
 function isExecutable(filePath) {

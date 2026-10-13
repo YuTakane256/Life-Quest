@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import { BATTLE_CONFIG, MAP_CONFIG, ENEMY_IMAGE_KEYS } from '../config/gameConfig';
+import { getMapForStage, getMapStages, isMapUnlocked } from '@life-quest/core/battle';
 import { Swords, Trophy, Skull, RotateCcw, ChevronRight } from 'lucide-react';
 import { BattleReplayModal } from '../components/ui/BattleReplayModal';
 import { HpBar } from '../components/ui/HpBar';
@@ -23,10 +24,6 @@ function getEnemyImage(stage: number) {
     const src = key ? getEnemyImageSrc(key) : null;
     if (src) return { type: 'image' as const, src };
     return { type: 'emoji' as const, emoji: '❓' };
-}
-
-function getMapForStage(stage: number) {
-    return MAP_CONFIG.find(m => stage >= m.stageRange[0] && stage <= m.stageRange[1]) || MAP_CONFIG[0];
 }
 
 function getSkillTone(skill: BattleSkillDefinition): { icon: string; color: string } {
@@ -61,14 +58,10 @@ export function MapBattlePage() {
         });
     };
 
-    const selectedMap = MAP_CONFIG.find(m => m.id === selectedMapId) || MAP_CONFIG[0];
-    const mapStages = BATTLE_CONFIG.STAGES.filter(
-        s => s.stage >= selectedMap.stageRange[0] && s.stage <= selectedMap.stageRange[1]
-    );
-
-    // マップロック解除条件
-    const isMap2Unlocked = battle.maxClearedStage >= 10;
-    const isMap3Unlocked = battle.maxClearedStage >= 20;
+    const requestedMap = MAP_CONFIG.find(m => m.id === selectedMapId) || MAP_CONFIG[0];
+    const selectedMap = isMapUnlocked(requestedMap, battle.maxClearedStage, battle.battleUnlocked)
+        ? requestedMap : MAP_CONFIG[0];
+    const mapStages = getMapStages(selectedMap);
 
     useEffect(() => {
         if (battle.status === 'fighting') {
@@ -306,8 +299,8 @@ export function MapBattlePage() {
             {/* マップ切り替えタブ */}
             <div className="flex gap-2 mb-4">
                 {MAP_CONFIG.map((map) => {
-                    const isLocked = (map.id === 2 && !isMap2Unlocked) || (map.id === 3 && !isMap3Unlocked);
-                    const isSelected = map.id === selectedMapId;
+                    const isLocked = !isMapUnlocked(map, battle.maxClearedStage, battle.battleUnlocked);
+                    const isSelected = map.id === selectedMap.id;
                     return (
                         <button
                             key={map.id}
