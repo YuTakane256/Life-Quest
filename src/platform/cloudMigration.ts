@@ -16,6 +16,7 @@ import { useHabitStore } from '../stores/useHabitStore';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
+import { completionKeysToLedger } from './completionRewards';
 
 /** ローカルストアから移行スナップショットを構築する。 */
 export function buildWebImportSnapshot(): ImportSnapshotInput {
@@ -32,6 +33,7 @@ export function buildWebImportSnapshot(): ImportSnapshotInput {
 
     return {
         tasks: taskState.tasks,
+        rewardLedger: completionKeysToLedger(gameState.completionRewardKeys, habitState.allCompleteRewardDates),
         habits: habitState.habits,
         dailyRecords: habitState.dailyRecords,
         restDays: habitState.restDays,

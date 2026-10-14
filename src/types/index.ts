@@ -168,6 +168,11 @@ export interface ChestRevealEvent {
 }
 
 export interface GameStoreState {
+    /** Anonymous Web task/subtask receipts, saved atomically with the reward balance. */
+    completionRewardKeys: string[];
+    completionRewardError: string | null;
+    grantCompletionReward: (key: string, baseXp: number, generation: number) => Promise<boolean>;
+    clearCompletionRewardError: () => void;
     character: CharacterStats;
     debuff: Debuff;
     equipment: Equipment[];

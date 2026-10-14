@@ -38,6 +38,18 @@ const habit = {
 };
 
 describe('canonical task snapshots', () => {
+    it('uses explicit Web receipts instead of mistaking undo-window completion for a paid reward', () => {
+        const pending = { ...fullTask, completed: true };
+        const unpaid = convertLegacyGameSnapshot({ game: { completionRewardKeys: [] }, tasks: { tasks: [pending] } });
+        expect(unpaid.rewardLedger.rewardedTaskIds).toEqual([]);
+        expect(unpaid.rewardLedger.rewardedSubtaskIds).toEqual([]);
+        const paid = convertLegacyGameSnapshot({
+            game: { completionRewardKeys: ['task:task-1', 'subtask:subtask-1'] },
+            tasks: { tasks: [{ ...pending, completed: false, subtasks: [] }] },
+        });
+        expect(paid.rewardLedger.rewardedTaskIds).toEqual(['task-1']);
+        expect(paid.rewardLedger.rewardedSubtaskIds).toEqual(['subtask-1']);
+    });
     it('Web/Mobile共通のpersist envelopeから完全なTaskを保持する', () => {
         const source = { state: { tasks: [fullTask] }, version: 0 };
 

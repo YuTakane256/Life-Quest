@@ -33,6 +33,10 @@ describe('useTaskStore クラウド同期の配線', () => {
         vi.spyOn(useGameStore.getState(), 'addXp').mockImplementation(() => undefined);
         vi.spyOn(useGameStore.getState(), 'incrementGachaCount').mockImplementation(() => undefined);
         vi.spyOn(useGameStore.getState(), 'checkGachaMilestones').mockImplementation(() => undefined);
+        vi.spyOn(useGameStore.getState(), 'grantCompletionReward').mockImplementation(async (_key, xp) => {
+            const store = useGameStore.getState();
+            store.addXp(xp); store.incrementGachaCount(); store.checkGachaMilestones(); return true;
+        });
         vi.spyOn(useStatsStore.getState(), 'logTaskXp').mockImplementation(() => undefined);
     });
 

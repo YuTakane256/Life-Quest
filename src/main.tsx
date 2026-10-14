@@ -10,6 +10,8 @@ import { registerWebOutboxHooks } from './platform/cloudOutbox';
 import { registerPendingCompletionFlush } from './platform/pendingCompletionFlush';
 import { startWebCanonicalSync } from './platform/canonicalSync';
 import { registerWebPendingTaskRewardRecovery } from './stores/useTaskStore';
+import { registerCompletionRewardStorageSync } from './platform/completionRewards';
+import { useGameStore } from './stores/useGameStore';
 
 // 旧quest-board-*データのcanonical移行と、以降のストア変更の書き戻しを開始する。
 // UIをブロックしない（初期化の失敗はブリッジ内で握りつぶして警告する）。
@@ -22,6 +24,7 @@ registerWebCloudMigrationHooks(); // 初回移行はプル開始より先（#506
 registerWebOutboxHooks();
 registerWebCloudSyncHooks();
 registerWebPendingTaskRewardRecovery();
+registerCompletionRewardStorageSync(() => useGameStore.persist.rehydrate());
 registerPendingCompletionFlush(); // タブ非表示・離脱時の5秒Undo待機を即時確定（#512のMobile対策と対称）
 startAuthSessionListener();
 

@@ -6,6 +6,7 @@ import { SnackbarProvider } from './components/ui/SnackbarProvider';
 import { LevelUpOverlay } from './components/ui/LevelUpOverlay';
 import { LoginBonusOverlay } from './components/ui/LoginBonusOverlay';
 import { ChestOpeningOverlay } from './components/ui/ChestOpeningOverlay';
+import { CompletionRewardNotice } from './components/ui/CompletionRewardNotice';
 import { ThemeController } from './components/ui/ThemeController';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { useLoginBonusStore } from './stores/useLoginBonusStore';
@@ -102,6 +103,7 @@ function App() {
                         <LevelUpOverlay />
                         <LoginBonusOverlay />
                         <ChestOpeningOverlay />
+                        <CompletionRewardNotice />
                     </div>
                 </SnackbarProvider>
             </BrowserRouter>

@@ -17,6 +17,7 @@ import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 import { enqueueCloudOperation, isWebCloudOutboxActive } from '../platform/cloudOutbox';
 import { getGameRewardAuthorityState, subscribeGameRewardAuthority } from '@life-quest/core/gameRewardAuthority';
+import { getCompletionRewardGeneration } from '../platform/completionRewards';
 import {
     deferWebRewardOperation,
     getPendingWebRewardOperations,
@@ -44,19 +45,23 @@ async function awardTaskXp(
     // 遅延importより先に境界を確認する。ここが後だと、復元中に開始した
     // Promiseが認証確定後にローカル報酬として実行されてしまう。
     const authority = getGameRewardAuthorityState();
+    const generation = getCompletionRewardGeneration();
     if (authority === 'resolving') {
         if (key) deferWebRewardOperation({ key, priority, completedAt, xpReward });
         return false;
     }
-    const gameStore = await getGameStore();
+    const [gameStore, statsStore] = await Promise.all([getGameStore(), getStatsStore()]);
+    if (generation !== getCompletionRewardGeneration()) return false;
     const store = gameStore.getState();
-    store.addXp(xpReward);
-    store.incrementGachaCount();
+    if (authority === 'anonymous') {
+        if (!key || !await store.grantCompletionReward(key, xpReward, generation)) return false;
+    } else {
+        store.addXp(xpReward);
+        store.incrementGachaCount();
+    }
     // サインイン後はcomplete_task / complete_subtaskがDBロック下で宝箱を作る。
     // ここで別IDのローカル宝箱まで作ると、次回pullで二重になる。
-    if (getGameRewardAuthorityState() === 'anonymous' && !isWebCloudOutboxActive()) {
-        store.checkGachaMilestones();
-    }
+    // Anonymous completion commits XP/count/chests/receipts in one game write.
 
     // サーバー（complete_task Edge Function）はgetTodayJst()でstats_dailyへJST日付キーで
     // 記録するため、クライアント側もJST日付に揃える必要がある（UTC日付のままだと
@@ -64,8 +69,10 @@ async function awardTaskXp(
     // activeDays等の日数系実績が水増しされる）。isoToJstYmdが失敗するケースは
     // completedAtが常に有効なISO文字列のため実質発生しないが、防御的にフォールバックする。
     const dateStr = isoToJstYmd(completedAt) ?? toIsoDatePart(completedAt);
-    const statsStore = await getStatsStore();
-    statsStore.getState().logTaskXp(dateStr, xpReward);
+    if (generation === getCompletionRewardGeneration()) {
+        try { statsStore.getState().logTaskXp(dateStr, xpReward); }
+        catch (error) { console.warn('Reward is committed, but its statistics could not be saved.', error); }
+    }
     return true;
 }
 
@@ -79,9 +86,17 @@ export function registerWebPendingTaskRewardRecovery(): () => void {
         const pending = getPendingWebRewardOperations();
         if (pending.length === 0) return;
         for (const reward of pending) {
-            const [kind, id] = reward.key.split(':', 2);
-            void awardTaskXp(reward.priority, reward.completedAt, reward.xpReward).then((granted) => {
-                if (!granted || authority !== 'anonymous') return;
+            const separator = reward.key.indexOf(':');
+            const kind = reward.key.slice(0, separator);
+            const id = reward.key.slice(separator + 1);
+            void awardTaskXp(reward.priority, reward.completedAt, reward.xpReward, reward.key).then((granted) => {
+                if (authority !== 'anonymous' || getGameRewardAuthorityState() !== 'anonymous') return;
+                if (!granted) {
+                    void getGameStore().then((store) => {
+                        if (store.getState().completionRewardKeys.includes(reward.key)) removePendingWebRewardOperation(reward.key);
+                    }).catch(() => undefined);
+                    return;
+                }
                 if (kind === 'task') {
                     spawnWebRecurringNext(id);
                     removePendingWebRewardOperation(reward.key);
@@ -92,7 +107,7 @@ export function registerWebPendingTaskRewardRecovery(): () => void {
                 );
                 if (parent?.completed) spawnWebRecurringNext(parent.id);
                 removePendingWebRewardOperation(reward.key);
-            });
+            }).catch(() => undefined); // keep a durable pending entry if cleanup fails
             if (authority === 'authenticated') {
                 if (kind === 'task') {
                     void enqueueCloudOperation('complete_task', { taskId: id }, { dependsOnEntityIds: [id] })

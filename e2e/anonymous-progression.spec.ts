@@ -1,5 +1,13 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { dismissStartupDialogs } from './helpers';
+
+async function startAnonymous(page: Page) {
+    await page.clock.install({ time: new Date('2026-10-14T03:00:00Z') });
+    await page.goto('/settings');
+    await dismissStartupDialogs(page);
+    await expect(page.getByText('クラウド接続は未設定です。これまでどおり端末内のみで動作します。', { exact: true })).toBeVisible();
+    await page.getByRole('navigation', { name: 'メインナビゲーション' }).getByRole('button', { name: 'タスク', exact: true }).click();
+}
 
 test('earns a starter chest through UI and retains victory progress on map return and reload', async ({ page }) => {
     test.setTimeout(60_000);
@@ -51,6 +59,19 @@ test('earns a starter chest through UI and retains victory progress on map retur
     const victoryXp = await xp.getAttribute('aria-valuetext');
     expect(Number(victoryXp?.split(' / ')[0])).toBe(initialXp + 105);
 
+    // The paid task can be undone/re-completed, but is not a new reward source.
+    for (const restart of [false, true]) {
+        if (restart) await page.reload();
+        await expect(xp).toHaveAttribute('aria-valuetext', victoryXp!);
+        await navigation.getByRole('button', { name: 'タスク', exact: true }).click();
+        await page.getByText('完了タスク (5)', { exact: true }).click();
+        await page.getByRole('button', { name: 'タスク「Progression 5」を未完了にする' }).click();
+        await page.getByRole('button', { name: 'タスク「Progression 5」を完了にする' }).click();
+        await page.clock.runFor(6_000);
+        await page.getByRole('button', { name: 'キャラ', exact: true }).click();
+        await expect(xp).toHaveAttribute('aria-valuetext', victoryXp!);
+        expect((await persistedGame()).completionRewardKeys).toHaveLength(5);
+    }
     await page.reload();
     await expect(page.getByRole('dialog', { name: 'ログインボーナス' })).toHaveCount(0);
     await expect(xp).toHaveAttribute('aria-valuetext', victoryXp!);
@@ -65,3 +86,47 @@ test('earns a starter chest through UI and retains victory progress on map retur
     await expect(page.getByRole('button', { name: 'スタート', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '再挑戦', exact: true })).toBeVisible();
 });
+
+test('two real tabs completing the same task share one durable reward', async ({ page, context }) => {
+    test.setTimeout(60_000);
+    await startAnonymous(page);
+    await page.getByRole('button', { name: '新しいタスクを追加' }).click();
+    await page.getByPlaceholder('タスク名を入力...').fill('Shared reward');
+    await page.getByRole('button', { name: '追加', exact: true }).click();
+    const other = await context.newPage();
+    await startAnonymous(other);
+    const done = (tab: Page) => tab.getByRole('button', { name: 'タスク「Shared reward」を完了にする' });
+    await expect(done(other)).toBeVisible();
+    await Promise.all([done(page).click(), done(other).click()]);
+    await Promise.all([page.clock.runFor(11_000), other.clock.runFor(11_000)]);
+    const readGame = () => page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-game')!).state);
+    await expect.poll(async () => (await readGame()).completionRewardKeys.length).toBe(1);
+    expect(await readGame()).toMatchObject({ gachaCount: 1, character: { totalXp: 40 } });
+    for (const tab of [page, other]) {
+        await tab.getByRole('button', { name: 'キャラ', exact: true }).click();
+        await expect(tab.getByRole('progressbar', { name: 'あなた の経験値' })).toHaveAttribute('aria-valuetext', '40 / 80');
+    }
+    await other.close();
+    await page.reload();
+    await expect(page.getByRole('progressbar', { name: 'あなた の経験値' })).toHaveAttribute('aria-valuetext', '40 / 80');
+});
+
+for (const theme of ['light', 'dark'] as const) {
+    test(`missing lock support shows a ${theme} error instead of an unprotected reward`, async ({ page }, testInfo) => {
+        await page.emulateMedia({ colorScheme: theme });
+        await page.addInitScript(() => Object.defineProperty(navigator, 'locks', { value: undefined }));
+        await startAnonymous(page);
+        await page.getByRole('button', { name: '新しいタスクを追加' }).click();
+        await page.getByPlaceholder('タスク名を入力...').fill('Unsupported lock');
+        await page.getByRole('button', { name: '追加', exact: true }).click();
+        await page.getByRole('button', { name: 'タスク「Unsupported lock」を完了にする' }).click();
+        await page.clock.runFor(6_000);
+        const notice = page.getByRole('alert').filter({ hasText: 'Web Locks' });
+        await expect(notice).toBeVisible();
+        const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-game')!).state);
+        expect(saved).toMatchObject({ gachaCount: 0, completionRewardKeys: [], character: { totalXp: 20 } });
+        await page.screenshot({ path: `docs/screenshots/anonymous-rewards/${testInfo.project.name}-${theme}-error.png` });
+        await page.getByRole('button', { name: '報酬保存エラーを閉じる' }).click();
+        await expect(notice).toHaveCount(0);
+    });
+}

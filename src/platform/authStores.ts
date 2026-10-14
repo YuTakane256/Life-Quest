@@ -18,6 +18,7 @@ import { sanitizeHabitStoreState, useHabitStore } from '../stores/useHabitStore'
 import { sanitizeTaskStoreState, useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
 import { beginLoginBonusCloudSession, clearLoginBonusCloudSession } from '../stores/useLoginBonusStore';
+import { resetCompletionRewardStorage } from './completionRewards';
 
 let cloudSessionSeeded = false;
 
@@ -35,11 +36,12 @@ export function resetCloudSessionSeeded(): void {
 export function clearWebCloudStores(): void {
     useTaskStore.setState({ ...sanitizeTaskStoreState(undefined), pendingCompletions: [] });
     useHabitStore.setState(sanitizeHabitStoreState(undefined));
-    useGameStore.setState({
+    resetCompletionRewardStorage(() => useGameStore.setState({
         ...sanitizeGameStoreState(undefined),
         levelUpEvent: null,
         pendingChestReveal: null,
-    });
+        completionRewardError: null,
+    }));
     useTitleStore.setState({ activeTitle: null });
 }
 

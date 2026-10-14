@@ -24,6 +24,10 @@ describe('useTaskStore.toggleComplete', () => {
         addXpSpy = vi.spyOn(useGameStore.getState(), 'addXp').mockImplementation(() => undefined);
         incGachaSpy = vi.spyOn(useGameStore.getState(), 'incrementGachaCount').mockImplementation(() => undefined);
         checkGachaSpy = vi.spyOn(useGameStore.getState(), 'checkGachaMilestones').mockImplementation(() => undefined);
+        // Wiring test: the atomic action is integration-tested with real storage separately.
+        vi.spyOn(useGameStore.getState(), 'grantCompletionReward').mockImplementation(async (_key, xp) => {
+            addXpSpy(xp); incGachaSpy(); checkGachaSpy(); return true;
+        });
         logTaskXpSpy = vi.spyOn(useStatsStore.getState(), 'logTaskXp').mockImplementation(() => undefined);
     });
 

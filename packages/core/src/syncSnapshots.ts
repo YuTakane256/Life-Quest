@@ -241,11 +241,13 @@ export function convertLegacyGameSnapshot(
     const taskSnapshot = convertLegacyTaskSnapshot(sources.tasks);
     const habitSnapshot = convertLegacyHabitSnapshot(sources.habits);
     const titleRecord = readRecord(sources.title);
+    const webReceipts = readRecord(sources.game).completionRewardKeys;
+    const explicitWebReceipts = Array.isArray(webReceipts);
     const completedTaskIds = taskSnapshot.tasks
-        .filter((task) => task.completed)
+        .filter((task) => !explicitWebReceipts && task.completed)
         .map((task) => task.id);
     const completedSubtaskIds = taskSnapshot.tasks.flatMap((task) =>
-        task.subtasks.filter((subtask) => subtask.completed).map((subtask) => subtask.id)
+        task.subtasks.filter((subtask) => !explicitWebReceipts && subtask.completed).map((subtask) => subtask.id)
     );
 
     return {
@@ -253,11 +255,13 @@ export function convertLegacyGameSnapshot(
         activeTitle: sanitizeActiveTitle(titleRecord.activeTitle) ?? canonical.activeTitle,
         rewardLedger: sanitizeRewardLedger({
             rewardedTaskIds: mergeRecentStrings(
-                [...canonical.rewardLedger.rewardedTaskIds, ...completedTaskIds],
+                [...canonical.rewardLedger.rewardedTaskIds, ...completedTaskIds,
+                    ...(explicitWebReceipts ? webReceipts.filter((key): key is string => typeof key === 'string' && key.startsWith('task:')).map((key) => key.slice(5)) : [])],
                 GAME_STATE_LIMITS.maxRewardedTaskIds,
             ),
             rewardedSubtaskIds: mergeRecentStrings(
-                [...canonical.rewardLedger.rewardedSubtaskIds, ...completedSubtaskIds],
+                [...canonical.rewardLedger.rewardedSubtaskIds, ...completedSubtaskIds,
+                    ...(explicitWebReceipts ? webReceipts.filter((key): key is string => typeof key === 'string' && key.startsWith('subtask:')).map((key) => key.slice(8)) : [])],
                 GAME_STATE_LIMITS.maxRewardedSubtaskIds,
             ),
             habitBonusDates: sanitizeDateList(

@@ -9,6 +9,9 @@ import {
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
 import { useLoginBonusStore } from '../stores/useLoginBonusStore';
+import { useGameStore } from '../stores/useGameStore';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
+import { resetCompletionRewardStorage } from './completionRewards';
 
 function task(id: string) {
     return {
@@ -95,7 +98,12 @@ describe('Webログアウト時のストアクリア（ADR-009）', () => {
     });
 
     it('clearWebCloudStoresは全対象ストアを初期状態へ戻す', () => {
+        setGameRewardAuthorityState('anonymous');
+        resetCompletionRewardStorage(() => useGameStore.setState({ completionRewardKeys: ['task:previous-user'] }));
         clearWebCloudStores();
+        expect(useGameStore.getState().completionRewardKeys).toEqual([]);
+        expect(JSON.parse(localStorage.getItem('quest-board-game')!).state.completionRewardKeys).toEqual([]);
+        expect(JSON.parse(localStorage.getItem('quest-board-game')!).state.completionRewardScope).toBe('anonymous');
 
         expect(useTaskStore.getState().tasks).toEqual([]);
         expect(useTaskStore.getState().pendingCompletions).toEqual([]);

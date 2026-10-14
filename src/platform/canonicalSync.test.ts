@@ -7,7 +7,8 @@ import { LEGACY_STORAGE_KEYS } from '@life-quest/core/legacyMigration';
 import type { CanonicalGameSnapshot, CanonicalTaskSnapshot } from '@life-quest/core/syncSnapshots';
 import { createWebCanonicalRepositories } from './canonicalRepositories';
 import { startWebCanonicalSync } from './canonicalSync';
-import { useGameStore } from '../stores/useGameStore';
+import { useGameStore, sanitizeGameStoreState } from '../stores/useGameStore';
+import { resetCompletionRewardStorage } from './completionRewards';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
 
@@ -38,6 +39,8 @@ function task(id: string, completed = false) {
 
 describe('startWebCanonicalSync', () => {
     beforeEach(() => {
+        localStorage.clear();
+        resetCompletionRewardStorage(() => useGameStore.setState(sanitizeGameStoreState(undefined)));
         useTaskStore.setState({ tasks: [], pendingCompletions: [] });
         useTitleStore.setState({ activeTitle: null });
     });
@@ -99,6 +102,7 @@ describe('startWebCanonicalSync', () => {
     it('報酬台帳は単調増加し、完了タスクを削除しても証跡が残る', async () => {
         const { map, storage } = createMemoryStorage();
         useTaskStore.setState({ tasks: [task('t1', true)] });
+        useGameStore.setState({ completionRewardKeys: ['task:t1'] });
         const sync = startWebCanonicalSync(storage);
         try {
             await sync.ready;
@@ -113,6 +117,17 @@ describe('startWebCanonicalSync', () => {
         } finally {
             sync.stop();
         }
+    });
+
+    it('5秒の取消待機中の完了表示を付与済み台帳に変換しない', async () => {
+        const { map, storage } = createMemoryStorage();
+        useTaskStore.setState({ tasks: [task('pending', true)] });
+        const sync = startWebCanonicalSync(storage);
+        try {
+            await sync.ready;
+            await sync.flush();
+            expect(readData<CanonicalGameSnapshot>(map, CANONICAL_STORAGE_KEYS.game).rewardLedger.rewardedTaskIds).toEqual([]);
+        } finally { sync.stop(); }
     });
 
     it('称号の変更もgame canonicalへ反映される', async () => {
