@@ -32,6 +32,8 @@
     "mobile:ios": "npm run ios:parity --workspace @life-quest/mobile",
     "mobile:parity:screenshots": "node scripts/run-mobile-parity-screenshots.mjs",
     "mobile:parity:smoke": "node scripts/run-mobile-parity-screenshots.mjs smoke",
+    "mobile:parity:progression": "node scripts/run-mobile-parity-screenshots.mjs progression",
+    "mobile:start:anonymous": "npm run start:anonymous --workspace @life-quest/mobile",
     "mobile:parity:reference": "node scripts/run-mobile-parity-screenshots.mjs reference",
     "mobile:reference:dark": "npm run start:reference:dark --workspace @life-quest/mobile",
     "mobile:reference:light": "npm run start:reference:light --workspace @life-quest/mobile",

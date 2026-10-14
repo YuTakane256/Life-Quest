@@ -742,6 +742,11 @@ export const useGameStore = create<GameStoreState>()(
                     battle: {
                         ...battle,
                         status: next.outcome === 'ongoing' ? 'fighting' : next.outcome,
+                        // Local wins are final now, not only when "next" is pressed.
+                        // Cloud progress remains authoritative in applyResolvedCloudBattle.
+                        maxClearedStage: battle.rewardMode === 'local' && next.outcome === 'victory'
+                            ? Math.max(battle.maxClearedStage, battle.currentStage)
+                            : battle.maxClearedStage,
                         enemy: { ...battle.enemy, hp: next.enemyHp },
                         playerHp: next.playerHp,
                         logs: next.logs,
@@ -777,6 +782,9 @@ export const useGameStore = create<GameStoreState>()(
                     battle: {
                         ...battle,
                         status: next.outcome === 'ongoing' ? 'fighting' : next.outcome,
+                        maxClearedStage: battle.rewardMode === 'local' && next.outcome === 'victory'
+                            ? Math.max(battle.maxClearedStage, battle.currentStage)
+                            : battle.maxClearedStage,
                         enemy: { ...battle.enemy, hp: next.enemyHp },
                         playerHp: next.playerHp,
                         logs: next.logs,

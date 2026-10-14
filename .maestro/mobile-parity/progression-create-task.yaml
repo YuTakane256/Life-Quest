@@ -1,0 +1,19 @@
+appId: com.yutakane.lifequest.parity
+---
+- tapOn: "新しいタスクを追加"
+- tapOn: "タスク名"
+- inputText: ${TASK_NAME}
+- pressKey: enter
+- scrollUntilVisible:
+    element: "追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "追加"
+- tapOn: "${TASK_NAME}を完了にする"
+- extendedWaitUntil:
+    visible: "${TASK_NAME}を未完了にする"
+    timeout: 10000
+# Let the actual undo window commit. Its toast overlays the add-task button.
+- extendedWaitUntil:
+    notVisible: "取消する"
+    timeout: 10000

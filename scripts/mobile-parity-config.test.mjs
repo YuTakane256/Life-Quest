@@ -25,6 +25,23 @@ async function nativeEntitlements(variant, existing = {}) {
 }
 
 describe('anonymous parity iOS signing configuration', () => {
+    it('exposes only a boolean local-only guard, not Supabase values', () => {
+        vi.stubEnv('LIFE_QUEST_APP_VARIANT', 'parity');
+        vi.stubEnv('EXPO_PUBLIC_SUPABASE_URL', '');
+        vi.stubEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY', '');
+        expect(appConfig({ config: baseConfig }).extra.parityLocalOnly).toBe(true);
+        for (const [key, value] of [['EXPO_PUBLIC_SUPABASE_URL', 'https://example.invalid'], ['EXPO_PUBLIC_SUPABASE_ANON_KEY', 'public-test-key']]) {
+            vi.stubEnv(key, value);
+            const extra = appConfig({ config: baseConfig }).extra;
+            expect(extra.parityLocalOnly).toBe(false);
+            expect(JSON.stringify(extra)).not.toContain(value);
+            vi.stubEnv(key, '');
+        }
+        for (const variant of ['release', 'preview']) {
+            vi.stubEnv('LIFE_QUEST_APP_VARIANT', variant);
+            expect(appConfig({ config: baseConfig }).extra.parityLocalOnly).toBe(false);
+        }
+    });
     it.each(['release', 'preview'])('rejects fixture flags for %s, even during development', (variant) => {
         vi.stubEnv('LIFE_QUEST_APP_VARIANT', variant);
         vi.stubEnv('LIFE_QUEST_PARITY_CAPTURE', 'dark');

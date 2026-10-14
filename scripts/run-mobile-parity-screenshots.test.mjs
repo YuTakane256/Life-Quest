@@ -8,6 +8,7 @@ import {
     getMobileParityPreflight,
     getReferenceTheme,
     assertReferenceProfile,
+    assertPersistentParityRuntime,
     requiresReferenceRuntime,
 } from './run-mobile-parity-screenshots.mjs';
 
@@ -75,6 +76,31 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('only allows real local persistence and never a reference/cloud/unknown runtime', () => {
+        const extra = { appVariant: 'parity', parityLocalOnly: true };
+        expect(() => assertPersistentParityRuntime({ extra })).not.toThrow();
+        expect(() => assertPersistentParityRuntime({ extra: { expoClient: { extra } } })).not.toThrow();
+        for (const invalid of [undefined, {}, { ...extra, appVariant: 'release' }, { ...extra, appVariant: 'preview' },
+            { ...extra, parityLocalOnly: false }, { appVariant: 'parity' },
+            { ...extra, parityCaptureTheme: 'dark' }, { ...extra, parityCaptureProfile: 'battle' }]) {
+            expect(() => assertPersistentParityRuntime({ extra: invalid })).toThrow(/mobile:start:anonymous/);
+        }
+    });
+    it('keeps progression isolated and checks actual restart and reward stability', () => {
+        expect(requiresReferenceRuntime('progression')).toBe(false);
+        const flow = getMobileParityFlow('progression');
+        expect(flow).toMatchObject({ ok: true, path: '.maestro/mobile-parity/anonymous-progression.yaml' });
+        const yaml = readFileSync(new URL(`../${flow.path}`, import.meta.url), 'utf8');
+        expect(yaml).toMatch(/^appId: com\.yutakane\.lifequest\.parity\n/);
+        expect(yaml.match(/clearState: true/g)).toHaveLength(1);
+        expect(yaml).toContain('- stopApp\n- launchApp:\n    clearState: false');
+        expect(yaml).toContain('青色の宝箱を開封する');
+        expect(yaml).toContain('ステージ 2 スタート');
+        expect(yaml.match(/maestro\.copiedText == output\.victoryXp/g)).toHaveLength(2);
+        const helper = readFileSync(new URL('../.maestro/mobile-parity/progression-create-task.yaml', import.meta.url), 'utf8');
+        expect(helper).not.toContain('launchApp');
+        expect(helper).not.toContain('clearState');
+    });
     it('requires the explicit battle profile and rejects mismatched capture flows', () => {
         const manifest = (profile) => ({ extra: { appVariant: 'parity', parityCaptureTheme: 'dark', parityCaptureProfile: profile } });
         expect(() => assertReferenceProfile(manifest('battle'), 'battle')).not.toThrow();

@@ -62,6 +62,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         extra: {
             ...config.extra,
             appVariant: variant,
+            // Boolean only: the destructive local test runner must fail closed
+            // without publishing either environment value in the manifest.
+            parityLocalOnly: isParity && !process.env.EXPO_PUBLIC_SUPABASE_URL && !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
             parityCaptureTheme: captureTheme || undefined,
             parityCaptureProfile: captureProfile || undefined,
         },

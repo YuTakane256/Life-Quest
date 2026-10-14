@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
+    "start:anonymous": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--dns-result-order=ipv4first\" LIFE_QUEST_APP_VARIANT=parity LIFE_QUEST_PARITY_CAPTURE= LIFE_QUEST_PARITY_PROFILE= EXPO_PUBLIC_SUPABASE_URL= EXPO_PUBLIC_SUPABASE_ANON_KEY= expo start --dev-client --localhost",
     "android": "expo start --android",
     "export:android": "expo export --platform android --output-dir dist",
     "ios": "expo start --ios",

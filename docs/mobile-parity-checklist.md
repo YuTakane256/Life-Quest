@@ -45,8 +45,10 @@ npm run ios:parity --workspace @life-quest/mobile -- --device "iPhone 18 Pro"
 
 Use the name of an available simulator on your Mac. iPhone 13/14 are only
 required for the 390 x 844 screenshot comparison; the anonymous smoke flow
-can run on other iPhone simulators. Keep the Metro terminal running. In a
-second terminal, run (Metro must use the default port 8081):
+can run on other iPhone simulators. Stop the build's Metro with Ctrl+C, then
+start `npm run mobile:start:anonymous` to explicitly remove cloud and reference
+settings. Keep that terminal running. In a second terminal, run (Metro must use
+the default port 8081):
 
 ```bash
 npm run mobile:parity:screenshots
@@ -57,6 +59,14 @@ the installed `com.yutakane.lifequest.parity` development app before it runs.
 It never reads an app identifier from an environment variable. If a prerequisite
 is unavailable, it exits without installing tools or clearing app data and
 prints the next setup step.
+
+Before any clearing flow, it also checks the local Metro manifest for the
+parity-only, cloud-unconfigured, non-reference runtime. Old Metro manifests
+without the `parityLocalOnly` flag are rejected; restart with the anonymous
+command above. Memory-only screenshot fixtures cannot serve as persistence
+evidence. The full earned starter-chest/map/restart path is available via
+`npm run mobile:parity:progression`; see
+[quality checks](anonymous-progression-quality.md).
 
 The flow at `.maestro/mobile-parity/capture-major-screens.yaml` clears the
 fixed `com.yutakane.lifequest.parity` local development app state and creates
