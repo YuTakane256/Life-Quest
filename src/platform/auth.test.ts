@@ -132,7 +132,7 @@ describe('Web auth pending reward ownership', () => {
 
     it('TOKEN_REFRESHED does not strand an in-progress login in resolving', async () => {
         let finish!: () => void;
-        state.notifyLogin.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+        state.notifyLogin.mockReturnValueOnce(new Promise<undefined>((resolve) => { finish = () => resolve(undefined); }));
         const stop = startAuthSessionListener();
         try {
             state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
