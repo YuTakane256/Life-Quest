@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
-import { useGameStore, sanitizeGameStoreState } from './useGameStore';
+import { useGameStore, sanitizeGameStoreState, syncAnonymousGameFromStorage } from './useGameStore';
 import { flushCompletionRewardWrites, getCompletionRewardGeneration, registerCompletionRewardStorageSync, resetCompletionRewardStorage, withoutCompletionRewardPersistence, withSettledGamePersistence, COMPLETION_REWARD_LOCK } from '../platform/completionRewards';
 import { exportAllData, importAllData } from '../utils/dataBackup';
 import { CANONICAL_STORAGE_KEYS } from '@life-quest/core/syncRepository';
@@ -31,6 +31,38 @@ beforeEach(async () => {
 afterEach(async () => { await flushCompletionRewardWrites(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('anonymous completion receipts and reward balance', () => {
+    it('does not discard an ongoing battle snapshot/actions when a delayed task reward arrives', async () => {
+        useGameStore.setState({ battle: { ...useGameStore.getState().battle, battleUnlocked: true } });
+        useGameStore.getState().startBattle(1);
+        useGameStore.getState().processBattleTurn();
+        await flushCompletionRewardWrites();
+        const battle = useGameStore.getState().battle;
+        expect(battle.status).toBe('fighting');
+        expect(await grant('task:during-battle')).toBe(true);
+        expect(useGameStore.getState().battle).toBe(battle);
+        expect(disk().battle.playerSnapshot).toEqual(battle.playerSnapshot);
+        expect(disk().battle.actions).toEqual(battle.actions);
+        useGameStore.getState().processBattleTurn();
+        expect(useGameStore.getState().battle.actions).toHaveLength(battle.actions.length + 1);
+    });
+
+    it('refreshes another anonymous tab receipt without clearing live battle or reveal state', async () => {
+        useGameStore.setState({ battle: { ...useGameStore.getState().battle, battleUnlocked: true } });
+        useGameStore.getState().startBattle(1);
+        await flushCompletionRewardWrites();
+        const snapshot = useGameStore.getState().battle.playerSnapshot;
+        const stop = registerCompletionRewardStorageSync(syncAnonymousGameFromStorage);
+        try {
+            const foreign = JSON.stringify({ state: { ...disk(), completionRewardKeys: ['task:other-tab'], character: { ...disk().character, totalXp: 20 } }, version: 0 });
+            localStorage.setItem('quest-board-game', foreign);
+            window.dispatchEvent(new StorageEvent('storage', { key: 'quest-board-game', newValue: foreign }));
+            expect(useGameStore.getState().completionRewardKeys).toEqual(['task:other-tab']);
+            expect(useGameStore.getState().battle.playerSnapshot).toBe(snapshot);
+            useGameStore.getState().processBattleTurn();
+            expect(useGameStore.getState().battle.actions).toHaveLength(1);
+            await flushCompletionRewardWrites();
+        } finally { stop(); }
+    });
     it('retains local receipts at startup, but replaces them with a confirmed cloud ledger', async () => {
         useGameStore.setState({ completionRewardKeys: ['task:old-local'] });
         await flushCompletionRewardWrites();

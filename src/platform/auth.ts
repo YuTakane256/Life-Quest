@@ -466,12 +466,14 @@ export function startAuthSessionListener(): () => void {
     const finishAnonymous = () => {
         const generation = ++sessionGeneration;
         const current = () => generation === sessionGeneration;
-        if (!hasPersistedCloudGame()) {
-            setGameRewardAuthorityState('anonymous');
-            return;
-        }
-        setGameRewardAuthorityState('resolving');
-        void prepareWebAnonymousSession(current).then(() => {
+        // Even a local canonical seed may still be waiting for the game lock.
+        // Settle it before changing reward generation or deciding the saved scope.
+        void flushCompletionRewardWrites().then(async () => {
+            if (!current()) return;
+            if (hasPersistedCloudGame()) {
+                setGameRewardAuthorityState('resolving');
+                await prepareWebAnonymousSession(current);
+            }
             if (current()) setGameRewardAuthorityState('anonymous');
         }).catch((error) => console.warn('Anonymous session preparation failed; cloud cache is retained.', error));
     };

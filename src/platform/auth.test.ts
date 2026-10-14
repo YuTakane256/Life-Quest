@@ -9,7 +9,7 @@ import {
 } from './pendingRewardOperations';
 import { useGameStore, sanitizeGameStoreState } from '../stores/useGameStore';
 import { CLOUD_SESSION_RECOVERY_PREFIX } from './authStores';
-import { flushCompletionRewardWrites, seedCloudCompletionRewardStorage } from './completionRewards';
+import { flushCompletionRewardWrites, seedCloudCompletionRewardStorage, resetCompletionRewardStorage, COMPLETION_REWARD_LOCK } from './completionRewards';
 
 const state = vi.hoisted(() => ({
     listener: null as null | ((event: string, session: { user: { id: string } } | null) => void),
@@ -140,6 +140,33 @@ describe('Web auth pending reward ownership', () => {
             finish();
             await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
         } finally { stop(); }
+    });
+
+    it('settles a held startup game save before INITIAL_SESSION=null changes authority generation', async () => {
+        await flushCompletionRewardWrites();
+        let tail = Promise.resolve();
+        const manager = { request: (_name: string, work: () => unknown) => {
+            const result = tail.then(work);
+            tail = result.then(() => undefined, () => undefined);
+            return result;
+        } };
+        vi.stubGlobal('navigator', { locks: manager });
+        setGameRewardAuthorityState('resolving');
+        resetCompletionRewardStorage(() => useGameStore.setState(sanitizeGameStoreState(undefined)));
+        await flushCompletionRewardWrites();
+        let release!: () => void;
+        const held = manager.request(COMPLETION_REWARD_LOCK, () => new Promise<void>((resolve) => { release = resolve; }));
+        await Promise.resolve();
+        useGameStore.getState().updateCharacter({ name: 'Canonical startup profile' });
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+            release();
+            await held;
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('anonymous'));
+            expect(JSON.parse(localStorage.getItem('quest-board-game')!).state.character.name).toBe('Canonical startup profile');
+        } finally { stop(); await flushCompletionRewardWrites(); vi.unstubAllGlobals(); }
     });
 
     it('登録後にセッションが無い時は確認メール待ちを返す', async () => {

@@ -451,9 +451,18 @@ export const useGameStore = create<GameStoreState>()(
                         };
                         // Commit before publishing: subscribers/canonical write-through must
                         // not observe a reward whose one durable write failed.
-                        storage.setItem('quest-board-game', JSON.stringify({ state: rewardState, version: 0 }));
+                        // Sanitization is for reload, not for an ongoing battle. A
+                        // completion does not modify the battle's saved runtime.
+                        const savedBattle = isPlainObject(parsed) && isPlainObject(parsed.battle) ? parsed.battle : get().battle;
+                        storage.setItem('quest-board-game', JSON.stringify({ state: { ...rewardState, battle: savedBattle }, version: 0 }));
                         try {
-                            withoutCompletionRewardPersistence(() => set({ ...rewardState, completionRewardError: null,
+                            withoutCompletionRewardPersistence(() => set({
+                                completionRewardKeys: rewardState.completionRewardKeys,
+                                character: rewardState.character,
+                                debuff: rewardState.debuff,
+                                gachaCount: rewardState.gachaCount,
+                                chestQueue: rewardState.chestQueue,
+                                completionRewardError: null,
                                 ...(xp.levelGain > 0 ? { levelUpEvent: {
                                     id: generateId(), fromLevel: durable.character.level, toLevel: xp.character.level,
                                     attackGain: xp.statGains.attack, defenseGain: xp.statGains.defense, hpGain: xp.statGains.maxHp,
@@ -1003,3 +1012,23 @@ export const useGameStore = create<GameStoreState>()(
         }
     )
 );
+
+/** Live tab updates are not reloads: preserve private battle runtime and overlay events. */
+export function syncAnonymousGameFromStorage(): void {
+    if (getGameRewardAuthorityState() !== 'anonymous') return;
+    const raw = getWebLocalStorage()?.getItem('quest-board-game');
+    if (!raw) return;
+    const persisted = JSON.parse(raw)?.state;
+    if (!isPlainObject(persisted) || persisted.completionRewardScope !== 'anonymous') return;
+    const snapshot = sanitizeGameStoreState(persisted);
+    const current = useGameStore.getState();
+    withoutCompletionRewardPersistence(() => useGameStore.setState({
+        ...snapshot,
+        battle: {
+            ...current.battle,
+            battleUnlocked: snapshot.battle.battleUnlocked,
+            currentStage: current.battle.status === 'fighting' ? current.battle.currentStage : snapshot.battle.currentStage,
+            maxClearedStage: Math.max(current.battle.maxClearedStage, snapshot.battle.maxClearedStage),
+        },
+    }));
+}
