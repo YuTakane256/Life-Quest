@@ -10,10 +10,12 @@ import { registerWebOutboxHooks } from './platform/cloudOutbox';
 import { registerPendingCompletionFlush } from './platform/pendingCompletionFlush';
 import { startWebCanonicalSync } from './platform/canonicalSync';
 import { registerWebPendingTaskRewardRecovery } from './stores/useTaskStore';
+import { flushCompletionRewardWrites, registerCompletionRewardStorageSync } from './platform/completionRewards';
+import { syncAnonymousGameFromStorage } from './stores/useGameStore';
 
 // 旧quest-board-*データのcanonical移行と、以降のストア変更の書き戻しを開始する。
 // UIをブロックしない（初期化の失敗はブリッジ内で握りつぶして警告する）。
-startWebCanonicalSync();
+const canonicalSync = startWebCanonicalSync();
 
 // 認証ライフサイクル: ログアウト時のストア即時クリア（ADR-009、クラウドシード後のみ作動）と
 // 保存済みセッションの復元通知。Supabase未設定なら双方とも何もしない。
@@ -22,8 +24,10 @@ registerWebCloudMigrationHooks(); // 初回移行はプル開始より先（#506
 registerWebOutboxHooks();
 registerWebCloudSyncHooks();
 registerWebPendingTaskRewardRecovery();
+registerCompletionRewardStorageSync(syncAnonymousGameFromStorage);
 registerPendingCompletionFlush(); // タブ非表示・離脱時の5秒Undo待機を即時確定（#512のMobile対策と対称）
-startAuthSessionListener();
+// Complete local seeding before expired-session cache isolation can clear stores.
+void canonicalSync.ready.then(flushCompletionRewardWrites).then(() => startAuthSessionListener());
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { createWebPersistStorage } from '../platform/storage';
+import { getWebLocalStorage } from '../platform/storage';
+import { createRewardAwareGameStorage, getCompletionRewardGeneration, readLegacyCompletionRewardKeys, sanitizeCompletionRewardKeys, withCompletionRewardLock, withoutCompletionRewardPersistence } from '../platform/completionRewards';
+import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type {
     CharacterStats,
     Debuff,
@@ -163,6 +165,8 @@ const initialBattle: BattleState = {
 };
 
 interface GameStorePersisted {
+    completionRewardScope?: 'anonymous' | 'cloud';
+    completionRewardKeys: string[];
     character: CharacterStats;
     debuff: Debuff;
     equipment: Equipment[];
@@ -373,6 +377,7 @@ export function sanitizeGameStoreState(persisted: unknown): GameStorePersisted {
     if (!isPlainObject(persisted)) {
         return {
             character: { ...initialCharacter },
+            completionRewardKeys: [],
             debuff: { ...initialDebuff },
             equipment: [],
             gachaCount: 0,
@@ -384,6 +389,7 @@ export function sanitizeGameStoreState(persisted: unknown): GameStorePersisted {
     const character = sanitizeCharacter(persisted.character);
 
     return {
+        completionRewardKeys: sanitizeCompletionRewardKeys(persisted.completionRewardKeys),
         character,
         debuff: sanitizeDebuff(persisted.debuff),
         equipment: sanitizeEquipmentList(persisted.equipment),
@@ -400,6 +406,81 @@ export function sanitizeGameStoreState(persisted: unknown): GameStorePersisted {
 export const useGameStore = create<GameStoreState>()(
     persist(
         (set, get) => ({
+            completionRewardKeys: [],
+            completionRewardError: null,
+            clearCompletionRewardError: () => {
+                withoutCompletionRewardPersistence(() => set({ completionRewardError: null }));
+            },
+            grantCompletionReward: async (key, baseXp, generation) => {
+                try {
+                    return await withCompletionRewardLock(() => {
+                        if (getGameRewardAuthorityState() !== 'anonymous' || generation !== getCompletionRewardGeneration()) return false;
+                        if (!sanitizeCompletionRewardKeys([key]).length || !Number.isFinite(baseXp) || baseXp <= 0) return false;
+                        const storage = getWebLocalStorage();
+                        if (!storage) throw new Error('保存領域を利用できません。');
+                        const raw = storage.getItem('quest-board-game');
+                        const parsed = raw ? JSON.parse(raw).state : null;
+                        if (raw && !isPlainObject(parsed)) throw new Error('ゲーム保存データを確認できません。');
+                        if (isPlainObject(parsed) && parsed.completionRewardScope === 'cloud') {
+                            throw new Error('別タブでクラウド用の保存状態に切り替わりました。再読み込みしてアカウント状態を確認してください。');
+                        }
+                        const durable = raw ? sanitizeGameStoreState(parsed) : sanitizeGameStoreState(get());
+                        if (isPlainObject(parsed) && !Object.prototype.hasOwnProperty.call(parsed, 'completionRewardKeys')) {
+                            durable.completionRewardKeys = get().completionRewardKeys;
+                        }
+                        if (isPlainObject(parsed) && Object.prototype.hasOwnProperty.call(parsed, 'completionRewardKeys')
+                            && !Array.isArray(parsed.completionRewardKeys)) throw new Error('報酬台帳を確認できません。');
+                        if (durable.completionRewardKeys.includes(key)) return false;
+                        const debuff = durable.debuff;
+                        const multiplier = debuff.active && debuff.expiresAt && new Date().toISOString() < debuff.expiresAt ? debuff.multiplier : 1;
+                        const xp = applyCharacterXp(durable.character, baseXp, multiplier);
+                        const count = Math.min(MAX_GACHA_COUNT, durable.gachaCount + 1);
+                        const milestone = getMilestoneAtCount(count);
+                        const rewardState: GameStorePersisted = {
+                            ...durable,
+                            completionRewardScope: 'anonymous',
+                            completionRewardKeys: [...durable.completionRewardKeys, key],
+                            character: { ...durable.character, ...xp.character },
+                            debuff: multiplier === 1 && debuff.active ? { ...initialDebuff } : debuff,
+                            gachaCount: count,
+                            chestQueue: milestone ? capChestQueue([...durable.chestQueue, {
+                                id: generateId(), chestType: milestone.chestType, label: milestone.label,
+                                opened: false, equipment: null, origin: 'local',
+                                isStarterCharacter: milestone.count === 5,
+                            }]) : durable.chestQueue,
+                        };
+                        // Commit before publishing: subscribers/canonical write-through must
+                        // not observe a reward whose one durable write failed.
+                        // Sanitization is for reload, not for an ongoing battle. A
+                        // completion does not modify the battle's saved runtime.
+                        const savedBattle = isPlainObject(parsed) && isPlainObject(parsed.battle) ? parsed.battle : get().battle;
+                        storage.setItem('quest-board-game', JSON.stringify({ state: { ...rewardState, battle: savedBattle }, version: 0 }));
+                        try {
+                            withoutCompletionRewardPersistence(() => set({
+                                completionRewardKeys: rewardState.completionRewardKeys,
+                                character: rewardState.character,
+                                debuff: rewardState.debuff,
+                                gachaCount: rewardState.gachaCount,
+                                chestQueue: rewardState.chestQueue,
+                                completionRewardError: null,
+                                ...(xp.levelGain > 0 ? { levelUpEvent: {
+                                    id: generateId(), fromLevel: durable.character.level, toLevel: xp.character.level,
+                                    attackGain: xp.statGains.attack, defenseGain: xp.statGains.defense, hpGain: xp.statGains.maxHp,
+                                } } : {}),
+                            }));
+                        } catch {
+                            // The reward is already durable. Subscriber failure must
+                            // not roll it back or permit a duplicate grant.
+                        }
+                        return true;
+                    });
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : '報酬を保存できません。';
+                    try { withoutCompletionRewardPersistence(() => set({ completionRewardError: `報酬は未付与です。${message} 保存環境を確認後、未完了に戻して再完了してください。` })); }
+                    catch { /* error feedback remains in memory even if storage is unavailable */ }
+                    return false;
+                }
+            },
             character: { ...initialCharacter },
             debuff: { ...initialDebuff },
             equipment: [],
@@ -898,11 +979,20 @@ export const useGameStore = create<GameStoreState>()(
         }),
         {
             name: 'quest-board-game',
-            storage: createWebPersistStorage(),
+            storage: createRewardAwareGameStorage<GameStorePersisted>((error) => {
+                const message = error instanceof Error ? error.message : '保存領域を利用できません。';
+                withoutCompletionRewardPersistence(() => useGameStore.setState({
+                    completionRewardError: `ゲームの変更を保存できません。${message}`,
+                }));
+            }, (state) => {
+                withoutCompletionRewardPersistence(() => useGameStore.setState(state));
+            }),
             // UI 用の一時イベント（levelUpEvent / pendingChestReveal）は永続化しない。
             // これらが localStorage に残ると、リロード時にモーダルが意図せず再表示される。
             // また、細工された localStorage で起動時に勝手に発火させられる嫌がらせも防ぐ。
             partialize: (state) => ({
+                completionRewardScope: getGameRewardAuthorityState() === 'anonymous' ? 'anonymous' as const : 'cloud' as const,
+                completionRewardKeys: state.completionRewardKeys,
                 character: state.character,
                 debuff: state.debuff,
                 equipment: state.equipment,
@@ -913,9 +1003,32 @@ export const useGameStore = create<GameStoreState>()(
             merge: (persisted, current) => ({
                 ...current,
                 ...sanitizeGameStoreState(persisted),
+                completionRewardKeys: isPlainObject(persisted) && !Object.prototype.hasOwnProperty.call(persisted, 'completionRewardKeys')
+                    ? readLegacyCompletionRewardKeys() : sanitizeGameStoreState(persisted).completionRewardKeys,
+                completionRewardError: null,
                 levelUpEvent: null,
                 pendingChestReveal: null,
             }),
         }
     )
 );
+
+/** Live tab updates are not reloads: preserve private battle runtime and overlay events. */
+export function syncAnonymousGameFromStorage(): void {
+    if (getGameRewardAuthorityState() !== 'anonymous') return;
+    const raw = getWebLocalStorage()?.getItem('quest-board-game');
+    if (!raw) return;
+    const persisted = JSON.parse(raw)?.state;
+    if (!isPlainObject(persisted) || persisted.completionRewardScope !== 'anonymous') return;
+    const snapshot = sanitizeGameStoreState(persisted);
+    const current = useGameStore.getState();
+    withoutCompletionRewardPersistence(() => useGameStore.setState({
+        ...snapshot,
+        battle: {
+            ...current.battle,
+            battleUnlocked: snapshot.battle.battleUnlocked,
+            currentStage: current.battle.status === 'fighting' ? current.battle.currentStage : snapshot.battle.currentStage,
+            maxClearedStage: Math.max(current.battle.maxClearedStage, snapshot.battle.maxClearedStage),
+        },
+    }));
+}

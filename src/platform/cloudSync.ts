@@ -104,7 +104,7 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
     if (seedable.game) {
         const game = buildCanonicalGameSnapshot(cache);
         if (game) {
-            seedGame(game);
+            seedGame(game, 'cloud');
             seeded = true;
         }
     }

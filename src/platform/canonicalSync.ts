@@ -29,6 +29,7 @@ import type { RepositoryStorage } from '@life-quest/core/syncRepository';
 import { createWebCanonicalRepositories } from './canonicalRepositories';
 import { migrateWebLegacyData } from './legacyMigration';
 import { getPlatformStorageAdapter } from './storage';
+import { completionKeysToLedger, completionLedgerToKeys, seedCloudCompletionRewardStorage } from './completionRewards';
 import { useGameStore } from '../stores/useGameStore';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useTaskStore } from '../stores/useTaskStore';
@@ -69,8 +70,11 @@ export function seedHabits(snapshot: CanonicalHabitSnapshot): void {
  * バトルは進行度（unlocked / currentStage / maxClearedStage）のみ上書きし、
  * 戦闘中の一時状態（敵HP・ログ・クールダウン）は canonical 契約に無いため保持する。
  */
-export function seedGame(snapshot: CanonicalGameSnapshot): void {
-    useGameStore.setState((state) => ({
+export function seedGame(snapshot: CanonicalGameSnapshot, source: 'local' | 'cloud' = 'local'): void {
+    const seed = () => useGameStore.setState((state) => ({
+        completionRewardKeys: source === 'local'
+            ? [...new Set([...state.completionRewardKeys, ...completionLedgerToKeys(snapshot.rewardLedger)])]
+            : completionLedgerToKeys(snapshot.rewardLedger),
         character: snapshot.character,
         debuff: {
             active: snapshot.debuff.active,
@@ -87,6 +91,8 @@ export function seedGame(snapshot: CanonicalGameSnapshot): void {
             maxClearedStage: snapshot.battleProgress.maxClearedStage,
         },
     }));
+    if (source === 'cloud') seedCloudCompletionRewardStorage(seed);
+    else seed();
     useTitleStore.setState({ activeTitle: snapshot.activeTitle });
 }
 
@@ -157,12 +163,8 @@ export function startWebCanonicalSync(
         if (seeded.has('game')) {
             const gameState = useGameStore.getState();
             const titleState = useTitleStore.getState();
-            // Webのゲームストアは報酬台帳を持たないため、canonical上の既存台帳を
-            // 引き継いだ上で完了済みタスク・習慣を証跡としてマージする（単調増加）。
-            const currentGame = await repositories.game.load();
-            const currentLedger = currentGame.status === 'ready'
-                ? currentGame.value.data.rewardLedger
-                : undefined;
+            // Only committed receipts: a visible completed flag can still be
+            // in the undo window, so it must not silently become a paid claim.
             results.game = await writeCanonicalSnapshot(repositories.game, convertLegacyGameSnapshot({
                 game: {
                     character: gameState.character,
@@ -171,10 +173,9 @@ export function startWebCanonicalSync(
                     gachaCount: gameState.gachaCount,
                     chestQueue: gameState.chestQueue,
                     battle: gameState.battle,
-                    ...(currentLedger ? { rewardLedger: currentLedger } : {}),
+                    rewardLedger: completionKeysToLedger(gameState.completionRewardKeys, habitState.allCompleteRewardDates),
                 },
                 title: { activeTitle: titleState.activeTitle },
-                tasks: tasksSource,
                 habits: habitsSource,
             }));
             if (results.game.revision !== undefined) {

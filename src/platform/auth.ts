@@ -13,6 +13,8 @@ import { getWebSupabaseClient } from './supabase';
 import { detachPendingWebRewardOperations, restorePendingWebRewardOperations } from './pendingRewardOperations';
 import { getWebEdgeFunctionInvoker } from './edgeFunctions';
 import { cleanupDeletedWebAccount } from './accountDeletion';
+import { flushCompletionRewardWrites } from './completionRewards';
+import { hasPersistedCloudGame, prepareWebAnonymousSession } from './authStores';
 
 export type AuthResult =
     | { ok: true; emailVerificationPending?: boolean; manualAppleRevocationRequired?: boolean }
@@ -120,6 +122,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
         setGameRewardAuthorityState('resolving');
         try { restorePendingWebRewardOperations(data.user.id); } catch { /* メモリ保留は維持する */ }
         await notifyLogin(data.user.id);
+        await flushCompletionRewardWrites();
         setGameRewardAuthorityState('authenticated');
     }
     // Email confirmation is enabled when Supabase returns a user without a session.
@@ -136,6 +139,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
         setGameRewardAuthorityState('resolving');
         try { restorePendingWebRewardOperations(data.user.id); } catch { /* メモリ保留は維持する */ }
         await notifyLogin(data.user.id);
+        await flushCompletionRewardWrites();
         setGameRewardAuthorityState('authenticated');
     }
     return { ok: true };
@@ -230,6 +234,7 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
         setGameRewardAuthorityState('resolving');
         try { restorePendingWebRewardOperations(data.session.user.id); } catch { /* メモリ保留は維持する */ }
         await notifyLogin(data.session.user.id);
+        await flushCompletionRewardWrites();
         setGameRewardAuthorityState('authenticated');
     }
     return { ok: true };
@@ -392,6 +397,7 @@ export async function signOutUser(): Promise<AuthResult> {
     // クラウド対象ストアのメモリクリア）だけを完了させる。
     detachPendingWebRewardOperations();
     await notifyLogout();
+    await flushCompletionRewardWrites();
     setWebRecoveryGate(false);
     setGameRewardAuthorityState('anonymous');
     return { ok: true };
@@ -456,10 +462,25 @@ export const getGameAuthState = getBattleAuthState;
  * 戻り値で購読解除できる。
  */
 export function startAuthSessionListener(): () => void {
+    let sessionGeneration = 0;
+    const finishAnonymous = () => {
+        const generation = ++sessionGeneration;
+        const current = () => generation === sessionGeneration;
+        // Even a local canonical seed may still be waiting for the game lock.
+        // Settle it before changing reward generation or deciding the saved scope.
+        void flushCompletionRewardWrites().then(async () => {
+            if (!current()) return;
+            if (hasPersistedCloudGame()) {
+                setGameRewardAuthorityState('resolving');
+                await prepareWebAnonymousSession(current);
+            }
+            if (current()) setGameRewardAuthorityState('anonymous');
+        }).catch((error) => console.warn('Anonymous session preparation failed; cloud cache is retained.', error));
+    };
     const client = getWebSupabaseClient();
     if (!client) {
-        setGameRewardAuthorityState('anonymous');
-        return () => {};
+        finishAnonymous();
+        return () => { sessionGeneration += 1; };
     }
     recoveryCallbackInProgress = isRecoveryCallbackUrl() || hasWebRecoveryGate();
     if (isRecoveryCallbackUrl()) setWebRecoveryGate(true);
@@ -470,6 +491,10 @@ export function startAuthSessionListener(): () => void {
     }
     setGameRewardAuthorityState('resolving');
     const { data } = client.auth.onAuthStateChange((event, session) => {
+        // Invalidate an older no-session recovery before a new login can seed stores.
+        if (session && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
+            sessionGeneration += 1;
+        }
         if (event === 'PASSWORD_RECOVERY' && session) {
             recoveryCallbackInProgress = false;
             setWebRecoveryGate(true);
@@ -486,7 +511,11 @@ export function startAuthSessionListener(): () => void {
             }
             setGameRewardAuthorityState('resolving');
             try { restorePendingWebRewardOperations(session.user.id); } catch { /* メモリ保留は維持する */ }
-            void notifyLogin(session.user.id).then(() => setGameRewardAuthorityState('authenticated'));
+            const generation = sessionGeneration;
+            void notifyLogin(session.user.id).then(async () => {
+                await flushCompletionRewardWrites();
+                if (generation === sessionGeneration) setGameRewardAuthorityState('authenticated');
+            });
         }
         if (event === 'INITIAL_SESSION' && !session) {
             if (hasWebRecoveryGate()) {
@@ -494,18 +523,27 @@ export function startAuthSessionListener(): () => void {
                 return;
             }
             detachPendingWebRewardOperations();
-            setGameRewardAuthorityState('anonymous');
+            finishAnonymous();
         }
         if (event === 'SIGNED_OUT') {
             if (suppressRecoverySignOut) return;
+            sessionGeneration += 1;
             // authenticatedの保留操作をanonymous報酬として消費させない。
             // 永続キーは残し、同一userの次回ログインでのみ復元する。
             detachPendingWebRewardOperations();
-            setGameRewardAuthorityState('anonymous');
-            void notifyLogout();
+            if (hasPersistedCloudGame()) {
+                setGameRewardAuthorityState('resolving');
+                const generation = sessionGeneration;
+                void notifyLogout().then(() => {
+                    if (generation === sessionGeneration) finishAnonymous();
+                });
+            } else {
+                setGameRewardAuthorityState('anonymous');
+                void notifyLogout();
+            }
         }
     });
     void handleWebGoogleOAuthCallback();
     void handleWebAppleOAuthCallback();
-    return () => data.subscription.unsubscribe();
+    return () => { sessionGeneration += 1; data.subscription.unsubscribe(); };
 }
