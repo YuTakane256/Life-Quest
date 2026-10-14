@@ -7,8 +7,28 @@ import { getWebLocalStorage } from './storage';
 export const COMPLETION_REWARD_LOCK = 'life-quest:anonymous-completion-rewards';
 let authorityGeneration = 0;
 let replacingGameStorageScope: 'anonymous' | 'cloud' | undefined;
+let skippingGamePersistence = false;
+const pendingGameWrites = new Set<Promise<void>>();
 subscribeGameRewardAuthority(() => { authorityGeneration += 1; });
 export const getCompletionRewardGeneration = () => authorityGeneration;
+
+/** Publish a committed reward/transient error without scheduling another durable write. */
+export function withoutCompletionRewardPersistence<T>(work: () => T): T {
+    const previous = skippingGamePersistence;
+    skippingGamePersistence = true;
+    try { return work(); } finally { skippingGamePersistence = previous; }
+}
+
+export async function flushCompletionRewardWrites(): Promise<void> {
+    while (pendingGameWrites.size) await Promise.all([...pendingGameWrites]);
+}
+
+/** Backup UI must settle queued game saves before reading/replacing their raw slots. */
+export async function withSettledGamePersistence<T>(work: () => T): Promise<T> {
+    await flushCompletionRewardWrites();
+    return typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function'
+        ? withCompletionRewardLock(work) : work();
+}
 
 /** Explicit logout/reset is not a stale-tab write and must not resurrect receipts. */
 export function resetCompletionRewardStorage<T>(work: () => T): T {
@@ -85,62 +105,96 @@ interface RewardPersistence {
 }
 
 /** A stale anonymous tab must never overwrite receipts committed by another tab. */
-export function createRewardAwareGameStorage<S extends RewardPersistence>(): PersistStorage<S> | undefined {
+export function createRewardAwareGameStorage<S extends RewardPersistence>(
+    onError: (error: unknown) => void,
+    onCommitted: (state: S) => void,
+): PersistStorage<S> | undefined {
+    let writeSequence = 0;
     return createJSONStorage<S>(() => ({
         getItem: (key) => getWebLocalStorage()?.getItem(key) ?? null,
         removeItem: (key) => getWebLocalStorage()?.removeItem(key),
         setItem: (key, value) => {
-            const storage = getWebLocalStorage();
-            if (!storage) throw new Error('保存領域を利用できません。');
-            if (replacingGameStorageScope) {
-                const reset = JSON.parse(value);
-                reset.state.completionRewardScope = replacingGameStorageScope;
-                storage.setItem(key, JSON.stringify(reset));
-                return;
-            }
-            if (getGameRewardAuthorityState() === 'resolving') {
-                // Startup may persist before INITIAL_SESSION. Do not label an
-                // anonymous save as cloud-owned just because auth is unresolved.
-                const previous = storage.getItem(key);
-                const next = JSON.parse(value);
-                next.state.completionRewardScope = previous && JSON.parse(previous)?.state?.completionRewardScope === 'cloud'
-                    ? 'cloud' : 'anonymous';
-                value = JSON.stringify(next);
-            }
-            if (getGameRewardAuthorityState() === 'anonymous') {
-                const previous = storage.getItem(key);
-                if (previous) {
-                    const disk = JSON.parse(previous)?.state as S | undefined;
-                    if (!disk || typeof disk !== 'object' || Array.isArray(disk)) {
-                        throw new Error('ゲーム保存データを確認できません。');
-                    }
-                    if (Object.prototype.hasOwnProperty.call(disk, 'completionRewardKeys') && !Array.isArray(disk.completionRewardKeys)) {
-                        throw new Error('報酬台帳を確認できません。');
-                    }
-                    if (disk.completionRewardScope === 'cloud') {
-                        throw new Error('クラウド用保存状態へ匿名の変更を上書きできません。再読み込みしてください。');
-                    }
-                    const next = JSON.parse(value) as { state: S; version: number };
-                    const diskKeys = sanitizeCompletionRewardKeys(disk?.completionRewardKeys);
-                    const incomingKeys = new Set(next.state.completionRewardKeys);
-                    if (diskKeys.some((claim) => !incomingKeys.has(claim))) {
-                        next.state.completionRewardKeys = [...new Set([...diskKeys, ...next.state.completionRewardKeys])];
-                        // Preserve the newer reward balance when a stale profile/UI write arrives.
-                        if (disk && disk.character.totalXp > next.state.character.totalXp) {
-                            next.state.character = { ...next.state.character,
-                                ...applyCharacterXp(next.state.character, disk.character.totalXp - next.state.character.totalXp).character };
+            if (skippingGamePersistence) return;
+            // Capture explicit seed/reset intent before its synchronous wrapper exits.
+            const replacementScope = replacingGameStorageScope;
+            const generation = authorityGeneration;
+            const authority = getGameRewardAuthorityState();
+            const sequence = ++writeSequence;
+            const write = () => {
+                if (generation !== authorityGeneration) return; // never publish a queued previous-session save
+                const storage = getWebLocalStorage();
+                if (!storage) throw new Error('保存領域を利用できません。');
+                if (replacementScope) {
+                    const reset = JSON.parse(value);
+                    reset.state.completionRewardScope = replacementScope;
+                    storage.setItem(key, JSON.stringify(reset));
+                    return;
+                }
+                if (authority === 'resolving') {
+                    // Startup may persist before INITIAL_SESSION. Do not label an
+                    // anonymous save as cloud-owned just because auth is unresolved.
+                    const previous = storage.getItem(key);
+                    const next = JSON.parse(value);
+                    next.state.completionRewardScope = previous && JSON.parse(previous)?.state?.completionRewardScope === 'cloud'
+                        ? 'cloud' : 'anonymous';
+                    value = JSON.stringify(next);
+                }
+                let merged = false;
+                if (authority !== 'authenticated') {
+                    const previous = storage.getItem(key);
+                    if (previous) {
+                        const disk = JSON.parse(previous)?.state as S | undefined;
+                        if (!disk || typeof disk !== 'object' || Array.isArray(disk)) {
+                            throw new Error('ゲーム保存データを確認できません。');
                         }
-                        next.state.gachaCount = Math.max(next.state.gachaCount, disk?.gachaCount ?? 0);
-                        const chests = new Map(next.state.chestQueue.map((chest) => [chest.id, chest]));
-                        for (const chest of disk?.chestQueue ?? []) {
-                            if (!chests.has(chest.id) || chest.opened) chests.set(chest.id, chest);
+                        if (Object.prototype.hasOwnProperty.call(disk, 'completionRewardKeys') && !Array.isArray(disk.completionRewardKeys)) {
+                            throw new Error('報酬台帳を確認できません。');
                         }
-                        next.state.chestQueue = [...chests.values()];
-                        value = JSON.stringify(next);
+                        if (authority === 'anonymous' && disk.completionRewardScope === 'cloud') {
+                            throw new Error('クラウド用保存状態へ匿名の変更を上書きできません。再読み込みしてください。');
+                        }
+                        const next = JSON.parse(value) as { state: S; version: number };
+                        const diskKeys = sanitizeCompletionRewardKeys(disk?.completionRewardKeys);
+                        const incomingKeys = new Set(next.state.completionRewardKeys);
+                        if (disk.completionRewardScope !== 'cloud' && diskKeys.some((claim) => !incomingKeys.has(claim))) {
+                            merged = true;
+                            next.state.completionRewardKeys = [...new Set([...diskKeys, ...next.state.completionRewardKeys])];
+                            // Preserve the newer reward balance when a stale profile/UI write arrives.
+                            if (disk && disk.character.totalXp > next.state.character.totalXp) {
+                                next.state.character = { ...next.state.character,
+                                    ...applyCharacterXp(next.state.character, disk.character.totalXp - next.state.character.totalXp).character };
+                            }
+                            next.state.gachaCount = Math.max(next.state.gachaCount, disk?.gachaCount ?? 0);
+                            const chests = new Map(next.state.chestQueue.map((chest) => [chest.id, chest]));
+                            for (const chest of disk?.chestQueue ?? []) {
+                                if (!chests.has(chest.id) || chest.opened) chests.set(chest.id, chest);
+                            }
+                            next.state.chestQueue = [...chests.values()];
+                            value = JSON.stringify(next);
+                        }
                     }
                 }
+                storage.setItem(key, value);
+                if (merged && sequence === writeSequence) onCommitted((JSON.parse(value) as { state: S }).state);
+            };
+            // All cooperative writers use the same lock, not just the reward action.
+            // Hydration stays synchronous. Only durable writes become asynchronous.
+            if (typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function') {
+                const pending = withCompletionRewardLock(write).catch((error) => {
+                    if (generation === authorityGeneration) onError(error);
+                });
+                pendingGameWrites.add(pending);
+                void pending.finally(() => pendingGameWrites.delete(pending));
+                return pending;
             }
-            storage.setItem(key, value);
+            // Without lock support there can be no completion grants. Preserve the
+            // existing non-reward local experience, but never rewrite paid receipts.
+            try {
+                const existing = getWebLocalStorage()?.getItem(key);
+                const paid = existing && sanitizeCompletionRewardKeys(JSON.parse(existing)?.state?.completionRewardKeys).length;
+                if (paid && !replacementScope) throw new Error('付与済み報酬の安全な保存にはWeb Locks対応ブラウザーが必要です。');
+                write();
+            } catch (error) { onError(error); }
         },
     }));
 }

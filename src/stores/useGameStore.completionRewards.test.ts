@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { useGameStore, sanitizeGameStoreState } from './useGameStore';
-import { getCompletionRewardGeneration, registerCompletionRewardStorageSync, resetCompletionRewardStorage } from '../platform/completionRewards';
+import { flushCompletionRewardWrites, getCompletionRewardGeneration, registerCompletionRewardStorageSync, resetCompletionRewardStorage, withoutCompletionRewardPersistence, withSettledGamePersistence, COMPLETION_REWARD_LOCK } from '../platform/completionRewards';
 import { exportAllData, importAllData } from '../utils/dataBackup';
 import { CANONICAL_STORAGE_KEYS } from '@life-quest/core/syncRepository';
 import { seedGame } from '../platform/canonicalSync';
@@ -18,45 +18,54 @@ function locks() {
 const grant = (key: string, xp = 20) => useGameStore.getState().grantCompletionReward(key, xp, getCompletionRewardGeneration());
 const disk = () => JSON.parse(localStorage.getItem('quest-board-game')!).state;
 
-beforeEach(() => {
+beforeEach(async () => {
+    await flushCompletionRewardWrites();
     vi.stubGlobal('navigator', { locks: locks() });
     setGameRewardAuthorityState('anonymous');
     localStorage.clear();
     resetCompletionRewardStorage(() => useGameStore.setState({
         ...sanitizeGameStoreState(undefined), completionRewardError: null, levelUpEvent: null, pendingChestReveal: null,
     }));
+    await flushCompletionRewardWrites();
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(async () => { await flushCompletionRewardWrites(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('anonymous completion receipts and reward balance', () => {
-    it('retains local receipts at startup, but replaces them with a confirmed cloud ledger', () => {
+    it('retains local receipts at startup, but replaces them with a confirmed cloud ledger', async () => {
         useGameStore.setState({ completionRewardKeys: ['task:old-local'] });
+        await flushCompletionRewardWrites();
         setGameRewardAuthorityState('resolving');
         const snapshot = convertLegacyGameSnapshot({ game: {
             completionRewardKeys: ['task:canonical'],
         } });
         seedGame(snapshot);
+        await flushCompletionRewardWrites();
         expect(useGameStore.getState().completionRewardKeys).toEqual(['task:old-local', 'task:canonical']);
         expect(disk().completionRewardScope).toBe('anonymous');
         seedGame(snapshot, 'cloud');
+        await flushCompletionRewardWrites();
         expect(useGameStore.getState().completionRewardKeys).toEqual(['task:canonical']);
         expect(disk().completionRewardScope).toBe('cloud');
     });
     it('does not poison an anonymous save while startup auth is resolving', async () => {
         setGameRewardAuthorityState('resolving');
         useGameStore.getState().updateCharacter({ name: 'Before initial session' });
+        await flushCompletionRewardWrites();
         expect(disk().completionRewardScope).toBe('anonymous');
         setGameRewardAuthorityState('anonymous');
         expect(await grant('task:A')).toBe(true);
     });
 
-    it('preserves a cloud scope during resolving but clears it on explicit logout reset', () => {
+    it('preserves a cloud scope during resolving but clears it on explicit logout reset', async () => {
         setGameRewardAuthorityState('authenticated');
         useGameStore.getState().updateCharacter({ name: 'Cloud account' });
+        await flushCompletionRewardWrites();
         setGameRewardAuthorityState('resolving');
         useGameStore.getState().updateCharacter({ name: 'Restoring' });
+        await flushCompletionRewardWrites();
         expect(disk().completionRewardScope).toBe('cloud');
         resetCompletionRewardStorage(() => useGameStore.setState(sanitizeGameStoreState(undefined)));
+        await flushCompletionRewardWrites();
         expect(disk().completionRewardScope).toBe('anonymous');
     });
 
@@ -105,6 +114,7 @@ describe('anonymous completion receipts and reward balance', () => {
         const stale = useGameStore.getState();
         for (let i = 0; i < 5; i++) await grant(`task:${i}`);
         useGameStore.setState({ ...stale, character: { ...stale.character, name: 'Stale profile' } });
+        await flushCompletionRewardWrites();
         expect(disk()).toMatchObject({ gachaCount: 5, character: { totalXp: 100, name: 'Stale profile' } });
         expect(disk().completionRewardKeys).toHaveLength(5);
         expect(disk().chestQueue).toHaveLength(1);
@@ -115,6 +125,7 @@ describe('anonymous completion receipts and reward balance', () => {
 
     it('retains old receipts beyond the core migration ledger cap', async () => {
         useGameStore.setState({ completionRewardKeys: Array.from({ length: 4001 }, (_, i) => `task:${i}`) });
+        await flushCompletionRewardWrites();
         await useGameStore.persist.rehydrate();
         expect(await grant('task:0')).toBe(false);
         expect(useGameStore.getState().completionRewardKeys).toHaveLength(4001);
@@ -137,16 +148,52 @@ describe('anonymous completion receipts and reward balance', () => {
         expect(disk().character.totalXp).toBe(20);
     });
 
-    it('keeps a durable grant when only the redundant persist fails', async () => {
-        const original = Storage.prototype.setItem;
-        let writes = 0;
-        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-            if (key === 'quest-board-game' && ++writes === 2) throw new Error('second write');
-            original.call(this, key, value);
-        });
+    it('publishes a durable grant without a redundant unlocked persist', async () => {
+        const write = vi.spyOn(Storage.prototype, 'setItem');
         expect(await grant('task:A')).toBe(true);
+        await flushCompletionRewardWrites();
+        expect(write.mock.calls.filter(([key]) => key === 'quest-board-game')).toHaveLength(1);
         expect(disk().character.totalXp).toBe(20);
         expect(await grant('task:A')).toBe(false);
+    });
+
+    it('queues a stale profile save behind a held reward lock and merges the committed receipt', async () => {
+        const manager = navigator.locks;
+        const stale = useGameStore.getState();
+        let release!: () => void;
+        const held = manager.request(COMPLETION_REWARD_LOCK, () => new Promise<void>((resolve) => { release = resolve; }));
+        await Promise.resolve();
+        const awarded = grant('task:A');
+        withoutCompletionRewardPersistence(() => useGameStore.setState(stale));
+        useGameStore.getState().updateCharacter({ name: 'Queued stale profile' });
+        expect(disk().completionRewardKeys).toEqual([]);
+        release();
+        await held;
+        expect(await awarded).toBe(true);
+        await flushCompletionRewardWrites();
+        expect(disk()).toMatchObject({ completionRewardKeys: ['task:A'], character: { totalXp: 20, name: 'Queued stale profile' }, gachaCount: 1 });
+        expect(useGameStore.getState().character).toMatchObject({ totalXp: 20, name: 'Queued stale profile' });
+        expect(await grant('task:A')).toBe(false);
+    });
+
+    it('settles queued profile saves before backup export and restore', async () => {
+        useGameStore.getState().updateCharacter({ name: 'Queued for backup' });
+        const backup = await withSettledGamePersistence(() => exportAllData());
+        expect((backup.game as { state: { character: { name: string } } }).state.character.name).toBe('Queued for backup');
+        useGameStore.getState().updateCharacter({ name: 'Old queued write' });
+        expect(await withSettledGamePersistence(() => importAllData(backup))).toBe(true);
+        await flushCompletionRewardWrites();
+        await useGameStore.persist.rehydrate();
+        expect(useGameStore.getState().character.name).toBe('Queued for backup');
+    });
+
+    it('drops a queued previous-session profile save before it can overwrite a new account', async () => {
+        useGameStore.getState().updateCharacter({ name: 'Old anonymous' });
+        setGameRewardAuthorityState('authenticated');
+        const cloud = JSON.stringify({ state: { ...disk(), completionRewardScope: 'cloud', character: { ...disk().character, name: 'New account' } }, version: 0 });
+        localStorage.setItem('quest-board-game', cloud);
+        await flushCompletionRewardWrites();
+        expect(localStorage.getItem('quest-board-game')).toBe(cloud);
     });
 
     it('preserves malformed storage and refuses to guess a reward balance', async () => {

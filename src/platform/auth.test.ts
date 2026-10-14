@@ -7,6 +7,9 @@ import {
     pendingWebRewardOperationsKey,
     restorePendingWebRewardOperations,
 } from './pendingRewardOperations';
+import { useGameStore, sanitizeGameStoreState } from '../stores/useGameStore';
+import { CLOUD_SESSION_RECOVERY_PREFIX } from './authStores';
+import { flushCompletionRewardWrites, seedCloudCompletionRewardStorage } from './completionRewards';
 
 const state = vi.hoisted(() => ({
     listener: null as null | ((event: string, session: { user: { id: string } } | null) => void),
@@ -97,6 +100,46 @@ describe('Web auth pending reward ownership', () => {
         } finally {
             stop();
         }
+    });
+
+    it('INITIAL_SESSION=null archives a persisted cloud cache and enables anonymous rewards', async () => {
+        vi.stubGlobal('navigator', { locks: { request: async (_name: string, work: () => unknown) => work() } });
+        seedCloudCompletionRewardStorage(() => useGameStore.setState(sanitizeGameStoreState({ character: { totalXp: 110 } })));
+        await flushCompletionRewardWrites();
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('anonymous'));
+            expect(useGameStore.getState().character.totalXp).toBe(0);
+            expect(Object.keys(localStorage).some((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX))).toBe(true);
+            expect(JSON.parse(localStorage.getItem('quest-board-game')!).state.completionRewardScope).toBe('anonymous');
+        } finally { stop(); vi.unstubAllGlobals(); }
+    });
+
+    it('a newer SIGNED_IN invalidates pending no-session cache isolation', async () => {
+        vi.stubGlobal('navigator', { locks: { request: async (_name: string, work: () => unknown) => work() } });
+        seedCloudCompletionRewardStorage(() => useGameStore.setState(sanitizeGameStoreState({ character: { totalXp: 110 } })));
+        await flushCompletionRewardWrites();
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            state.listener?.('SIGNED_IN', { user: { id: 'user-new' } });
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+            expect(useGameStore.getState().character.totalXp).toBe(110);
+            expect(Object.keys(localStorage).filter((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX))).toHaveLength(0);
+        } finally { stop(); vi.unstubAllGlobals(); }
+    });
+
+    it('TOKEN_REFRESHED does not strand an in-progress login in resolving', async () => {
+        let finish!: () => void;
+        state.notifyLogin.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            finish();
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+        } finally { stop(); }
     });
 
     it('登録後にセッションが無い時は確認メール待ちを返す', async () => {

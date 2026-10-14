@@ -4,6 +4,7 @@ import { createBackupImportSummary, formatBackupExportedAt, type BackupImportSum
 import { exportAllData, importAllData, MAX_IMPORT_FILE_SIZE, parseBackupImportJson, type BackupData } from '../../utils/dataBackup';
 import { ConfirmDialog } from './ConfirmDialog';
 import { toIsoDatePart } from '../../utils/dateUtils';
+import { withSettledGamePersistence } from '../../platform/completionRewards';
 
 export function DataBackupSettings() {
     const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -20,16 +21,18 @@ export function DataBackupSettings() {
         setTimeout(() => setImportStatus('idle'), 3000);
     };
 
-    const handleExport = () => {
-        const data = exportAllData();
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `life-quest-backup-${toIsoDatePart(new Date().toISOString())}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+    const handleExport = async () => {
+        try {
+            const data = await withSettledGamePersistence(() => exportAllData());
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `life-quest-backup-${toIsoDatePart(new Date().toISOString())}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch { showImportError(); }
     };
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,10 +71,10 @@ export function DataBackupSettings() {
         }
     };
 
-    const handleImportConfirm = () => {
+    const handleImportConfirm = async () => {
         if (!pendingBackup) return;
         try {
-            const success = importAllData(pendingBackup);
+            const success = await withSettledGamePersistence(() => importAllData(pendingBackup));
             if (success) {
                 setImportStatus('success');
                 setShowImportConfirm(false);
@@ -152,7 +155,7 @@ export function DataBackupSettings() {
                     className="mt-3 px-4 py-2 rounded-xl text-center text-sm font-medium animate-fade-in"
                     style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--color-text-danger)' }}
                 >
-                    ファイルの読み込みに失敗しました。正しいバックアップファイルか確認してください。
+                    バックアップ操作に失敗しました。保存環境とバックアップファイルを確認してください。
                 </div>
             )}
         </div>

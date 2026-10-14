@@ -1,17 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
     clearWebCloudStores,
     markCloudSessionSeeded,
     registerWebAuthStoreHooks,
     resetCloudSessionSeeded,
+    prepareWebAnonymousSession,
+    CLOUD_SESSION_RECOVERY_PREFIX,
 } from './authStores';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
 import { useLoginBonusStore } from '../stores/useLoginBonusStore';
 import { useGameStore } from '../stores/useGameStore';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
-import { resetCompletionRewardStorage } from './completionRewards';
+import { flushCompletionRewardWrites, getCompletionRewardGeneration, resetCompletionRewardStorage, seedCloudCompletionRewardStorage } from './completionRewards';
 
 function task(id: string) {
     return {
@@ -108,5 +110,62 @@ describe('Webログアウト時のストアクリア（ADR-009）', () => {
         expect(useTaskStore.getState().tasks).toEqual([]);
         expect(useTaskStore.getState().pendingCompletions).toEqual([]);
         expect(useTitleStore.getState().activeTitle).toBeNull();
+    });
+});
+
+describe('expired cloud session cache isolation', () => {
+    beforeEach(async () => {
+        await flushCompletionRewardWrites();
+        localStorage.clear();
+        vi.stubGlobal('navigator', { locks: { request: async (_name: string, work: () => unknown) => work() } });
+        setGameRewardAuthorityState('resolving');
+        resetCloudSessionSeeded();
+        seedCloudCompletionRewardStorage(() => useGameStore.setState({
+            character: { ...useGameStore.getState().character, totalXp: 110 }, completionRewardKeys: ['task:cloud-paid'],
+        }));
+        useTaskStore.setState({ tasks: [task('cloud-only')], pendingCompletions: [] });
+        await flushCompletionRewardWrites();
+    });
+    afterEach(async () => { await flushCompletionRewardWrites(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+    it('archives cloud data before starting fresh anonymous progress, which survives reload', async () => {
+        const oldGame = localStorage.getItem('quest-board-game');
+        const oldTasks = localStorage.getItem('quest-board-tasks');
+        await prepareWebAnonymousSession();
+        const recoveryKeys = Object.keys(localStorage).filter((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX));
+        expect(recoveryKeys).toHaveLength(1);
+        const archive = JSON.parse(localStorage.getItem(recoveryKeys[0])!);
+        expect(archive.slots).toMatchObject({ 'quest-board-game': oldGame, 'quest-board-tasks': oldTasks });
+        expect(useTaskStore.getState().tasks).toEqual([]);
+        expect(useGameStore.getState().completionRewardKeys).toEqual([]);
+        setGameRewardAuthorityState('anonymous');
+        expect(await useGameStore.getState().grantCompletionReward('task:new', 20, getCompletionRewardGeneration())).toBe(true);
+        await useGameStore.persist.rehydrate();
+        expect(useGameStore.getState().character.totalXp).toBe(20);
+        await prepareWebAnonymousSession();
+        expect(Object.keys(localStorage).filter((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX))).toHaveLength(1);
+    });
+
+    it('never clears the cloud original when archive storage fails', async () => {
+        const original = localStorage.getItem('quest-board-game');
+        const write = Storage.prototype.setItem;
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+            if (key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX)) throw new DOMException('quota', 'QuotaExceededError');
+            write.call(this, key, value);
+        });
+        await expect(prepareWebAnonymousSession()).rejects.toThrow();
+        expect(localStorage.getItem('quest-board-game')).toBe(original);
+        expect(useTaskStore.getState().tasks.map((value) => value.id)).toEqual(['cloud-only']);
+        expect(useGameStore.getState().completionRewardError).toContain('再ログイン');
+    });
+
+    it('does not reset a newer login or a normal anonymous save', async () => {
+        await prepareWebAnonymousSession(() => false);
+        expect(useGameStore.getState().completionRewardKeys).toEqual(['task:cloud-paid']);
+        resetCompletionRewardStorage(() => useGameStore.setState({ completionRewardKeys: ['task:local-paid'] }));
+        await flushCompletionRewardWrites();
+        await prepareWebAnonymousSession();
+        expect(useGameStore.getState().completionRewardKeys).toEqual(['task:local-paid']);
+        expect(Object.keys(localStorage).filter((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX))).toHaveLength(0);
     });
 });

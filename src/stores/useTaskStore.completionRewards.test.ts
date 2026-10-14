@@ -76,6 +76,25 @@ describe('real task/subtask completion reward integration', () => {
         expect(useTaskStore.getState().tasks).toHaveLength(3);
     });
 
+    it('does not create another recurring period from an already paid old subtask', async () => {
+        useTaskStore.getState().addTask('daily child', '2026-10-14', 'medium', 'daily');
+        const old = useTaskStore.getState().tasks[0].id;
+        useTaskStore.getState().addSubtask(old, 'child');
+        const child = useTaskStore.getState().tasks[0].subtasks[0].id;
+        useTaskStore.getState().toggleSubtaskComplete(old, child);
+        await vi.dynamicImportSettled();
+        const next = useTaskStore.getState().tasks[1];
+        useTaskStore.getState().toggleSubtaskComplete(next.id, next.subtasks[0].id);
+        await vi.dynamicImportSettled();
+        expect(useTaskStore.getState().tasks).toHaveLength(3);
+        const xp = useGameStore.getState().character.totalXp;
+        useTaskStore.getState().toggleSubtaskComplete(old, child);
+        useTaskStore.getState().toggleSubtaskComplete(old, child);
+        await vi.dynamicImportSettled();
+        expect(useTaskStore.getState().tasks).toHaveLength(3);
+        expect(useGameStore.getState().character.totalXp).toBe(xp);
+    });
+
     it('does not re-grant an already applied deferred reward when auth resolves again', async () => {
         useTaskStore.getState().addTask('recover', null, 'medium', 'none');
         const id = useTaskStore.getState().tasks[0].id;

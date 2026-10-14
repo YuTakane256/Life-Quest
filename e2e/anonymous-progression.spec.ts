@@ -130,3 +130,39 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(notice).toHaveCount(0);
     });
 }
+
+test('a real second-tab profile save cannot erase a queued task reward', async ({ page, context }) => {
+    test.setTimeout(60_000);
+    await startAnonymous(page);
+    await page.getByRole('button', { name: '新しいタスクを追加' }).click();
+    await page.getByPlaceholder('タスク名を入力...').fill('Locked reward');
+    await page.getByRole('button', { name: '追加', exact: true }).click();
+    const other = await context.newPage();
+    await startAnonymous(other);
+    await other.getByRole('button', { name: 'キャラ', exact: true }).click();
+    await other.getByRole('button', { name: 'プロフィールを編集', exact: true }).click();
+    const profile = other.getByRole('dialog', { name: 'プロフィール編集' });
+    await profile.getByPlaceholder('名前を入力').fill('Queued profile');
+    // Synchronization only: no saved rewards or progress are injected.
+    await page.evaluate(() => {
+        const state = window as unknown as { rewardLockHeld?: boolean; releaseRewardLock?: () => void };
+        void navigator.locks.request('life-quest:anonymous-completion-rewards', () => new Promise<void>((resolve) => {
+            state.rewardLockHeld = true;
+            state.releaseRewardLock = resolve;
+        }));
+    });
+    await expect.poll(() => page.evaluate(() => (window as unknown as { rewardLockHeld?: boolean }).rewardLockHeld)).toBe(true);
+    await page.getByRole('button', { name: 'タスク「Locked reward」を完了にする' }).click();
+    await page.clock.runFor(11_000);
+    await profile.getByRole('button', { name: '保存する', exact: true }).click();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-game')!).state.gachaCount)).toBe(0);
+    await page.evaluate(() => (window as unknown as { releaseRewardLock: () => void }).releaseRewardLock());
+    const read = () => page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-game')!).state);
+    await expect.poll(async () => (await read()).character.name).toBe('Queued profile');
+    expect(await read()).toMatchObject({ gachaCount: 1, character: { totalXp: 40 } });
+    expect((await read()).completionRewardKeys).toHaveLength(1);
+    await other.close();
+    await page.getByRole('button', { name: 'キャラ', exact: true }).click();
+    await page.reload();
+    await expect(page.getByRole('progressbar', { name: 'Queued profile の経験値' })).toHaveAttribute('aria-valuetext', '40 / 80');
+});

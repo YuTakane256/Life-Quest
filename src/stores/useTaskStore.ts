@@ -575,7 +575,12 @@ export const useTaskStore = create<TaskStoreState>()(
                     }));
 
                     if (isCompleting) {
-                        void awardTaskXp(task.priority, completedAt, getSubtaskXp(task.priority), `subtask:${subtaskId}`);
+                        void awardTaskXp(task.priority, completedAt, getSubtaskXp(task.priority), `subtask:${subtaskId}`).then((rewarded) => {
+                            if (rewarded && allSubtasksComplete && !task.completed
+                                && getGameRewardAuthorityState() === 'anonymous' && !isWebCloudOutboxActive()) {
+                                spawnWebRecurringNext(taskId);
+                            }
+                        }).catch(() => undefined);
                         // サーバー側は complete_subtask が親完了・親報酬まで連鎖する
                         if (getGameRewardAuthorityState() !== 'resolving') {
                             void enqueueCloudOperation('complete_subtask', { subtaskId }, { dependsOnEntityIds: [subtaskId, taskId] });
@@ -584,18 +589,6 @@ export const useTaskStore = create<TaskStoreState>()(
                         void enqueueCloudOperation('uncomplete_subtask', { p_id: subtaskId }, { dependsOnEntityIds: [subtaskId] });
                     }
 
-                    // サブタスク完了で親タスクが完了したら、繰り返しタスクの次回分を生成
-                    // （クラウド同期中はcomplete_task EFがサーバー側で生成するためスキップ）
-                    if (isCompleting && allSubtasksComplete && !task.completed
-                        && getGameRewardAuthorityState() !== 'resolving' && !isWebCloudOutboxActive()) {
-                        const next = buildNextRecurringTask(task);
-                        if (next) {
-                            const exists = hasOpenRecurringDuplicate(get().tasks, next);
-                            if (!exists && get().tasks.length < MAX_PERSISTED_TASKS) {
-                                set((state) => ({ tasks: [...state.tasks, next] }));
-                            }
-                        }
-                    }
                 },
 
                 cancelPendingCompletion: (taskId: string) => {

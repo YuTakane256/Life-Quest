@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { getWebLocalStorage } from '../platform/storage';
-import { createRewardAwareGameStorage, getCompletionRewardGeneration, readLegacyCompletionRewardKeys, sanitizeCompletionRewardKeys, withCompletionRewardLock } from '../platform/completionRewards';
+import { createRewardAwareGameStorage, getCompletionRewardGeneration, readLegacyCompletionRewardKeys, sanitizeCompletionRewardKeys, withCompletionRewardLock, withoutCompletionRewardPersistence } from '../platform/completionRewards';
 import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type {
     CharacterStats,
@@ -409,7 +409,7 @@ export const useGameStore = create<GameStoreState>()(
             completionRewardKeys: [],
             completionRewardError: null,
             clearCompletionRewardError: () => {
-                try { set({ completionRewardError: null }); } catch { /* transient update still applied */ }
+                withoutCompletionRewardPersistence(() => set({ completionRewardError: null }));
             },
             grantCompletionReward: async (key, baseXp, generation) => {
                 try {
@@ -453,21 +453,21 @@ export const useGameStore = create<GameStoreState>()(
                         // not observe a reward whose one durable write failed.
                         storage.setItem('quest-board-game', JSON.stringify({ state: rewardState, version: 0 }));
                         try {
-                            set({ ...rewardState, completionRewardError: null,
+                            withoutCompletionRewardPersistence(() => set({ ...rewardState, completionRewardError: null,
                                 ...(xp.levelGain > 0 ? { levelUpEvent: {
                                     id: generateId(), fromLevel: durable.character.level, toLevel: xp.character.level,
                                     attackGain: xp.statGains.attack, defenseGain: xp.statGains.defense, hpGain: xp.statGains.maxHp,
                                 } } : {}),
-                            });
+                            }));
                         } catch {
-                            // The reward is already durable and memory was published by set.
-                            // Do not roll it back or re-grant because the redundant persist failed.
+                            // The reward is already durable. Subscriber failure must
+                            // not roll it back or permit a duplicate grant.
                         }
                         return true;
                     });
                 } catch (error) {
                     const message = error instanceof Error ? error.message : '報酬を保存できません。';
-                    try { set({ completionRewardError: `報酬は未付与です。${message} 保存環境を確認後、未完了に戻して再完了してください。` }); }
+                    try { withoutCompletionRewardPersistence(() => set({ completionRewardError: `報酬は未付与です。${message} 保存環境を確認後、未完了に戻して再完了してください。` })); }
                     catch { /* error feedback remains in memory even if storage is unavailable */ }
                     return false;
                 }
@@ -970,7 +970,14 @@ export const useGameStore = create<GameStoreState>()(
         }),
         {
             name: 'quest-board-game',
-            storage: createRewardAwareGameStorage<GameStorePersisted>(),
+            storage: createRewardAwareGameStorage<GameStorePersisted>((error) => {
+                const message = error instanceof Error ? error.message : '保存領域を利用できません。';
+                withoutCompletionRewardPersistence(() => useGameStore.setState({
+                    completionRewardError: `ゲームの変更を保存できません。${message}`,
+                }));
+            }, (state) => {
+                withoutCompletionRewardPersistence(() => useGameStore.setState(state));
+            }),
             // UI 用の一時イベント（levelUpEvent / pendingChestReveal）は永続化しない。
             // これらが localStorage に残ると、リロード時にモーダルが意図せず再表示される。
             // また、細工された localStorage で起動時に勝手に発火させられる嫌がらせも防ぐ。
