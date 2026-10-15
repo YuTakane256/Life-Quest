@@ -2,11 +2,9 @@
  * 装備合成をクラウド権威で行う（可能な場合）。Web `src/hooks/useCloudItemSynthesis.ts`
  * の移植（エラー分岐の設計・理由もそちらのコメント参照）。
  *
- * - `synthesizeCloudItems`が`null`を返す（未ログイン・Edge Function未設定）
- *   → 無条件でローカル`synthesizeItems`へフォールバック
- * - 4xx（400/404/409）→ ローカル`synthesizeItems`へフォールバック。
- *   synthesize_itemsのEdge Functionは`callApply`（DB関数呼び出し・素材消費）
- *   より前に素材検証を行い4xxを返すため、素材未消費が保証されている
+ * - 匿名確定時だけローカル合成を許可し、クラウドへは送信しない
+ * - 認証済み/判定不能時はnull・4xxも含め端末内合成へ切り替えない
+ * - 純粋な判断関数も明示的なallowLocalFallbackなしでは端末内合成を許可しない
  * - それ以外（ネットワーク断・5xx等）→ フォールバックせずエラー状態にし、
  *   呼び出し元に再送させる（サーバーのidempotency_keysが二重消費を防ぐ）
  *
@@ -19,6 +17,9 @@ import { synthesizeCloudItems } from '../platform/battleCloud';
 import { createMobileId } from '../utils/createMobileId';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import type { Equipment } from '@life-quest/core/equipment';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
+import { getGameAuthState } from '../platform/auth';
+import { useGameOperationScope } from './useGameOperationScope';
 
 export interface UseCloudItemSynthesisResult {
     isSynthesizing: boolean;
@@ -37,6 +38,9 @@ export interface CloudSynthesisDeps {
     synthesizeCloudItems: (itemIds: string[], idempotencyKey: string) => Promise<{ resultId: string; templateId: string } | null>;
     applyCloudSynthesisResult: (itemIds: string[], resultId: string, templateId: string) => Equipment | null;
     localSynthesizeItems: (itemIds: string[]) => Equipment | null;
+    /** 匿名確定時だけtrue。省略時は許可しない。 */
+    allowLocalFallback?: boolean;
+    isActive?: () => boolean;
 }
 
 /**
@@ -56,18 +60,24 @@ export async function runCloudSynthesis(
     idempotencyKey: string,
     deps: CloudSynthesisDeps,
 ): Promise<{ tag: CloudSynthesisTag; equipment: Equipment | null }> {
+    const isActive = deps.isActive ?? captureAuthSessionGuard();
+    if (!isActive()) return { tag: 'error', equipment: null };
     try {
         const result = await deps.synthesizeCloudItems(itemIds, idempotencyKey);
+        if (!isActive()) return { tag: 'error', equipment: null };
         if (!result) {
+            if (deps.allowLocalFallback !== true) return { tag: 'error', equipment: null };
             return { tag: 'unconfigured-fallback', equipment: deps.localSynthesizeItems(itemIds) };
         }
         const equipment = deps.applyCloudSynthesisResult(itemIds, result.resultId, result.templateId);
         return { tag: 'applied', equipment };
     } catch (error) {
+        if (!isActive()) return { tag: 'error', equipment: null };
         // status===nullを`<500`に含めないこと（null<500はtrueに評価されるため、
         // 明示的な!==nullガードが無いとネットワーク断がclient-error扱いに
         // 誤分類され、本来温存すべき冪等キーが誤って削除されてしまう）
-        if (error instanceof EdgeFunctionError && error.status !== null && error.status < 500) {
+        if (deps.allowLocalFallback === true && error instanceof EdgeFunctionError
+            && [400, 404, 409].includes(error.status ?? 0)) {
             return { tag: 'client-error-fallback', equipment: deps.localSynthesizeItems(itemIds) };
         }
         return { tag: 'error', equipment: null };
@@ -81,8 +91,15 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
     const [hasError, setHasError] = useState(false);
     const idempotencyKeysRef = useRef(new Map<string, string>());
     const lastItemIdsRef = useRef<string[] | null>(null);
+    const operationScope = useGameOperationScope(() => {
+        idempotencyKeysRef.current.clear(); lastItemIdsRef.current = null;
+        setIsSynthesizing(false); setHasError(false);
+    });
 
     const runSynthesize = async (itemIds: string[]): Promise<Equipment | null> => {
+        const operation = operationScope.begin();
+        if (!operation) return null;
+        itemIds = [...itemIds];
         setIsSynthesizing(true);
         setHasError(false);
         lastItemIdsRef.current = itemIds;
@@ -93,9 +110,18 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
             idempotencyKeysRef.current.set(synthKey, key);
         }
         try {
+            const auth = await getGameAuthState();
+            if (!operation.isActive()) return null;
+            if (auth.kind === 'unavailable' || operation.userId !== (auth.kind === 'authenticated' ? auth.userId : null)) {
+                setHasError(true); return null;
+            }
             const { tag, equipment } = await runCloudSynthesis(itemIds, key, {
-                synthesizeCloudItems, applyCloudSynthesisResult, localSynthesizeItems,
+                synthesizeCloudItems: auth.kind === 'anonymous' ? async () => null
+                    : (ids, retryKey) => synthesizeCloudItems(ids, retryKey, { isActive: operation.isActive, expectedUserId: auth.userId }),
+                applyCloudSynthesisResult, localSynthesizeItems,
+                allowLocalFallback: auth.kind === 'anonymous', isActive: operation.isActive,
             });
+            if (!operation.isActive()) return null;
             if (tag === 'error') {
                 setHasError(true);
                 return null;
@@ -103,19 +129,23 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
             if (tag !== 'unconfigured-fallback') {
                 idempotencyKeysRef.current.delete(synthKey);
             }
+            lastItemIdsRef.current = null;
             return equipment;
+        } catch {
+            if (operation.isActive()) setHasError(true);
+            return null;
         } finally {
-            setIsSynthesizing(false);
+            if (operation.isActive()) setIsSynthesizing(false);
+            operation.finish();
         }
     };
 
     const synthesize = async (itemIds: string[]): Promise<Equipment | null> => {
-        if (isSynthesizing) return null;
         return runSynthesize(itemIds);
     };
 
     const retry = async (): Promise<Equipment | null> => {
-        if (!hasError || isSynthesizing || !lastItemIdsRef.current) return null;
+        if (!lastItemIdsRef.current) return null;
         return runSynthesize(lastItemIdsRef.current);
     };
 

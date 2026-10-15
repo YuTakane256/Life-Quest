@@ -2,8 +2,8 @@
  * 宝箱開封をクラウド権威で行う（可能な場合）。Web `src/hooks/useCloudChestOpen.ts`
  * の移植（エラー分岐の設計はWebと同一。詳細な理由もそちらのコメント参照）。
  *
- * - `openCloudChest`が`null`を返す、またはstatus 404の場合は、旧ローカル
- *   宝箱だけをローカル`openChest`へフォールバック
+ * - 匿名確定かつ旧ローカル宝箱のみ端末内で開封する
+ * - 認証済み/判定不能時はnull/404でもローカル抽選へ切り替えない
  * - canonical pull由来（`origin: 'cloud'`）の宝箱はnull/404でもフォールバックせず
  *   再送・次回pullへ委ねる
  * - `chest_already_opened`を返すstatus 409（サーバー側は既に正常）→ エラー扱い
@@ -20,6 +20,9 @@ import { openCloudChest, type CloudChestResult } from '../platform/battleCloud';
 import { createMobileId } from '../utils/createMobileId';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import type { Equipment } from '@life-quest/core/equipment';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
+import { getGameAuthState } from '../platform/auth';
+import { useGameOperationScope } from './useGameOperationScope';
 
 export interface CloudChestOpenOutcome {
     /** 'opened': 開封確定（equipmentはnullの場合あり＝スターター宝箱等）。'pending': 再送待ち、演出は出さない。 */
@@ -49,8 +52,9 @@ export interface CloudChestOpenDeps {
     ) => Equipment | null;
     discardSyncedChest: (chestId: string) => void;
     localOpenChest: (chestId: string) => Equipment | null;
-    /** canonical pull由来の宝箱は、404でも端末内の抽選へ戻さない。 */
+    /** 匿名確定かつlocal originの場合だけtrue。省略時は許可しない。 */
     allowLocalFallback?: boolean;
+    isActive?: () => boolean;
 }
 
 /**
@@ -71,17 +75,21 @@ export async function runCloudChestOpen(
     idempotencyKey: string,
     deps: CloudChestOpenDeps,
 ): Promise<{ tag: CloudChestOpenTag; equipment: Equipment | null }> {
+    const isActive = deps.isActive ?? captureAuthSessionGuard();
+    if (!isActive()) return { tag: 'error', equipment: null };
     try {
         const result = await deps.openCloudChest(chestId, idempotencyKey);
+        if (!isActive()) return { tag: 'error', equipment: null };
         if (!result) {
-            if (deps.allowLocalFallback === false) return { tag: 'error', equipment: null };
+            if (deps.allowLocalFallback !== true) return { tag: 'error', equipment: null };
             return { tag: 'unconfigured-fallback', equipment: deps.localOpenChest(chestId) };
         }
         const equipment = deps.applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
         return { tag: 'applied', equipment };
     } catch (error) {
+        if (!isActive()) return { tag: 'error', equipment: null };
         if (error instanceof EdgeFunctionError && error.status === 404) {
-            if (deps.allowLocalFallback === false) return { tag: 'error', equipment: null };
+            if (deps.allowLocalFallback !== true) return { tag: 'error', equipment: null };
             return { tag: 'not-found-fallback', equipment: deps.localOpenChest(chestId) };
         }
         if (error instanceof EdgeFunctionError && error.status === 409 && isAlreadyOpened(error)) {
@@ -107,28 +115,46 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
     const localOpenChest = useMobileGameStore((state) => state.openChest);
     const applyCloudChestResult = useMobileGameStore((state) => state.applyCloudChestResult);
     const discardSyncedChest = useMobileGameStore((state) => state.discardSyncedChest);
-    const chestQueue = useMobileGameStore((state) => state.chestQueue);
     const [openingChestId, setOpeningChestId] = useState<string | null>(null);
     const [errorChestId, setErrorChestId] = useState<string | null>(null);
     const idempotencyKeysRef = useRef(new Map<string, string>());
+    const errorRef = useRef<string | null>(null);
+    const operationScope = useGameOperationScope(() => {
+        idempotencyKeysRef.current.clear(); errorRef.current = null;
+        setOpeningChestId(null); setErrorChestId(null);
+    });
 
     const runOpen = async (chestId: string): Promise<CloudChestOpenOutcome> => {
+        const chest = useMobileGameStore.getState().chestQueue.find((candidate) => candidate.id === chestId && !candidate.opened);
+        if (!chest) return PENDING;
+        const operation = operationScope.begin();
+        if (!operation) return PENDING;
         setOpeningChestId(chestId);
         setErrorChestId(null);
+        errorRef.current = null;
         let key = idempotencyKeysRef.current.get(chestId);
         if (!key) {
             key = createMobileId();
             idempotencyKeysRef.current.set(chestId, key);
         }
         try {
+            const auth = await getGameAuthState();
+            if (!operation.isActive()) return PENDING;
+            if (auth.kind === 'unavailable' || operation.userId !== (auth.kind === 'authenticated' ? auth.userId : null)) {
+                errorRef.current = chestId; setErrorChestId(chestId); return PENDING;
+            }
             const { tag, equipment } = await runCloudChestOpen(chestId, key, {
-                openCloudChest,
+                openCloudChest: auth.kind === 'anonymous' ? async () => null
+                    : (id, retryKey) => openCloudChest(id, retryKey, { isActive: operation.isActive, expectedUserId: auth.userId }),
                 applyCloudChestResult,
                 discardSyncedChest,
                 localOpenChest,
-                allowLocalFallback: chestQueue.find((chest) => chest.id === chestId)?.origin !== 'cloud',
+                allowLocalFallback: auth.kind === 'anonymous' && chest.origin !== 'cloud',
+                isActive: operation.isActive,
             });
+            if (!operation.isActive()) return PENDING;
             if (tag === 'error') {
+                errorRef.current = chestId;
                 setErrorChestId(chestId);
                 return PENDING;
             }
@@ -137,19 +163,22 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
             }
             if (tag === 'discarded') return PENDING;
             return { status: 'opened', equipment };
+        } catch {
+            if (operation.isActive()) { errorRef.current = chestId; setErrorChestId(chestId); }
+            return PENDING;
         } finally {
-            setOpeningChestId(null);
+            if (operation.isActive()) setOpeningChestId(null);
+            operation.finish();
         }
     };
 
     const openChest = async (chestId: string): Promise<CloudChestOpenOutcome> => {
-        if (openingChestId) return PENDING;
         return runOpen(chestId);
     };
 
     const retry = async (): Promise<CloudChestOpenOutcome> => {
-        if (!errorChestId || openingChestId) return PENDING;
-        return runOpen(errorChestId);
+        if (!errorRef.current) return PENDING;
+        return runOpen(errorRef.current);
     };
 
     return { openingChestId, errorChestId, openChest, retry };

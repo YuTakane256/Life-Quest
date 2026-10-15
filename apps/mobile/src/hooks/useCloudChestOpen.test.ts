@@ -6,6 +6,7 @@
  * インスタンスを投げて検証する（表面的なモックにしない）。
  */
 import { describe, expect, it, vi } from 'vitest';
+vi.mock('../platform/auth', () => ({ getGameAuthState: vi.fn() }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -33,6 +34,7 @@ const dummyEquipment: Equipment = {
 
 function makeDeps(overrides: Partial<Parameters<typeof runCloudChestOpen>[2]> = {}) {
     return {
+        allowLocalFallback: true,
         openCloudChest: vi.fn(async () => null),
         applyCloudChestResult: vi.fn(() => dummyEquipment),
         discardSyncedChest: vi.fn(),

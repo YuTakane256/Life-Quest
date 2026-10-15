@@ -7,8 +7,8 @@
  * サーバー側で成功していた場合（レスポンスがネットワーク断で届かなかった等）
  * にサーバーと乖離した装備をローカルに表示してしまう危険がある。
  * そのため:
- * - `openCloudChest`が`null`を返す、またはstatus 404の場合は、旧ローカル
- *   宝箱だけをローカル`openChest`へフォールバックする
+ * - 匿名確定時のみ、旧ローカル宝箱をローカル`openChest`で開封する
+ * - 認証済み/判定不能時はnull/404でもローカル抽選へ切り替えない
  * - canonical pull由来（`origin: 'cloud'`）の宝箱はnull/404でもフォールバックせず
  *   再送・次回pullへ委ねる。サインイン中のサーバー正を端末抽選で上書きしないため
  * - `chest_already_opened`を返すstatus 409（サーバー側は既に正常）→ エラー扱い
@@ -23,6 +23,9 @@ import { useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
 import { openCloudChest, type CloudChestResult } from '../platform/gameCloud';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
+import { getGameAuthState } from '../platform/auth';
+import { useGameOperationScope } from './useGameOperationScope';
 
 export interface UseCloudChestOpenResult {
     /** 開封処理中のchestId（ボタン無効化用）。開封中でなければnull。 */
@@ -44,8 +47,9 @@ export interface CloudChestOpenDeps {
     ) => void;
     discardSyncedChest: (chestId: string) => void;
     localOpenChest: (chestId: string) => void;
-    /** canonical pull由来の宝箱は、404でも端末内の抽選へ戻さない。 */
+    /** 匿名確定かつlocal originの場合だけtrue。省略時は許可しない。 */
     allowLocalFallback?: boolean;
+    isActive?: () => boolean;
 }
 
 /**
@@ -68,18 +72,22 @@ export async function runCloudChestOpen(
     idempotencyKey: string,
     deps: CloudChestOpenDeps,
 ): Promise<CloudChestOpenOutcome> {
+    const isActive = deps.isActive ?? captureAuthSessionGuard();
+    if (!isActive()) return 'error';
     try {
         const result = await deps.openCloudChest(chestId, idempotencyKey);
+        if (!isActive()) return 'error';
         if (!result) {
-            if (deps.allowLocalFallback === false) return 'error';
+            if (deps.allowLocalFallback !== true) return 'error';
             deps.localOpenChest(chestId);
             return 'unconfigured-fallback';
         }
         deps.applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
         return 'applied';
     } catch (error) {
+        if (!isActive()) return 'error';
         if (error instanceof EdgeFunctionError && error.status === 404) {
-            if (deps.allowLocalFallback === false) return 'error';
+            if (deps.allowLocalFallback !== true) return 'error';
             deps.localOpenChest(chestId);
             return 'not-found-fallback';
         }
@@ -106,28 +114,46 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
     const localOpenChest = useGameStore((state) => state.openChest);
     const applyCloudChestResult = useGameStore((state) => state.applyCloudChestResult);
     const discardSyncedChest = useGameStore((state) => state.discardSyncedChest);
-    const chestQueue = useGameStore((state) => state.chestQueue);
     const [openingChestId, setOpeningChestId] = useState<string | null>(null);
     const [errorChestId, setErrorChestId] = useState<string | null>(null);
     const idempotencyKeysRef = useRef(new Map<string, string>());
+    const errorRef = useRef<string | null>(null);
+    const operationScope = useGameOperationScope(() => {
+        idempotencyKeysRef.current.clear(); errorRef.current = null;
+        setOpeningChestId(null); setErrorChestId(null);
+    });
 
     const runOpen = async (chestId: string): Promise<void> => {
+        const chest = useGameStore.getState().chestQueue.find((candidate) => candidate.id === chestId && !candidate.opened);
+        if (!chest) return;
+        const operation = operationScope.begin();
+        if (!operation) return;
         setOpeningChestId(chestId);
         setErrorChestId(null);
+        errorRef.current = null;
         let key = idempotencyKeysRef.current.get(chestId);
         if (!key) {
             key = crypto.randomUUID();
             idempotencyKeysRef.current.set(chestId, key);
         }
         try {
+            const auth = await getGameAuthState();
+            if (!operation.isActive()) return;
+            if (auth.kind === 'unavailable' || operation.userId !== (auth.kind === 'authenticated' ? auth.userId : null)) {
+                errorRef.current = chestId; setErrorChestId(chestId); return;
+            }
             const outcome = await runCloudChestOpen(chestId, key, {
-                openCloudChest,
+                openCloudChest: auth.kind === 'anonymous' ? async () => null
+                    : (id, retryKey) => openCloudChest(id, retryKey, { isActive: operation.isActive, expectedUserId: auth.userId }),
                 applyCloudChestResult,
                 discardSyncedChest,
                 localOpenChest,
-                allowLocalFallback: chestQueue.find((chest) => chest.id === chestId)?.origin !== 'cloud',
+                allowLocalFallback: auth.kind === 'anonymous' && chest.origin !== 'cloud',
+                isActive: operation.isActive,
             });
+            if (!operation.isActive()) return;
             if (outcome === 'error') {
+                errorRef.current = chestId;
                 setErrorChestId(chestId);
             } else if (outcome !== 'unconfigured-fallback') {
                 // 未接続時はサーバーに何も送っていないため、そのchestId用の
@@ -135,19 +161,21 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
                 // ようにする。applied/404/409は削除して良い）
                 idempotencyKeysRef.current.delete(chestId);
             }
+        } catch {
+            if (operation.isActive()) { errorRef.current = chestId; setErrorChestId(chestId); }
         } finally {
-            setOpeningChestId(null);
+            if (operation.isActive()) setOpeningChestId(null);
+            operation.finish();
         }
     };
 
     const openChest = async (chestId: string): Promise<void> => {
-        if (openingChestId) return;
         await runOpen(chestId);
     };
 
     const retry = (): void => {
-        if (!errorChestId || openingChestId) return;
-        void runOpen(errorChestId);
+        if (!errorRef.current) return;
+        void runOpen(errorRef.current);
     };
 
     return { openingChestId, errorChestId, openChest, retry };
