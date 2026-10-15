@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, notifyLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { cloudCacheKey, type CloudCache } from '@life-quest/core/cloudCache';
 import { cloudCursorKey, type PullBatch } from '@life-quest/core/cloudPull';
 import { createInactiveCloudSyncState } from '@life-quest/core/cloudSyncState';
@@ -120,6 +120,47 @@ for (const platform of [
     { name: 'Mobile', register: registerMobileCloudSyncHooks, active: getActiveMobileCloudSync, state: getMobileCloudSyncState, start: startMobileCloudSync },
 ]) {
     describe(`${platform.name} cloud sync session boundaries`, () => {
+        it('keeps an in-flight pull valid across a same-user notification', async () => {
+            cleanups.push(platform.register());
+            await notifyLogin('a');
+            await settle();
+            const response = deferred<{ data: PullBatch; error: null }>();
+            mocks.rpc.mockReturnValueOnce(response.promise);
+            const pull = platform.active()!.flush();
+            await settle();
+            await notifyLogin('a');
+            response.resolve({ data: batch('a'), error: null });
+            await pull;
+            expect(mocks.visibleTasks).toEqual(['a-task']);
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('2');
+        });
+
+        for (const transition of ['logout', 'switch'] as const) {
+            it(`invalidates the old pull before delayed ${transition} hooks reach sync shutdown`, async () => {
+                const gate = deferred<void>();
+                cleanups.push(registerAuthLifecycleHooks({
+                    onLogin: (userId) => userId === 'b' ? gate.promise : undefined,
+                    onLogout: () => gate.promise,
+                }));
+                cleanups.push(platform.register());
+                await notifyLogin('a');
+                await settle();
+                const response = deferred<{ data: PullBatch; error: null }>();
+                mocks.rpc.mockReturnValueOnce(response.promise);
+                const pullA = platform.active()!.flush();
+                await settle();
+                const changing = transition === 'logout' ? notifyLogout() : notifyLogin('b');
+                response.resolve({ data: batch('a', true), error: null });
+                await pullA;
+                expect(mocks.visibleTasks).toEqual([]);
+                expect(mocks.seeded).not.toHaveBeenCalled();
+                expect(mocks.storage.setItem).not.toHaveBeenCalled();
+                expect(mocks.rpc).toHaveBeenCalledTimes(1);
+                gate.resolve();
+                await changing;
+            });
+        }
+
         it('does not resume an old manual sync after its outbox retry finishes', async () => {
             cleanups.push(platform.register());
             await notifyLogin('a');

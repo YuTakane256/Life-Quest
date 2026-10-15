@@ -8,7 +8,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { AppState, type AppStateStatus } from 'react-native';
-import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
     applyPullBatchToCache,
     createEmptyCloudCache,
@@ -72,7 +72,8 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     let cache: CloudCache = createEmptyCloudCache();
     let stopped = false;
     const generation = ++cloudSyncGeneration;
-    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration;
+    const isAuthSessionCurrent = captureAuthSessionGuard();
+    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration && isAuthSessionCurrent();
     let pushState = getMobileCloudOutboxState();
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
     const publish = (): void => {

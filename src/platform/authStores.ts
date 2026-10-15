@@ -1,7 +1,7 @@
 /**
  * ログアウト時のストア即時クリア（#503で契約定義、ADR-009）。
  *
- * クラウド同期対象ストア（tasks/habits/game/title）を、ログアウトの一部として
+ * アカウントの表示用ストア（tasks/habits/game/title/stats/battle history）を、ログアウトの一部として
  * メモリ上で即座に初期状態へ戻す。別アカウントへの切り替えで前ユーザーの
  * データが画面・送信内容に残留することを防ぐ。
  *
@@ -17,6 +17,8 @@ import { sanitizeGameStoreState, useGameStore } from '../stores/useGameStore';
 import { invalidatePendingHabitEffects, sanitizeHabitStoreState, useHabitStore } from '../stores/useHabitStore';
 import { sanitizeTaskStoreState, useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
+import { sanitizeStatsStoreState, useStatsStore } from '../stores/useStatsStore';
+import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import { beginLoginBonusCloudSession, clearLoginBonusCloudSession } from '../stores/useLoginBonusStore';
 import { flushCompletionRewardWrites, resetCompletionRewardStorage, withCompletionRewardLock, withoutCompletionRewardPersistence } from './completionRewards';
 import { getWebLocalStorage } from './storage';
@@ -47,7 +49,8 @@ export async function prepareWebAnonymousSession(shouldContinue: () => boolean =
             if (!shouldContinue() || !hasPersistedCloudGame()) return;
             const storage = getWebLocalStorage();
             if (!storage) throw new Error('保存領域を利用できません。');
-            const slots = Object.fromEntries(['quest-board-game', 'quest-board-tasks', 'quest-board-habits', 'quest-board-title']
+            const slots = Object.fromEntries(['quest-board-game', 'quest-board-tasks', 'quest-board-habits', 'quest-board-title',
+                'quest-board-stats', 'quest-board-battle-history']
                 .map((key) => [key, storage.getItem(key)]));
             // Do not overwrite older recovery copies. If this write fails, keep the original cache.
             storage.setItem(`${CLOUD_SESSION_RECOVERY_PREFIX}${generateId()}`, JSON.stringify({
@@ -91,6 +94,8 @@ export function clearWebCloudStores(): void {
         completionRewardError: null,
     }));
     useTitleStore.setState({ activeTitle: null });
+    useStatsStore.setState(sanitizeStatsStoreState(undefined));
+    useBattleHistoryStore.getState().clearHistory();
 }
 
 /**
@@ -98,12 +103,24 @@ export function clearWebCloudStores(): void {
  * 戻り値で解除できる（テスト用）。
  */
 export function registerWebAuthStoreHooks(): () => void {
+    let activeUserId: string | null = null;
     return registerAuthLifecycleHooks({
         onLogin: (userId) => {
+            // Initial login preserves the anonymous migration source; repeated same-user
+            // notifications preserve in-session progress. A -> B must clear before B's
+            // migration/sync hooks can inspect the previous account's display cache.
+            const switchedSeededAccount = activeUserId !== null && activeUserId !== userId && cloudSessionSeeded;
+            activeUserId = userId;
+            if (switchedSeededAccount) {
+                clearWebCloudStores();
+                cloudSessionSeeded = false;
+            }
             // クラウド同期の開始より先に、前アカウントの演出・失敗状態を隔離する。
             beginLoginBonusCloudSession(userId);
+            if (switchedSeededAccount) return flushCompletionRewardWrites();
         },
         onLogout: () => {
+            activeUserId = null;
             // cloudSessionSeededの有無に関係なくログインボーナスはアカウント固有。
             clearLoginBonusCloudSession();
             if (!cloudSessionSeeded) return; // クラウド未シードならローカルデータを守る

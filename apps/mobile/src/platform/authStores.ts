@@ -9,6 +9,8 @@ import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { invalidatePendingHabitEffects, useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { useMobileStatsStore } from '../stores/useMobileStatsStore';
+import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { beginMobileLoginBonusCloudSession, clearMobileLoginBonusCloudSession } from '../stores/useMobileLoginBonusStore';
 
 let cloudSessionSeeded = false;
@@ -29,15 +31,27 @@ export function clearMobileCloudStores(): void {
     useMobileTaskStore.setState({ tasks: [] });
     useMobileHabitStore.setState({ habits: [], records: [], restDays: [], rewardEligibleDates: [] });
     useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), lastLevelUp: null });
+    useMobileStatsStore.setState({ taskXpLog: {}, habitLog: {}, seeded: false });
+    useMobileTitleStore.setState({ activeTitle: null });
 }
 
 /** ログアウトフックを登録する。アプリ起動時に一度だけ呼ぶ。 */
 export function registerMobileAuthStoreHooks(): () => void {
+    let activeUserId: string | null = null;
     return registerAuthLifecycleHooks({
         onLogin: (userId) => {
+            // Keep anonymous migration data and same-user refreshes, but never let
+            // B's migration/sync hooks read A's already-seeded display cache.
+            const switchedSeededAccount = activeUserId !== null && activeUserId !== userId && cloudSessionSeeded;
+            activeUserId = userId;
+            if (switchedSeededAccount) {
+                clearMobileCloudStores();
+                cloudSessionSeeded = false;
+            }
             beginMobileLoginBonusCloudSession(userId);
         },
         onLogout: () => {
+            activeUserId = null;
             clearMobileLoginBonusCloudSession();
             if (!cloudSessionSeeded) return; // クラウド未シードならローカルデータを守る
             clearMobileCloudStores();

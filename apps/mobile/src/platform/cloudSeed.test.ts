@@ -76,7 +76,7 @@ describe('applyCloudCacheToMobileStores（データ消失パターンの回帰�
             ],
         });
 
-        applyCloudCacheToMobileStores(cache);
+        expect(applyCloudCacheToMobileStores(cache)).toBe(true);
         expect(useMobileStatsStore.getState().taskXpLog).toEqual({ '2026-07-01': 30 });
         expect(useMobileStatsStore.getState().habitLog).toEqual({ '2026-07-01': { count: 2, allComplete: true } });
     });

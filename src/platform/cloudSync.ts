@@ -13,7 +13,7 @@
  * セクション単位で「クラウドが正か」を判定し（getSeedableSections）、
  * 初期行しか無いクラウド状態で既存ローカルデータを消さない。
  */
-import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
     applyPullBatchToCache,
     buildCanonicalGameSnapshot,
@@ -140,7 +140,9 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     let cache: CloudCache = createEmptyCloudCache();
     let stopped = false;
     const generation = ++cloudSyncGeneration;
-    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration;
+    // Invalidate at notification start, not only once later sync hooks reach stop().
+    const isAuthSessionCurrent = captureAuthSessionGuard();
+    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration && isAuthSessionCurrent();
     let pushState = getWebCloudOutboxState();
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
     const publish = (): void => {
