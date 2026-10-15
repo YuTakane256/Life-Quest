@@ -26,6 +26,49 @@ function makeDeps(batches: PullBatch[]) {
 }
 
 describe('createCloudPullRunner', () => {
+    it.each(['read', 'fetch', 'apply', 'cursor'] as const)('stops at the %s boundary without another page or queued rerun', async (boundary) => {
+        let active = true;
+        let release!: () => void;
+        let entered!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const ready = new Promise<void>((resolve) => { entered = resolve; });
+        const steps: string[] = [];
+        const pause = async (step: string) => {
+            steps.push(step);
+            if (step === boundary) { entered(); await gate; }
+        };
+        const runner = createCloudPullRunner({
+            isActive: () => active,
+            readCursor: async () => { await pause('read'); return 0; },
+            fetchBatch: async () => { await pause('fetch'); return { next_cursor: 1, has_more: true }; },
+            applyBatch: async () => { await pause('apply'); },
+            writeCursor: async () => { await pause('cursor'); },
+        });
+        const pull = runner.flush();
+        await ready;
+        runner.requestPull();
+        active = false;
+        release();
+        await pull;
+        runner.requestPull();
+        await runner.flush();
+        const order = ['read', 'fetch', 'apply', 'cursor'];
+        expect(steps).toEqual(order.slice(0, order.indexOf(boundary) + 1));
+    });
+
+    it('does no work for an inactive owner and still retries failures for an active owner', async () => {
+        let active = false;
+        const { deps, applied } = makeDeps([{ next_cursor: 3, has_more: false }]);
+        const runner = createCloudPullRunner({ ...deps, isActive: () => active });
+        await runner.flush();
+        expect(deps.fetchBatch).not.toHaveBeenCalled();
+        active = true;
+        deps.fetchBatch.mockRejectedValueOnce(new Error('offline'));
+        await expect(runner.flush()).rejects.toThrow('offline');
+        await runner.flush();
+        expect(applied).toHaveLength(1);
+    });
+
     it('has_moreが尽きるまで繰り返し、next_cursorへのみ前進する', async () => {
         const { deps, applied, cursorWrites, getCursor } = makeDeps([
             { next_cursor: 3, has_more: true, tasks: [1, 2, 3] },
