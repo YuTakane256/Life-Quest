@@ -14,7 +14,7 @@
  */
 import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { sanitizeGameStoreState, useGameStore } from '../stores/useGameStore';
-import { sanitizeHabitStoreState, useHabitStore } from '../stores/useHabitStore';
+import { invalidatePendingHabitEffects, sanitizeHabitStoreState, useHabitStore } from '../stores/useHabitStore';
 import { sanitizeTaskStoreState, useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
 import { beginLoginBonusCloudSession, clearLoginBonusCloudSession } from '../stores/useLoginBonusStore';
@@ -81,6 +81,7 @@ export function resetCloudSessionSeeded(): void {
 
 /** クラウド同期対象の全Webストアをメモリ上で初期状態へ戻す。 */
 export function clearWebCloudStores(): void {
+    invalidatePendingHabitEffects();
     useTaskStore.setState({ ...sanitizeTaskStoreState(undefined), pendingCompletions: [] });
     useHabitStore.setState(sanitizeHabitStoreState(undefined));
     resetCompletionRewardStorage(() => useGameStore.setState({

@@ -7,7 +7,7 @@
 import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
-import { useMobileHabitStore } from '../stores/useMobileHabitStore';
+import { invalidatePendingHabitEffects, useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { beginMobileLoginBonusCloudSession, clearMobileLoginBonusCloudSession } from '../stores/useMobileLoginBonusStore';
 
@@ -25,6 +25,7 @@ export function resetCloudSessionSeeded(): void {
 
 /** クラウド同期対象の全Mobileストアをメモリ上で初期状態へ戻す。 */
 export function clearMobileCloudStores(): void {
+    invalidatePendingHabitEffects();
     useMobileTaskStore.setState({ tasks: [] });
     useMobileHabitStore.setState({ habits: [], records: [], restDays: [], rewardEligibleDates: [] });
     useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), lastLevelUp: null });

@@ -12,6 +12,8 @@ import { useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
 import { useLoginBonusStore } from '../stores/useLoginBonusStore';
 import { useGameStore } from '../stores/useGameStore';
+import { useHabitStore } from '../stores/useHabitStore';
+import { useStatsStore } from '../stores/useStatsStore';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { flushCompletionRewardWrites, getCompletionRewardGeneration, resetCompletionRewardStorage, seedCloudCompletionRewardStorage } from './completionRewards';
 
@@ -24,6 +26,22 @@ function task(id: string) {
 }
 
 describe('Webログアウト時のストアクリア（ADR-009）', () => {
+    it('ストア直接クリア後は、SDKのログアウト通知前でも遅延した習慣集計を反映しない', async () => {
+        vi.useFakeTimers();
+        try {
+            useStatsStore.setState({ taskXpLog: {}, habitLog: {} });
+            useHabitStore.setState({ habits: [{ id: 'old', name: 'Old', categoryId: 'health', createdAt: '2026-10-15T00:00:00Z' }],
+                dailyRecords: [], restDays: [], allCompleteRewardDates: [] });
+            useHabitStore.getState().toggleHabitCompletion('old', '2026-10-15');
+            vi.runOnlyPendingTimers(); // Callback is now waiting for its stats import.
+            clearWebCloudStores();
+            await vi.dynamicImportSettled();
+            expect(useGameStore.getState().character.totalXp).toBe(0);
+            expect(useGameStore.getState().gachaCount).toBe(0);
+            expect(useStatsStore.getState().habitLog).toEqual({});
+        } finally { vi.useRealTimers(); }
+    });
+
     beforeEach(() => {
         resetCloudSessionSeeded();
         useTaskStore.setState({ tasks: [task('local-1')], pendingCompletions: [] });
