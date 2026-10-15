@@ -15,8 +15,8 @@ import type { StoreApi, UseBoundStore } from 'zustand';
 import { captureAuthSessionGuard, captureAuthSessionScope, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { preMigrationBackupKey } from '@life-quest/core/cloudImport';
 import { loadCloudCache, type CloudCache } from '@life-quest/core/cloudCache';
-import { sanitizeHabitCollection, sanitizeHabitRecords, type Habit, type HabitDailyRecord } from '@life-quest/core/habits';
-import { sanitizeTaskCollection, type Task } from '@life-quest/core/tasks';
+import { HABIT_LIMITS, sanitizeHabitCollection, sanitizeHabitRecords, type Habit, type HabitDailyRecord } from '@life-quest/core/habits';
+import { TASK_LIMITS, sanitizeTaskCollection, type Task } from '@life-quest/core/tasks';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
@@ -174,7 +174,12 @@ export async function getPendingMobileContent(userId: string): Promise<PendingMo
     const habits = [...new Map([...backup.habits, ...useMobileHabitStore.getState().habits].map((habit) => [habit.id, habit])).values()];
     const dailyRecords = [...new Map([...backup.dailyRecords, ...useMobileHabitStore.getState().records]
         .map((record) => [JSON.stringify([record.habitId, record.date]), record])).values()];
-    const payload = JSON.stringify(detectPendingMobileContent(cache, { tasks, habits, dailyRecords }));
+    const pending = detectPendingMobileContent(cache, { tasks, habits, dailyRecords });
+    if (pending.tasks.length > TASK_LIMITS.maxTasks || pending.habits.length > HABIT_LIMITS.maxHabits
+        || pending.dailyRecords.length > HABIT_LIMITS.maxRecords) {
+        throw new EdgeFunctionError('import-limit-exceeded', `統合候補が1回の取り込み上限（タスク${TASK_LIMITS.maxTasks}件・習慣${HABIT_LIMITS.maxHabits}件・記録${HABIT_LIMITS.maxRecords}件）を超えています。分割移行が必要です。端末データとバックアップは削除せず保持しています。`);
+    }
+    const payload = JSON.stringify(pending);
     const content = JSON.parse(payload) as PendingMobileContent;
     issuedImports.set(content, { userId, isCurrent: scope.isCurrent, payload, key: createMobileId(), promise: null });
     return content;

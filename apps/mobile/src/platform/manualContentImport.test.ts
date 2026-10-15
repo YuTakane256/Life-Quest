@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { cloudCacheKey } from '@life-quest/core/cloudCache';
-import { preMigrationBackupKey } from '@life-quest/core/cloudImport';
+import { buildMobileContentPayload, preMigrationBackupKey } from '@life-quest/core/cloudImport';
 import { createEdgeFunctionInvoker, type EdgeFunctionInvoker } from '@life-quest/core/edgeFunctions';
+import { HABIT_LIMITS } from '@life-quest/core/habits';
+import { TASK_LIMITS } from '@life-quest/core/tasks';
 
 const mocks = vi.hoisted(() => ({ values: new Map<string, string>(), getItem: vi.fn(),
     user: null as { userId: string; email: string | null } | null, invoke: null as EdgeFunctionInvoker | null }));
@@ -45,6 +47,37 @@ beforeEach(async () => {
 afterEach(() => { resetAuthLifecycleHooks(); vi.restoreAllMocks(); });
 
 describe('Mobile手動統合の候補・承認・再試行', () => {
+    it('上限ちょうどの習慣と先頭の記録はサーバー用payloadでも欠落しない', async () => {
+        const habits = Array.from({ length: HABIT_LIMITS.maxHabits }, (_, i) => ({
+            id: `h-${i}`, name: `habit ${i}`, categoryId: 'health', createdAt: '2026-10-15T00:00:00Z',
+        }));
+        mocks.values.set(preMigrationBackupKey('a'), JSON.stringify({ tasks: [], habits,
+            dailyRecords: [{ habitId: 'h-0', date: '2026-10-15', completed: true, memo: 'retained' }] }));
+        const pending = await getPendingMobileContent('a');
+        const payload = buildMobileContentPayload(pending);
+        expect(pending.habits).toHaveLength(HABIT_LIMITS.maxHabits);
+        expect(payload.habits).toHaveLength(HABIT_LIMITS.maxHabits);
+        expect(payload.habits[0].client_id).toBe('h-0');
+        expect(payload.habit_logs).toHaveLength(1);
+    });
+
+    it.each(['tasks', 'habits', 'records'])('backupとliveの合成%sが上限を超えたら送信前に明示エラーにする', async (kind) => {
+        const h = { id: 'h', name: 'habit', categoryId: 'health', createdAt: '2026-10-15T00:00:00Z' };
+        const backup = { tasks: kind === 'tasks' ? Array.from({ length: TASK_LIMITS.maxTasks }, (_, i) => task(`saved-${i}`)) : [],
+            habits: kind === 'habits' ? Array.from({ length: HABIT_LIMITS.maxHabits }, (_, i) => ({ ...h, id: `saved-${i}` })) : [h],
+            dailyRecords: kind === 'records' ? Array.from({ length: HABIT_LIMITS.maxRecords }, (_, i) => ({
+                habitId: 'h', date: new Date(Date.UTC(1800, 0, i + 1)).toISOString().slice(0, 10), completed: true, memo: '',
+            })) : [] };
+        const original = JSON.stringify(backup);
+        mocks.values.set(preMigrationBackupKey('a'), original);
+        useMobileTaskStore.setState({ tasks: kind === 'tasks' ? [task('one-extra')] : [] });
+        useMobileHabitStore.setState({ habits: kind === 'habits' ? [{ ...h, id: 'one-extra' }] : [h],
+            records: kind === 'records' ? [{ habitId: 'h', date: '2026-10-15', completed: true, memo: '' }] : [] });
+        await expect(getPendingMobileContent('a')).rejects.toThrow('取り込み上限');
+        expect(mocks.values.get(preMigrationBackupKey('a'))).toBe(original);
+        expect(fetchFn).not.toHaveBeenCalled();
+    });
+
     it('同じIDの退避内容より現在の編集を優先し、記録も二重にしない', async () => {
         mocks.values.set(preMigrationBackupKey('a'), JSON.stringify({ tasks: [task('local', 'old name')],
             habits: [{ id: 'h', name: 'old habit', categoryId: 'health', createdAt: '2026-10-15T00:00:00Z' }],

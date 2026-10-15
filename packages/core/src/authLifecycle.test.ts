@@ -8,6 +8,7 @@ import {
     registerAuthLifecycleHooks,
     resetAuthLifecycleHooks,
     subscribeAuthSessionScope,
+    waitForAuthLifecycleSettled,
 } from './authLifecycle.ts';
 
 afterEach(() => {
@@ -15,6 +16,38 @@ afterEach(() => {
 });
 
 describe('authLifecycle', () => {
+    it('UI wait handles published to scope subscribers resolve after asynchronous initialization', async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        let wait!: Promise<void>;
+        subscribeAuthSessionScope(() => { wait = waitForAuthLifecycleSettled(); });
+        registerAuthLifecycleHooks({ onLogin: () => gate });
+        const login = notifyLogin('a');
+        const done = vi.fn();
+        void wait.then(done);
+        await Promise.resolve();
+        expect(done).not.toHaveBeenCalled();
+        release();
+        await Promise.all([login, wait]);
+        expect(done).toHaveBeenCalledOnce();
+    });
+
+    it('a superseded transition finishing cannot release the newer initialization wait handle', async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        let newer!: Promise<void>;
+        subscribeAuthSessionScope((scope) => { if (scope.userId === 'a') newer = notifyLogin('b'); });
+        registerAuthLifecycleHooks({ onLogin: () => gate });
+        await notifyLogin('a'); // Superseded A has no remaining hooks, B is still blocked.
+        const done = vi.fn();
+        const wait = waitForAuthLifecycleSettled().then(done);
+        await Promise.resolve();
+        expect(done).not.toHaveBeenCalled();
+        release();
+        await Promise.all([newer, wait]);
+        expect(done).toHaveBeenCalledOnce();
+    });
+
     it('scope subscribers run before asynchronous lifecycle hooks and ignore same-user duplicates', async () => {
         const events: string[] = [];
         const stop = subscribeAuthSessionScope((scope) => { events.push(`scope:${scope.userId}`); });

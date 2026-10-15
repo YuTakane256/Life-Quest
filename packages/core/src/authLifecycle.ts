@@ -25,6 +25,7 @@ const registeredHooks = new Set<AuthLifecycleHooks>();
 let lifecycleGeneration = 0;
 let scopeGeneration = 0;
 let scopeUserId: string | null = null;
+let lifecycleSettled: Promise<void> = Promise.resolve();
 const scopeListeners = new Set<(scope: AuthSessionScope) => void>();
 
 export interface AuthSessionScope {
@@ -40,6 +41,11 @@ export function captureAuthSessionScope(): AuthSessionScope {
 export function subscribeAuthSessionScope(listener: (scope: AuthSessionScope) => void): () => void {
     scopeListeners.add(listener);
     return () => { scopeListeners.delete(listener); };
+}
+
+/** Detached UI may wait for initialization. Never await this from a lifecycle hook itself. */
+export function waitForAuthLifecycleSettled(): Promise<void> {
+    return lifecycleSettled;
 }
 
 /** Compare lifecycle scope only; this is not an authentication/authorization check. */
@@ -72,6 +78,7 @@ export function resetAuthLifecycleHooks(): void {
     registeredHooks.clear();
     scopeListeners.clear();
     lifecycleGeneration = 0;
+    lifecycleSettled = Promise.resolve();
     scopeUserId = null;
     scopeGeneration += 1; // Teardown must invalidate already captured work.
 }
@@ -93,14 +100,22 @@ async function runHooks(
 
 /** セッション確立を全フックへ通知する。 */
 export function notifyLogin(userId: string): Promise<void> {
-    const generation = ++lifecycleGeneration;
-    updateScope(userId);
-    return runHooks((hooks) => hooks.onLogin?.(userId), () => generation === lifecycleGeneration);
+    return notifyTransition(userId, (hooks) => hooks.onLogin?.(userId));
 }
 
 /** ログアウトを全フックへ通知する。全フック完了後に解決する。 */
 export function notifyLogout(): Promise<void> {
+    return notifyTransition(null, (hooks) => hooks.onLogout?.());
+}
+
+function notifyTransition(userId: string | null, run: (hooks: AuthLifecycleHooks) => void | Promise<void>): Promise<void> {
     const generation = ++lifecycleGeneration;
-    updateScope(null);
-    return runHooks((hooks) => hooks.onLogout?.(), () => generation === lifecycleGeneration);
+    let finish!: () => void;
+    // Publish before synchronous hooks/subscribers. Reentrant transitions replace
+    // this handle; completing older work must not replace the newer wait handle.
+    lifecycleSettled = new Promise<void>((resolve) => { finish = resolve; });
+    updateScope(userId);
+    const completed = runHooks(run, () => generation === lifecycleGeneration);
+    void completed.then(finish, finish);
+    return completed;
 }

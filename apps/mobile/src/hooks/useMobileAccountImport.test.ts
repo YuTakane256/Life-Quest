@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import type { MobileImportResult, PendingMobileContent } from '../platform/cloudMigration';
+import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 
 const mocks = vi.hoisted(() => ({ user: vi.fn(), pending: vi.fn(), approve: vi.fn() }));
 vi.mock('../platform/auth', () => ({ getCurrentUser: mocks.user }));
@@ -36,6 +37,28 @@ beforeEach(async () => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals(); });
 
 describe('Mobile設定画面のアカウント・統合状態', () => {
+    it('上限超過の明示エラーを一般的な通信エラーへ隠さず、候補を送信しない', async () => {
+        mocks.pending.mockRejectedValueOnce(new EdgeFunctionError('import-limit-exceeded', '取り込み上限を超えています。データは保持しています。'));
+        await mount();
+        expect(latest.importMessage).toContain('取り込み上限');
+        expect(latest.pendingContent).toBeNull();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+
+    it('ログイン初期化中のmountはバックアップ作成完了まで候補取得を待機する', async () => {
+        const gate = deferred<void>();
+        registerAuthLifecycleHooks({ onLogin: () => gate.promise });
+        const loggingIn = notifyLogin('a');
+        mocks.pending.mockResolvedValue({ tasks: [], habits: [], dailyRecords: [] });
+        await mount();
+        expect(mocks.pending).not.toHaveBeenCalled();
+        expect(latest.checking).toBe(true);
+        mocks.pending.mockResolvedValue(content('backed-up-after-hydration'));
+        await act(async () => { gate.resolve(); await loggingIn; });
+        expect(latest.pendingContent?.tasks[0].id).toBe('backed-up-after-hydration');
+        expect(latest.checking).toBe(false);
+    });
+
     it('同一ユーザー再通知で失敗後の承認候補と再送単位を作り直さない', async () => {
         await mount();
         const original = latest.pendingContent;

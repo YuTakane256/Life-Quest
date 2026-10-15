@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { captureAuthSessionScope, registerAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, registerAuthLifecycleHooks, subscribeAuthSessionScope, waitForAuthLifecycleSettled } from '@life-quest/core/authLifecycle';
+import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import { getCurrentUser, type AuthUserInfo } from '../platform/auth';
 import { approveMobileContentImport, getPendingMobileContent, type PendingMobileContent } from '../platform/cloudMigration';
 
@@ -40,6 +41,10 @@ export function useMobileAccountImport() {
         if (scope.userId === null) { clear(); return; }
         setChecking(true);
         try {
+            // Mounting during login must not finalize empty candidates before backup creation.
+            // Auth hooks launch this refresh detached, so waiting cannot block their completion.
+            await waitForAuthLifecycleSettled();
+            if (!active()) return;
             const user = await getCurrentUser();
             if (!active()) return;
             if (user?.userId !== scope.userId) { clear(); return; }
@@ -48,8 +53,9 @@ export function useMobileAccountImport() {
             if (!active()) return;
             pendingRef.current = pending.tasks.length > 0 || pending.habits.length > 0 ? pending : null;
             setPendingContent(pendingRef.current);
-        } catch {
-            if (active()) setImportMessage('端末データの確認に失敗しました。接続・保存環境を確認して再確認してください。');
+        } catch (error) {
+            if (active()) setImportMessage(error instanceof EdgeFunctionError && error.code === 'import-limit-exceeded'
+                ? error.message : '端末データの確認に失敗しました。接続・保存環境を確認して再確認してください。');
         } finally {
             if (active()) setChecking(false);
         }
