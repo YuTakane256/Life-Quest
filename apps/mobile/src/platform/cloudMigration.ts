@@ -12,7 +12,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { preMigrationBackupKey } from '@life-quest/core/cloudImport';
 import { loadCloudCache, type CloudCache } from '@life-quest/core/cloudCache';
 import type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
@@ -58,20 +58,35 @@ async function waitForAllStoresHydrated(timeoutMs?: number): Promise<boolean> {
     return results.every(Boolean);
 }
 
+interface BackupAttempt {
+    isCurrent: () => boolean;
+    promise: Promise<void>;
+}
+const backupAttempts = new Map<string, BackupAttempt>();
+
 /**
- * ローカル全状態のバックアップを（未保存の場合のみ）保存する。
- * 3ストア全てのhydration完了を待ってから読む（未hydrate状態の空データを
- * 確定保存しないため）。hydrateしないままタイムアウトした場合は保存を
- * スキップし、次回ログイン時に再試行する（バックアップキーが未作成のため
- * 「初回のみ」の判定に引っかからない）。
- * timeoutMsはテスト用（既定10秒）。
+ * ローカル全状態を初回のみ保存する。同じ認証スコープの重複通知は待機を共有する。
+ * 3ストアのhydration完了前に空データを確定保存せず、スコープが変わったら保存しない。
+ * timeoutMs（既定10秒）を超えた場合は未保存のまま次回ログインの再試行へ委ねる。
  */
-export async function ensurePreMigrationBackup(userId: string, timeoutMs?: number): Promise<void> {
+export function ensurePreMigrationBackup(userId: string, timeoutMs?: number): Promise<void> {
+    const pending = backupAttempts.get(userId);
+    if (pending?.isCurrent()) return pending.promise;
+    const attempt: BackupAttempt = { isCurrent: captureAuthSessionGuard(), promise: Promise.resolve() };
+    backupAttempts.set(userId, attempt);
+    attempt.promise = savePreMigrationBackup(userId, attempt.isCurrent, timeoutMs).finally(() => {
+        if (backupAttempts.get(userId) === attempt) backupAttempts.delete(userId);
+    });
+    return attempt.promise;
+}
+
+async function savePreMigrationBackup(userId: string, isCurrent: () => boolean, timeoutMs?: number): Promise<void> {
     const key = preMigrationBackupKey(userId);
     const existing = await AsyncStorage.getItem(key);
-    if (existing !== null) return; // 初回のみ。既存バックアップは上書きしない
+    if (!isCurrent() || existing !== null) return; // 初回のみ。既存バックアップは上書きしない
 
     const hydrated = await waitForAllStoresHydrated(timeoutMs);
+    if (!isCurrent()) return;
     if (!hydrated) {
         console.warn('pre-migration backup skipped: stores did not hydrate in time (will retry next login)');
         return;
@@ -174,10 +189,11 @@ export async function approveMobileContentImport(content: PendingMobileContent):
 export function registerMobileCloudMigrationHooks(): () => void {
     return registerAuthLifecycleHooks({
         onLogin: async (userId) => {
+            const isCurrent = captureAuthSessionGuard();
             try {
                 await ensurePreMigrationBackup(userId);
             } catch (error) {
-                console.warn('pre-migration backup failed', error);
+                if (isCurrent()) console.warn('pre-migration backup failed', error);
             }
         },
     });

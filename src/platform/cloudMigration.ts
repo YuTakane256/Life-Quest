@@ -6,7 +6,7 @@
  * 初回クラウド移行は必ずWebが基準（platform='web'）。
  * サーバー側が二重取り込みを防止するため、複数タブ・再試行でも安全。
  */
-import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import type { ImportSnapshotInput } from '@life-quest/core/cloudImport';
 import { getWebEdgeFunctionInvoker } from './edgeFunctions';
 import { getWebSupabaseClient } from './supabase';
@@ -67,11 +67,16 @@ export function buildWebImportSnapshot(): ImportSnapshotInput {
     };
 }
 
-let importAttemptedFor: string | null = null;
+interface ImportAttempt {
+    userId: string;
+    isCurrent: () => boolean;
+    promise: Promise<boolean>;
+}
+let importAttempt: ImportAttempt | null = null;
 
 /** テスト用。 */
 export function resetWebCloudImportState(): void {
-    importAttemptedFor = null;
+    importAttempt = null;
 }
 
 /**
@@ -79,33 +84,43 @@ export function resetWebCloudImportState(): void {
  * 成否に関わらずアプリの動作は継続する（失敗時は次回ログインで再試行される）。
  * 移行を実行または確認済みなら true を返す。
  */
-export async function maybeRunWebCloudImport(userId: string): Promise<boolean> {
-    if (importAttemptedFor === userId) return false; // 同一セッション内の重複通知を無視
+export function maybeRunWebCloudImport(userId: string): Promise<boolean> {
+    // A repeated notification must await the same migration, not let sync overtake it.
+    if (importAttempt?.userId === userId && importAttempt.isCurrent()) return importAttempt.promise;
     const client = getWebSupabaseClient();
     const invoker = getWebEdgeFunctionInvoker();
-    if (!client || !invoker) return false;
-    importAttemptedFor = userId;
+    if (!client || !invoker) return Promise.resolve(false);
+    const attempt: ImportAttempt = { userId, isCurrent: captureAuthSessionGuard(), promise: Promise.resolve(false) };
+    importAttempt = attempt;
+    const isCurrent = (): boolean => importAttempt === attempt && attempt.isCurrent();
 
-    try {
-        const { data: profile, error } = await client
-            .from('profiles')
-            .select('imported_at')
-            .eq('user_id', userId)
-            .single<{ imported_at: string | null }>();
-        if (error || !profile) return false;
-        if (profile.imported_at !== null) return true; // 移行済み
+    const run = async (): Promise<boolean> => {
+        try {
+            const { data: profile, error } = await client
+                .from('profiles')
+                .select('imported_at')
+                .eq('user_id', userId)
+                .single<{ imported_at: string | null }>();
+            if (!isCurrent() || error || !profile) return false;
+            if (profile.imported_at !== null) return true; // 移行済み
 
-        await invoker('import_snapshot', {
-            platform: 'web',
-            snapshot: buildWebImportSnapshot(),
-            idempotencyKey: `web-import-${userId}`,
-        });
-        return true;
-    } catch (error) {
-        console.warn('web cloud import failed (will retry next login)', error);
-        importAttemptedFor = null; // 失敗時は次のログイン通知で再試行できるようにする
-        return false;
-    }
+            await invoker('import_snapshot', {
+                platform: 'web',
+                snapshot: buildWebImportSnapshot(),
+                idempotencyKey: `web-import-${userId}`,
+            }, { isActive: isCurrent });
+            return isCurrent();
+        } catch (error) {
+            if (isCurrent()) console.warn('web cloud import failed (will retry next login)', error);
+            return false;
+        }
+    };
+    attempt.promise = run().then((succeeded) => {
+        // An old failure must not reset the newer user's in-flight/completed attempt.
+        if (!succeeded && importAttempt === attempt) importAttempt = null;
+        return succeeded;
+    });
+    return attempt.promise;
 }
 
 /**
