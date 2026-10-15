@@ -64,6 +64,8 @@ export interface OutboxDeps {
     storage: RepositoryStorage;
     /** user_id別namespaceの保存キー（cloudOutboxKey(userId)） */
     storageKey: string;
+    /** 認証スコープが失効したら、停止フックを待たず新しい送信を防ぐ。 */
+    isActive?: () => boolean;
     /** 1opを送信する。ネットワーク断は permanent:false、4xx系は permanent:true */
     send: (op: OutboxOp) => Promise<OutboxSendResult>;
     /** 恒久失敗したopの楽観更新を巻き戻す（任意） */
@@ -134,8 +136,10 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
 
     let ops: OutboxOp[] = [];
     let stopped = false;
+    const canRun = (): boolean => !stopped && (deps.isActive?.() ?? true);
     let running: Promise<void> | null = null;
     let dirty = false;
+    let pendingWrites: Promise<void> = Promise.resolve();
     let lastPushSuccessAt: string | null = null;
     const listeners = new Set<(state: OutboxPublicState) => void>();
 
@@ -159,8 +163,12 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
         listeners.forEach((listener) => listener(state));
     };
 
-    const persist = async (): Promise<void> => {
-        await deps.storage.setItem(deps.storageKey, JSON.stringify({ ops } satisfies PersistedOutbox));
+    const persist = (): Promise<void> => {
+        // 遅い旧スナップショットが新しい保存を上書きしないよう直列化する。
+        const value = JSON.stringify({ ops } satisfies PersistedOutbox);
+        const write = pendingWrites.then(() => deps.storage.setItem(deps.storageKey, value));
+        pendingWrites = write.then(() => {}, () => {});
+        return write;
     };
 
     const setStatus = (opId: string, status: OutboxOpStatus, failure?: OutboxFailure): void => {
@@ -189,19 +197,25 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
             op.status === 'pending' && op.dependsOn.includes(failedId));
         for (const dependent of dependents) {
             setStatus(dependent.opId, 'failed', { kind: 'dependency', occurredAt: now() });
-            await deps.onPermanentFailure?.(ops.find((op) => op.opId === dependent.opId)!);
+            if (canRun()) await deps.onPermanentFailure?.(ops.find((op) => op.opId === dependent.opId)!);
             await cascadeFailure(dependent.opId);
         }
     };
 
     const drainLoop = async (): Promise<void> => {
         for (;;) {
-            if (stopped) return;
+            if (!canRun()) return;
             const op = nextSendable();
             if (!op) return;
 
             setStatus(op.opId, 'inflight');
             await persist();
+
+            if (!canRun()) {
+                setStatus(op.opId, 'pending');
+                await persist();
+                return;
+            }
 
             let result: OutboxSendResult;
             try {
@@ -210,7 +224,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
                 result = { ok: false, permanent: false, failureKind: 'network', error: error instanceof Error ? error.message : 'send failed' };
             }
 
-            if (stopped) {
+            if (!canRun()) {
                 // ログアウト等による中断: inflightのまま放置せずpendingへ戻す
                 setStatus(op.opId, 'pending');
                 await persist();
@@ -231,7 +245,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
                     result.failureKind === 'conflict' ? 'conflict' : 'failed',
                     { kind: result.failureKind ?? 'unknown', occurredAt: now() },
                 );
-                await deps.onPermanentFailure?.(ops.find((candidate) => candidate.opId === op.opId)!);
+                if (canRun()) await deps.onPermanentFailure?.(ops.find((candidate) => candidate.opId === op.opId)!);
                 await cascadeFailure(op.opId);
                 await persist();
                 continue; // 依存しない後続は送り続ける
@@ -253,7 +267,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
                 do {
                     dirty = false;
                     await drainLoop();
-                } while (dirty && !stopped);
+                } while (dirty && canRun());
             } finally {
                 running = null;
             }
@@ -262,7 +276,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
     };
 
     const requestDrainInternal = (): void => {
-        if (stopped) return;
+        if (!canRun()) return;
         if (running) {
             dirty = true; // 実行中のdrainが終わったらもう1周する（enqueue取りこぼし防止）
             return;
@@ -286,6 +300,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
             notify();
         },
         enqueue: async (input) => {
+            if (!canRun()) return null;
             const opId = input.opId ?? generateId();
             if (ops.some((op) => op.opId === opId)) return null; // 二重enqueue無視
             const op: OutboxOp = {
@@ -315,9 +330,11 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
         stop: async () => {
             stopped = true;
             await (running ?? Promise.resolve());
+            // enqueueの保存待ちも完了してから、次の同一namespaceのloadを許可する。
+            await pendingWrites;
         },
         resumeAfterAuth: async () => {
-            if (stopped) return;
+            if (!canRun()) return;
             let changed = false;
             ops = ops.map((op) => {
                 if (op.status === 'pending' && op.failure?.kind === 'auth-required') {

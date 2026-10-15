@@ -38,7 +38,7 @@
  *   habitReminderHourの4項目のみ絶対状態upsert。notifiedTaskIds/
  *   lastHabitReminderDate等デバイスローカルの重複通知防止状態は含めない）
  */
-import { registerAuthLifecycleHooks } from './authLifecycle.ts';
+import { captureAuthSessionGuard, registerAuthLifecycleHooks, subscribeAuthSessionScope } from './authLifecycle.ts';
 import { cloudOutboxKey } from './cloudPull.ts';
 import {
     createSyncOutbox,
@@ -50,7 +50,7 @@ import {
     type SyncOutbox,
 } from './syncOutbox.ts';
 import type { RepositoryStorage } from './syncRepository.ts';
-import { EdgeFunctionError, type EdgeFunctionInvoker } from './edgeFunctions.ts';
+import { EdgeFunctionError, type EdgeFunctionInvoker, type EdgeFunctionCallOptions, type EdgeSession } from './edgeFunctions.ts';
 
 /** DB RPCとして送る操作（payloadに p_key として opId を注入する） */
 export const RPC_OPERATIONS: ReadonlySet<string> = new Set([
@@ -100,6 +100,26 @@ export interface CloudOutboxRpcClient {
     ) => Promise<{ error: { message: string; code?: string } | null }>;
 }
 
+/** SDKへの送信直前に所有者を確認し、その時点のJWTを明示ヘッダーに固定する。 */
+export function createAccountBoundOutboxRpcClient(deps: {
+    getSession: () => Promise<{ session: EdgeSession | null; error?: unknown }>;
+    call: (name: string, params: Record<string, unknown>, accessToken: string) => Promise<{
+        error: { message: string; code?: string } | null; status?: number;
+    }>;
+}, options?: EdgeFunctionCallOptions): CloudOutboxRpcClient {
+    const authError = { error: { code: '401', message: 'outbox authentication required' } };
+    return { rpc: async (name, params) => {
+        if (options && !options.isActive()) return authError;
+        const { session, error } = await deps.getSession();
+        if (error || !session || (options && (!options.isActive()
+            || (options.expectedUserId !== undefined && session.userId !== options.expectedUserId)))) return authError;
+        const result = await deps.call(name, params, session.accessToken);
+        if (options && !options.isActive()) return authError;
+        return { error: result.error && result.status && result.status >= 400
+            ? { ...result.error, code: String(result.status) } : result.error };
+    } };
+}
+
 export interface CloudOutboxControllerDeps {
     storage: RepositoryStorage;
     /**
@@ -107,7 +127,7 @@ export interface CloudOutboxControllerDeps {
      * Mobileのreact-native依存等、プラットフォーム固有の遅延importは
      * ここに閉じ込める。
      */
-    getRpcClient: () => Promise<CloudOutboxRpcClient | null> | CloudOutboxRpcClient | null;
+    getRpcClient: (options?: EdgeFunctionCallOptions) => Promise<CloudOutboxRpcClient | null> | CloudOutboxRpcClient | null;
     /** Edge Function呼び出し関数を取得する（未設定ならnull）。 */
     getEdgeInvoker: () => Promise<EdgeFunctionInvoker | null> | EdgeFunctionInvoker | null;
     /** 恒久失敗したopの楽観更新を巻き戻す（任意） */
@@ -151,6 +171,8 @@ export interface CloudOutboxController {
 export function createCloudOutboxController(deps: CloudOutboxControllerDeps): CloudOutboxController {
     let activeOutbox: SyncOutbox | null = null;
     let activeUserId: string | null = null;
+    let activeIsCurrent = (): boolean => false;
+    const liveOutbox = (): SyncOutbox | null => activeIsCurrent() ? activeOutbox : null;
     // 非同期のログイン初期化が、後から来たログアウト/別ユーザーのログイン後に
     // 古いoutboxを復活させないための世代番号。
     let lifecycleGeneration = 0;
@@ -158,14 +180,21 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
     const pendingEntityOps = new Map<string, string>();
     const listeners = new Set<(state: CloudOutboxPublicState) => void>();
     let activeOutboxUnsubscribe: (() => void) | null = null;
+    let pendingStops: Promise<void> = Promise.resolve();
+    const stopOutbox = (outbox: SyncOutbox | null): Promise<void> => {
+        // A→B→Aが重なっても、detach済みAの保存を新しいAのloadより先に終える。
+        pendingStops = Promise.all([pendingStops, outbox?.stop()]).then(() => {});
+        return pendingStops;
+    };
 
     const inactiveState = (): CloudOutboxPublicState => ({
         availability: 'inactive', pending: 0, inflight: 0, failed: 0, conflict: 0,
         oldestPendingAt: null, lastPushSuccessAt: null, failureKinds: [],
     });
-    const getState = (): CloudOutboxPublicState => activeOutbox
-        ? { availability: 'ready', ...activeOutbox.getState() }
-        : inactiveState();
+    const getState = (): CloudOutboxPublicState => {
+        const outbox = liveOutbox();
+        return outbox ? { availability: 'ready', ...outbox.getState() } : inactiveState();
+    };
     const notify = (): void => {
         const state = getState();
         listeners.forEach((listener) => listener(state));
@@ -175,11 +204,15 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
         activeOutboxUnsubscribe = null;
     };
 
-    async function sendOperation(op: OutboxOp): Promise<OutboxSendResult> {
+    async function sendOperation(op: OutboxOp, options?: EdgeFunctionCallOptions): Promise<OutboxSendResult> {
+        const stale = (): OutboxSendResult => ({ ok: false, permanent: false, failureKind: 'auth-required', error: 'outbox session changed' });
+        if (options && !options.isActive()) return stale();
         if (RPC_OPERATIONS.has(op.operation)) {
-            const client = await deps.getRpcClient();
+            const client = await deps.getRpcClient(options);
+            if (options && !options.isActive()) return stale();
             if (!client) return { ok: false, permanent: false, error: 'supabase env not configured', failureKind: 'network' };
             const { error } = await client.rpc(op.operation, { ...op.payload, p_key: op.opId });
+            if (options && !options.isActive()) return stale();
             if (!error) return { ok: true };
             // 数字3桁のHTTP statusだけを既知分類する。Postgres/PostgREST等の
             // 非HTTP codeは意味を推測せず、再送可能なunknownとして残す。
@@ -194,11 +227,17 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
 
         if (EDGE_OPERATIONS.has(op.operation)) {
             const invoker = await deps.getEdgeInvoker();
+            if (options && !options.isActive()) return stale();
             if (!invoker) return { ok: false, permanent: false, error: 'edge functions not configured', failureKind: 'network' };
             try {
-                await invoker(op.operation, { ...op.payload, idempotencyKey: op.opId });
+                const body = { ...op.payload, idempotencyKey: op.opId };
+                if (options) await invoker(op.operation, body, options);
+                else await invoker(op.operation, body);
+                if (options && !options.isActive()) return stale();
                 return { ok: true };
             } catch (error) {
+                if ((options && !options.isActive()) || (error instanceof EdgeFunctionError
+                    && (error.code === 'stale-session' || error.code === 'unauthenticated'))) return stale();
                 if (error instanceof EdgeFunctionError && typeof error.status === 'number') {
                     const classified = classifySyncFailure(error.status);
                     return { ok: false, permanent: classified.permanent, failureKind: classified.kind, error: error.message };
@@ -216,24 +255,28 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
         payload: Record<string, unknown>,
         options: { dependsOnEntityIds?: string[]; trackEntityId?: string } = {},
     ): Promise<boolean> {
-        if (!activeOutbox) return false;
+        const outbox = liveOutbox();
+        const isCurrent = activeIsCurrent;
+        if (!outbox) return false;
         const dependsOn: string[] = [];
         for (const entityId of options.dependsOnEntityIds ?? []) {
             const parentOpId = pendingEntityOps.get(entityId);
             if (parentOpId) dependsOn.push(parentOpId);
         }
-        const op = await activeOutbox.enqueue({ operation, payload, dependsOn });
+        const op = await outbox.enqueue({ operation, payload, dependsOn });
+        if (!isCurrent() || activeOutbox !== outbox) return false;
         if (op && options.trackEntityId) {
             pendingEntityOps.set(options.trackEntityId, op.opId);
         }
         return op !== null;
     }
 
-    async function createOutbox(userId: string): Promise<SyncOutbox> {
+    async function createOutbox(userId: string, isCurrent: () => boolean): Promise<SyncOutbox> {
         const outbox = createSyncOutbox({
             storage: deps.storage,
             storageKey: cloudOutboxKey(userId),
-            send: sendOperation,
+            isActive: isCurrent,
+            send: (op) => sendOperation(op, { isActive: isCurrent, expectedUserId: userId }),
             onPermanentFailure: deps.onPermanentFailure,
         });
         await outbox.load();
@@ -248,18 +291,18 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
         activeUserId = null;
         pendingEntityOps.clear();
         notify();
-        await previousOutbox?.stop();
+        await stopOutbox(previousOutbox);
     }
 
     return {
         sendOperation,
         enqueue,
-        isActive: () => activeOutbox !== null,
-        getActiveOutbox: () => activeOutbox,
+        isActive: () => liveOutbox() !== null,
+        getActiveOutbox: liveOutbox,
         detachForAccountDeletion,
-        requestDrain: () => activeOutbox?.requestDrain(),
-        drainAndWait: () => activeOutbox?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),
-        retryPending: () => activeOutbox?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),
+        requestDrain: () => liveOutbox()?.requestDrain(),
+        drainAndWait: () => liveOutbox()?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),
+        retryPending: () => liveOutbox()?.drainAndWait() ?? Promise.resolve({ retryablePending: false }),
         getState,
         subscribe: (listener) => {
             listeners.add(listener);
@@ -267,30 +310,36 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
             return () => listeners.delete(listener);
         },
         registerHooks: () => {
+            // フック到達前でも古いキューを公開しない（前段の非同期フック待ち対策）。
+            const unsubscribeScope = subscribeAuthSessionScope(() => notify());
             const unregister = registerAuthLifecycleHooks({
                 onLogin: async (userId) => {
-                    if (activeUserId === userId && activeOutbox) {
-                        await activeOutbox.resumeAfterAuth();
+                    const currentOutbox = liveOutbox();
+                    if (activeUserId === userId && currentOutbox) {
+                        await currentOutbox.resumeAfterAuth();
                         return;
                     }
                     const generation = ++lifecycleGeneration;
+                    const scopeIsCurrent = captureAuthSessionGuard();
+                    const isCurrent = (): boolean => generation === lifecycleGeneration && scopeIsCurrent();
                     const previousOutbox = activeOutbox;
                     detachOutbox();
                     activeOutbox = null;
                     activeUserId = null;
                     notify();
-                    await previousOutbox?.stop();
-                    if (generation !== lifecycleGeneration) return;
+                    await stopOutbox(previousOutbox);
+                    if (!isCurrent()) return;
                     pendingEntityOps.clear();
-                    const outbox = await createOutbox(userId);
-                    if (generation !== lifecycleGeneration) {
-                        await outbox.stop();
+                    const outbox = await createOutbox(userId, isCurrent);
+                    if (!isCurrent()) {
+                        await stopOutbox(outbox);
                         return;
                     }
                     activeOutbox = outbox;
                     activeUserId = userId;
+                    activeIsCurrent = isCurrent;
                     activeOutboxUnsubscribe = outbox.subscribe(() => {
-                        if (generation === lifecycleGeneration && activeOutbox === outbox) notify();
+                        if (isCurrent() && activeOutbox === outbox) notify();
                     });
                     notify();
                     await outbox.resumeAfterAuth(); // 前回の401で止まった同一opIdを再開
@@ -305,7 +354,7 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
                     activeUserId = null;
                     pendingEntityOps.clear();
                     notify();
-                    await previousOutbox?.stop();
+                    await stopOutbox(previousOutbox);
                 },
             });
             return () => {
@@ -316,7 +365,8 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
                 activeUserId = null;
                 pendingEntityOps.clear();
                 notify();
-                void previousOutbox?.stop();
+                void stopOutbox(previousOutbox);
+                unsubscribeScope();
                 unregister();
             };
         },

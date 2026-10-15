@@ -13,9 +13,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     createCloudOutboxController,
+    createAccountBoundOutboxRpcClient,
     EDGE_OPERATIONS,
     RPC_OPERATIONS,
-    type CloudOutboxRpcClient,
     type CloudOutboxPublicState,
 } from '@life-quest/core/cloudOutboxController';
 import type { OutboxDrainResult, SyncOutbox } from '@life-quest/core/syncOutbox';
@@ -24,16 +24,23 @@ export { EDGE_OPERATIONS, RPC_OPERATIONS };
 
 const controller = createCloudOutboxController({
     storage: AsyncStorage,
-    getRpcClient: async (): Promise<CloudOutboxRpcClient | null> => {
+    getRpcClient: async (options) => {
         const { getMobileSupabaseClient } = await import('./supabase');
         const client = getMobileSupabaseClient();
         if (!client) return null;
-        return {
-            rpc: async (name, params) => {
-                const { error } = await client.rpc(name, params);
-                return { error };
+        return createAccountBoundOutboxRpcClient({
+            getSession: async () => {
+                const { data, error } = await client.auth.getSession();
+                return { error, session: data.session ? {
+                    accessToken: data.session.access_token, userId: data.session.user.id,
+                } : null };
             },
-        };
+            call: async (name, params, token) => {
+                const { error, status } = await client.rpc(name, params)
+                    .setHeader('Authorization', `Bearer ${token}`);
+                return { error, status };
+            },
+        }, options);
     },
     getEdgeInvoker: async () => {
         const { getMobileEdgeFunctionInvoker } = await import('./edgeFunctions');
