@@ -135,6 +135,23 @@ for (const platform of [
             expect(mocks.values.get(cloudCursorKey('a'))).toBe('2');
         });
 
+        it('restarts A when a delayed logout was superseded by a new A login', async () => {
+            const gate = deferred<void>();
+            cleanups.push(registerAuthLifecycleHooks({ onLogout: () => gate.promise }));
+            cleanups.push(platform.register());
+            await notifyLogin('a');
+            await settle();
+            const previous = platform.active();
+            const logout = notifyLogout();
+            await notifyLogin('a');
+            expect(platform.active()).not.toBe(previous);
+            mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
+            await platform.active()!.flush();
+            expect(mocks.visibleTasks).toEqual(['a-task']);
+            gate.resolve();
+            await logout;
+        });
+
         for (const transition of ['logout', 'switch'] as const) {
             it(`invalidates the old pull before delayed ${transition} hooks reach sync shutdown`, async () => {
                 const gate = deferred<void>();

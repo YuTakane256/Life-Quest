@@ -40,6 +40,7 @@ import { createReconnectDetector, resolveNetworkOnlineState } from './networkRec
 import { requestMobileLoginBonusRecheck } from '../stores/useMobileLoginBonusStore';
 
 export interface CloudSyncHandle {
+    isActive: () => boolean;
     flush: () => Promise<void>;
     stop: () => void;
     syncNow: () => Promise<void>;
@@ -197,6 +198,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
 
     publish();
     return {
+        isActive: isCurrent,
         flush: () => runner.flush(),
         syncNow: async () => {
             if (!isCurrent()) return;
@@ -247,7 +249,7 @@ export function stopMobileCloudSyncForAccountDeletion(): void {
 export function registerMobileCloudSyncHooks(): () => void {
     const unregister = registerAuthLifecycleHooks({
         onLogin: (userId) => {
-            if (activeUserId === userId && activeHandle) return;
+            if (activeUserId === userId && activeHandle?.isActive()) return;
             activeHandle?.stop();
             activeHandle = startMobileCloudSync(userId);
             activeUserId = activeHandle ? userId : null;

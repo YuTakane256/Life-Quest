@@ -56,6 +56,8 @@ import { useNotificationStore } from '../stores/useNotificationStore';
 import { requestLoginBonusRecheck } from '../stores/useLoginBonusStore';
 
 export interface CloudSyncHandle {
+    /** 同じuserIdでも、途中のログアウト通知で無効になったハンドルは再利用しない。 */
+    isActive: () => boolean;
     /** 実行中のプルの完了を待つ（テスト用） */
     flush: () => Promise<void>;
     /** 購読・タイマーを全て止める */
@@ -268,6 +270,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
 
     publish();
     return {
+        isActive: isCurrent,
         flush: () => runner.flush(),
         syncNow: async () => {
             if (!isCurrent()) return;
@@ -322,7 +325,7 @@ export function stopWebCloudSyncForAccountDeletion(): void {
 export function registerWebCloudSyncHooks(): () => void {
     const unregister = registerAuthLifecycleHooks({
         onLogin: (userId) => {
-            if (activeUserId === userId && activeHandle) return;
+            if (activeUserId === userId && activeHandle?.isActive()) return;
             activeHandle?.stop();
             activeHandle = startWebCloudSync(userId);
             activeUserId = activeHandle ? userId : null;
