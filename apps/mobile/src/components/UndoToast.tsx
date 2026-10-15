@@ -1,5 +1,5 @@
 /**
- * 画面下部の取消トースト（#512）。WebのshowUndoスナックバーに対応する。
+ * 取消トースト（#512）。配置は親のボトムアクション領域が管理する。
  * 表示・非表示の制御は親（メッセージがnullなら非表示）。自動消滅も親が管理する。
  */
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -34,10 +34,6 @@ export function UndoToast({ message, actionLabel = '取消', onAction }: UndoToa
 function createStyles(palette: ThemePalette) {
     return StyleSheet.create({
         container: {
-            position: 'absolute',
-            left: 16,
-            right: 16,
-            bottom: 12,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 12,
@@ -54,7 +50,7 @@ function createStyles(palette: ThemePalette) {
             elevation: 6,
         },
         message: { flex: 1, color: palette.text.primary, fontSize: 13, fontWeight: '600' },
-        action: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: palette.accent.primary },
+        action: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: palette.accent.primary },
         pressed: { opacity: 0.7 },
         actionText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
     });

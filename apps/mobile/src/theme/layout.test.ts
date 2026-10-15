@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { LAYOUT_TOKENS } from '@life-quest/core/designTokens';
-import { getTabBarHeight, getTaskBadge, PAGE_HEADING, shouldNavigateTab, TAB_SCREEN_EDGES } from './layout';
+import { getTabBarHeight, getTaskBadge, getTaskActionsBottomPadding, TASK_ACTION_LAYOUT, PAGE_HEADING, shouldNavigateTab, TAB_SCREEN_EDGES } from './layout';
 
 describe('Web-aligned Mobile layout', () => {
+    it('keeps normal task spacing and reserves measured wrapped/scaled toast height', () => {
+        expect(getTaskActionsBottomPadding(44)).toBe(76);
+        for (const toastHeight of [68, 96, 150, 240]) {
+            const stackHeight = TASK_ACTION_LAYOUT.size + TASK_ACTION_LAYOUT.gap + toastHeight;
+            expect(getTaskActionsBottomPadding(stackHeight)).toBeGreaterThanOrEqual(stackHeight + TASK_ACTION_LAYOUT.bottom);
+        }
+    });
+    it.each([0, -1, NaN, Infinity])('uses safe default task clearance for invalid measured height %s', (height) => {
+        expect(getTaskActionsBottomPadding(height)).toBe(76);
+    });
     it.each([320, 390, 402, 512, 834])('keeps the standard 64-point bar at width %s', (width) => {
         expect(getTabBarHeight(width, 1)).toBe(64);
     });

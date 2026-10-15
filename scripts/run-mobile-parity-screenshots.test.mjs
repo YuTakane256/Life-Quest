@@ -76,6 +76,22 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('runs undo/add layout checks only in guarded memory-only reference mode', () => {
+        expect(requiresReferenceRuntime('undo')).toBe(true);
+        const flow = getMobileParityFlow('undo');
+        expect(flow).toMatchObject({ ok: true, path: '.maestro/mobile-parity/task-undo-actions.yaml' });
+        const extra = { appVariant: 'parity', parityCaptureTheme: 'light', parityLocalOnly: true };
+        expect(() => assertReferenceProfile({ extra }, 'undo')).not.toThrow();
+        for (const parityLocalOnly of [false, undefined]) {
+            expect(() => assertReferenceProfile({ extra: { ...extra, parityLocalOnly } }, 'undo')).toThrow(/no Supabase/);
+        }
+        expect(() => assertReferenceProfile({ extra: { ...extra, parityCaptureProfile: 'battle' } }, 'undo')).toThrow(/Battle flow/);
+        const yaml = readFileSync(new URL(`../${flow.path}`, import.meta.url), 'utf8');
+        expect(yaml).toContain('clearState: false');
+        expect(yaml).not.toContain('clearState: true');
+        expect(yaml).toContain('text: "新しいタスクを追加"\n    waitToSettleTimeoutMs: 200\n- tapOn: "取消する"\n- assertVisible: "タスク追加フォームを閉じる"');
+        expect(yaml).toContain('undo-${REFERENCE_THEME}-input');
+    });
     it('only allows real local persistence and never a reference/cloud/unknown runtime', () => {
         const extra = { appVariant: 'parity', parityLocalOnly: true };
         expect(() => assertPersistentParityRuntime({ extra })).not.toThrow();

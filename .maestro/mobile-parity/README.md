@@ -64,3 +64,13 @@ targets. Use the same anonymous Metro for the existing smoke/screenshots flows.
 This is local anonymous evidence, not signed-in synchronization, real-device
 authentication, Android behavior, or release approval. See
 [progression quality checks](../../docs/anonymous-progression-quality.md).
+
+## Task undo / add clearance (#721)
+
+Start `npm run mobile:reference:light` (or `:dark`), then run
+`node scripts/run-mobile-parity-screenshots.mjs undo` in another terminal.
+This guarded memory-only daily-reference flow keeps `clearState:false`.
+It opens Add during the five-second undo window, explicitly undoes the completion,
+and checks form entry and layout after expiry. It never changes the undo duration.
+Input captures do not imply software-keyboard visibility; see
+[scope and manual checks](../../docs/mobile-task-undo-quality.md).

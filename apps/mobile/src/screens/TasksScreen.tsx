@@ -41,7 +41,7 @@ import {
     type Recurrence,
     type Task,
 } from '@life-quest/core/tasks';
-import { UndoToast } from '../components/UndoToast';
+import { TaskBottomActions } from '../components/TaskBottomActions';
 import {
     Chip,
     Choice,
@@ -53,7 +53,7 @@ import {
 import { dailyStyles, ui } from '../theme/dailyScreenStyles';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { getTodayJst } from '../utils/date';
-import { TAB_SCREEN_EDGES } from '../theme/layout';
+import { getTaskActionsBottomPadding, TASK_ACTION_LAYOUT, TAB_SCREEN_EDGES } from '../theme/layout';
 import { usePalette } from '../theme/usePalette';
 import {
     dueLabel,
@@ -87,6 +87,7 @@ export default function TasksScreen() {
     const [tags, setTags] = useState<string[]>([]);
     const [sort, setSort] = useState<TaskSort>('dueDate');
     const [showForm, setShowForm] = useState(false);
+    const [bottomActionsHeight, setBottomActionsHeight] = useState<number>(TASK_ACTION_LAYOUT.size);
     const [editing, setEditing] = useState<Task | null>(null);
     const [completedOpen, setCompletedOpen] = useState(false);
     const [expandOverrides, setExpandOverrides] = useState<
@@ -351,12 +352,14 @@ export default function TasksScreen() {
                 style={{ flex: 1 }}
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
+                {/* The inner flex viewport shrinks above the iOS keyboard padding. */}
+                <View style={{ flex: 1 }}>
                 <FlatList
                     ref={list}
                     data={open}
                     keyExtractor={(task) => task.id}
                     renderItem={({ item }) => renderTask(item)}
-                    contentContainerStyle={s.page}
+                    contentContainerStyle={[s.page, { paddingBottom: getTaskActionsBottomPadding(bottomActionsHeight) }]}
                     keyboardShouldPersistTaps="handled"
                     ListHeaderComponent={
                         <>
@@ -651,14 +654,11 @@ export default function TasksScreen() {
                         ) : null
                     }
                 />
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                        showForm
-                            ? 'タスク追加フォームを閉じる'
-                            : '新しいタスクを追加'
-                    }
-                    onPress={() => {
+                <TaskBottomActions
+                    formOpen={showForm}
+                    toast={toast}
+                    onHeightChange={setBottomActionsHeight}
+                    onToggleForm={() => {
                         setEditing(null);
                         setShowForm((value) => !value);
                         list.current?.scrollToOffset({
@@ -666,27 +666,8 @@ export default function TasksScreen() {
                             animated: true,
                         });
                     }}
-                    style={{
-                        position: 'absolute',
-                        right: 16,
-                        bottom: 12,
-                        width: 44,
-                        height: 44,
-                        borderRadius: 22,
-                        backgroundColor: p.accent.primary,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: '0 4px 12px #0005',
-                    }}
-                >
-                    <Plus size={22} color="#fff" />
-                </Pressable>
-                {toast && (
-                    <UndoToast
-                        message={toast.message}
-                        onAction={toast.onUndo}
-                    />
-                )}
+                />
+                </View>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
