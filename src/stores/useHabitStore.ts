@@ -15,6 +15,11 @@ import {
 import { clampString } from '../utils/validation';
 import { isPlainObject, sanitizeTimestamp, sanitizeNullableYmd } from '../utils/persistSanitize';
 import { enqueueCloudOperation } from '../platform/cloudOutbox';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
+
+let effectGeneration = 0;
+/** Store clearing (including account deletion) can precede the SDK logout event. */
+export function invalidatePendingHabitEffects(): void { effectGeneration += 1; }
 
 interface HabitStorePersisted {
     habits: Habit[];
@@ -161,6 +166,9 @@ export const useHabitStore = create<HabitStoreState>()(
 
             toggleHabitCompletion: (habitId: string, date: string) => {
                 if (!isValidYmd(date) || !get().habits.some((habit) => habit.id === habitId)) return;
+                const sameSession = captureAuthSessionGuard();
+                const generation = effectGeneration;
+                const isCurrent = () => sameSession() && generation === effectGeneration;
                 const existingRecord = get().dailyRecords.find(
                     (r) => r.habitId === habitId && r.date === date
                 );
@@ -201,6 +209,7 @@ export const useHabitStore = create<HabitStoreState>()(
                 // 全習慣が完了したか確認して報酬付与
                 // setTimeout で状態更新後に確認
                 setTimeout(async () => {
+                    if (!isCurrent()) return;
                     const state = get();
                     const allComplete = state.areAllHabitsComplete(date);
 
@@ -209,9 +218,13 @@ export const useHabitStore = create<HabitStoreState>()(
                         (r) => r.date === date && r.completed
                     ).length;
                     const statsStore = await import('./useStatsStore').then(m => m.useStatsStore);
+                    if (!isCurrent()) return;
                     statsStore.getState().logHabitActivity(date, completedCount, allComplete);
 
                     if (allComplete) {
+                        if (!isCurrent() || get().allCompleteRewardDates.includes(date)) return;
+                        const gameStore = await import('./useGameStore').then(m => m.useGameStore);
+                        if (!isCurrent()) return;
                         let shouldAwardReward = false;
                         set((latest) => ({
                             allCompleteRewardDates: latest.allCompleteRewardDates.includes(date)
@@ -224,7 +237,6 @@ export const useHabitStore = create<HabitStoreState>()(
                         if (!shouldAwardReward) return;
 
                         // 全達成報酬を付与
-                        const gameStore = await import('./useGameStore').then(m => m.useGameStore);
                         const store = gameStore.getState();
                         store.addXp(XP_CONFIG.HABIT_ALL_COMPLETE_BONUS);
                         store.incrementGachaCount();
@@ -233,6 +245,7 @@ export const useHabitStore = create<HabitStoreState>()(
                         // サーバーは更新後のhabit_logsで全達成を検証するため、
                         // set_habit_logの完了（pendingEntityOps登録）を待ってから送る。
                         await logEnqueued;
+                        if (!isCurrent()) return;
                         void enqueueCloudOperation('claim_habit_bonus', { date }, { dependsOnEntityIds: [habitId] });
                     }
                 }, 0);

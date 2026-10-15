@@ -23,6 +23,20 @@ const registeredHooks = new Set<AuthLifecycleHooks>();
 // 認証SDKはログイン/ログアウト通知を並行して発火しうる。新しい認証遷移が
 // 始まったら、古い通知が後続フック（cloud sync等）を動かさないようにする。
 let lifecycleGeneration = 0;
+let scopeGeneration = 0;
+let scopeUserId: string | null = null;
+
+/** Compare lifecycle scope only; this is not an authentication/authorization check. */
+export function captureAuthSessionGuard(): () => boolean {
+    const generation = scopeGeneration;
+    return () => generation === scopeGeneration;
+}
+
+function updateScope(userId: string | null): void {
+    if (scopeUserId === userId) return;
+    scopeUserId = userId;
+    scopeGeneration += 1;
+}
 
 /** フックを登録する。戻り値で解除できる。 */
 export function registerAuthLifecycleHooks(hooks: AuthLifecycleHooks): () => void {
@@ -36,6 +50,8 @@ export function registerAuthLifecycleHooks(hooks: AuthLifecycleHooks): () => voi
 export function resetAuthLifecycleHooks(): void {
     registeredHooks.clear();
     lifecycleGeneration = 0;
+    scopeUserId = null;
+    scopeGeneration += 1; // Teardown must invalidate already captured work.
 }
 
 async function runHooks(
@@ -55,12 +71,14 @@ async function runHooks(
 
 /** セッション確立を全フックへ通知する。 */
 export function notifyLogin(userId: string): Promise<void> {
+    updateScope(userId);
     const generation = ++lifecycleGeneration;
     return runHooks((hooks) => hooks.onLogin?.(userId), () => generation === lifecycleGeneration);
 }
 
 /** ログアウトを全フックへ通知する。全フック完了後に解決する。 */
 export function notifyLogout(): Promise<void> {
+    updateScope(null);
     const generation = ++lifecycleGeneration;
     return runHooks((hooks) => hooks.onLogout?.(), () => generation === lifecycleGeneration);
 }

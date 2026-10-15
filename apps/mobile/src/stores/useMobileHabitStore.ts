@@ -22,6 +22,11 @@ import { createMobileId } from '../utils/createMobileId';
 import { enqueueCloudOperation } from '../platform/cloudOutbox';
 import { useMobileGameStore } from './useMobileGameStore';
 import { useMobileStatsStore } from './useMobileStatsStore';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
+
+let effectGeneration = 0;
+/** Invalidate deferred work before replacing account-owned store data. */
+export function invalidatePendingHabitEffects(): void { effectGeneration += 1; }
 
 /** お休み日の最大保持数（Webと同じ上限） */
 export const MAX_HABIT_REST_DAYS = 3660;
@@ -75,6 +80,9 @@ export const useMobileHabitStore = create<MobileHabitStore>()(
             toggleToday: (habitId, date) => {
                 const before = get();
                 if (!before.hasHydrated || !before.habits.some((habit) => habit.id === habitId)) return;
+                const sameSession = captureAuthSessionGuard();
+                const generation = effectGeneration;
+                const isCurrent = () => sameSession() && generation === effectGeneration;
 
                 set((state) => {
                     const records = toggleHabitDailyRecord(state.records, habitId, date);
@@ -110,6 +118,7 @@ export const useMobileHabitStore = create<MobileHabitStore>()(
                 // 依存させて送る（pendingEntityOpsのhabitIdキーを使い回し、直前opの
                 // 完了を待たせる）。
                 void (async () => {
+                    if (!isCurrent()) return;
                     await enqueueCloudOperation('set_habit_log', {
                         p_habit_id: habitId,
                         p_date: date,
@@ -117,7 +126,7 @@ export const useMobileHabitStore = create<MobileHabitStore>()(
                         p_memo: record?.memo ?? '',
                     }, { dependsOnEntityIds: [habitId], trackEntityId: habitId });
 
-                    if (eligible) {
+                    if (eligible && isCurrent()) {
                         await enqueueCloudOperation('claim_habit_bonus', { date }, { dependsOnEntityIds: [habitId] });
                     }
                 })();

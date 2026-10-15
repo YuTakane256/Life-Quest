@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+    captureAuthSessionGuard,
     notifyLogin,
     notifyLogout,
     registerAuthLifecycleHooks,
@@ -12,6 +13,42 @@ afterEach(() => {
 });
 
 describe('authLifecycle', () => {
+    it('scope guards survive duplicate same-user notifications but not A→B→A', async () => {
+        const anonymous = captureAuthSessionGuard();
+        await notifyLogout();
+        expect(anonymous()).toBe(true);
+        await notifyLogin('a');
+        expect(anonymous()).toBe(false);
+        const a = captureAuthSessionGuard();
+        await notifyLogin('a');
+        expect(a()).toBe(true);
+        await notifyLogin('b');
+        expect(a()).toBe(false);
+        await notifyLogin('a');
+        expect(a()).toBe(false);
+        expect(captureAuthSessionGuard()()).toBe(true);
+    });
+
+    it('invalidates old work before an asynchronous logout hook completes', async () => {
+        await notifyLogin('a');
+        const a = captureAuthSessionGuard();
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        registerAuthLifecycleHooks({ onLogout: () => gate });
+        const logout = notifyLogout();
+        expect(a()).toBe(false);
+        release();
+        await logout;
+    });
+
+    it('teardown invalidates existing guards even when the next user ID is the same', async () => {
+        await notifyLogin('a');
+        const a = captureAuthSessionGuard();
+        resetAuthLifecycleHooks();
+        await notifyLogin('a');
+        expect(a()).toBe(false);
+    });
+
     it('notifyLoginが登録済み全フックへuserIdを渡す', async () => {
         const first = vi.fn();
         const second = vi.fn();
