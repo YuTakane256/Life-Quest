@@ -27,12 +27,12 @@ export function getWebEdgeFunctionInvoker(): EdgeFunctionInvoker | null {
         anonKey: env.anonKey,
         getSession: async () => {
             const { data } = await client.auth.getSession();
-            return data.session ? { accessToken: data.session.access_token } : null;
+            return data.session ? { accessToken: data.session.access_token, userId: data.session.user.id } : null;
         },
         refreshSession: async () => {
             const { data, error } = await client.auth.refreshSession();
             if (error || !data.session) return null;
-            return { accessToken: data.session.access_token };
+            return { accessToken: data.session.access_token, userId: data.session.user.id };
         },
     });
     return cachedInvoker;

@@ -12,15 +12,16 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { captureAuthSessionGuard, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, captureAuthSessionScope, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { preMigrationBackupKey } from '@life-quest/core/cloudImport';
 import { loadCloudCache, type CloudCache } from '@life-quest/core/cloudCache';
-import type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
-import type { Task } from '@life-quest/core/tasks';
+import { HABIT_LIMITS, sanitizeHabitCollection, sanitizeHabitRecords, type Habit, type HabitDailyRecord } from '@life-quest/core/habits';
+import { TASK_LIMITS, sanitizeTaskCollection, type Task } from '@life-quest/core/tasks';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { createMobileId } from '../utils/createMobileId';
 
 /**
  * hydration完了まで待ってから解決する。zustand persistのonRehydrateStorageが
@@ -123,7 +124,10 @@ export interface PendingMobileContent {
  * クラウド側にまだ存在しないローカルのタスク・習慣を検出する。
  * クラウドの実ID（uuid）と client_id（取り込み元のローカルID）の両方と照合する。
  */
-export function detectPendingMobileContent(cache: CloudCache): PendingMobileContent {
+export function detectPendingMobileContent(cache: CloudCache, source: PendingMobileContent = {
+    tasks: useMobileTaskStore.getState().tasks, habits: useMobileHabitStore.getState().habits,
+    dailyRecords: useMobileHabitStore.getState().records,
+}): PendingMobileContent {
     const cloudTaskIds = new Set<string>();
     for (const row of Object.values(cache.tasks)) {
         if (typeof row.id === 'string') cloudTaskIds.add(row.id);
@@ -135,10 +139,10 @@ export function detectPendingMobileContent(cache: CloudCache): PendingMobileCont
         if (typeof row.client_id === 'string') cloudHabitIds.add(row.client_id);
     }
 
-    const tasks = useMobileTaskStore.getState().tasks.filter((task) => !cloudTaskIds.has(task.id));
-    const habits = useMobileHabitStore.getState().habits.filter((habit) => !cloudHabitIds.has(habit.id));
+    const tasks = source.tasks.filter((task) => !cloudTaskIds.has(task.id));
+    const habits = source.habits.filter((habit) => !cloudHabitIds.has(habit.id));
     const pendingHabitIds = new Set(habits.map((habit) => habit.id));
-    const dailyRecords = useMobileHabitStore.getState().records
+    const dailyRecords = source.dailyRecords
         .filter((record) => pendingHabitIds.has(record.habitId));
 
     return { tasks, habits, dailyRecords };
@@ -146,40 +150,94 @@ export function detectPendingMobileContent(cache: CloudCache): PendingMobileCont
 
 /** ログイン中ユーザーの未統合コンテンツを取得する（確認UI用）。 */
 export async function getPendingMobileContent(userId: string): Promise<PendingMobileContent> {
+    const scope = captureAuthSessionScope();
+    if (scope.userId !== userId) throw staleImport();
+    await assertImportUser(userId, scope.isCurrent);
     const cache = await loadCloudCache(AsyncStorage, userId);
-    return detectPendingMobileContent(cache);
+    if (!scope.isCurrent()) throw staleImport();
+    const raw = await AsyncStorage.getItem(preMigrationBackupKey(userId));
+    if (!scope.isCurrent()) throw staleImport();
+    let backup: PendingMobileContent = { tasks: [], habits: [], dailyRecords: [] };
+    if (raw !== null) {
+        const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+        if (!parsed || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.habits) || !Array.isArray(parsed.dailyRecords)) {
+            throw new Error('端末バックアップの形式を確認できません。バックアップは削除せず保持しています。');
+        }
+        const habits = sanitizeHabitCollection(parsed.habits);
+        backup = { tasks: sanitizeTaskCollection(parsed.tasks), habits,
+            dailyRecords: sanitizeHabitRecords(parsed.dailyRecords, new Set(habits.map((habit) => habit.id))) };
+    }
+    await assertImportUser(userId, scope.isCurrent);
+    // Live edits win over the older backup, while cloud IDs/client_ids (including
+    // tombstones) are still excluded by the detector. Backups are never modified.
+    const tasks = [...new Map([...backup.tasks, ...useMobileTaskStore.getState().tasks].map((task) => [task.id, task])).values()];
+    const habits = [...new Map([...backup.habits, ...useMobileHabitStore.getState().habits].map((habit) => [habit.id, habit])).values()];
+    const dailyRecords = [...new Map([...backup.dailyRecords, ...useMobileHabitStore.getState().records]
+        .map((record) => [JSON.stringify([record.habitId, record.date]), record])).values()];
+    const pending = detectPendingMobileContent(cache, { tasks, habits, dailyRecords });
+    if (pending.tasks.length > TASK_LIMITS.maxTasks || pending.habits.length > HABIT_LIMITS.maxHabits
+        || pending.dailyRecords.length > HABIT_LIMITS.maxRecords) {
+        throw new EdgeFunctionError('import-limit-exceeded', `統合候補が1回の取り込み上限（タスク${TASK_LIMITS.maxTasks}件・習慣${HABIT_LIMITS.maxHabits}件・記録${HABIT_LIMITS.maxRecords}件）を超えています。分割移行が必要です。端末データとバックアップは削除せず保持しています。`);
+    }
+    const payload = JSON.stringify(pending);
+    const content = JSON.parse(payload) as PendingMobileContent;
+    issuedImports.set(content, { userId, isCurrent: scope.isCurrent, payload, key: createMobileId(), promise: null });
+    return content;
 }
 
 export type MobileImportResult =
     | { status: 'imported' }
+    | { status: 'stale' }
     | { status: 'web_migration_required' }
     | { status: 'error'; message: string };
+
+interface IssuedImport {
+    userId: string;
+    isCurrent: () => boolean;
+    payload: string;
+    key: string;
+    promise: Promise<MobileImportResult> | null;
+}
+const issuedImports = new WeakMap<PendingMobileContent, IssuedImport>();
+const staleImport = () => new EdgeFunctionError('stale-session', 'アカウントが切り替わりました。統合候補を再確認してください。');
+
+async function assertImportUser(userId: string, isCurrent: () => boolean): Promise<void> {
+    const { getCurrentUser } = await import('./auth');
+    if (!isCurrent()) throw staleImport();
+    const user = await getCurrentUser();
+    if (!isCurrent() || user?.userId !== userId) throw staleImport();
+}
 
 /**
  * 確認UIで承認されたコンテンツをクラウドへ統合する（フローB・コンテンツ）。
  * Web初回移行が未完了なら web_migration_required を返し、UIはWebへ誘導する。
  */
-export async function approveMobileContentImport(content: PendingMobileContent): Promise<MobileImportResult> {
-    const { getMobileEdgeFunctionInvoker } = await import('./edgeFunctions');
-    const invoker = getMobileEdgeFunctionInvoker();
-    if (!invoker) return { status: 'error', message: 'クラウド接続が設定されていません' };
-
-    try {
-        await invoker('import_mobile_content', {
-            content: {
-                tasks: content.tasks,
-                habits: content.habits,
-                dailyRecords: content.dailyRecords,
-            },
-            idempotencyKey: crypto.randomUUID(),
-        });
-        return { status: 'imported' };
-    } catch (error) {
-        if (error instanceof EdgeFunctionError && error.message.includes('web_migration_required')) {
-            return { status: 'web_migration_required' };
+export function approveMobileContentImport(content: PendingMobileContent): Promise<MobileImportResult> {
+    const issued = issuedImports.get(content);
+    if (!issued?.isCurrent()) return Promise.resolve({ status: 'stale' });
+    if (issued.promise) return issued.promise;
+    const run = async (): Promise<MobileImportResult> => {
+        try {
+            await assertImportUser(issued.userId, issued.isCurrent);
+            const { getMobileEdgeFunctionInvoker } = await import('./edgeFunctions');
+            if (!issued.isCurrent()) return { status: 'stale' };
+            const invoker = getMobileEdgeFunctionInvoker();
+            if (!invoker) return { status: 'error', message: 'クラウド接続が設定されていません' };
+            await invoker('import_mobile_content', { content: JSON.parse(issued.payload), idempotencyKey: issued.key },
+                { isActive: issued.isCurrent, expectedUserId: issued.userId });
+            await assertImportUser(issued.userId, issued.isCurrent);
+            return { status: 'imported' };
+        } catch (error) {
+            if (!issued.isCurrent() || (error instanceof EdgeFunctionError && error.code === 'stale-session')) return { status: 'stale' };
+            if (error instanceof EdgeFunctionError && error.message.includes('web_migration_required')) return { status: 'web_migration_required' };
+            return { status: 'error', message: error instanceof Error ? error.message : '統合に失敗しました' };
         }
-        return { status: 'error', message: error instanceof Error ? error.message : '統合に失敗しました' };
-    }
+    };
+    issued.promise = run().then((result) => {
+        if (result.status !== 'imported') issued.promise = null;
+        return result;
+    });
+    return issued.promise;
 }
 
 /**

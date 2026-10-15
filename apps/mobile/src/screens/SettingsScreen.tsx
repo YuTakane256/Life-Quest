@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { captureAuthSessionGuard, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,7 +10,6 @@ import type { CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
 import {
     deleteCurrentAccount,
     cancelPasswordRecovery,
-    getCurrentUser,
     getPasswordRecoveryState,
     requestPasswordReset,
     resendEmailVerification,
@@ -22,11 +22,7 @@ import {
     updatePasswordFromRecovery,
 } from '../platform/auth';
 import { AppleSignInButton } from '../components/AppleSignInButton';
-import {
-    approveMobileContentImport,
-    getPendingMobileContent,
-    type PendingMobileContent,
-} from '../platform/cloudMigration';
+import { useMobileAccountImport } from '../hooks/useMobileAccountImport';
 import { ensureNotificationPermission } from '../platform/notifications';
 import { readMobileSupabaseEnv } from '../platform/supabase';
 import { getMobileCloudSyncState, subscribeMobileCloudSyncState, syncMobileNow } from '../platform/cloudSync';
@@ -108,15 +104,16 @@ export default function SettingsScreen() {
     const [password, setPassword] = useState('');
     const [passwordConfirmation, setPasswordConfirmation] = useState('');
     const [mode, setMode] = useState<Mode>('signIn');
-    const [currentUser, setCurrentUser] = useState<{ userId: string; email: string | null } | null>(null);
     const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [message, setMessage] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
+    const [authBusy, setBusy] = useState(false);
     const [deleteConfirming, setDeleteConfirming] = useState(false);
     const [deleteText, setDeleteText] = useState('');
-    const [pendingContent, setPendingContent] = useState<PendingMobileContent | null>(null);
-    const [importMessage, setImportMessage] = useState<string | null>(null);
+    const { currentUser, pendingContent, importMessage, checking, importing, refreshAccount,
+        dismissPendingContent, importContent } = useMobileAccountImport();
+    const busy = authBusy || importing;
+    const mounted = useRef(false);
     const [storageSummary, setStorageSummary] = useState<StorageSummary>({
         loading: true,
         appKeyCount: 0,
@@ -143,22 +140,19 @@ export default function SettingsScreen() {
         }
     }, [setNotificationsEnabled]);
 
-    const refreshAccount = useCallback(async (): Promise<void> => {
-        const user = await getCurrentUser();
-        setCurrentUser(user);
-        if (!user) {
-            setPendingContent(null);
-            return;
-        }
-        const pending = await getPendingMobileContent(user.userId);
-        setPendingContent(pending.tasks.length > 0 || pending.habits.length > 0 ? pending : null);
-    }, []);
+    useEffect(() => subscribeAuthSessionScope(() => {
+        setDeleteConfirming(false);
+        setDeleteText('');
+        setPassword('');
+        setPasswordConfirmation('');
+        setVerificationEmail(null);
+        setMessage(null);
+    }), []);
 
     useEffect(() => {
         let cancelled = false;
+        mounted.current = true;
         void (async () => {
-            await refreshAccount();
-            if (cancelled) return;
             try {
                 const summary = await readStorageSummary();
                 if (!cancelled) setStorageSummary(summary);
@@ -166,8 +160,8 @@ export default function SettingsScreen() {
                 if (!cancelled) setStorageSummary((current) => ({ ...current, loading: false }));
             }
         })();
-        return () => { cancelled = true; };
-    }, [refreshAccount]);
+        return () => { cancelled = true; mounted.current = false; };
+    }, []);
 
     useEffect(() => subscribeMobileCloudSyncState(setSyncState), []);
     useEffect(() => subscribePasswordRecoveryState(setRecoveryState), []);
@@ -179,20 +173,12 @@ export default function SettingsScreen() {
     };
 
     const handleImportContent = async () => {
-        if (!pendingContent) return;
-        setBusy(true);
-        setImportMessage(null);
-        const result = await approveMobileContentImport(pendingContent);
-        if (result.status === 'imported') {
-            setPendingContent(null);
-            setImportMessage('この端末のデータをクラウドへ統合しました');
-            void readStorageSummary().then(setStorageSummary).catch(() => undefined);
-        } else if (result.status === 'web_migration_required') {
-            setImportMessage('先にWeb版でログインして初回設定を完了してください');
-        } else {
-            setImportMessage(result.message);
+        const isCurrent = captureAuthSessionGuard();
+        if (await importContent()) {
+            void readStorageSummary().then((summary) => {
+                if (mounted.current && isCurrent()) setStorageSummary(summary);
+            }).catch(() => undefined);
         }
-        setBusy(false);
     };
 
     const handleSubmit = async () => {
@@ -281,7 +267,7 @@ export default function SettingsScreen() {
         if (result.ok) {
             setPassword('');
             setPasswordConfirmation('');
-            setCurrentUser(null);
+            await refreshAccount();
             setVerificationEmail(null);
             setMode(nextMode);
         } else {
@@ -294,9 +280,8 @@ export default function SettingsScreen() {
         setBusy(true);
         const result = await signOutUser();
         if (result.ok) {
-            setCurrentUser(null);
-            setPendingContent(null);
-            setMessage('ログアウトしました（この端末のデータは残ります）');
+            await refreshAccount();
+            setMessage('ログアウトしました。クラウド上のデータは、再ログインすると同期されます。');
         } else {
             setMessage(result.message);
         }
@@ -309,8 +294,7 @@ export default function SettingsScreen() {
         setMessage(null);
         const result = await deleteCurrentAccount();
         if (result.ok) {
-            setCurrentUser(null);
-            setPendingContent(null);
+            await refreshAccount();
             setDeleteConfirming(false);
             setDeleteText('');
             setMessage(result.manualAppleRevocationRequired
@@ -370,6 +354,8 @@ export default function SettingsScreen() {
                                 <Text style={styles.hint}>このリンクは無効または期限切れです。もう一度パスワードを再設定してください。</Text>
                                 <Pressable accessibilityRole="button" accessibilityLabel="パスワードを再設定する" disabled={busy} onPress={() => { void handleRecoveryCancel('passwordReset'); }}><Text style={styles.linkText}>パスワードを再設定する</Text></Pressable>
                             </View>
+                        ) : checking && !currentUser ? (
+                            <Text style={styles.hint}>アカウントを確認しています</Text>
                         ) : currentUser ? (
                             <View style={styles.loggedIn}>
                                 <Text style={styles.bodyText}>ログイン中: {currentUser.email ?? 'Appleアカウント'}</Text>
@@ -566,10 +552,12 @@ export default function SettingsScreen() {
                         <Text style={styles.helpCardChevron}>›</Text>
                     </Pressable>
 
-                    {currentUser && pendingContent && (
+                    {((currentUser && (pendingContent || checking)) || importMessage) && (
                         <Card title="クラウド統合の確認" styles={styles}>
+                            {checking && <Text style={styles.hint}>端末データを確認しています</Text>}
+                            {pendingContent && <>
                             <Text style={styles.hint}>
-                                この端末にはクラウドに無いデータがあります（タスク{pendingContent.tasks.length}件・習慣{pendingContent.habits.length}件）。
+                                この端末と退避バックアップに、クラウドに無いデータがあります（タスク{pendingContent.tasks.length}件・習慣{pendingContent.habits.length}件）。
                             </Text>
                             <View style={styles.formActions}>
                                 <Pressable
@@ -585,13 +573,19 @@ export default function SettingsScreen() {
                                     accessibilityRole="button"
                                     accessibilityLabel="統合を後で行う"
                                     disabled={busy}
-                                    onPress={() => setPendingContent(null)}
+                                    onPress={dismissPendingContent}
                                     style={({ pressed }) => [styles.secondaryButton, (busy || pressed) && styles.muted]}
                                 >
                                     <Text style={styles.secondaryButtonText}>後で</Text>
                                 </Pressable>
                             </View>
-                            {importMessage && <Text style={styles.bodyText}>{importMessage}</Text>}
+                            </>}
+                            {importMessage && <Text accessibilityRole="alert" style={styles.bodyText}>{importMessage}</Text>}
+                            {!pendingContent && !checking && <Pressable accessibilityRole="button"
+                                accessibilityLabel="統合候補を再確認する" disabled={busy}
+                                onPress={() => { void refreshAccount(); }} style={styles.secondaryButton}>
+                                <Text style={styles.secondaryButtonText}>候補を再確認</Text>
+                            </Pressable>}
                         </Card>
                     )}
 

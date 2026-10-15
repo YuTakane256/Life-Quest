@@ -2,10 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     captureAuthSessionGuard,
+    captureAuthSessionScope,
     notifyLogin,
     notifyLogout,
     registerAuthLifecycleHooks,
     resetAuthLifecycleHooks,
+    subscribeAuthSessionScope,
+    waitForAuthLifecycleSettled,
 } from './authLifecycle.ts';
 
 afterEach(() => {
@@ -13,6 +16,78 @@ afterEach(() => {
 });
 
 describe('authLifecycle', () => {
+    it('UI wait handles published to scope subscribers resolve after asynchronous initialization', async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        let wait!: Promise<void>;
+        subscribeAuthSessionScope(() => { wait = waitForAuthLifecycleSettled(); });
+        registerAuthLifecycleHooks({ onLogin: () => gate });
+        const login = notifyLogin('a');
+        const done = vi.fn();
+        void wait.then(done);
+        await Promise.resolve();
+        expect(done).not.toHaveBeenCalled();
+        release();
+        await Promise.all([login, wait]);
+        expect(done).toHaveBeenCalledOnce();
+    });
+
+    it('a superseded transition finishing cannot release the newer initialization wait handle', async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        let newer!: Promise<void>;
+        subscribeAuthSessionScope((scope) => { if (scope.userId === 'a') newer = notifyLogin('b'); });
+        registerAuthLifecycleHooks({ onLogin: () => gate });
+        await notifyLogin('a'); // Superseded A has no remaining hooks, B is still blocked.
+        const done = vi.fn();
+        const wait = waitForAuthLifecycleSettled().then(done);
+        await Promise.resolve();
+        expect(done).not.toHaveBeenCalled();
+        release();
+        await Promise.all([newer, wait]);
+        expect(done).toHaveBeenCalledOnce();
+    });
+
+    it('scope subscribers run before asynchronous lifecycle hooks and ignore same-user duplicates', async () => {
+        const events: string[] = [];
+        const stop = subscribeAuthSessionScope((scope) => { events.push(`scope:${scope.userId}`); });
+        registerAuthLifecycleHooks({ onLogin: async (id) => { events.push(`hook:${id}`); } });
+        await notifyLogin('a');
+        const a = captureAuthSessionScope();
+        await notifyLogin('a');
+        expect(events).toEqual(['scope:a', 'hook:a', 'hook:a']);
+        expect(a.userId).toBe('a');
+        expect(a.isCurrent()).toBe(true);
+        await notifyLogout();
+        expect(a.isCurrent()).toBe(false);
+        expect(events[events.length - 1]).toBe('scope:null');
+        stop();
+        await notifyLogin('b');
+        expect(events[events.length - 1]).toBe('hook:b');
+    });
+
+    it('throwing scope subscribers cannot prevent auth cleanup', async () => {
+        subscribeAuthSessionScope(() => { throw new Error('UI subscriber failed'); });
+        const cleaned = vi.fn();
+        registerAuthLifecycleHooks({ onLogout: cleaned });
+        await notifyLogin('a');
+        await notifyLogout();
+        expect(cleaned).toHaveBeenCalledOnce();
+    });
+
+    it('reentrant scope transitions do not resume old scope callbacks or hooks', async () => {
+        let newer!: Promise<void>;
+        subscribeAuthSessionScope((scope) => { if (scope.userId === 'a') newer = notifyLogin('b'); });
+        const seen: Array<string | null> = [];
+        subscribeAuthSessionScope((scope) => { seen.push(scope.userId); });
+        const hook = vi.fn();
+        registerAuthLifecycleHooks({ onLogin: hook });
+        await notifyLogin('a');
+        await newer;
+        expect(seen).toEqual(['b']);
+        expect(hook.mock.calls).toEqual([['b']]);
+    });
+
     it('scope guards survive duplicate same-user notifications but not A→B→A', async () => {
         const anonymous = captureAuthSessionGuard();
         await notifyLogout();
