@@ -41,6 +41,8 @@ export class EdgeFunctionError extends Error {
 export type EdgeFunctionInvoker = <TResult>(
     name: string,
     body?: Record<string, unknown>,
+    /** Optional caller-owned scope guard; never serialized into the request. */
+    options?: { isActive: () => boolean },
 ) => Promise<TResult>;
 
 /** 依存を束ねてEdge Function呼び出し関数を作る。 */
@@ -59,20 +61,30 @@ export function createEdgeFunctionInvoker(deps: EdgeFunctionDeps): EdgeFunctionI
             body: JSON.stringify(body),
         });
 
-    return async <TResult>(name: string, body: Record<string, unknown> = {}): Promise<TResult> => {
+    return async <TResult>(name: string, body: Record<string, unknown> = {}, options?: { isActive: () => boolean }): Promise<TResult> => {
+        const assertActive = (): void => {
+            if (options && !options.isActive()) {
+                throw new EdgeFunctionError('stale-session', 'アカウントが切り替わったため、処理を中止しました');
+            }
+        };
+        assertActive();
         // サーバーはJWTのuser_idしか信用しない（ADR-007）。誤って混入したuser_idは送らない。
         const { user_id: _ignored, userId: _ignored2, ...safeBody } = body;
 
         const session = await deps.getSession();
+        assertActive();
         if (!session) {
             throw new EdgeFunctionError('unauthenticated', 'ログインが必要です');
         }
 
         let response = await call(name, session.accessToken, safeBody);
+        assertActive();
         if (response.status === 401) {
             const refreshed = await deps.refreshSession();
+            assertActive();
             if (refreshed) {
                 response = await call(name, refreshed.accessToken, safeBody);
+                assertActive();
             }
         }
 
@@ -85,6 +97,8 @@ export function createEdgeFunctionInvoker(deps: EdgeFunctionDeps): EdgeFunctionI
             }
             throw new EdgeFunctionError('http-error', `${name} failed: ${response.status} ${detail}`.trim(), response.status);
         }
-        return await response.json() as TResult;
+        const result = await response.json() as TResult;
+        assertActive();
+        return result;
     };
 }

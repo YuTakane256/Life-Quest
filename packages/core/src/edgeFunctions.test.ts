@@ -10,6 +10,68 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe('createEdgeFunctionInvoker', () => {
+    it('無効な呼び出しスコープならトークン取得も通信も開始しない', async () => {
+        const getSession = vi.fn(async () => ({ accessToken: 'token-a' }));
+        const fetchFn = vi.fn();
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession, refreshSession: async () => null, fetchFn });
+        await expect(invoke('import_snapshot', {}, { isActive: () => false })).rejects.toMatchObject({ code: 'stale-session' });
+        expect(getSession).not.toHaveBeenCalled();
+        expect(fetchFn).not.toHaveBeenCalled();
+    });
+
+    it('トークン取得中の失効で別セッションのトークンを送らない', async () => {
+        let active = true;
+        const fetchFn = vi.fn();
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession: async () => { active = false; return { accessToken: 'token-b' }; },
+            refreshSession: async () => null, fetchFn });
+        await expect(invoke('import_snapshot', {}, { isActive: () => active })).rejects.toMatchObject({ code: 'stale-session' });
+        expect(fetchFn).not.toHaveBeenCalled();
+    });
+
+    it('401到着時に失効していればrefreshも再送も開始しない', async () => {
+        let active = true;
+        const refreshSession = vi.fn(async () => ({ accessToken: 'token-b' }));
+        const fetchFn = vi.fn(async () => { active = false; return jsonResponse(401, {}); });
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession: async () => ({ accessToken: 'token-a' }), refreshSession, fetchFn });
+        await expect(invoke('import_snapshot', {}, { isActive: () => active })).rejects.toMatchObject({ code: 'stale-session' });
+        expect(refreshSession).not.toHaveBeenCalled();
+        expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('refresh待機中に失効したら新トークンでの再送をしない', async () => {
+        let active = true;
+        const fetchFn = vi.fn(async () => jsonResponse(401, {}));
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession: async () => ({ accessToken: 'token-a' }),
+            refreshSession: async () => { active = false; return { accessToken: 'token-b' }; }, fetchFn });
+        await expect(invoke('import_snapshot', {}, { isActive: () => active })).rejects.toMatchObject({ code: 'stale-session' });
+        expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('ガードが有効なら既存の401再試行を維持し、オプションを本文へ含めない', async () => {
+        const fetchFn = vi.fn().mockResolvedValueOnce(jsonResponse(401, {})).mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession: async () => ({ accessToken: 'token-a' }), refreshSession: async () => ({ accessToken: 'renewed-a' }), fetchFn });
+        await expect(invoke('import_snapshot', { snapshot: {} }, { isActive: () => true })).resolves.toEqual({ ok: true });
+        expect(fetchFn).toHaveBeenCalledTimes(2);
+        const init = fetchFn.mock.calls[1][1] as RequestInit;
+        expect(JSON.parse(init.body as string)).toEqual({ snapshot: {} });
+        expect((init.headers as Record<string, string>).Authorization).toBe('Bearer renewed-a');
+    });
+
+    it('レスポンス本文の読み込み中に失効した成功結果は返さない', async () => {
+        let active = true;
+        const fetchFn = vi.fn(async () => ({ ok: true, status: 200,
+            json: async () => { active = false; return { ok: true }; },
+        } as unknown as Response));
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession: async () => ({ accessToken: 'token-a' }), refreshSession: async () => null, fetchFn });
+        await expect(invoke('import_snapshot', {}, { isActive: () => active })).rejects.toMatchObject({ code: 'stale-session' });
+    });
+
     it('access_tokenをAuthorizationヘッダーへ付与して呼び出す', async () => {
         const fetchFn = vi.fn(async () => jsonResponse(200, { ok: true }));
         const invoke = createEdgeFunctionInvoker({
