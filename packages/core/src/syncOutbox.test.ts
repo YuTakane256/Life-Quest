@@ -34,6 +34,92 @@ function makeOutbox(overrides: {
 }
 
 describe('createSyncOutbox', () => {
+    it('drainの保存失敗後もstopは残る並行enqueueの保存を待つ', async () => {
+        const storage = createMemoryStorage();
+        let fail!: () => void;
+        let release!: () => void;
+        let started!: () => void;
+        let thirdStarted!: () => void;
+        const failGate = new Promise<void>((resolve) => { fail = resolve; });
+        const saveGate = new Promise<void>((resolve) => { release = resolve; });
+        const writing = new Promise<void>((resolve) => { started = resolve; });
+        const thirdWriting = new Promise<void>((resolve) => { thirdStarted = resolve; });
+        let writes = 0;
+        const outbox = createSyncOutbox({ storage: { ...storage, setItem: async (key, value) => {
+            const attempt = ++writes;
+            if (attempt === 2) { started(); await failGate; throw new Error('disk error'); }
+            if (attempt === 3) { thirdStarted(); await saveGate; }
+            storage.setItem(key, value);
+        } }, storageKey: 'queue', send: async () => ({ ok: true }) });
+        await outbox.load();
+        await outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'one' });
+        await writing;
+        const second = outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'two' });
+        const running = expect(outbox.flush()).rejects.toThrow('disk error');
+        let settled = false;
+        const stop = outbox.stop().then(() => { settled = true; }, () => { settled = true; });
+        fail();
+        await running;
+        await thirdWriting;
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        release();
+        await Promise.all([stop, second]);
+        expect(settled).toBe(true);
+        expect(JSON.parse(storage.map.get('queue')!).ops.map((op: OutboxOp) => op.opId)).toEqual(['one', 'two']);
+    });
+    it('並行enqueueの保存を直列化し、stopはすべての保存完了を待つ', async () => {
+        const storage = createMemoryStorage();
+        let release!: () => void;
+        let entered!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const writing = new Promise<void>((resolve) => { entered = resolve; });
+        let writes = 0;
+        const outbox = createSyncOutbox({ storage: { ...storage, setItem: async (key, value) => {
+            if (++writes === 1) { entered(); await gate; }
+            storage.setItem(key, value);
+        } }, storageKey: 'queue', send: async () => ({ ok: true }) });
+        await outbox.load();
+        const first = outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'one' });
+        await writing;
+        const second = outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'two' });
+        let stopped = false;
+        const stop = outbox.stop().then(() => { stopped = true; });
+        await Promise.resolve();
+        expect(writes).toBe(1);
+        expect(stopped).toBe(false);
+        release();
+        await Promise.all([first, second, stop]);
+        expect(JSON.parse(storage.map.get('queue')!).ops.map((op: OutboxOp) => op.opId)).toEqual(['one', 'two']);
+    });
+    it.each(['stop', 'scope'] as const)('送信前の保存待ちで%sした操作は送らず、同じIDで再開できる', async (mode) => {
+        const storage = createMemoryStorage();
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        let writes = 0;
+        let active = true;
+        const send = vi.fn(async () => ({ ok: true } as const));
+        const outbox = createSyncOutbox({
+            storage: { ...storage, setItem: async (key, value) => {
+                if (++writes === 2) await gate;
+                storage.setItem(key, value);
+            } },
+            storageKey: 'queue', send, isActive: () => active,
+        });
+        await outbox.load();
+        await outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'same-id' });
+        active = mode !== 'scope';
+        const stopped = mode === 'stop' ? outbox.stop() : outbox.flush();
+        release();
+        await stopped;
+        expect(send).not.toHaveBeenCalled();
+        expect(outbox.snapshot()).toMatchObject([{ opId: 'same-id', status: 'pending' }]);
+        expect(await outbox.enqueue({ operation: 'upsert_task', payload: {} })).toBeNull();
+        const resumed = createSyncOutbox({ storage, storageKey: 'queue', send });
+        await resumed.load();
+        await resumed.drainAndWait();
+        expect(send).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ opId: 'same-id' }));
+    });
     it('FIFOで送信し、成功したopはキューから消える', async () => {
         const { outbox, sent } = makeOutbox();
         await outbox.load();
@@ -227,11 +313,14 @@ describe('createSyncOutbox', () => {
     it('stop（ログアウト）: 進行中opはpendingへ戻り、以後drainは走らない', async () => {
         let resolveSend: ((result: OutboxSendResult) => void) | undefined;
         const gate = new Promise<OutboxSendResult>((resolve) => { resolveSend = resolve; });
-        const send = vi.fn(async () => gate);
+        let started!: () => void;
+        const sending = new Promise<void>((resolve) => { started = resolve; });
+        const send = vi.fn(async () => { started(); return gate; });
         const storage = createMemoryStorage();
         const { outbox } = makeOutbox({ storage, send });
         await outbox.load();
         await outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'op-1' });
+        await sending;
 
         const stopPromise = outbox.stop(); // 送信中に中断
         resolveSend?.({ ok: true });       // 送信自体は成功して返るが…

@@ -4,7 +4,8 @@
  * 恒久失敗しないこと）と、delete_subtask がSupabase RPCとして
  * 送られることを検証する。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -15,12 +16,20 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 const rpcCalls: { operation: string; params: Record<string, unknown> }[] = [];
+const headerCalls: unknown[][] = [];
+const session = vi.hoisted(() => ({ user: 'user-a', token: 'token-a' }));
 
 vi.mock('./supabase', () => ({
     getMobileSupabaseClient: () => ({
-        rpc: vi.fn(async (operation: string, params: Record<string, unknown>) => {
+        auth: { getSession: async () => ({ data: { session: {
+            access_token: session.token, user: { id: session.user },
+        } }, error: null }) },
+        rpc: vi.fn((operation: string, params: Record<string, unknown>) => {
             rpcCalls.push({ operation, params });
-            return { data: {}, error: null };
+            return { setHeader: async (...args: unknown[]) => {
+                headerCalls.push(args);
+                return { data: {}, error: null, status: 200 };
+            } };
         }),
     }),
 }));
@@ -29,7 +38,8 @@ vi.mock('./edgeFunctions', () => ({
     getMobileEdgeFunctionInvoker: () => vi.fn(async () => ({})),
 }));
 
-import { EDGE_OPERATIONS, RPC_OPERATIONS, sendOperation } from './cloudOutbox';
+import { EDGE_OPERATIONS, RPC_OPERATIONS, sendOperation, registerMobileOutboxHooks,
+    enqueueCloudOperation, getActiveMobileOutbox, retryPendingOutbox } from './cloudOutbox';
 import type { OutboxOp } from '@life-quest/core/syncOutbox';
 
 function makeOp(operation: string, payload: Record<string, unknown>): OutboxOp {
@@ -48,11 +58,36 @@ function makeOp(operation: string, payload: Record<string, unknown>): OutboxOp {
 describe('cloudOutboxの送信ルーティング（#505）', () => {
     beforeEach(() => {
         rpcCalls.length = 0;
+        headerCalls.length = 0;
+        session.user = 'user-a'; session.token = 'token-a';
+    });
+    afterEach(() => resetAuthLifecycleHooks());
+
+    it('Mobileでも別ユーザーのJWTを拒否し、元のユーザーの認証回復で同じIDを再送する', async () => {
+        const unregister = registerMobileOutboxHooks();
+        await notifyLogin('user-a');
+        session.user = 'user-b'; session.token = 'token-b';
+        await enqueueCloudOperation('upsert_task', { p_id: 'a-task' });
+        const outbox = getActiveMobileOutbox()!;
+        await outbox.flush();
+        const id = outbox.snapshot()[0].opId;
+        expect(outbox.snapshot()[0].failure?.kind).toBe('auth-required');
+        expect(rpcCalls).toEqual([]);
+        session.user = 'user-a'; session.token = 'a-new-token';
+        await retryPendingOutbox();
+        expect(rpcCalls).toEqual([]);
+        await notifyLogin('user-a');
+        expect(headerCalls).toEqual([['Authorization', 'Bearer a-new-token']]);
+        expect(rpcCalls[0].params.p_key).toBe(id);
+        expect(outbox.snapshot()).toEqual([]);
+        await notifyLogout();
+        unregister();
     });
 
     it('delete_subtaskはSupabase RPCとして送られ、opIdがp_keyになる', async () => {
         const result = await sendOperation(makeOp('delete_subtask', { p_id: 'sub-1' }));
         expect(result).toEqual({ ok: true });
+        expect(headerCalls).toEqual([['Authorization', 'Bearer token-a']]);
         expect(rpcCalls).toEqual([
             { operation: 'delete_subtask', params: { p_id: 'sub-1', p_key: 'op-1' } },
         ]);
