@@ -8,7 +8,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { AppState, type AppStateStatus } from 'react-native';
-import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
     applyPullBatchToCache,
     createEmptyCloudCache,
@@ -40,6 +40,7 @@ import { createReconnectDetector, resolveNetworkOnlineState } from './networkRec
 import { requestMobileLoginBonusRecheck } from '../stores/useMobileLoginBonusStore';
 
 export interface CloudSyncHandle {
+    isActive: () => boolean;
     flush: () => Promise<void>;
     stop: () => void;
     syncNow: () => Promise<void>;
@@ -72,7 +73,8 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     let cache: CloudCache = createEmptyCloudCache();
     let stopped = false;
     const generation = ++cloudSyncGeneration;
-    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration;
+    const isAuthSessionCurrent = captureAuthSessionGuard();
+    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration && isAuthSessionCurrent();
     let pushState = getMobileCloudOutboxState();
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
     const publish = (): void => {
@@ -196,6 +198,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
 
     publish();
     return {
+        isActive: isCurrent,
         flush: () => runner.flush(),
         syncNow: async () => {
             if (!isCurrent()) return;
@@ -246,7 +249,7 @@ export function stopMobileCloudSyncForAccountDeletion(): void {
 export function registerMobileCloudSyncHooks(): () => void {
     const unregister = registerAuthLifecycleHooks({
         onLogin: (userId) => {
-            if (activeUserId === userId && activeHandle) return;
+            if (activeUserId === userId && activeHandle?.isActive()) return;
             activeHandle?.stop();
             activeHandle = startMobileCloudSync(userId);
             activeUserId = activeHandle ? userId : null;

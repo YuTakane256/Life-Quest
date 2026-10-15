@@ -13,7 +13,7 @@
  * セクション単位で「クラウドが正か」を判定し（getSeedableSections）、
  * 初期行しか無いクラウド状態で既存ローカルデータを消さない。
  */
-import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
     applyPullBatchToCache,
     buildCanonicalGameSnapshot,
@@ -56,6 +56,8 @@ import { useNotificationStore } from '../stores/useNotificationStore';
 import { requestLoginBonusRecheck } from '../stores/useLoginBonusStore';
 
 export interface CloudSyncHandle {
+    /** 同じuserIdでも、途中のログアウト通知で無効になったハンドルは再利用しない。 */
+    isActive: () => boolean;
     /** 実行中のプルの完了を待つ（テスト用） */
     flush: () => Promise<void>;
     /** 購読・タイマーを全て止める */
@@ -140,7 +142,9 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     let cache: CloudCache = createEmptyCloudCache();
     let stopped = false;
     const generation = ++cloudSyncGeneration;
-    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration;
+    // Invalidate at notification start, not only once later sync hooks reach stop().
+    const isAuthSessionCurrent = captureAuthSessionGuard();
+    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration && isAuthSessionCurrent();
     let pushState = getWebCloudOutboxState();
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
     const publish = (): void => {
@@ -266,6 +270,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
 
     publish();
     return {
+        isActive: isCurrent,
         flush: () => runner.flush(),
         syncNow: async () => {
             if (!isCurrent()) return;
@@ -320,7 +325,7 @@ export function stopWebCloudSyncForAccountDeletion(): void {
 export function registerWebCloudSyncHooks(): () => void {
     const unregister = registerAuthLifecycleHooks({
         onLogin: (userId) => {
-            if (activeUserId === userId && activeHandle) return;
+            if (activeUserId === userId && activeHandle?.isActive()) return;
             activeHandle?.stop();
             activeHandle = startWebCloudSync(userId);
             activeUserId = activeHandle ? userId : null;

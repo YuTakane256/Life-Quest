@@ -14,6 +14,9 @@ import { useLoginBonusStore } from '../stores/useLoginBonusStore';
 import { useGameStore } from '../stores/useGameStore';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useStatsStore } from '../stores/useStatsStore';
+import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
+import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
+import { applyCloudCacheToWebStores } from './cloudSync';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { flushCompletionRewardWrites, getCompletionRewardGeneration, resetCompletionRewardStorage, seedCloudCompletionRewardStorage } from './completionRewards';
 
@@ -23,6 +26,12 @@ function task(id: string) {
         subtasks: [], recurrence: 'none' as const, completed: false,
         completedAt: null, createdAt: '2026-07-01T00:00:00.000Z',
     };
+}
+
+function battle() {
+    return { id: 'old-battle', timestamp: '2026-10-01T00:00:00Z', stage: 1,
+        enemyName: 'Enemy', enemyMaxHp: 100, enemyAttack: 5, enemyDefense: 1,
+        outcome: 'victory' as const, turnCount: 2, xpEarned: 20, logs: [] };
 }
 
 describe('Webログアウト時のストアクリア（ADR-009）', () => {
@@ -45,7 +54,12 @@ describe('Webログアウト時のストアクリア（ADR-009）', () => {
     beforeEach(() => {
         resetCloudSessionSeeded();
         useTaskStore.setState({ tasks: [task('local-1')], pendingCompletions: [] });
+        useHabitStore.setState({ habits: [{ id: 'old-habit', name: 'Old habit', categoryId: 'health', createdAt: '2026-10-01T00:00:00Z' }],
+            dailyRecords: [], restDays: [], allCompleteRewardDates: [] });
+        resetCompletionRewardStorage(() => useGameStore.setState((state) => ({ character: { ...state.character, totalXp: 75 } })));
         useTitleStore.setState({ activeTitle: 'ローカル称号' });
+        useStatsStore.setState({ taskXpLog: { '2026-10-01': 80 }, habitLog: { '2026-10-01': { count: 3, allComplete: true } } });
+        useBattleHistoryStore.setState({ history: [battle()] });
     });
 
     afterEach(() => {
@@ -62,6 +76,14 @@ describe('Webログアウト時のストアクリア（ADR-009）', () => {
         // notifyLogout完了時点（＝ログアウトAPIの一部として）で即座に空
         expect(useTaskStore.getState().tasks).toEqual([]);
         expect(useTitleStore.getState().activeTitle).toBeNull();
+        expect(useStatsStore.getState().taskXpLog).toEqual({});
+        expect(useStatsStore.getState().habitLog).toEqual({});
+        expect(useBattleHistoryStore.getState().history).toEqual([]);
+        // Persisted state must not bring the previous account back on reload.
+        await useStatsStore.persist.rehydrate();
+        await useBattleHistoryStore.persist.rehydrate();
+        expect(useStatsStore.getState().taskXpLog).toEqual({});
+        expect(useBattleHistoryStore.getState().history).toEqual([]);
         unregister();
     });
 
@@ -72,7 +94,59 @@ describe('Webログアウト時のストアクリア（ADR-009）', () => {
 
         expect(useTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
         expect(useTitleStore.getState().activeTitle).toBe('ローカル称号');
+        expect(useStatsStore.getState().taskXpLog).toEqual({ '2026-10-01': 80 });
+        expect(useBattleHistoryStore.getState().history).toHaveLength(1);
         unregister();
+    });
+
+    it('初回・同一ユーザーのログインは保持し、別ユーザーの後続フックより先に全表示データを隔離する', async () => {
+        const unregister = registerWebAuthStoreHooks();
+        await notifyLogin('user-a');
+        expect(useTaskStore.getState().tasks).toHaveLength(1); // Local migration source is preserved.
+        markCloudSessionSeeded();
+        await notifyLogin('user-a');
+        expect(useStatsStore.getState().taskXpLog).toEqual({ '2026-10-01': 80 });
+        const { registerAuthLifecycleHooks } = await import('@life-quest/core/authLifecycle');
+        const observed = vi.fn(() => ({
+            tasks: useTaskStore.getState().tasks, habits: useHabitStore.getState().habits,
+            xp: useGameStore.getState().character.totalXp, title: useTitleStore.getState().activeTitle,
+            history: useBattleHistoryStore.getState().history,
+            taskXpLog: useStatsStore.getState().taskXpLog, habitLog: useStatsStore.getState().habitLog,
+        }));
+        const unobserve = registerAuthLifecycleHooks({ onLogin: () => { observed(); } });
+        await notifyLogin('user-b');
+        expect(observed).toHaveBeenCalledOnce();
+        expect(observed).toHaveReturnedWith({ tasks: [], habits: [], xp: 0, title: null, history: [], taskXpLog: {}, habitLog: {} });
+        // The new account's monotonic merge must not inherit A's larger values.
+        useStatsStore.getState().mergeFromCloud({ taskXpLog: { '2026-10-01': 10 }, habitLog: {} });
+        expect(useStatsStore.getState().taskXpLog).toEqual({ '2026-10-01': 10 });
+        markCloudSessionSeeded();
+        await notifyLogout();
+        expect(useStatsStore.getState().taskXpLog).toEqual({});
+        unobserve();
+        unregister();
+    });
+
+    it('クラウド統計だけを反映したセッションもログアウト時にクリアする', async () => {
+        registerWebAuthStoreHooks();
+        await notifyLogin('stats-only');
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 1, has_more: false,
+            stats_daily: [{ date: '2026-10-02', task_xp: 20, habit_count: 1, all_habits_complete: false, version: 1 }],
+        });
+        if (applyCloudCacheToWebStores(cache)) markCloudSessionSeeded();
+        await notifyLogout();
+        expect(useStatsStore.getState().taskXpLog).toEqual({});
+        expect(useStatsStore.getState().habitLog).toEqual({});
+    });
+
+    it('未シードのまま別ユーザー通知になっても匿名移行元を消さない', async () => {
+        registerWebAuthStoreHooks();
+        await notifyLogin('user-a');
+        await notifyLogin('user-b');
+        expect(useTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
+        expect(useStatsStore.getState().taskXpLog).toEqual({ '2026-10-01': 80 });
+        expect(useBattleHistoryStore.getState().history.map((entry) => entry.id)).toEqual(['old-battle']);
     });
 
     it('ログインボーナスはクラウドシードの有無に関係なくログアウト時に即時隔離する', async () => {
@@ -142,6 +216,8 @@ describe('expired cloud session cache isolation', () => {
             character: { ...useGameStore.getState().character, totalXp: 110 }, completionRewardKeys: ['task:cloud-paid'],
         }));
         useTaskStore.setState({ tasks: [task('cloud-only')], pendingCompletions: [] });
+        useStatsStore.setState({ taskXpLog: { '2026-10-01': 80 }, habitLog: {} });
+        useBattleHistoryStore.setState({ history: [battle()] });
         await flushCompletionRewardWrites();
     });
     afterEach(async () => { await flushCompletionRewardWrites(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -149,11 +225,16 @@ describe('expired cloud session cache isolation', () => {
     it('archives cloud data before starting fresh anonymous progress, which survives reload', async () => {
         const oldGame = localStorage.getItem('quest-board-game');
         const oldTasks = localStorage.getItem('quest-board-tasks');
+        const oldStats = localStorage.getItem('quest-board-stats');
+        const oldHistory = localStorage.getItem('quest-board-battle-history');
         await prepareWebAnonymousSession();
         const recoveryKeys = Object.keys(localStorage).filter((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX));
         expect(recoveryKeys).toHaveLength(1);
         const archive = JSON.parse(localStorage.getItem(recoveryKeys[0])!);
         expect(archive.slots).toMatchObject({ 'quest-board-game': oldGame, 'quest-board-tasks': oldTasks });
+        expect(archive.slots).toMatchObject({ 'quest-board-stats': oldStats, 'quest-board-battle-history': oldHistory });
+        expect(useStatsStore.getState().taskXpLog).toEqual({});
+        expect(useStatsStore.getState().habitLog).toEqual({});
         expect(useTaskStore.getState().tasks).toEqual([]);
         expect(useGameStore.getState().completionRewardKeys).toEqual([]);
         setGameRewardAuthorityState('anonymous');
@@ -174,6 +255,8 @@ describe('expired cloud session cache isolation', () => {
         await expect(prepareWebAnonymousSession()).rejects.toThrow();
         expect(localStorage.getItem('quest-board-game')).toBe(original);
         expect(useTaskStore.getState().tasks.map((value) => value.id)).toEqual(['cloud-only']);
+        expect(useStatsStore.getState().taskXpLog).toEqual({ '2026-10-01': 80 });
+        expect(useBattleHistoryStore.getState().history.map((value) => value.id)).toEqual(['old-battle']);
         expect(useGameStore.getState().completionRewardError).toContain('再ログイン');
     });
 
