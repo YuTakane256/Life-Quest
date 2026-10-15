@@ -1,0 +1,56 @@
+appId: com.yutakane.lifequest.parity
+name: Task add and undo remain separate during the five-second grace period
+---
+# Runner requires the memory-only daily reference. Never clear persistent data.
+- stopApp
+- launchApp:
+    clearState: false
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "メールを返信するを完了にする"
+    timeout: 60000
+# No five-second wait: add must open the form, not accidentally invoke undo.
+- scrollUntilVisible:
+    element: "メールを返信するを完了にする"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "メールを返信するを完了にする"
+    waitToSettleTimeoutMs: 200
+- tapOn:
+    text: "新しいタスクを追加"
+    waitToSettleTimeoutMs: 200
+- tapOn: "取消する"
+- assertVisible: "タスク追加フォームを閉じる"
+- assertNotVisible: "取消する"
+- tapOn: "タスク追加フォームを閉じる"
+- assertVisible: "メールを返信するを完了にする"
+# Capture both controls and exercise focused text entry. Software keyboard
+# visibility depends on the simulator's hardware-keyboard setting.
+- scrollUntilVisible:
+    element: "メールを返信するを完了にする"
+    direction: DOWN
+    centerElement: true
+- tapOn: "メールを返信するを完了にする"
+- takeScreenshot: "undo-${REFERENCE_THEME}-stack"
+- tapOn: "新しいタスクを追加"
+- tapOn: "タスク名"
+- takeScreenshot: "undo-${REFERENCE_THEME}-input"
+- inputText: "Space during undo"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "追加"
+- assertVisible: "Space during undoを完了にする"
+- extendedWaitUntil:
+    notVisible: "取消する"
+    timeout: 6000
+- takeScreenshot: "undo-${REFERENCE_THEME}-expired"

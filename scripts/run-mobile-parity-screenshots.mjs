@@ -14,6 +14,7 @@ export const mobileParityFlows = Object.freeze({
     progression: '.maestro/mobile-parity/anonymous-progression.yaml',
     reference: '.maestro/mobile-parity/capture-reference-screens.yaml',
     daily: '.maestro/mobile-parity/daily-screen-interactions.yaml',
+    undo: '.maestro/mobile-parity/task-undo-actions.yaml',
     character: '.maestro/mobile-parity/character-screen-interactions.yaml',
     map: '.maestro/mobile-parity/map-screen-interactions.yaml',
     battle: '.maestro/mobile-parity/battle-screen-interactions.yaml',
@@ -35,7 +36,7 @@ export function getMaestroTestCommand(flow) {
 }
 
 export function requiresReferenceRuntime(name) {
-    return name === 'reference' || name === 'daily' || name === 'character' || name === 'map' || name === 'battle';
+    return name === 'reference' || name === 'daily' || name === 'undo' || name === 'character' || name === 'map' || name === 'battle';
 }
 
 /** Never mistake seeded in-memory screenshots for persistence evidence. */
@@ -147,6 +148,9 @@ export function assertReferenceProfile(manifest, flowName) {
     getReferenceTheme(manifest);
     const extra = manifest?.extra?.expoClient?.extra ?? manifest?.extra;
     const profile = extra?.parityCaptureProfile ?? 'daily';
+    if (flowName === 'undo' && extra?.parityLocalOnly !== true) {
+        throw new Error('Undo flow requires the anonymous parity reference runtime with no Supabase configuration.');
+    }
     if (profile !== (flowName === 'battle' ? 'battle' : 'daily')) {
         throw new Error('Battle flow requires LIFE_QUEST_PARITY_PROFILE=battle; other reference flows require the daily profile.');
     }
