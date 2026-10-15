@@ -21,6 +21,8 @@ export interface CloudPullDeps {
     /** カーソルの読み書き（user_id別namespaceキーに対して） */
     readCursor: () => Promise<number>;
     writeCursor: (cursor: number) => Promise<void>;
+    /** False once the owning session stops/is superseded. Late results are discarded. */
+    isActive?: () => boolean;
     maxVersionsPerBatch?: number;
 }
 
@@ -33,14 +35,18 @@ export interface CloudPullRunner {
 
 export function createCloudPullRunner(deps: CloudPullDeps): CloudPullRunner {
     const maxVersions = deps.maxVersionsPerBatch ?? 200;
+    const isActive = deps.isActive ?? (() => true);
     let running: Promise<void> | null = null;
     let dirty = false;
 
     const pullLoop = async (): Promise<void> => {
+        if (!isActive()) return;
         let cursor = await deps.readCursor();
-        for (;;) {
+        while (isActive()) {
             const batch = await deps.fetchBatch(cursor, maxVersions);
+            if (!isActive()) return;
             await deps.applyBatch(batch);
+            if (!isActive()) return;
             // カーソルは「実際に返って適用したバッチのnext_cursor」にのみ前進させる
             //（ADR-005: 独立クエリでの前進は取りこぼしの温床になるため禁止）
             if (batch.next_cursor > cursor) {
@@ -52,6 +58,7 @@ export function createCloudPullRunner(deps: CloudPullDeps): CloudPullRunner {
     };
 
     const run = (): Promise<void> => {
+        if (!isActive()) return Promise.resolve();
         if (running) {
             dirty = true;
             return running;
@@ -61,7 +68,7 @@ export function createCloudPullRunner(deps: CloudPullDeps): CloudPullRunner {
                 do {
                     dirty = false;
                     await pullLoop();
-                } while (dirty);
+                } while (dirty && isActive());
             } finally {
                 running = null;
             }

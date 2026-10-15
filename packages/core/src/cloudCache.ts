@@ -356,13 +356,15 @@ export function cloudCacheKey(userId: string, section: CloudCacheSection): strin
     return `life-quest:cloud:${userId}:cache:${section}:v1`;
 }
 
-/** キャッシュ全体をセクション別キーへ保存する */
+/** 保存開始済みのI/Oは取消不可。失効後は次のセクションの保存を開始しない。 */
 export async function persistCloudCache(
     storage: RepositoryStorage,
     userId: string,
     cache: CloudCache,
+    isActive: () => boolean = () => true,
 ): Promise<void> {
     for (const [section, tables] of Object.entries(CACHE_SECTIONS)) {
+        if (!isActive()) return;
         const payload = Object.fromEntries(tables.map((table) => [table, cache[table]]));
         await storage.setItem(cloudCacheKey(userId, section as CloudCacheSection), JSON.stringify(payload));
     }

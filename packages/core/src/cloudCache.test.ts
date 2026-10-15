@@ -31,6 +31,30 @@ function createMemoryStorage() {
     };
 }
 
+describe('cloud cache persistence session boundary', () => {
+    it('does not begin writes for an inactive session or more sections after it stops', async () => {
+        let active = false;
+        const writes: string[] = [];
+        let release!: () => void;
+        let entered!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const ready = new Promise<void>((resolve) => { entered = resolve; });
+        const storage = {
+            ...createMemoryStorage(),
+            setItem: async (key: string) => { writes.push(key); entered(); await gate; },
+        };
+        await persistCloudCache(storage, 'a', createEmptyCloudCache(), () => active);
+        expect(writes).toEqual([]);
+        active = true;
+        const saving = persistCloudCache(storage, 'a', createEmptyCloudCache(), () => active);
+        await ready;
+        active = false;
+        release();
+        await saving;
+        expect(writes).toEqual([cloudCacheKey('a', 'tasks')]);
+    });
+});
+
 describe('applyPullBatchToCache', () => {
     it('PKでupsertし、versionの後退は拒否する', () => {
         let cache = createEmptyCloudCache();

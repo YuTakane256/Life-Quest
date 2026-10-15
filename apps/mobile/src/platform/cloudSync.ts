@@ -72,10 +72,11 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     let cache: CloudCache = createEmptyCloudCache();
     let stopped = false;
     const generation = ++cloudSyncGeneration;
+    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration;
     let pushState = getMobileCloudOutboxState();
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
     const publish = (): void => {
-        if (stopped || generation !== cloudSyncGeneration) return;
+        if (!isCurrent()) return;
         publishCloudSyncState({
             availability: pushState.availability === 'inactive' ? 'inactive' : 'ready',
             push: pushState,
@@ -89,12 +90,14 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     });
 
     const seedStores = (): void => {
-        if (applyCloudCacheToMobileStores(cache)) {
+        if (!isCurrent()) return;
+        if (applyCloudCacheToMobileStores(cache) && isCurrent()) {
             markCloudSessionSeeded();
         }
     };
 
     const runner = createCloudPullRunner({
+        isActive: isCurrent,
         fetchBatch: async (afterVersion, maxVersions) => {
             const { data, error } = await client.rpc('pull_sync_batch', {
                 p_after_version: afterVersion,
@@ -104,8 +107,9 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
             return data as PullBatch;
         },
         applyBatch: async (batch) => {
+            if (!isCurrent()) return;
             cache = applyPullBatchToCache(cache, batch);
-            await persistCloudCache(AsyncStorage, userId, cache);
+            await persistCloudCache(AsyncStorage, userId, cache, isCurrent);
             seedStores();
         },
         readCursor: async () => {
@@ -114,21 +118,22 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
             return Number.isFinite(cursor) && cursor >= 0 ? cursor : 0;
         },
         writeCursor: async (cursor) => {
+            if (!isCurrent()) return;
             await AsyncStorage.setItem(cloudCursorKey(userId), String(cursor));
         },
     });
 
     const pullNow = async (): Promise<void> => {
-        if (stopped) return;
+        if (!isCurrent()) return;
         pullState = { ...pullState, phase: 'pulling' };
         publish();
         try {
             await runner.flush();
-            if (stopped) return;
+            if (!isCurrent()) return;
             pullState = { phase: 'idle', lastSuccessAt: new Date().toISOString() };
             publish();
         } catch {
-            if (stopped) return;
+            if (!isCurrent()) return;
             pullState = { ...pullState, phase: 'failed' };
             publish();
             throw new Error('cloud pull failed');
@@ -141,8 +146,9 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
 
     // 再接続時は、古いクラウド状態をpullする前にローカルの保留操作を送る。
     const recoverConnection = async (): Promise<boolean> => {
+        if (!isCurrent()) return false;
         const { retryablePending } = await drainOutboxAndWait();
-        if (stopped || retryablePending) return false;
+        if (!isCurrent() || retryablePending) return false;
         let pulled = false;
         try {
             await pullNow();
@@ -150,8 +156,8 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         } catch {
             // オフライン時はキャッシュ表示を継続し、次の復帰トリガで再試行する。
         }
-        if (pulled && !stopped) requestMobileLoginBonusRecheck();
-        return !stopped;
+        if (pulled && isCurrent()) requestMobileLoginBonusRecheck();
+        return isCurrent();
     };
 
     const channel = client
@@ -164,6 +170,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         .subscribe();
 
     const onAppStateChange = (state: AppStateStatus): void => {
+        if (!isCurrent()) return;
         if (state === 'active') {
             scheduler.start();
             void recoverConnection().catch(() => undefined);
@@ -181,7 +188,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     // 起動: まずキャッシュから復元（オフラインでも表示）→ 初回プル
     void (async () => {
         cache = await loadCloudCache(AsyncStorage, userId);
-        if (stopped) return;
+        if (!isCurrent()) return;
         // 前回セッションの保留操作があるなら、古いキャッシュで楽観更新を
         // 上書きしない。送信成功後にだけキャッシュを適用する。
         if (await recoverConnection()) seedStores();
@@ -191,7 +198,9 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     return {
         flush: () => runner.flush(),
         syncNow: async () => {
+            if (!isCurrent()) return;
             await retryPendingOutbox();
+            if (!isCurrent()) return;
             const state = getMobileCloudOutboxState();
             if (state.pending > 0 || state.inflight > 0) return;
             try {

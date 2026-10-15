@@ -140,10 +140,11 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     let cache: CloudCache = createEmptyCloudCache();
     let stopped = false;
     const generation = ++cloudSyncGeneration;
+    const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration;
     let pushState = getWebCloudOutboxState();
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
     const publish = (): void => {
-        if (stopped || generation !== cloudSyncGeneration) return;
+        if (!isCurrent()) return;
         publishCloudSyncState({
             availability: pushState.availability === 'inactive' ? 'inactive' : 'ready',
             push: pushState,
@@ -157,12 +158,14 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     });
 
     const seedStores = (): void => {
-        if (applyCloudCacheToWebStores(cache)) {
+        if (!isCurrent()) return;
+        if (applyCloudCacheToWebStores(cache) && isCurrent()) {
             markCloudSessionSeeded();
         }
     };
 
     const runner = createCloudPullRunner({
+        isActive: isCurrent,
         fetchBatch: async (afterVersion, maxVersions) => {
             const { data, error } = await client.rpc('pull_sync_batch', {
                 p_after_version: afterVersion,
@@ -172,8 +175,9 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
             return data as PullBatch;
         },
         applyBatch: async (batch) => {
+            if (!isCurrent()) return;
             cache = applyPullBatchToCache(cache, batch);
-            await persistCloudCache(storage, userId, cache);
+            await persistCloudCache(storage, userId, cache, isCurrent);
             seedStores();
         },
         readCursor: async () => {
@@ -182,21 +186,22 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
             return Number.isFinite(cursor) && cursor >= 0 ? cursor : 0;
         },
         writeCursor: async (cursor) => {
+            if (!isCurrent()) return;
             await storage.setItem(cloudCursorKey(userId), String(cursor));
         },
     });
 
     const pullNow = async (): Promise<void> => {
-        if (stopped) return;
+        if (!isCurrent()) return;
         pullState = { ...pullState, phase: 'pulling' };
         publish();
         try {
             await runner.flush();
-            if (stopped) return;
+            if (!isCurrent()) return;
             pullState = { phase: 'idle', lastSuccessAt: new Date().toISOString() };
             publish();
         } catch {
-            if (stopped) return;
+            if (!isCurrent()) return;
             pullState = { ...pullState, phase: 'failed' };
             publish();
             throw new Error('cloud pull failed');
@@ -210,8 +215,9 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     // 楽観更新が残ったままpullすると、古いクラウド状態で一時的に上書きされうる。
     // 再接続・フォアグラウンド復帰ではoutboxを先に空にしてからpullを要求する。
     const recoverConnection = async (): Promise<boolean> => {
+        if (!isCurrent()) return false;
         const { retryablePending } = await drainOutboxAndWait();
-        if (stopped || retryablePending) return false;
+        if (!isCurrent() || retryablePending) return false;
         let pulled = false;
         try {
             await pullNow();
@@ -221,8 +227,8 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         }
         // 同期が成功した復帰時だけ未請求ボーナスを再確認する。ストア側の
         // 世代・in-flightゲートが複数トリガの重複を吸収する。
-        if (pulled && !stopped) requestLoginBonusRecheck();
-        return !stopped;
+        if (pulled && isCurrent()) requestLoginBonusRecheck();
+        return isCurrent();
     };
 
     // Realtime: 全書き込み操作が必ずsync_versionsをUPDATEするため、1購読で全変更を検知できる
@@ -236,6 +242,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         .subscribe();
 
     const onVisibilityChange = (): void => {
+        if (!isCurrent()) return;
         if (document.visibilityState === 'visible') {
             scheduler.start();
             void recoverConnection().catch(() => undefined);
@@ -251,7 +258,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     // 起動: まずキャッシュから復元（オフラインでも表示）→ 初回プル
     void (async () => {
         cache = await loadCloudCache(storage, userId);
-        if (stopped) return;
+        if (!isCurrent()) return;
         // pending outboxがある間は、前回のクラウドキャッシュで楽観更新を
         // 上書きしない。送信成功後にのみキャッシュを反映する。
         if (await recoverConnection()) seedStores();
@@ -261,7 +268,9 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     return {
         flush: () => runner.flush(),
         syncNow: async () => {
+            if (!isCurrent()) return;
             await retryPendingOutbox();
+            if (!isCurrent()) return;
             const state = getWebCloudOutboxState();
             if (state.pending > 0 || state.inflight > 0) return;
             try {
