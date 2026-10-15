@@ -49,7 +49,8 @@ npx vitest run src/platform/cloudMigrationSession.test.ts apps/mobile/src/platfo
   開始済み保存が切替後に完了する場合でも、保存内容は開始前に直列化したスナップショットです。
   退会時の削除と開始済み保存との原子性を保証するものではありません。
 - Mobile設定画面の`getPendingMobileContent`/承認操作は別の手動フローです。
-  候補表示・承認のセッション帰属確認は後続課題で、今回「統合操作全体が分離済み」とは扱いません。
+  #731では対象外です。候補表示・承認の帰属・再試行・画面更新は
+  [後続の#733](mobile-manual-import-quality.md)でまとめて対応します。
 - 実Supabaseの2アカウントE2E、Web↔Mobile、オフライン復帰、iOS/Android実機は
   [全体の品質確認](mobile-web-implementation-roadmap.md)で別途検証します。
 

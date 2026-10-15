@@ -10,6 +10,35 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe('createEdgeFunctionInvoker', () => {
+    it.each(['b', undefined])('expectedUserIdがある時は異なる/不明のtoken所有者%sを拒否する', async (userId) => {
+        const fetchFn = vi.fn();
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession: async () => ({ accessToken: 'token', userId }), refreshSession: async () => null, fetchFn });
+        await expect(invoke('import_mobile_content', {}, { isActive: () => true, expectedUserId: 'a' }))
+            .rejects.toMatchObject({ code: 'stale-session' });
+        expect(fetchFn).not.toHaveBeenCalled();
+    });
+
+    it('refreshが別ユーザーのtokenを返したら再送しない', async () => {
+        const fetchFn = vi.fn(async () => jsonResponse(401, {}));
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession: async () => ({ accessToken: 'a-token', userId: 'a' }),
+            refreshSession: async () => ({ accessToken: 'b-token', userId: 'b' }), fetchFn });
+        await expect(invoke('import_mobile_content', {}, { isActive: () => true, expectedUserId: 'a' }))
+            .rejects.toMatchObject({ code: 'stale-session' });
+        expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('同一ユーザーのtoken更新は許可し、expectedUserIdもHTTP本文には含めない', async () => {
+        const fetchFn = vi.fn().mockResolvedValueOnce(jsonResponse(401, {})).mockResolvedValueOnce(jsonResponse(200, {}));
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'anon',
+            getSession: async () => ({ accessToken: 'a-token', userId: 'a' }),
+            refreshSession: async () => ({ accessToken: 'new-a-token', userId: 'a' }), fetchFn });
+        await invoke('import_mobile_content', { content: {} }, { isActive: () => true, expectedUserId: 'a' });
+        expect(JSON.parse(fetchFn.mock.calls[1][1].body as string)).toEqual({ content: {} });
+        expect(fetchFn.mock.calls[1][1].headers.Authorization).toBe('Bearer new-a-token');
+    });
+
     it('無効な呼び出しスコープならトークン取得も通信も開始しない', async () => {
         const getSession = vi.fn(async () => ({ accessToken: 'token-a' }));
         const fetchFn = vi.fn();

@@ -25,6 +25,22 @@ const registeredHooks = new Set<AuthLifecycleHooks>();
 let lifecycleGeneration = 0;
 let scopeGeneration = 0;
 let scopeUserId: string | null = null;
+const scopeListeners = new Set<(scope: AuthSessionScope) => void>();
+
+export interface AuthSessionScope {
+    userId: string | null;
+    isCurrent: () => boolean;
+}
+
+/** Lifecycle identity only, not authentication. Useful for invalidating account UI before async hooks. */
+export function captureAuthSessionScope(): AuthSessionScope {
+    return { userId: scopeUserId, isCurrent: captureAuthSessionGuard() };
+}
+
+export function subscribeAuthSessionScope(listener: (scope: AuthSessionScope) => void): () => void {
+    scopeListeners.add(listener);
+    return () => { scopeListeners.delete(listener); };
+}
 
 /** Compare lifecycle scope only; this is not an authentication/authorization check. */
 export function captureAuthSessionGuard(): () => boolean {
@@ -36,6 +52,11 @@ function updateScope(userId: string | null): void {
     if (scopeUserId === userId) return;
     scopeUserId = userId;
     scopeGeneration += 1;
+    const scope = captureAuthSessionScope();
+    for (const listener of [...scopeListeners]) {
+        if (!scope.isCurrent()) break; // A subscriber may start a newer transition.
+        try { listener(scope); } catch { /* A UI subscriber must not prevent authentication cleanup. */ }
+    }
 }
 
 /** フックを登録する。戻り値で解除できる。 */
@@ -49,6 +70,7 @@ export function registerAuthLifecycleHooks(hooks: AuthLifecycleHooks): () => voi
 /** 全フックを破棄する（テスト用）。 */
 export function resetAuthLifecycleHooks(): void {
     registeredHooks.clear();
+    scopeListeners.clear();
     lifecycleGeneration = 0;
     scopeUserId = null;
     scopeGeneration += 1; // Teardown must invalidate already captured work.
@@ -71,14 +93,14 @@ async function runHooks(
 
 /** セッション確立を全フックへ通知する。 */
 export function notifyLogin(userId: string): Promise<void> {
-    updateScope(userId);
     const generation = ++lifecycleGeneration;
+    updateScope(userId);
     return runHooks((hooks) => hooks.onLogin?.(userId), () => generation === lifecycleGeneration);
 }
 
 /** ログアウトを全フックへ通知する。全フック完了後に解決する。 */
 export function notifyLogout(): Promise<void> {
-    updateScope(null);
     const generation = ++lifecycleGeneration;
+    updateScope(null);
     return runHooks((hooks) => hooks.onLogout?.(), () => generation === lifecycleGeneration);
 }

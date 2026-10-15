@@ -12,6 +12,7 @@
 
 export interface EdgeSession {
     accessToken: string;
+    userId?: string;
 }
 
 export interface EdgeFunctionDeps {
@@ -38,11 +39,17 @@ export class EdgeFunctionError extends Error {
     }
 }
 
+export interface EdgeFunctionCallOptions {
+    isActive: () => boolean;
+    /** When set, fail closed unless token metadata belongs to this user. */
+    expectedUserId?: string;
+}
+
 export type EdgeFunctionInvoker = <TResult>(
     name: string,
     body?: Record<string, unknown>,
     /** Optional caller-owned scope guard; never serialized into the request. */
-    options?: { isActive: () => boolean },
+    options?: EdgeFunctionCallOptions,
 ) => Promise<TResult>;
 
 /** 依存を束ねてEdge Function呼び出し関数を作る。 */
@@ -61,9 +68,10 @@ export function createEdgeFunctionInvoker(deps: EdgeFunctionDeps): EdgeFunctionI
             body: JSON.stringify(body),
         });
 
-    return async <TResult>(name: string, body: Record<string, unknown> = {}, options?: { isActive: () => boolean }): Promise<TResult> => {
-        const assertActive = (): void => {
-            if (options && !options.isActive()) {
+    return async <TResult>(name: string, body: Record<string, unknown> = {}, options?: EdgeFunctionCallOptions): Promise<TResult> => {
+        const assertActive = (session?: EdgeSession | null): void => {
+            if (options && (!options.isActive()
+                || (session !== undefined && options.expectedUserId !== undefined && session?.userId !== options.expectedUserId))) {
                 throw new EdgeFunctionError('stale-session', 'アカウントが切り替わったため、処理を中止しました');
             }
         };
@@ -72,7 +80,7 @@ export function createEdgeFunctionInvoker(deps: EdgeFunctionDeps): EdgeFunctionI
         const { user_id: _ignored, userId: _ignored2, ...safeBody } = body;
 
         const session = await deps.getSession();
-        assertActive();
+        assertActive(session);
         if (!session) {
             throw new EdgeFunctionError('unauthenticated', 'ログインが必要です');
         }
@@ -81,7 +89,7 @@ export function createEdgeFunctionInvoker(deps: EdgeFunctionDeps): EdgeFunctionI
         assertActive();
         if (response.status === 401) {
             const refreshed = await deps.refreshSession();
-            assertActive();
+            assertActive(refreshed);
             if (refreshed) {
                 response = await call(name, refreshed.accessToken, safeBody);
                 assertActive();
