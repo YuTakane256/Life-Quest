@@ -18,6 +18,36 @@ function memory() {
 afterEach(() => resetAuthLifecycleHooks());
 
 describe('outbox account boundary', () => {
+    it('停止中の一時的な保存失敗でも、次のログインで復旧し元のopIdを再送する', async () => {
+        const storage = memory();
+        const failed = deferred();
+        const entered = deferred();
+        let writes = 0;
+        const send = vi.fn(async () => ({ error: null }));
+        const controller = createCloudOutboxController({ storage: { ...storage, setItem: async (key, value) => {
+            if (++writes === 2) { entered.resolve(); await failed.promise; throw new Error('temporary disk error'); }
+            await storage.setItem(key, value);
+        } }, getRpcClient: () => ({ rpc: send }), getEdgeInvoker: () => null });
+        const unregister = controller.registerHooks();
+        await notifyLogin('a');
+        await controller.enqueue('upsert_task', { p_id: 'keep-me' });
+        const old = controller.getActiveOutbox()!;
+        await entered.promise;
+        const id = old.snapshot()[0].opId;
+        const running = expect(old.flush()).rejects.toThrow('temporary disk error');
+        const logout = notifyLogout();
+        failed.resolve();
+        await Promise.all([running, logout]);
+        await notifyLogin('b');
+        expect(controller.isActive()).toBe(true);
+        await notifyLogin('a');
+        const restored = controller.getActiveOutbox()!;
+        expect(restored).not.toBe(old);
+        await restored.flush();
+        expect(send).toHaveBeenCalledExactlyOnceWith('upsert_task', { p_id: 'keep-me', p_key: id });
+        expect(restored.snapshot()).toEqual([]);
+        unregister();
+    });
     it('保存待ちのA→B→Aでも、新Aはdetach済みAの保存完了を待って復元する', async () => {
         const storage = memory();
         const saved = deferred();

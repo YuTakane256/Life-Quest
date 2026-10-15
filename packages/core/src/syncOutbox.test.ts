@@ -34,6 +34,40 @@ function makeOutbox(overrides: {
 }
 
 describe('createSyncOutbox', () => {
+    it('drainの保存失敗後もstopは残る並行enqueueの保存を待つ', async () => {
+        const storage = createMemoryStorage();
+        let fail!: () => void;
+        let release!: () => void;
+        let started!: () => void;
+        let thirdStarted!: () => void;
+        const failGate = new Promise<void>((resolve) => { fail = resolve; });
+        const saveGate = new Promise<void>((resolve) => { release = resolve; });
+        const writing = new Promise<void>((resolve) => { started = resolve; });
+        const thirdWriting = new Promise<void>((resolve) => { thirdStarted = resolve; });
+        let writes = 0;
+        const outbox = createSyncOutbox({ storage: { ...storage, setItem: async (key, value) => {
+            const attempt = ++writes;
+            if (attempt === 2) { started(); await failGate; throw new Error('disk error'); }
+            if (attempt === 3) { thirdStarted(); await saveGate; }
+            storage.setItem(key, value);
+        } }, storageKey: 'queue', send: async () => ({ ok: true }) });
+        await outbox.load();
+        await outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'one' });
+        await writing;
+        const second = outbox.enqueue({ operation: 'upsert_task', payload: {}, opId: 'two' });
+        const running = expect(outbox.flush()).rejects.toThrow('disk error');
+        let settled = false;
+        const stop = outbox.stop().then(() => { settled = true; }, () => { settled = true; });
+        fail();
+        await running;
+        await thirdWriting;
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        release();
+        await Promise.all([stop, second]);
+        expect(settled).toBe(true);
+        expect(JSON.parse(storage.map.get('queue')!).ops.map((op: OutboxOp) => op.opId)).toEqual(['one', 'two']);
+    });
     it('並行enqueueの保存を直列化し、stopはすべての保存完了を待つ', async () => {
         const storage = createMemoryStorage();
         let release!: () => void;

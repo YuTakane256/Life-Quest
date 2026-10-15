@@ -183,8 +183,14 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
     let pendingStops: Promise<void> = Promise.resolve();
     const stopOutbox = (outbox: SyncOutbox | null): Promise<void> => {
         // A→B→Aが重なっても、detach済みAの保存を新しいAのloadより先に終える。
-        pendingStops = Promise.all([pendingStops, outbox?.stop()]).then(() => {});
-        return pendingStops;
+        // 一件が失敗しても他の停止を待ち、共有バリアには拒否を持ち越さない。
+        const stopping = Promise.allSettled([pendingStops, outbox?.stop()]).then((results) => {
+            for (const result of results) {
+                if (result.status === 'rejected') throw result.reason;
+            }
+        });
+        pendingStops = stopping.catch(() => {});
+        return stopping;
     };
 
     const inactiveState = (): CloudOutboxPublicState => ({
@@ -365,7 +371,7 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
                 activeUserId = null;
                 pendingEntityOps.clear();
                 notify();
-                void stopOutbox(previousOutbox);
+                void stopOutbox(previousOutbox).catch(() => {});
                 unsubscribeScope();
                 unregister();
             };

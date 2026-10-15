@@ -329,9 +329,12 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
         flush: () => running ?? Promise.resolve(),
         stop: async () => {
             stopped = true;
-            await (running ?? Promise.resolve());
-            // enqueueの保存待ちも完了してから、次の同一namespaceのloadを許可する。
-            await pendingWrites;
+            try {
+                await (running ?? Promise.resolve());
+            } finally {
+                // drain失敗時もenqueue保存を待ってから次のnamespace loadを許可する。
+                await pendingWrites;
+            }
         },
         resumeAfterAuth: async () => {
             if (!canRun()) return;
