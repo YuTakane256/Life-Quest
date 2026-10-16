@@ -7,6 +7,7 @@
  * レンダラー無しで直接検証する。
  */
 import { describe, expect, it, vi } from 'vitest';
+vi.mock('../platform/auth', () => ({ getGameAuthState: vi.fn() }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {

@@ -12,10 +12,7 @@ import {
     type BattleAction,
     type StageDefinition,
 } from '@life-quest/core/battle';
-import { createBattleStartGate, getBattleStartMessage, requestBattleStart } from '@life-quest/core/battleStartPolicy';
-import { startCloudBattleAttempt } from '../platform/battleCloud';
-import { getBattleAuthState } from '../platform/auth';
-import { createMobileId } from '../utils/createMobileId';
+import { useCloudBattleStart } from '../hooks/useCloudBattleStart';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { usePalette } from '../theme/usePalette';
 import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
@@ -28,8 +25,6 @@ export default function MapScreen() {
     const battleProgress = useMobileGameStore((state) => state.battleProgress);
     const activeBattle = useMobileGameStore((state) => state.activeBattle);
     const hasHydrated = useMobileGameStore((state) => state.hasHydrated);
-    const startBattle = useMobileGameStore((state) => state.startBattle);
-    const startCloudBattle = useMobileGameStore((state) => state.startCloudBattle);
     const performBattleAction = useMobileGameStore((state) => state.performBattleAction);
     const clearActiveBattle = useMobileGameStore((state) => state.clearActiveBattle);
     const { resolveState, granted, retry: retryResolve } = useCloudBattleResolve();
@@ -39,51 +34,21 @@ export default function MapScreen() {
 
     const [selectedMapId, setSelectedMapId] = useState(() => getMapForStage(battleProgress.currentStage).id);
     const [notice, setNotice] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
-    const startGateRef = useRef(createBattleStartGate());
+    const { isStarting: busy, startError, startStage, retry: retryStart, clearError: clearStartError } = useCloudBattleStart();
     const listRef = useRef<FlatList<StageDefinition>>(null);
-    const retryStartRef = useRef<{ stage: number; idempotencyKey: string } | null>(null);
     const requestedMap = MAP_CONFIG.find((map) => map.id === selectedMapId) ?? MAP_CONFIG[0];
     // A restored account can have less progress than the previously selected area.
     const selectedArea = isMapUnlocked(requestedMap, battleProgress.maxClearedStage, battleProgress.battleUnlocked)
         ? requestedMap : MAP_CONFIG[0];
 
-    const handleStart = async (stage: number, idempotencyKey = createMobileId()) => {
+    const handleStart = (stage: number) => {
         if (activeBattle && hasPendingBattleResult(activeBattle.state.outcome, activeBattle.rewardMode, activeBattle.battleAttemptId)) return;
         setNotice(null);
         if (!battleProgress.battleUnlocked) {
             setNotice('青色の宝箱を開封するとマップバトルが解放されます');
             return;
         }
-        if (!startGateRef.current.tryEnter()) return;
-        setBusy(true);
-        try {
-            const result = await requestBattleStart(
-                await getBattleAuthState(),
-                getBattleAuthState,
-                (expectedUserId) => startCloudBattleAttempt(stage, idempotencyKey, expectedUserId),
-            );
-            if (result.kind === 'cloud-started') {
-                startCloudBattle(stage, result.attempt.battleAttemptId, result.attempt.actors);
-                listRef.current?.scrollToOffset({ offset: 0, animated: false });
-                retryStartRef.current = null;
-                return;
-            }
-            if (result.kind === 'local-started' && !startBattle(stage)) {
-                setNotice('このステージはまだ解放されていません');
-                return;
-            }
-            if (result.kind !== 'local-started') {
-                retryStartRef.current = { stage, idempotencyKey };
-                setNotice(getBattleStartMessage(result));
-            } else {
-                retryStartRef.current = null;
-                listRef.current?.scrollToOffset({ offset: 0, animated: false });
-            }
-        } finally {
-            startGateRef.current.leave();
-            setBusy(false);
-        }
+        void startStage(stage, () => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
     };
 
     const handleAction = (action: BattleAction) => {
@@ -94,7 +59,7 @@ export default function MapScreen() {
         if (activeBattle) setSelectedMapId(getMapForStage(activeBattle.stage).id);
         clearActiveBattle();
         setNotice(null);
-        retryStartRef.current = null;
+        clearStartError();
         listRef.current?.scrollToOffset({ offset: 0, animated: false });
     };
 
@@ -135,18 +100,15 @@ export default function MapScreen() {
 
                             {busy && <Text style={styles.noticeText} accessibilityRole="alert">バトルを開始中…</Text>}
 
-                            {notice && (
+                            {(notice ?? startError) && (
                                 <View style={styles.notice} accessibilityRole="alert">
-                                    <Text style={styles.noticeText}>{notice}</Text>
-                                    {retryStartRef.current && (
+                                    <Text style={styles.noticeText}>{notice ?? startError}</Text>
+                                    {startError && (
                                         <Pressable
                                             accessibilityRole="button"
                                             accessibilityLabel="バトル開始を再試行する"
                                             disabled={busy}
-                                            onPress={() => {
-                                                const pending = retryStartRef.current;
-                                                if (pending) void handleStart(pending.stage, pending.idempotencyKey);
-                                            }}
+                                            onPress={() => { setNotice(null); void retryStart(); }}
                                             style={({ pressed }) => [styles.noticeRetryButton, (pressed || busy) && styles.muted]}
                                         >
                                             <Text style={styles.noticeRetryText}>再試行</Text>

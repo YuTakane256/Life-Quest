@@ -8,10 +8,13 @@ function deferred<T>() {
     const promise = new Promise<T>((done) => { resolve = done; });
     return { promise, resolve };
 }
-const routes = ['chest', 'synthesis'] as const;
+const routes = ['chest', 'synthesis', 'battle-start', 'battle-resolve'] as const;
 afterEach(() => resetAuthLifecycleHooks());
 describe.each(routes)('%sの送信セッション境界', (route) => {
     function request(client: ReturnType<typeof createGameCloudClient>) {
+        if (route === 'battle-start') return client.startBattleAttempt(1, 'same-key', 'a');
+        if (route === 'battle-resolve') return client.resolveBattleAttempt('attempt', [{ type: 'attack' }],
+            { isActive: () => true, expectedUserId: 'a', idempotencyKey: 'same-key' });
         return route === 'chest' ? client.openChest('chest-a', 'same-key')
             : client.synthesizeItems(['one', 'two', 'three'], 'same-key');
     }
@@ -63,6 +66,21 @@ describe.each(routes)('%sの送信セッション境界', (route) => {
         expect(new Headers(options?.headers).get('Authorization')).toBe('Bearer a-token');
         expect(JSON.parse(options!.body as string).idempotencyKey).toBe('same-key');
     });
+});
+
+it('決着の行動オブジェクトと列をコピーし、呼び出し元の変更を送信へ混入させない', async () => {
+    const ready = deferred<EdgeFunctionInvoker>();
+    const calls: unknown[] = [];
+    const client = createGameCloudClient({ getInvoker: () => ready.promise });
+    const action = { type: 'skill' as const, skillId: 'original' };
+    const actions = [action];
+    const result = client.resolveBattleAttempt('attempt', actions, { isActive: () => true, idempotencyKey: 'same-key' });
+    action.skillId = 'different'; actions.push(action);
+    ready.resolve(async <T>(_name: string, body?: Record<string, unknown>) => {
+        calls.push(body); return { outcome: 'victory', granted: true } as T;
+    });
+    await result;
+    expect(calls).toEqual([{ battleAttemptId: 'attempt', actions: [{ type: 'skill', skillId: 'original' }], idempotencyKey: 'same-key' }]);
 });
 
 it('合成対象は送信先取得待ちの前にコピーし、呼び出し元の配列変更を混入させない', async () => {

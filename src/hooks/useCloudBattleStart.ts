@@ -8,7 +8,6 @@
  */
 import { useRef, useState } from 'react';
 import {
-    createBattleStartGate,
     getBattleStartMessage,
     requestBattleStart,
     type BattleAuthState,
@@ -18,6 +17,8 @@ import { useGameStore } from '../stores/useGameStore';
 import { startCloudBattleAttempt, type CloudBattleAttempt } from '../platform/gameCloud';
 import { getBattleAuthState } from '../platform/auth';
 import type { BattlePlayerSnapshot, Enemy } from '../types';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
+import { useGameOperationScope } from './useGameOperationScope';
 
 export interface UseCloudBattleStartResult {
     isStarting: boolean;
@@ -27,6 +28,9 @@ export interface UseCloudBattleStartResult {
 }
 
 export interface CloudBattleStartDeps {
+    isActive?: () => boolean;
+    canApply?: () => boolean;
+    sessionUserId?: string | null;
     getBattleAuthState: () => Promise<BattleAuthState>;
     startCloudBattleAttempt: (stage: number, idempotencyKey: string, expectedUserId: string) => Promise<CloudBattleAttempt | null>;
     startBattle: (stage: number) => void;
@@ -48,13 +52,22 @@ export async function runCloudBattleStart(
     deps: CloudBattleStartDeps,
     beforeStart?: () => void,
 ): Promise<BattleStartResult<CloudBattleAttempt>> {
+    const scopeIsCurrent = captureAuthSessionGuard();
+    const isActive = () => scopeIsCurrent() && (deps.isActive?.() ?? true);
+    if (!isActive() || deps.canApply?.() === false) return { kind: 'auth-changed' };
+    let auth: BattleAuthState;
+    try { auth = await deps.getBattleAuthState(); } catch { return { kind: 'unavailable' }; }
+    if (!isActive() || deps.canApply?.() === false) return { kind: 'auth-changed' };
     const result = await requestBattleStart(
-        await deps.getBattleAuthState(),
+        auth,
         deps.getBattleAuthState,
         (expectedUserId) => deps.startCloudBattleAttempt(stage, idempotencyKey, expectedUserId),
+        { isActive, expectedUserId: deps.sessionUserId },
     );
+    if (!isActive() || deps.canApply?.() === false) return { kind: 'auth-changed' };
     if (result.kind === 'cloud-started') {
         beforeStart?.();
+        if (!isActive()) return { kind: 'auth-changed' };
         const attempt = result.attempt;
         const playerSnapshot: BattlePlayerSnapshot = {
             attack: attempt.actors.player.attack,
@@ -67,6 +80,7 @@ export async function runCloudBattleStart(
         deps.startCloudBattle(stage, attempt.battleAttemptId, playerSnapshot, enemy);
     } else if (result.kind === 'local-started') {
         beforeStart?.();
+        if (!isActive()) return { kind: 'auth-changed' };
         deps.startBattle(stage);
     }
     return result;
@@ -77,39 +91,60 @@ export function useCloudBattleStart(): UseCloudBattleStartResult {
     const startCloudBattle = useGameStore((state) => state.startCloudBattle);
     const [isStarting, setIsStarting] = useState(false);
     const [startError, setStartError] = useState<string | null>(null);
-    const startGateRef = useRef(createBattleStartGate());
-    const retryRef = useRef<{ stage: number; idempotencyKey: string; beforeStart?: () => void } | null>(null);
+    const retryRef = useRef<{ stage: number; idempotencyKey: string; beforeStart?: () => void; isCurrent: () => boolean } | null>(null);
+    const operationScope = useGameOperationScope(() => {
+        retryRef.current = null; setIsStarting(false); setStartError(null);
+    });
 
     const startStage = async (
         stage: number,
         beforeStart?: () => void,
         idempotencyKey: string = crypto.randomUUID(),
     ): Promise<BattleStartResult<CloudBattleAttempt>> => {
-        if (!startGateRef.current.tryEnter()) return { kind: 'retryable-error' };
+        const operation = operationScope.begin();
+        if (!operation) return { kind: 'retryable-error' };
+        const sourceBattle = useGameStore.getState().battle;
+        const sourceIsCurrent = () => {
+            const current = useGameStore.getState().battle;
+            // 同じ進行の定期pullによるオブジェクト再生成は別戦闘とみなさない。
+            return current.battleAttemptId === sourceBattle.battleAttemptId && current.status === sourceBattle.status
+                && current.currentStage === sourceBattle.currentStage && current.actions === sourceBattle.actions;
+        };
+        retryRef.current = null;
         setIsStarting(true);
         setStartError(null);
         try {
             const result = await runCloudBattleStart(
                 stage,
                 idempotencyKey,
-                { getBattleAuthState, startCloudBattleAttempt, startBattle, startCloudBattle },
+                { getBattleAuthState, startCloudBattleAttempt: (target, key, owner) =>
+                    startCloudBattleAttempt(target, key, owner, { isActive: () => operation.isActive() && sourceIsCurrent(), expectedUserId: owner }),
+                startBattle, startCloudBattle, isActive: operation.isActive, canApply: sourceIsCurrent, sessionUserId: operation.userId },
                 beforeStart,
             );
+            if (!operation.isActive()) return { kind: 'auth-changed' };
             if (result.kind === 'cloud-started' || result.kind === 'local-started') {
                 retryRef.current = null;
             } else {
-                retryRef.current = { stage, idempotencyKey, beforeStart };
+                if (!sourceIsCurrent()) return { kind: 'auth-changed' };
+                retryRef.current = { stage, idempotencyKey, beforeStart, isCurrent: sourceIsCurrent };
                 setStartError(getBattleStartMessage(result));
             }
             return result;
+        } catch {
+            if (!operation.isActive() || !sourceIsCurrent()) return { kind: 'auth-changed' };
+            retryRef.current = { stage, idempotencyKey, beforeStart, isCurrent: sourceIsCurrent };
+            setStartError(getBattleStartMessage({ kind: 'retryable-error' }));
+            return { kind: 'retryable-error' };
         } finally {
-            startGateRef.current.leave();
-            setIsStarting(false);
+            if (operation.isActive()) setIsStarting(false);
+            operation.finish();
         }
     };
 
     const retry = async (): Promise<BattleStartResult<CloudBattleAttempt> | null> => {
         const pending = retryRef.current;
+        if (pending && !pending.isCurrent()) { retryRef.current = null; setStartError(null); return null; }
         return pending ? startStage(pending.stage, pending.beforeStart, pending.idempotencyKey) : null;
     };
 
