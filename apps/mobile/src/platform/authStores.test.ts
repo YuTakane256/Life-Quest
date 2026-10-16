@@ -14,6 +14,7 @@ import { useMobileStatsStore } from '../stores/useMobileStatsStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { applyCloudCacheToMobileStores } from './cloudSeed';
 import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
+import { hasPendingBattleResult } from '@life-quest/core/battle';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -31,11 +32,55 @@ vi.mock('../stores/useMobileLoginBonusStore', () => ({
 void AsyncStorage;
 
 describe('Mobileログアウト時のストアクリア（ADR-009）', () => {
+    function setCloudBattle() {
+        useMobileGameStore.getState().startCloudBattle(3, 'attempt-a', {
+            player: { attack: 10, defense: 5, maxHp: 50 }, enemy: { stage: 3, name: 'enemy', maxHp: 10, attack: 1, defense: 1, xpReward: 5 },
+            playerName: 'hero', playerLevel: 1,
+        });
+        const battle = useMobileGameStore.getState().activeBattle!;
+        useMobileGameStore.setState({ activeBattle: { ...battle, state: { ...battle.state, outcome: 'victory' } } });
+    }
+    it.each([
+        { seeded: false, transition: 'logout' }, { seeded: false, transition: 'switch' },
+        { seeded: true, transition: 'logout' }, { seeded: true, transition: 'switch' },
+    ])('旧cloud戦闘からマップへ復帰できる: $seeded / $transition', async ({ seeded, transition }) => {
+        const unregister = registerMobileAuthStoreHooks();
+        await notifyLogin('a'); setCloudBattle();
+        const previous = useMobileGameStore.getState();
+        expect(hasPendingBattleResult('victory', 'cloud', previous.activeBattle!.battleAttemptId)).toBe(true);
+        if (seeded) markCloudSessionSeeded();
+        if (transition === 'logout') await notifyLogout(); else await notifyLogin('b');
+        const current = useMobileGameStore.getState();
+        expect(current.activeBattle).toBeNull();
+        if (!seeded) {
+            expect(current.battleProgress).toEqual(previous.battleProgress);
+            expect(current.character).toEqual(previous.character);
+            expect(current.gachaCount).toBe(7);
+            expect(useMobileTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
+        }
+        unregister();
+    });
+    it('初回認証復元・同一ユーザー通知ではcloud戦闘を消さない', async () => {
+        const unregister = registerMobileAuthStoreHooks(); setCloudBattle();
+        await notifyLogin('a'); await notifyLogin('a');
+        expect(useMobileGameStore.getState().activeBattle?.battleAttemptId).toBe('attempt-a');
+        unregister();
+    });
+    it.each(['logout', 'switch'])('未seedの匿名由来ローカル戦闘と進行は保持する: %s', async (transition) => {
+        const unregister = registerMobileAuthStoreHooks();
+        await notifyLogin('a'); setCloudBattle();
+        useMobileGameStore.setState((state) => ({ activeBattle: { ...state.activeBattle!, rewardMode: 'local', battleAttemptId: null } }));
+        const previous = useMobileGameStore.getState().activeBattle;
+        if (transition === 'logout') await notifyLogout(); else await notifyLogin('b');
+        expect(useMobileGameStore.getState().activeBattle).toBe(previous);
+        expect(useMobileTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
+        unregister();
+    });
     beforeEach(() => {
         resetCloudSessionSeeded();
         const task = createTask({ id: 'local-1', name: 'ローカルタスク', now: '2026-07-01T00:00:00.000Z' });
         useMobileTaskStore.setState({ tasks: task ? [task] : [], hasHydrated: true });
-        useMobileGameStore.setState({ gachaCount: 7, hasHydrated: true });
+        useMobileGameStore.setState({ gachaCount: 7, hasHydrated: true, activeBattle: null });
         useMobileHabitStore.setState({ habits: [{ id: 'old-habit', name: 'Old habit', categoryId: 'health', createdAt: '2026-10-01T00:00:00Z' }],
             records: [], restDays: [], rewardEligibleDates: [] });
         useMobileStatsStore.setState({ taskXpLog: { '2026-10-01': 80 }, habitLog: { '2026-10-01': { count: 3, allComplete: true } }, seeded: true, hasHydrated: true });

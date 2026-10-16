@@ -30,7 +30,7 @@ export function clearMobileCloudStores(): void {
     invalidatePendingHabitEffects();
     useMobileTaskStore.setState({ tasks: [] });
     useMobileHabitStore.setState({ habits: [], records: [], restDays: [], rewardEligibleDates: [] });
-    useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), lastLevelUp: null });
+    useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), activeBattle: null, lastLevelUp: null });
     useMobileStatsStore.setState({ taskXpLog: {}, habitLog: {}, seeded: false });
     useMobileTitleStore.setState({ activeTitle: null });
 }
@@ -38,11 +38,17 @@ export function clearMobileCloudStores(): void {
 /** ログアウトフックを登録する。アプリ起動時に一度だけ呼ぶ。 */
 export function registerMobileAuthStoreHooks(): () => void {
     let activeUserId: string | null = null;
+    const detachCloudBattle = (): void => {
+        const game = useMobileGameStore.getState();
+        if (game.activeBattle?.rewardMode === 'cloud') game.clearActiveBattle();
+    };
     return registerAuthLifecycleHooks({
         onLogin: (userId) => {
             // Keep anonymous migration data and same-user refreshes, but never let
             // B's migration/sync hooks read A's already-seeded display cache.
-            const switchedSeededAccount = activeUserId !== null && activeUserId !== userId && cloudSessionSeeded;
+            const switchedAccount = activeUserId !== null && activeUserId !== userId;
+            const switchedSeededAccount = switchedAccount && cloudSessionSeeded;
+            if (switchedAccount && !cloudSessionSeeded) detachCloudBattle();
             activeUserId = userId;
             if (switchedSeededAccount) {
                 clearMobileCloudStores();
@@ -51,9 +57,13 @@ export function registerMobileAuthStoreHooks(): () => void {
             beginMobileLoginBonusCloudSession(userId);
         },
         onLogout: () => {
+            const hadAccount = activeUserId !== null;
             activeUserId = null;
             clearMobileLoginBonusCloudSession();
-            if (!cloudSessionSeeded) return; // クラウド未シードならローカルデータを守る
+            if (!cloudSessionSeeded) {
+                if (hadAccount) detachCloudBattle();
+                return; // 匿名の移行元データは残す
+            }
             clearMobileCloudStores();
             cloudSessionSeeded = false;
         },

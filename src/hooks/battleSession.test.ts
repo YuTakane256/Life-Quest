@@ -1,7 +1,8 @@
 import { act, createElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, notifyLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { hasPendingBattleResult } from '@life-quest/core/battle';
 import type { BattleAction } from '@life-quest/core/battle';
 
 const mocks = vi.hoisted(() => ({
@@ -206,10 +207,16 @@ describe.each([
     it('決着待ちのA→logout→Aでも旧結果を復活させない', async () => {
         const old = deferred<unknown>(); mocks.resolve.mockReturnValueOnce(old.promise);
         setBattle('attempt'); await render();
+        // 実authStoresの一時戦闘隔離と同じ清掃。実ストア側はauthStores.testで別途検証する。
+        registerAuthLifecycleHooks({ onLogout: clearBattle });
         await act(async () => { await notifyLogout(); await notifyLogin('a'); });
         await act(async () => old.resolve({ outcome: 'victory', granted: true }));
         expect(mocks.applyResolve).not.toHaveBeenCalled(); expect(resolve.resolveState).toBe('idle');
+        expect(hasPendingBattleResult('victory', 'cloud', mocks.webBattle.battleAttemptId)).toBe(false);
+        expect(mocks.mobileBattle).toBeNull();
         await act(async () => resolve.retry()); expect(mocks.resolve).toHaveBeenCalledTimes(1);
+        await act(async () => { await start.startStage(1); });
+        expect(mocks.applyStart).toHaveBeenCalledTimes(1);
     });
     it('Bの戦闘へ切り替えた後は旧Aの結果や受領表示を混入させない', async () => {
         const old = deferred<unknown>(); const current = deferred<unknown>();
