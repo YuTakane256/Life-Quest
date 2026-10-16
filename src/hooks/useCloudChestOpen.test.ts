@@ -11,6 +11,7 @@ import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 
 function makeDeps(overrides: Partial<Parameters<typeof runCloudChestOpen>[2]> = {}) {
     return {
+        allowLocalFallback: true,
         openCloudChest: vi.fn(async () => null),
         applyCloudChestResult: vi.fn(),
         discardSyncedChest: vi.fn(),

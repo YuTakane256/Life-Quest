@@ -21,7 +21,8 @@
  * 同型）。react-native/DOM等プラットフォーム固有のクライアント取得は
  * 呼び出し側（apps/mobile/src/platform、src/platform）に閉じ込める。
  */
-import { EdgeFunctionError, type EdgeFunctionInvoker } from './edgeFunctions.ts';
+import { EdgeFunctionError, type EdgeFunctionInvoker, type EdgeFunctionCallOptions } from './edgeFunctions.ts';
+import { captureAuthSessionScope } from './authLifecycle.ts';
 import type { BattleAction, BattleActors } from './battle.ts';
 
 interface StartBattleAttemptResponse {
@@ -114,9 +115,9 @@ export interface GameCloudClient {
         actions: readonly BattleAction[],
     ) => Promise<ResolveBattleAttemptResponse>;
     /** 宝箱開封。クラウド未接続ならnull。idempotencyKeyは呼び出し元が管理し、失敗時の再送に使う。 */
-    openChest: (chestId: string, idempotencyKey: string) => Promise<CloudChestResult | null>;
+    openChest: (chestId: string, idempotencyKey: string, options?: EdgeFunctionCallOptions) => Promise<CloudChestResult | null>;
     /** 装備合成。クラウド未接続ならnull。idempotencyKeyは呼び出し元が管理し、失敗時の再送に使う。 */
-    synthesizeItems: (itemIds: readonly string[], idempotencyKey: string) => Promise<CloudSynthesisResult | null>;
+    synthesizeItems: (itemIds: readonly string[], idempotencyKey: string, options?: EdgeFunctionCallOptions) => Promise<CloudSynthesisResult | null>;
     /**
      * ログインボーナス請求。クラウド未接続ならnull。サーバーが「今日分か」の
      * 判定・streak算出・XP/宝箱付与を行うため、クライアントは日付やstreakを
@@ -136,6 +137,24 @@ export interface GameCloudClientDeps {
 export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClient {
     const { getInvoker } = deps;
     const generateId = deps.generateId ?? (() => crypto.randomUUID());
+
+    async function invokeOwned<T>(name: string, body: Record<string, unknown>, options?: EdgeFunctionCallOptions): Promise<T | null> {
+        const scope = captureAuthSessionScope();
+        const isActive = () => scope.isCurrent() && (options?.isActive() ?? true);
+        const assertActive = () => {
+            if (!isActive()) throw new EdgeFunctionError('stale-session', 'ログイン状態が変わりました');
+        };
+        assertActive();
+        const invoker = await getInvoker();
+        assertActive();
+        if (!invoker) return null;
+        const result = await invoker<T>(name, body, {
+            isActive,
+            expectedUserId: options?.expectedUserId ?? scope.userId ?? undefined,
+        });
+        assertActive();
+        return result;
+    }
 
     return {
         startBattleAttempt: async (stage, idempotencyKey, expectedUserId) => {
@@ -173,13 +192,12 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
             });
         },
 
-        openChest: async (chestId, idempotencyKey) => {
-            const invoker = await getInvoker();
-            if (!invoker) return null;
-            const response = await invoker<OpenChestResponse>('open_chest', {
+        openChest: async (chestId, idempotencyKey, options) => {
+            const response = await invokeOwned<OpenChestResponse>('open_chest', {
                 chestId,
                 idempotencyKey,
-            });
+            }, options);
+            if (!response) return null;
             return {
                 itemId: response.item_id,
                 templateId: response.template_id,
@@ -187,13 +205,12 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
             };
         },
 
-        synthesizeItems: async (itemIds, idempotencyKey) => {
-            const invoker = await getInvoker();
-            if (!invoker) return null;
-            const response = await invoker<SynthesizeItemsResponse>('synthesize_items', {
-                itemIds,
+        synthesizeItems: async (itemIds, idempotencyKey, options) => {
+            const response = await invokeOwned<SynthesizeItemsResponse>('synthesize_items', {
+                itemIds: [...itemIds],
                 idempotencyKey,
-            });
+            }, options);
+            if (!response) return null;
             return { resultId: response.result_id, templateId: response.template_id };
         },
 

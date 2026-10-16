@@ -16,6 +16,7 @@ const dummyEquipment: Equipment = {
 
 function makeDeps(overrides: Partial<Parameters<typeof runCloudItemSynthesis>[2]> = {}) {
     return {
+        allowLocalFallback: true,
         synthesizeCloudItems: vi.fn(async () => null),
         applyCloudSynthesisResult: vi.fn(() => dummyEquipment),
         localSynthesizeItems: vi.fn(() => dummyEquipment),
@@ -54,7 +55,7 @@ describe('runCloudItemSynthesis', () => {
         expect(outcome).toEqual({ status: 'unconfigured-fallback', equipment: dummyEquipment });
     });
 
-    it('400（素材数不正）等4xxは全てローカル合成へフォールバックする（DB到達前のためsafe、冪等キーは削除対象）', async () => {
+    it('ローカル処理を明示許可した判断関数は400でフォールバックできる', async () => {
         const deps = makeDeps({
             synthesizeCloudItems: vi.fn(async () => { throw new EdgeFunctionError('http-error', 'invalid ingredients', 400); }),
         });
