@@ -12,10 +12,10 @@
  * 消してしまう。#504 が pull_sync_batch でストアをシードした時点で
  * markCloudSessionSeeded() を呼び、それ以降のログアウトでクリアが働く。
  */
-import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, registerAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { sanitizeGameStoreState, useGameStore } from '../stores/useGameStore';
 import { invalidatePendingHabitEffects, sanitizeHabitStoreState, useHabitStore } from '../stores/useHabitStore';
-import { sanitizeTaskStoreState, useTaskStore } from '../stores/useTaskStore';
+import { discardWebPendingTaskCompletions, sanitizeTaskStoreState, useTaskStore } from '../stores/useTaskStore';
 import { useTitleStore } from '../stores/useTitleStore';
 import { sanitizeStatsStoreState, useStatsStore } from '../stores/useStatsStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
@@ -84,6 +84,7 @@ export function resetCloudSessionSeeded(): void {
 
 /** クラウド同期対象の全Webストアをメモリ上で初期状態へ戻す。 */
 export function clearWebCloudStores(): void {
+    discardWebPendingTaskCompletions();
     invalidatePendingHabitEffects();
     useTaskStore.setState({ ...sanitizeTaskStoreState(undefined), pendingCompletions: [] });
     useHabitStore.setState(sanitizeHabitStoreState(undefined));
@@ -103,6 +104,14 @@ export function clearWebCloudStores(): void {
  * 戻り値で解除できる（テスト用）。
  */
 export function registerWebAuthStoreHooks(): () => void {
+    let pendingOwner = captureAuthSessionScope().userId;
+    const unsubscribeScope = subscribeAuthSessionScope(({ userId }) => {
+        const previous = pendingOwner;
+        pendingOwner = userId;
+        // Initial anonymous migration and same-user refresh keep their pending work.
+        // Actual account departure invalidates it before any async lifecycle hook.
+        if (previous !== null && previous !== userId) discardWebPendingTaskCompletions();
+    });
     let activeUserId: string | null = null;
     const detachCloudBattle = (): boolean => {
         const game = useGameStore.getState();
@@ -111,7 +120,7 @@ export function registerWebAuthStoreHooks(): () => void {
         game.resetBattle();
         return true;
     };
-    return registerAuthLifecycleHooks({
+    const unregisterHooks = registerAuthLifecycleHooks({
         onLogin: (userId) => {
             // Initial login preserves the anonymous migration source; repeated same-user
             // notifications preserve in-session progress. A -> B must clear before B's
@@ -142,4 +151,5 @@ export function registerWebAuthStoreHooks(): () => void {
             return flushCompletionRewardWrites();
         },
     });
+    return () => { unsubscribeScope(); unregisterHooks(); };
 }

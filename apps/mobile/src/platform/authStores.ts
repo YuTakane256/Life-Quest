@@ -4,11 +4,11 @@
  * セッションでのみクリアする（未シードならローカル専用データを守る）。
  * #504 が pull_sync_batch でシードした時点で markCloudSessionSeeded() を呼ぶ。
  */
-import { registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, registerAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { invalidatePendingHabitEffects, useMobileHabitStore } from '../stores/useMobileHabitStore';
-import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { discardMobilePendingTaskCompletions, useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { beginMobileLoginBonusCloudSession, clearMobileLoginBonusCloudSession } from '../stores/useMobileLoginBonusStore';
@@ -27,6 +27,7 @@ export function resetCloudSessionSeeded(): void {
 
 /** クラウド同期対象の全Mobileストアをメモリ上で初期状態へ戻す。 */
 export function clearMobileCloudStores(): void {
+    discardMobilePendingTaskCompletions();
     invalidatePendingHabitEffects();
     useMobileTaskStore.setState({ tasks: [] });
     useMobileHabitStore.setState({ habits: [], records: [], restDays: [], rewardEligibleDates: [] });
@@ -37,12 +38,18 @@ export function clearMobileCloudStores(): void {
 
 /** ログアウトフックを登録する。アプリ起動時に一度だけ呼ぶ。 */
 export function registerMobileAuthStoreHooks(): () => void {
+    let pendingOwner = captureAuthSessionScope().userId;
+    const unsubscribeScope = subscribeAuthSessionScope(({ userId }) => {
+        const previous = pendingOwner;
+        pendingOwner = userId;
+        if (previous !== null && previous !== userId) discardMobilePendingTaskCompletions();
+    });
     let activeUserId: string | null = null;
     const detachCloudBattle = (): void => {
         const game = useMobileGameStore.getState();
         if (game.activeBattle?.rewardMode === 'cloud') game.clearActiveBattle();
     };
-    return registerAuthLifecycleHooks({
+    const unregisterHooks = registerAuthLifecycleHooks({
         onLogin: (userId) => {
             // Keep anonymous migration data and same-user refreshes, but never let
             // B's migration/sync hooks read A's already-seeded display cache.
@@ -68,4 +75,5 @@ export function registerMobileAuthStoreHooks(): () => void {
             cloudSessionSeeded = false;
         },
     });
+    return () => { unsubscribeScope(); unregisterHooks(); };
 }

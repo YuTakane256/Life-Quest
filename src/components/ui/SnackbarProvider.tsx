@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { captureAuthSessionGuard, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { X, Undo2 } from 'lucide-react';
 import { UI_CONFIG } from '../../config/gameConfig';
 import { generateId } from '../../utils/dateUtils';
@@ -7,13 +8,30 @@ import { appendSnackbar, type SnackbarItem } from './snackbarUtils';
 
 export function SnackbarProvider({ children }: { children: React.ReactNode }) {
     const [snackbars, setSnackbars] = useState<SnackbarItem[]>([]); const timersRef = useRef<Map<string, number>>(new Map());
+    const mounted = useRef(true);
+    useEffect(() => {
+        mounted.current = true;
+        const clear = () => {
+            for (const timer of timersRef.current.values()) window.clearTimeout(timer);
+            timersRef.current.clear();
+        };
+        const unsubscribe = subscribeAuthSessionScope(() => { clear(); setSnackbars([]); });
+        return () => { mounted.current = false; clear(); unsubscribe(); };
+    }, []);
     const removeSnackbar = useCallback((id: string) => { const timer = timersRef.current.get(id); if (timer) { window.clearTimeout(timer); timersRef.current.delete(id); } setSnackbars((prev) => prev.filter((s) => s.id !== id)); }, []);
     const showUndo = useCallback((message: string, onUndo: () => void) => {
+        if (!mounted.current) return;
+        const isCurrent = captureAuthSessionGuard();
         // generateId() は内部で Date.now() + Math.random() を組み合わせるため、
         // 同一 ms で複数呼び出されても衝突しない（旧実装は Date.now() のみで衝突していた）
         const id = `snack-${generateId()}`; const expiresAt = Date.now() + UI_CONFIG.UNDO_DURATION_MS;
         setSnackbars((prev) => {
-            const { next, removedIds } = appendSnackbar(prev, { id, message, onUndo, expiresAt });
+            const { next, removedIds } = appendSnackbar(prev, { id, message, expiresAt, onUndo: () => {
+                // Also reject stale handlers before React commits the cleared UI.
+                if (!mounted.current || !isCurrent() || !timersRef.current.has(id) || Date.now() >= expiresAt) return;
+                removeSnackbar(id);
+                onUndo();
+            } });
             for (const removedId of removedIds) {
                 const timer = timersRef.current.get(removedId);
                 if (timer) window.clearTimeout(timer);

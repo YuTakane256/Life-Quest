@@ -18,6 +18,7 @@ import { isPlainObject, sanitizeTimestamp, sanitizeNullableTimestamp, sanitizeNu
 import { enqueueCloudOperation, isWebCloudOutboxActive } from '../platform/cloudOutbox';
 import { getGameRewardAuthorityState, subscribeGameRewardAuthority } from '@life-quest/core/gameRewardAuthority';
 import { getCompletionRewardGeneration } from '../platform/completionRewards';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
 import {
     deferWebRewardOperation,
     getPendingWebRewardOperations,
@@ -42,6 +43,7 @@ async function awardTaskXp(
     xpReward: number = XP_CONFIG.REWARD_BY_PRIORITY[priority],
     key?: string,
 ): Promise<boolean> {
+    const isCurrent = captureAuthSessionGuard();
     // 遅延importより先に境界を確認する。ここが後だと、復元中に開始した
     // Promiseが認証確定後にローカル報酬として実行されてしまう。
     const authority = getGameRewardAuthorityState();
@@ -51,14 +53,16 @@ async function awardTaskXp(
         return false;
     }
     const [gameStore, statsStore] = await Promise.all([getGameStore(), getStatsStore()]);
-    if (generation !== getCompletionRewardGeneration()) return false;
+    if (!isCurrent() || generation !== getCompletionRewardGeneration()) return false;
     const store = gameStore.getState();
     if (authority === 'anonymous') {
         if (!key || !await store.grantCompletionReward(key, xpReward, generation)) return false;
     } else {
         store.addXp(xpReward);
+        if (!isCurrent()) return false;
         store.incrementGachaCount();
     }
+    if (!isCurrent()) return false;
     // サインイン後はcomplete_task / complete_subtaskがDBロック下で宝箱を作る。
     // ここで別IDのローカル宝箱まで作ると、次回pullで二重になる。
     // Anonymous completion commits XP/count/chests/receipts in one game write.
@@ -239,6 +243,8 @@ export const useTaskStore = create<TaskStoreState>()(
              * 即時確定）の両方から呼ばれる共通処理（Mobileのconfirm Completionと同型）。
              */
             const confirmCompletion = (pending: PendingCompletion): void => {
+                if (!get().pendingCompletions.includes(pending)) return;
+                const isCurrent = captureAuthSessionGuard();
                 const pendingTask = get().tasks.find((t) => t.id === pending.taskId);
                 set((state) => ({
                     tasks: state.tasks.map((t) =>
@@ -246,7 +252,7 @@ export const useTaskStore = create<TaskStoreState>()(
                     ),
                     pendingCompletions: state.pendingCompletions.filter((p) => p.taskId !== pending.taskId),
                 }));
-                if (!pendingTask) return;
+                if (!pendingTask || !isCurrent()) return;
 
                 void (async () => {
                     const rewarded = await awardTaskXp(
@@ -255,6 +261,7 @@ export const useTaskStore = create<TaskStoreState>()(
                         XP_CONFIG.REWARD_BY_PRIORITY[pendingTask.priority],
                         `task:${pending.taskId}`,
                     );
+                    if (!isCurrent()) return;
 
                     // クラウド同期中は complete_task EF がサーバー側で次回分を生成する。
                     // ローカルでも生成すると別IDの重複タスクが二重にできるためスキップする
@@ -627,3 +634,18 @@ export const useTaskStore = create<TaskStoreState>()(
         }
     )
 );
+
+/** Account departure cancels only unconfirmed completions, not earned rewards.
+ * Restore the optimistic flag only if this exact pending timestamp still owns it.
+ */
+export function discardWebPendingTaskCompletions(): void {
+    const pending = useTaskStore.getState().pendingCompletions;
+    for (const entry of pending) clearPendingCompletionTimer(entry);
+    if (pending.length === 0) return;
+    useTaskStore.setState((state) => ({
+        pendingCompletions: [],
+        tasks: state.tasks.map((task) => pending.some((entry) =>
+            entry.taskId === task.id && entry.completedAt === task.completedAt)
+            ? { ...task, completed: false, completedAt: null } : task),
+    }));
+}

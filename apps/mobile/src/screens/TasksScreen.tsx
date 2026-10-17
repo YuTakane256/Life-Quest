@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
     Alert,
     FlatList,
@@ -35,7 +35,6 @@ import {
 import { isValidYmd, shiftDate } from '@life-quest/core/dates';
 import {
     TASK_LIMITS,
-    TASK_UNDO_DURATION_MS,
     tasksToCsv,
     type Priority,
     type Recurrence,
@@ -52,6 +51,7 @@ import {
 } from '../components/DailyScreenUI';
 import { dailyStyles, ui } from '../theme/dailyScreenStyles';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { useTaskUndoToast } from '../hooks/useTaskUndoToast';
 import { getTodayJst } from '../utils/date';
 import { getTaskActionsBottomPadding, TASK_ACTION_LAYOUT, TAB_SCREEN_EDGES } from '../theme/layout';
 import { usePalette } from '../theme/usePalette';
@@ -93,31 +93,7 @@ export default function TasksScreen() {
     const [expandOverrides, setExpandOverrides] = useState<
         Record<string, boolean>
     >({});
-    const [toast, setToast] = useState<{
-        message: string;
-        onUndo: () => void;
-    } | null>(null);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    useEffect(
-        () => () => {
-            if (toastTimer.current) clearTimeout(toastTimer.current);
-        },
-        [],
-    );
-    const undo = (message: string, onUndo: () => void) => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast({
-            message,
-            onUndo: () => {
-                onUndo();
-                setToast(null);
-            },
-        });
-        toastTimer.current = setTimeout(
-            () => setToast(null),
-            TASK_UNDO_DURATION_MS,
-        );
-    };
+    const { toast, showUndo: undo } = useTaskUndoToast();
     const today = getTodayJst();
     const selected = useMemo(
         () => selectTasks(store.tasks, query, due, priority, tags, sort, today),
