@@ -78,7 +78,7 @@ describe('battleCloud', () => {
 
         const result = await claimCloudLoginBonus();
 
-        expect(invoker).toHaveBeenCalledWith('claim_login_bonus', { idempotencyKey: 'op-1' });
+        expect(invoker).toHaveBeenCalledWith('claim_login_bonus', { idempotencyKey: 'op-1' }, expect.objectContaining({ isActive: expect.any(Function) }));
         expect(result).toEqual({ granted: true, alreadyClaimed: false, claimDate: '2025-03-15', streak: 5, xp: 40, chestLabel: null });
     });
 });

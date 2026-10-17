@@ -126,7 +126,7 @@ export interface GameCloudClient {
      * 信用しない」方針）。呼び出し元は日付単位で安定したidempotencyKeyを渡し、
      * リトライでも同じ要求として再送する。
      */
-    claimLoginBonus: (idempotencyKey?: string, expectedUserId?: string) => Promise<CloudLoginBonusResult | null>;
+    claimLoginBonus: (idempotencyKey?: string, expectedUserId?: string, options?: EdgeFunctionCallOptions) => Promise<CloudLoginBonusResult | null>;
 }
 
 export interface GameCloudClientDeps {
@@ -214,13 +214,12 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
             return { resultId: response.result_id, templateId: response.template_id };
         },
 
-        claimLoginBonus: async (idempotencyKey = generateId(), expectedUserId) => {
-            const invoker = await getInvoker();
-            if (!invoker) return null;
-            const response = await invoker<ClaimLoginBonusResponse>('claim_login_bonus', {
+        claimLoginBonus: async (idempotencyKey = generateId(), expectedUserId, options) => {
+            const response = await invokeOwned<ClaimLoginBonusResponse>('claim_login_bonus', {
                 idempotencyKey,
                 ...(expectedUserId === undefined ? {} : { expectedUserId }),
-            });
+            }, { isActive: options?.isActive ?? (() => true), expectedUserId: expectedUserId ?? options?.expectedUserId });
+            if (!response) return null;
             return {
                 granted: response.granted,
                 alreadyClaimed: response.already_claimed === true || response.granted === false,

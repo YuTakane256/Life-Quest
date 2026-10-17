@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CloudLoginBonusResult } from '@life-quest/core/gameCloud';
+import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 
 const memory = new Map<string, string>();
 
@@ -40,7 +41,7 @@ const BASE_DATE = new Date('2025-03-15T03:00:00.000Z'); // UTC 03:00 = JST 12:00
 
 /** checkDailyLoginは内部でクラウド請求をawaitする非同期処理のため、マイクロタスクを十分にフラッシュする。 */
 async function flushAsync(): Promise<void> {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 12; i++) {
         await Promise.resolve();
     }
 }
@@ -51,8 +52,10 @@ const originalAddXp = useMobileGameStore.getState().addXp;
 const originalGrantChest = useMobileGameStore.getState().grantChest;
 
 function reset(fakeDate: Date = BASE_DATE) {
+    resetAuthLifecycleHooks(); clearMobileLoginBonusCloudSession();
     memory.clear();
-    useMobileLoginBonusStore.setState({ lastLoginDate: null, streak: 0, pendingBonus: null });
+    useMobileLoginBonusStore.setState({ lastLoginDate: null, streak: 0, pendingBonus: null,
+        anonymousState: { lastLoginDate: null, streak: 0 }, activeCloudUserId: null, claimStatus: 'idle', claimMessage: null });
     addXpSpy = vi.fn();
     grantChestSpy = vi.fn();
     useMobileGameStore.setState({
@@ -205,6 +208,7 @@ describe('useMobileLoginBonusStore（クラウド経路）', () => {
     beforeEach(async () => {
         reset();
         await useMobileLoginBonusStore.persist.rehydrate();
+        await notifyLogin('user-1');
     });
 
     afterEach(() => {
