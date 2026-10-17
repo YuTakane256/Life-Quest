@@ -3,7 +3,7 @@
  * Network faults and disk restart are simulated; this is not device UI/staging QA.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { createAccountBoundOutboxRpcClient, createCloudOutboxController } from '@life-quest/core/cloudOutboxController';
 import { createEdgeFunctionInvoker } from '@life-quest/core/edgeFunctions';
@@ -25,7 +25,7 @@ const storage = () => {
         removeItem: (key: string) => { map.delete(key); } };
 };
 type Storage = ReturnType<typeof storage>;
-type User = { id: string; email: string; password: string };
+type User = { id: string; session: { access_token: string; refresh_token: string } };
 
 async function createDevice(user: User, disk: Storage = storage(), initiallyOffline = false) {
     const network = { offline: false, loseNextCompletionResponse: false, lost: 0, completionKeys: [] as string[] };
@@ -44,8 +44,10 @@ async function createDevice(user: User, disk: Storage = storage(), initiallyOffl
         return response;
     };
     const client = createClient(api, anon, { ...options, global: { fetch: transport } });
-    const signedIn = await client.auth.signInWithPassword({ email: user.email, password: user.password });
-    if (signedIn.error) throw new Error('Test device could not sign in');
+    // Independent SDK instances, but reuse this fixture's in-memory credentials.
+    // Do not spend another password-signin rate-limit slot on each simulated restart.
+    const signedIn = await client.auth.setSession(user.session);
+    if (signedIn.error) throw new Error('Test device could not restore its session');
     network.offline = initiallyOffline;
     const session = async () => {
         const { data, error } = await client.auth.getSession();
@@ -99,7 +101,7 @@ async function createDevice(user: User, disk: Storage = storage(), initiallyOffl
 }
 
 describe.skipIf(!enabled)('同期復帰：実送信アダプタとローカルDB/Edge', () => {
-    let admin: ReturnType<typeof createClient>;
+    let admin: SupabaseClient;
     let user: User;
     let devices: Awaited<ReturnType<typeof createDevice>>[] = [];
     let createdUserId: string | null = null;
@@ -111,7 +113,11 @@ describe.skipIf(!enabled)('同期復帰：実送信アダプタとローカルDB
         const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
         if (error || !data.user) throw new Error('Test account creation failed');
         createdUserId = data.user.id;
-        user = { id: data.user.id, email, password };
+        const login = createClient(api, anon, options);
+        const { data: auth, error: authError } = await login.auth.signInWithPassword({ email, password });
+        login.auth.stopAutoRefresh();
+        if (authError || !auth.session) throw new Error('Test fixture sign in failed');
+        user = { id: data.user.id, session: { access_token: auth.session.access_token, refresh_token: auth.session.refresh_token } };
     }, 30000);
     afterEach(async () => {
         await Promise.all(devices.map((device) => device.close()));
@@ -206,6 +212,15 @@ describe.skipIf(!enabled)('同期復帰：実送信アダプタとローカルDB
 
     it('サーバー確定後の応答喪失→復元再送でも同じopIdでXP/回数/宝箱/統計を重複させない', async () => {
         const web = await device(); const mobile = await device(); await start();
+        // Reach an actual chest boundary via real task operations, not a seeded balance.
+        for (let index = 0; index < 4; index++) {
+            const previous = crypto.randomUUID();
+            await enqueue(web, 'upsert_task', { p_id: previous, p_name: `宝箱の前提${index}` });
+            await web.controller.drainAndWait();
+            await enqueue(web, 'complete_task', { taskId: previous });
+            await web.controller.drainAndWait();
+        }
+        expect(Number((await character()).gacha_count)).toBe(4);
         const id = crypto.randomUUID();
         await enqueue(web, 'upsert_task', { p_id: id, p_name: '応答喪失', p_priority: 'high' }); await web.controller.drainAndWait();
         mobile.network.loseNextCompletionResponse = true;
@@ -214,8 +229,10 @@ describe.skipIf(!enabled)('同期復帰：実送信アダプタとローカルDB
         const opId = mobile.controller.getActiveOutbox()!.snapshot()[0].opId;
         expect(mobile.network.completionKeys).toEqual([opId]);
         await converge(web);
-        const first = await character(); expect(Number(first.total_xp)).toBeGreaterThan(0); expect(Number(first.gacha_count)).toBe(1);
+        const first = await character(); expect(Number(first.total_xp)).toBeGreaterThan(0); expect(Number(first.gacha_count)).toBe(5);
         const stats = web.stats(); const game = web.game();
+        expect(game?.chestQueue).toHaveLength(1);
+        expect(game?.chestQueue[0]).toMatchObject({ isStarterCharacter: true, opened: false });
         await mobile.close(); devices = devices.filter((d) => d !== mobile);
         const restored = await device(mobile.disk); await start(); await restored.controller.retryPending();
         expect(restored.controller.getActiveOutbox()!.snapshot()).toEqual([]);
@@ -225,7 +242,7 @@ describe.skipIf(!enabled)('同期復帰：実送信アダプタとローカルDB
         expect(await character()).toEqual(first);
         expect(restored.stats()).toEqual(stats); expect(web.stats()).toEqual(stats);
         expect(restored.game()).toEqual(game); expect(web.game()).toEqual(game);
-        expect(web.tasks()[0]).toMatchObject({ id, completed: true }); expect(web.tasks()).toEqual(restored.tasks());
+        expect(web.tasks().find((task) => task.id === id)).toMatchObject({ completed: true }); expect(web.tasks()).toEqual(restored.tasks());
         const { count, error } = await admin.from('reward_transactions').select('*', { count: 'exact', head: true })
             .eq('user_id', user.id).eq('kind', 'task_complete').eq('source_id', id);
         expect(error).toBeNull(); expect(count).toBe(1);
