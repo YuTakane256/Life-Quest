@@ -25,6 +25,7 @@ import {
 import {
     createInactiveCloudSyncState,
     deriveCloudSyncAttention,
+    deriveCloudSyncAvailability,
     type CloudSyncPublicState,
 } from '@life-quest/core/cloudSyncState';
 import { markCloudSessionSeeded } from './authStores';
@@ -76,11 +77,13 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     const isAuthSessionCurrent = captureAuthSessionGuard();
     const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration && isAuthSessionCurrent();
     let pushState = getMobileCloudOutboxState();
+    let online: boolean | null = null;
+    let manualSync: Promise<void> | null = null;
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
     const publish = (): void => {
         if (!isCurrent()) return;
         publishCloudSyncState({
-            availability: pushState.availability === 'inactive' ? 'inactive' : 'ready',
+            availability: deriveCloudSyncAvailability(pushState, online),
             push: pushState,
             pull: pullState,
             attention: deriveCloudSyncAttention(pushState, pullState),
@@ -183,7 +186,11 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     const appStateSubscription = AppState.addEventListener('change', onAppStateChange);
     const detectReconnect = createReconnectDetector(() => { void recoverConnection().catch(() => undefined); });
     const netInfoUnsubscribe = NetInfo.addEventListener((state) => {
-        detectReconnect(resolveNetworkOnlineState(state));
+        if (!isCurrent()) return;
+        const next = resolveNetworkOnlineState(state);
+        if (next !== null) online = next;
+        publish();
+        detectReconnect(next);
     });
     scheduler.start();
 
@@ -200,17 +207,25 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     return {
         isActive: isCurrent,
         flush: () => runner.flush(),
-        syncNow: async () => {
-            if (!isCurrent()) return;
-            await retryPendingOutbox();
-            if (!isCurrent()) return;
-            const state = getMobileCloudOutboxState();
-            if (state.pending > 0 || state.inflight > 0) return;
-            try {
-                await pullNow();
-            } catch {
-                // 失敗状態は公開済み。UIイベントへ未処理のPromiseを返さない。
-            }
+        syncNow: () => {
+            if (!isCurrent() || deriveCloudSyncAvailability(pushState, online) !== 'ready') return Promise.resolve();
+            if (manualSync) return manualSync;
+            const work = (async () => {
+                try {
+                    await retryPendingOutbox();
+                    if (!isCurrent() || deriveCloudSyncAvailability(pushState, online) !== 'ready') return;
+                    const state = getMobileCloudOutboxState();
+                    if (state.pending > 0 || state.inflight > 0) return;
+                    await pullNow();
+                } catch {
+                    if (!isCurrent()) return;
+                    pullState = { ...pullState, phase: 'failed' };
+                    publish();
+                }
+            })();
+            manualSync = work;
+            void work.then(() => { if (manualSync === work) manualSync = null; });
+            return work;
         },
         stop: () => {
             stopped = true;

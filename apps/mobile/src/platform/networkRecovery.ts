@@ -19,7 +19,7 @@ export function resolveNetworkOnlineState(state: {
     isConnected: boolean | null;
     isInternetReachable: boolean | null;
 }): boolean | null {
-    if (state.isConnected === false) return false;
-    if (state.isInternetReachable === null) return null;
-    return state.isConnected === true && state.isInternetReachable === true;
+    if (state.isConnected === false || state.isInternetReachable === false) return false;
+    if (state.isConnected === null || state.isInternetReachable === null) return null;
+    return true;
 }

@@ -36,6 +36,7 @@ import {
 import {
     createInactiveCloudSyncState,
     deriveCloudSyncAttention,
+    deriveCloudSyncAvailability,
     type CloudSyncPublicState,
 } from '@life-quest/core/cloudSyncState';
 import { markCloudSessionSeeded } from './authStores';
@@ -146,11 +147,13 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     const isAuthSessionCurrent = captureAuthSessionGuard();
     const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration && isAuthSessionCurrent();
     let pushState = getWebCloudOutboxState();
+    let online: boolean | null = typeof navigator === 'undefined' ? null : navigator.onLine;
+    let manualSync: Promise<void> | null = null;
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
     const publish = (): void => {
         if (!isCurrent()) return;
         publishCloudSyncState({
-            availability: pushState.availability === 'inactive' ? 'inactive' : 'ready',
+            availability: deriveCloudSyncAvailability(pushState, online),
             push: pushState,
             pull: pullState,
             attention: deriveCloudSyncAttention(pushState, pullState),
@@ -254,9 +257,16 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
             scheduler.stop(); // バックグラウンドでは定期プルを止める
         }
     };
-    const onOnline = (): void => { void recoverConnection().catch(() => undefined); };
+    const onOnline = (): void => {
+        if (!isCurrent()) return;
+        online = true;
+        publish();
+        void recoverConnection().catch(() => undefined);
+    };
+    const onOffline = (): void => { if (isCurrent()) { online = false; publish(); } };
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
     scheduler.start();
 
     // 起動: まずキャッシュから復元（オフラインでも表示）→ 初回プル
@@ -272,17 +282,25 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     return {
         isActive: isCurrent,
         flush: () => runner.flush(),
-        syncNow: async () => {
-            if (!isCurrent()) return;
-            await retryPendingOutbox();
-            if (!isCurrent()) return;
-            const state = getWebCloudOutboxState();
-            if (state.pending > 0 || state.inflight > 0) return;
-            try {
-                await pullNow();
-            } catch {
-                // 失敗状態は公開済み。UIイベントへ未処理のPromiseを返さない。
-            }
+        syncNow: () => {
+            if (!isCurrent() || deriveCloudSyncAvailability(pushState, online) !== 'ready') return Promise.resolve();
+            if (manualSync) return manualSync;
+            const work = (async () => {
+                try {
+                    await retryPendingOutbox();
+                    if (!isCurrent() || deriveCloudSyncAvailability(pushState, online) !== 'ready') return;
+                    const state = getWebCloudOutboxState();
+                    if (state.pending > 0 || state.inflight > 0) return;
+                    await pullNow();
+                } catch {
+                    if (!isCurrent()) return;
+                    pullState = { ...pullState, phase: 'failed' };
+                    publish();
+                }
+            })();
+            manualSync = work;
+            void work.then(() => { if (manualSync === work) manualSync = null; });
+            return work;
         },
         stop: () => {
             stopped = true;
@@ -290,6 +308,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
             scheduler.stop();
             document.removeEventListener('visibilitychange', onVisibilityChange);
             window.removeEventListener('online', onOnline);
+            window.removeEventListener('offline', onOffline);
             void client.removeChannel(channel);
             if (generation === cloudSyncGeneration) {
                 publishCloudSyncState(createInactiveCloudSyncState());
