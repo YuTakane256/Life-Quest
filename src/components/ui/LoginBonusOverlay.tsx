@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { Gift, Flame, X } from 'lucide-react';
 import { useLoginBonusStore } from '../../stores/useLoginBonusStore';
 import { useModalEscape } from '../../hooks/useModalEscape';
+import { useRewardEventTimers } from '../../hooks/useRewardEventTimers';
+
+const getPendingBonus = () => useLoginBonusStore.getState().pendingBonus;
 
 export function LoginBonusOverlay() {
     const pendingBonus = useLoginBonusStore((s) => s.pendingBonus);
@@ -10,11 +13,13 @@ export function LoginBonusOverlay() {
     const claimStatus = useLoginBonusStore((s) => s.claimStatus);
     const retryDailyLogin = useLoginBonusStore((s) => s.retryDailyLogin);
     const [visible, setVisible] = useState(false);
+    const { schedule, isCurrent, active } = useRewardEventTimers(pendingBonus, getPendingBonus);
 
     const handleDismiss = useCallback(() => {
+        if (!isCurrent()) return;
         setVisible(false);
-        window.setTimeout(clearPendingBonus, 300);
-    }, [clearPendingBonus]);
+        schedule(clearPendingBonus, 300);
+    }, [clearPendingBonus, schedule, isCurrent]);
 
     useModalEscape(Boolean(pendingBonus && visible), handleDismiss);
 
@@ -48,7 +53,7 @@ export function LoginBonusOverlay() {
         </div>
     ) : null;
 
-    if (!pendingBonus || !visible) return banner;
+    if (!pendingBonus || !visible || !active) return banner;
 
     const titleId = 'login-bonus-overlay-title';
 

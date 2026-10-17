@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Sparkles, X } from 'lucide-react';
 import { useGameStore } from '../../stores/useGameStore';
 import { useModalEscape } from '../../hooks/useModalEscape';
+import { useRewardEventTimers } from '../../hooks/useRewardEventTimers';
+
+const getLevelUpEvent = () => useGameStore.getState().levelUpEvent;
 
 const SPARKLE_COUNT = 28;
 const SPARKLE_EMOJIS = ['✨', '⭐', '🌟', '💫', '⚡'];
@@ -34,24 +37,25 @@ export function LevelUpOverlay() {
     const levelUpEvent = useGameStore((s) => s.levelUpEvent);
     const clearLevelUpEvent = useGameStore((s) => s.clearLevelUpEvent);
     const [visible, setVisible] = useState(false);
+    const { schedule, isCurrent, active } = useRewardEventTimers(levelUpEvent, getLevelUpEvent);
 
     const sparkles = useMemo(() => (levelUpEvent ? generateSparkles() : []), [levelUpEvent]);
     const handleDismiss = useCallback(() => {
+        if (!isCurrent()) return;
         setVisible(false);
-        window.setTimeout(clearLevelUpEvent, 300);
-    }, [clearLevelUpEvent]);
+        schedule(clearLevelUpEvent, 300);
+    }, [clearLevelUpEvent, schedule, isCurrent]);
 
     useModalEscape(Boolean(levelUpEvent && visible), handleDismiss);
 
     useEffect(() => {
         if (levelUpEvent) {
             setVisible(true);
-            const t = window.setTimeout(handleDismiss, 4500);
-            return () => window.clearTimeout(t);
+            return schedule(handleDismiss, 4500);
         }
-    }, [levelUpEvent, handleDismiss]);
+    }, [levelUpEvent, handleDismiss, schedule]);
 
-    if (!levelUpEvent || !visible) return null;
+    if (!levelUpEvent || !visible || !active) return null;
 
     const titleId = 'level-up-overlay-title';
 
