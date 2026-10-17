@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { getWebLocalStorage } from '../platform/storage';
 import { createRewardAwareGameStorage, getCompletionRewardGeneration, readLegacyCompletionRewardKeys, sanitizeCompletionRewardKeys, withCompletionRewardLock, withoutCompletionRewardPersistence } from '../platform/completionRewards';
 import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
 import type {
     CharacterStats,
     Debuff,
@@ -412,9 +413,10 @@ export const useGameStore = create<GameStoreState>()(
                 withoutCompletionRewardPersistence(() => set({ completionRewardError: null }));
             },
             grantCompletionReward: async (key, baseXp, generation) => {
+                const isCurrent = captureAuthSessionGuard();
                 try {
                     return await withCompletionRewardLock(() => {
-                        if (getGameRewardAuthorityState() !== 'anonymous' || generation !== getCompletionRewardGeneration()) return false;
+                        if (!isCurrent() || getGameRewardAuthorityState() !== 'anonymous' || generation !== getCompletionRewardGeneration()) return false;
                         if (!sanitizeCompletionRewardKeys([key]).length || !Number.isFinite(baseXp) || baseXp <= 0) return false;
                         const storage = getWebLocalStorage();
                         if (!storage) throw new Error('保存領域を利用できません。');
@@ -475,6 +477,7 @@ export const useGameStore = create<GameStoreState>()(
                         return true;
                     });
                 } catch (error) {
+                    if (!isCurrent() || generation !== getCompletionRewardGeneration()) return false;
                     const message = error instanceof Error ? error.message : '報酬を保存できません。';
                     try { withoutCompletionRewardPersistence(() => set({ completionRewardError: `報酬は未付与です。${message} 保存環境を確認後、未完了に戻して再完了してください。` })); }
                     catch { /* error feedback remains in memory even if storage is unavailable */ }

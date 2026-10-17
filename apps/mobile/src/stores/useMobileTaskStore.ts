@@ -24,6 +24,7 @@ import { XP_CONFIG } from '@life-quest/core/progression';
 import { clampString } from '@life-quest/core/validation';
 import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { create } from 'zustand';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createMobileId } from '../utils/createMobileId';
 import { getTodayJst, isoToJstYmd, toIsoDatePart } from '../utils/date';
@@ -105,12 +106,15 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                 pending: Pick<MobilePendingCompletion, 'taskId' | 'completedAt'>,
                 dependsOnEntityIds: string[] = [pending.taskId],
             ): void => {
+                const isCurrent = captureAuthSessionGuard();
+                if ('timeoutId' in pending && !get().pendingCompletions.includes(pending as MobilePendingCompletion)) return;
                 const task = get().tasks.find((candidate) => candidate.id === pending.taskId);
                 set((state) => ({
                     pendingCompletions: state.pendingCompletions.filter((candidate) => candidate.taskId !== pending.taskId),
                 }));
-                if (!task || !task.completed) return; // 取消・削除済みなら何もしない
+                if (!task || !task.completed || !isCurrent()) return; // 取消・削除済みなら何もしない
                 const granted = useMobileGameStore.getState().grantTaskCompletionReward(task.id, task.priority);
+                if (!isCurrent()) return;
                 // 台帳が既付与でgrantedがfalseの場合は統計ログも記録しない（reconcileRewards再実行時の二重加算防止）
                 if (granted) {
                     useMobileStatsStore.getState().logTaskXp(
@@ -118,7 +122,9 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                         XP_CONFIG.REWARD_BY_PRIORITY[task.priority],
                     );
                 }
+                if (!isCurrent()) return;
                 spawnRecurringNext(task);
+                if (!isCurrent()) return;
                 if (getGameRewardAuthorityState() === 'resolving') {
                     deferTaskCompletion(task.id);
                 } else {
@@ -195,7 +201,7 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     }));
                     const timeoutId = setTimeout(() => {
                         const pending = get().pendingCompletions.find((candidate) =>
-                            candidate.taskId === taskId && candidate.completedAt === completedAt);
+                            candidate.taskId === taskId && candidate.completedAt === completedAt && candidate.timeoutId === timeoutId);
                         if (pending) confirmCompletion(pending);
                     }, TASK_UNDO_DURATION_MS);
                     set((state) => ({
@@ -487,3 +493,16 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
         }
     )
 );
+
+/** Discard the current account's unconfirmed operations before another account can flush them. */
+export function discardMobilePendingTaskCompletions(): void {
+    const pending = useMobileTaskStore.getState().pendingCompletions;
+    for (const entry of pending) clearTimeout(entry.timeoutId);
+    if (pending.length === 0) return;
+    useMobileTaskStore.setState((state) => ({
+        pendingCompletions: [],
+        tasks: state.tasks.map((task) => pending.some((entry) =>
+            entry.taskId === task.id && entry.completedAt === task.completedAt)
+            ? { ...task, completed: false, completedAt: null } : task),
+    }));
+}
