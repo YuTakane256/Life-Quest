@@ -7,6 +7,9 @@ import type { Rarity, EquipmentSlot } from '../../types';
 import heroImg from '@life-quest/assets/images/hero.png';
 import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { useModalEscape } from '../../hooks/useModalEscape';
+import { useRewardEventTimers } from '../../hooks/useRewardEventTimers';
+
+const getChestReveal = () => useGameStore.getState().pendingChestReveal;
 
 type Phase = 'idle' | 'revealing' | 'revealed';
 
@@ -58,6 +61,7 @@ export function ChestOpeningOverlay() {
     const [phase, setPhase] = useState<Phase>('idle');
     const [canDismiss, setCanDismiss] = useState(false);
     const [visible, setVisible] = useState(false);
+    const { schedule, isCurrent, active } = useRewardEventTimers(pendingChestReveal, getChestReveal);
 
     // 装備のレアリティ（starter なら legendary 相当の派手さで扱う）
     const effectiveRarity: Rarity | null = pendingChestReveal?.equipment?.rarity ?? null;
@@ -91,44 +95,44 @@ export function ChestOpeningOverlay() {
             setCanDismiss(false);
             setVisible(true);
         }
-    }, [pendingChestReveal?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [pendingChestReveal]);
 
     // phase 'revealing' から 'revealed' への自動遷移
     useEffect(() => {
         if (phase !== 'revealing') return;
-        const t = window.setTimeout(() => setPhase('revealed'), REVEALING_DURATION_MS);
-        return () => window.clearTimeout(t);
-    }, [phase]);
+        return schedule(() => setPhase('revealed'), REVEALING_DURATION_MS);
+    }, [phase, schedule]);
 
     // phase 'revealed' 突入後の誤閉じ防止ガード
     useEffect(() => {
         if (phase !== 'revealed') return;
-        const t = window.setTimeout(() => setCanDismiss(true), DISMISS_GUARD_MS);
-        return () => window.clearTimeout(t);
-    }, [phase]);
+        return schedule(() => setCanDismiss(true), DISMISS_GUARD_MS);
+    }, [phase, schedule]);
 
     const handleDismiss = useCallback(() => {
+        if (!isCurrent()) return;
         setVisible(false);
-        window.setTimeout(clearPendingChestReveal, 300);
-    }, [clearPendingChestReveal]);
+        schedule(clearPendingChestReveal, 300);
+    }, [clearPendingChestReveal, schedule, isCurrent]);
 
     const handleAdvance = useCallback(() => {
+        if (!isCurrent()) return;
         if (phase === 'idle') {
             setPhase('revealing');
         } else if (phase === 'revealed' && canDismiss) {
             handleDismiss();
         }
-    }, [canDismiss, handleDismiss, phase]);
+    }, [canDismiss, handleDismiss, phase, isCurrent]);
 
     const handleGoToBattle = useCallback(() => {
         handleDismiss();
         // 閉じる演出と被らないよう少し遅延させる
-        window.setTimeout(() => navigate('/map'), 100);
-    }, [handleDismiss, navigate]);
+        schedule(() => navigate('/map'), 100);
+    }, [handleDismiss, navigate, schedule]);
 
     useModalEscape(Boolean(pendingChestReveal && visible && phase === 'revealed' && canDismiss), handleDismiss);
 
-    if (!pendingChestReveal || !visible) return null;
+    if (!pendingChestReveal || !visible || !active) return null;
 
     const { equipment, label, chestType, isStarterCharacter } = pendingChestReveal;
     const titleId = 'chest-opening-overlay-title';
