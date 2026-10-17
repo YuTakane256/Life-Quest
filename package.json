@@ -43,6 +43,8 @@
     "test": "vitest run",
     "test:core": "npm run test --workspace @life-quest/core",
     "test:integration": "vitest run supabase/integration",
+    "test:sync": "node scripts/run-sync-quality.mjs",
+    "test:sync:unit": "node scripts/run-sync-quality.mjs --unit",
     "test:watch": "vitest"
   },
   "dependencies": {
