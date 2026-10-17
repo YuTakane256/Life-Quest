@@ -146,7 +146,7 @@ jobs:
           export SUPABASE_ANON_KEY="$ANON_KEY"
           export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
           export SUPABASE_FUNCTIONS_URL="$API_URL/functions/v1"
-          npm run test:integration
+          npm run test:sync -- --integration
 
       - name: Show Edge Functions log on failure
         if: failure()
