@@ -108,11 +108,12 @@ export interface GameCloudClient {
      * バトル開始。expectedUserIdはJWT主体との競合検出専用で、所有者の決定には使わない。
      * クラウド未接続ならnull。認証済み呼び出し元はローカル開始へ切り替えない。
      */
-    startBattleAttempt: (stage: number, idempotencyKey: string, expectedUserId: string) => Promise<CloudBattleAttempt | null>;
+    startBattleAttempt: (stage: number, idempotencyKey: string, expectedUserId: string, options?: EdgeFunctionCallOptions) => Promise<CloudBattleAttempt | null>;
     /** バトル決着。クラウド未接続なら例外。 */
     resolveBattleAttempt: (
         battleAttemptId: string,
         actions: readonly BattleAction[],
+        options?: EdgeFunctionCallOptions & { idempotencyKey?: string },
     ) => Promise<ResolveBattleAttemptResponse>;
     /** 宝箱開封。クラウド未接続ならnull。idempotencyKeyは呼び出し元が管理し、失敗時の再送に使う。 */
     openChest: (chestId: string, idempotencyKey: string, options?: EdgeFunctionCallOptions) => Promise<CloudChestResult | null>;
@@ -157,16 +158,15 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
     }
 
     return {
-        startBattleAttempt: async (stage, idempotencyKey, expectedUserId) => {
-            const invoker = await getInvoker();
-            if (!invoker) return null;
-            const response = await invoker<StartBattleAttemptResponse>('start_battle_attempt', {
+        startBattleAttempt: async (stage, idempotencyKey, expectedUserId, options) => {
+            const response = await invokeOwned<StartBattleAttemptResponse>('start_battle_attempt', {
                 stage,
                 idempotencyKey,
                 // JWT以外で所有者を決めることはない。これは開始要求の途中で
                 // セッション主体が切り替わった競合をEdge Functionで検出するためだけの値。
                 expectedUserId,
-            });
+            }, { isActive: options?.isActive ?? (() => true), expectedUserId });
+            if (!response) return null;
             return {
                 battleAttemptId: response.battle_attempt_id,
                 actors: {
@@ -182,14 +182,14 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
             };
         },
 
-        resolveBattleAttempt: async (battleAttemptId, actions) => {
-            const invoker = await getInvoker();
-            if (!invoker) throw new EdgeFunctionError('unconfigured', 'クラウド接続が利用できません');
-            return await invoker<ResolveBattleAttemptResponse>('resolve_battle_attempt', {
+        resolveBattleAttempt: async (battleAttemptId, actions, options) => {
+            const response = await invokeOwned<ResolveBattleAttemptResponse>('resolve_battle_attempt', {
                 battleAttemptId,
-                actions,
-                idempotencyKey: generateId(),
-            });
+                actions: actions.map((action) => ({ ...action })),
+                idempotencyKey: options?.idempotencyKey ?? generateId(),
+            }, options);
+            if (!response) throw new EdgeFunctionError('unconfigured', 'クラウド接続が利用できません');
+            return response;
         },
 
         openChest: async (chestId, idempotencyKey, options) => {

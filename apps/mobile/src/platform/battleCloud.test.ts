@@ -42,7 +42,7 @@ describe('battleCloud', () => {
             stage: 1,
             idempotencyKey: 'key-1',
             expectedUserId: 'user-1',
-        });
+        }, expect.objectContaining({ isActive: expect.any(Function), expectedUserId: 'user-1' }));
         expect(attempt).toEqual({
             battleAttemptId: 'attempt-1',
             actors: {
@@ -70,7 +70,7 @@ describe('battleCloud', () => {
             battleAttemptId: 'attempt-1',
             actions: [{ type: 'attack' }],
             idempotencyKey: 'op-1',
-        });
+        }, expect.objectContaining({ isActive: expect.any(Function) }));
     });
 
     it('claim_login_bonusを冪等キー付きで呼び、snake_caseレスポンスを変換する', async () => {

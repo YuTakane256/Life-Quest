@@ -34,7 +34,8 @@ describe('gameCloud（Webアダプタ）', () => {
 
         const attempt = await startCloudBattleAttempt(1, 'key-1', 'user-1');
 
-        expect(invoker).toHaveBeenCalledWith('start_battle_attempt', expect.objectContaining({ stage: 1, idempotencyKey: 'key-1', expectedUserId: 'user-1' }));
+        expect(invoker).toHaveBeenCalledWith('start_battle_attempt', expect.objectContaining({ stage: 1, idempotencyKey: 'key-1', expectedUserId: 'user-1' }),
+            expect.objectContaining({ isActive: expect.any(Function), expectedUserId: 'user-1' }));
         expect(attempt).toEqual({
             battleAttemptId: 'attempt-1',
             actors: {
@@ -61,6 +62,6 @@ describe('gameCloud（Webアダプタ）', () => {
         expect(invoker).toHaveBeenCalledWith('resolve_battle_attempt', expect.objectContaining({
             battleAttemptId: 'attempt-1',
             actions: [{ type: 'attack' }],
-        }));
+        }), expect.objectContaining({ isActive: expect.any(Function) }));
     });
 });

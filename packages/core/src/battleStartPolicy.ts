@@ -1,4 +1,5 @@
 import { EdgeFunctionError } from './edgeFunctions.ts';
+import { captureAuthSessionGuard } from './authLifecycle.ts';
 
 /** 操作時点で確認したクラウド認証の状態。 */
 export type BattleAuthState =
@@ -71,20 +72,28 @@ export async function requestBattleStart<TAttempt>(
     authState: BattleAuthState,
     getCurrentAuthState: () => Promise<BattleAuthState>,
     requestCloudAttempt: (expectedUserId: string) => Promise<TAttempt | null>,
+    options: { isActive?: () => boolean; expectedUserId?: string | null } = {},
 ): Promise<BattleStartResult<TAttempt>> {
-    if (authState.kind === 'anonymous') return { kind: 'local-started' };
+    const scopeIsCurrent = captureAuthSessionGuard();
+    const isActive = () => scopeIsCurrent() && (options.isActive?.() ?? true);
+    if (!isActive()) return { kind: 'auth-changed' };
     if (authState.kind === 'unavailable') return { kind: 'unavailable' };
+    if (options.expectedUserId !== undefined && options.expectedUserId !== (authState.kind === 'authenticated' ? authState.userId : null)) {
+        return { kind: 'auth-changed' };
+    }
+    if (authState.kind === 'anonymous') return { kind: 'local-started' };
 
     // getSessionとEdge Function呼び出しの間にログアウト/別ユーザーへの切替が
     // 起きても、観測した主体と異なるセッションで戦闘を開始しない。
-    if (!isSameAuthenticatedUser(authState, await getCurrentAuthState())) return { kind: 'auth-changed' };
-
     try {
+        if (!isSameAuthenticatedUser(authState, await getCurrentAuthState()) || !isActive()) return { kind: 'auth-changed' };
         const attempt = await requestCloudAttempt(authState.userId);
+        if (!isActive()) return { kind: 'auth-changed' };
         if (!attempt) return { kind: 'retryable-error' };
-        if (!isSameAuthenticatedUser(authState, await getCurrentAuthState())) return { kind: 'auth-changed' };
+        if (!isSameAuthenticatedUser(authState, await getCurrentAuthState()) || !isActive()) return { kind: 'auth-changed' };
         return { kind: 'cloud-started', attempt };
     } catch (error) {
+        if (!isActive() || (error instanceof EdgeFunctionError && error.code === 'stale-session')) return { kind: 'auth-changed' };
         if (error instanceof EdgeFunctionError) {
             if (error.code === 'unauthenticated' || error.status === 401) return { kind: 'auth-error' };
             if (error.status !== null && error.status >= 400 && error.status < 500) return { kind: 'rejected' };

@@ -19,6 +19,7 @@ import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/c
 import { applyCloudCacheToWebStores } from './cloudSync';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { flushCompletionRewardWrites, getCompletionRewardGeneration, resetCompletionRewardStorage, seedCloudCompletionRewardStorage } from './completionRewards';
+import { hasPendingBattleResult } from '@life-quest/core/battle';
 
 function task(id: string) {
     return {
@@ -35,6 +36,48 @@ function battle() {
 }
 
 describe('Webログアウト時のストアクリア（ADR-009）', () => {
+    it.each([
+        { seeded: false, transition: 'logout' }, { seeded: false, transition: 'switch' },
+        { seeded: true, transition: 'logout' }, { seeded: true, transition: 'switch' },
+    ])('旧cloud戦闘からマップへ復帰できる: $seeded / $transition', async ({ seeded, transition }) => {
+        const unregister = registerWebAuthStoreHooks();
+        await notifyLogin('a');
+        useGameStore.setState((state) => ({ battle: { ...state.battle, status: 'victory', rewardMode: 'cloud',
+            battleAttemptId: 'attempt-a', currentStage: 3, maxClearedStage: 2, battleUnlocked: true } }));
+        const totalXp = useGameStore.getState().character.totalXp;
+        if (seeded) markCloudSessionSeeded();
+        if (transition === 'logout') await notifyLogout(); else await notifyLogin('b');
+        const state = useGameStore.getState();
+        expect(state.battle.status).toBe('idle');
+        expect(state.battle.battleAttemptId).toBeNull();
+        expect(hasPendingBattleResult('victory', state.battle.rewardMode, state.battle.battleAttemptId)).toBe(false);
+        await useGameStore.persist.rehydrate();
+        expect(useGameStore.getState().battle.battleAttemptId).toBeNull();
+        if (!seeded) {
+            expect(state.character.totalXp).toBe(totalXp);
+            expect(state.battle).toMatchObject({ currentStage: 3, maxClearedStage: 2, battleUnlocked: true });
+            expect(useTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
+        }
+        unregister();
+    });
+
+    it('初回認証復元・同一ユーザー通知ではcloud戦闘を消さない', async () => {
+        const unregister = registerWebAuthStoreHooks();
+        useGameStore.setState((state) => ({ battle: { ...state.battle, status: 'victory', rewardMode: 'cloud', battleAttemptId: 'restored' } }));
+        await notifyLogin('a'); await notifyLogin('a');
+        expect(useGameStore.getState().battle.battleAttemptId).toBe('restored');
+        unregister();
+    });
+    it.each(['logout', 'switch'])('未seedの匿名由来ローカル戦闘と進行は保持する: %s', async (transition) => {
+        const unregister = registerWebAuthStoreHooks();
+        await notifyLogin('a');
+        useGameStore.setState((state) => ({ battle: { ...state.battle, status: 'fighting', rewardMode: 'local', battleAttemptId: null } }));
+        const previous = useGameStore.getState().battle;
+        if (transition === 'logout') await notifyLogout(); else await notifyLogin('b');
+        expect(useGameStore.getState().battle).toBe(previous);
+        expect(useTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
+        unregister();
+    });
     it('ストア直接クリア後は、SDKのログアウト通知前でも遅延した習慣集計を反映しない', async () => {
         vi.useFakeTimers();
         try {
@@ -53,6 +96,7 @@ describe('Webログアウト時のストアクリア（ADR-009）', () => {
 
     beforeEach(() => {
         resetCloudSessionSeeded();
+        useGameStore.getState().resetBattle();
         useTaskStore.setState({ tasks: [task('local-1')], pendingCompletions: [] });
         useHabitStore.setState({ habits: [{ id: 'old-habit', name: 'Old habit', categoryId: 'health', createdAt: '2026-10-01T00:00:00Z' }],
             dailyRecords: [], restDays: [], allCompleteRewardDates: [] });

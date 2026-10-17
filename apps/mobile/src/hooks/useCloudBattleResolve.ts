@@ -20,6 +20,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useMobileGameStore, type ActiveMobileBattle } from '../stores/useMobileGameStore';
 import { resolveCloudBattleAttempt, type ResolveBattleAttemptResponse } from '../platform/battleCloud';
 import type { BattleAction } from '@life-quest/core/battle';
+import { captureAuthSessionGuard, captureAuthSessionScope, type AuthSessionScope } from '@life-quest/core/authLifecycle';
+import { getGameAuthState } from '../platform/auth';
+import { createMobileId } from '../utils/createMobileId';
+import { useGameOperationScope } from './useGameOperationScope';
 
 export type CloudBattleResolveState = 'idle' | 'syncing' | 'done' | 'error';
 
@@ -32,6 +36,7 @@ export interface UseCloudBattleResolveResult {
 }
 
 export interface CloudBattleResolveDeps {
+    isActive?: () => boolean;
     resolveCloudBattleAttempt: (
         battleAttemptId: string,
         actions: readonly BattleAction[],
@@ -53,8 +58,11 @@ export async function runCloudBattleResolve(
     actions: readonly BattleAction[],
     deps: CloudBattleResolveDeps,
 ): Promise<CloudBattleResolveOutcome> {
+    const isActive = deps.isActive ?? captureAuthSessionGuard();
+    if (!isActive()) return { status: 'error' };
     try {
-        const response = await deps.resolveCloudBattleAttempt(attemptId, actions);
+        const response = await deps.resolveCloudBattleAttempt(attemptId, actions.map((action) => ({ ...action })));
+        if (!isActive()) return { status: 'error' };
         deps.applyResolvedCloudBattle(attemptId, response.outcome, response.granted);
         return { status: 'done', granted: response.granted };
     } catch {
@@ -85,41 +93,76 @@ export function useCloudBattleResolve(): UseCloudBattleResolveResult {
     const [resolveState, setResolveState] = useState<CloudBattleResolveState>('idle');
     const [granted, setGranted] = useState<boolean | null>(null);
     const resolvedAttemptIdRef = useRef<string | null>(null);
+    const appliedAttemptRef = useRef<string | null>(null);
+    const pendingRef = useRef<{ attemptId: string; actions: BattleAction[]; key: string } | null>(null);
+    const bindingRef = useRef<{ attemptId: string; scope: AuthSessionScope } | null>(null);
+    const operationScope = useGameOperationScope(() => {
+        resolvedAttemptIdRef.current = null; appliedAttemptRef.current = null; pendingRef.current = null;
+        setResolveState('idle'); setGranted(null);
+    });
 
-    const runResolve = (attemptId: string, actions: readonly BattleAction[]): void => {
+    const isTarget = (attemptId: string): boolean => {
+        const current = useMobileGameStore.getState().activeBattle;
+        return current?.battleAttemptId === attemptId && current.rewardMode === 'cloud'
+            && (current.state.outcome === 'victory' || current.state.outcome === 'defeat');
+    };
+    const runResolve = async (attemptId: string, actions: readonly BattleAction[]): Promise<void> => {
+        if (!isTarget(attemptId)) return;
+        const binding = bindingRef.current;
+        if (binding?.attemptId === attemptId && binding.scope.userId !== null && !binding.scope.isCurrent()) return;
+        if (!binding || binding.attemptId !== attemptId || binding.scope.userId === null) {
+            bindingRef.current = { attemptId, scope: captureAuthSessionScope() };
+        }
+        const operation = operationScope.begin();
+        if (!operation) return;
+        const pending = pendingRef.current?.attemptId === attemptId ? pendingRef.current
+            : { attemptId, actions: actions.map((action) => ({ ...action })), key: createMobileId() };
+        pendingRef.current = pending;
+        resolvedAttemptIdRef.current = attemptId;
         setResolveState('syncing');
-        void runCloudBattleResolve(attemptId, actions, { resolveCloudBattleAttempt, applyResolvedCloudBattle })
-            .then((outcome) => {
-                if (outcome.status === 'done') {
-                    setGranted(outcome.granted);
-                    setResolveState('done');
-                } else {
-                    setResolveState('error');
-                }
+        setGranted(null);
+        try {
+            const auth = await getGameAuthState();
+            if (!operation.isActive() || !isTarget(attemptId)) return;
+            if (auth.kind !== 'authenticated' || auth.userId !== operation.userId) { setResolveState('error'); return; }
+            const outcome = await runCloudBattleResolve(attemptId, pending.actions, {
+                resolveCloudBattleAttempt: (id, snapshot) => resolveCloudBattleAttempt(id, snapshot, {
+                    isActive: () => operation.isActive() && isTarget(attemptId), expectedUserId: auth.userId, idempotencyKey: pending.key,
+                }),
+                applyResolvedCloudBattle: (id, result, granted) => {
+                    appliedAttemptRef.current = id;
+                    applyResolvedCloudBattle(id, result, granted);
+                },
+                isActive: () => operation.isActive() && isTarget(attemptId),
             });
+            if (!operation.isActive()) return;
+            if (outcome.status === 'done') {
+                pendingRef.current = null; setGranted(outcome.granted); setResolveState('done');
+            } else if (isTarget(attemptId)) setResolveState('error');
+        } catch {
+            if (operation.isActive() && isTarget(attemptId)) setResolveState('error');
+        } finally { operation.finish(); }
     };
 
+    useEffect(() => () => { resolvedAttemptIdRef.current = null; }, []);
     useEffect(() => {
+        const terminal = activeBattle?.state.outcome === 'victory' || activeBattle?.state.outcome === 'defeat';
+        if (!terminal || activeBattle?.rewardMode !== 'cloud' || !activeBattle?.battleAttemptId) {
+            if (terminal && activeBattle?.rewardMode === 'cloud' && appliedAttemptRef.current !== null
+                && appliedAttemptRef.current === resolvedAttemptIdRef.current) return;
+            operationScope.cancel(); resolvedAttemptIdRef.current = null; pendingRef.current = null; appliedAttemptRef.current = null; bindingRef.current = null;
+            setResolveState('idle'); setGranted(null); return;
+        }
         if (!shouldResolveBattle(activeBattle, resolvedAttemptIdRef.current)) return;
         const attemptId = activeBattle!.battleAttemptId!;
-        resolvedAttemptIdRef.current = attemptId;
-        runResolve(attemptId, activeBattle!.actions);
+        operationScope.cancel(); appliedAttemptRef.current = null;
+        void runResolve(attemptId, activeBattle!.actions);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeBattle?.state.outcome, activeBattle?.rewardMode, activeBattle?.battleAttemptId, activeBattle?.actions]);
-
-    // 新しい戦闘が始まったら（またはactiveBattleが閉じられたら）状態をリセットする
-    useEffect(() => {
-        if (!activeBattle || activeBattle.state.outcome === 'ongoing') {
-            resolvedAttemptIdRef.current = null;
-            setResolveState('idle');
-            setGranted(null);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeBattle?.state.outcome, activeBattle?.battleAttemptId]);
+    }, [activeBattle?.state.outcome, activeBattle?.rewardMode, activeBattle?.battleAttemptId, activeBattle?.stage, operationScope.revision]);
 
     const retry = (): void => {
-        if (!activeBattle?.battleAttemptId) return;
-        runResolve(activeBattle.battleAttemptId, activeBattle.actions);
+        const pending = pendingRef.current;
+        if (pending) void runResolve(pending.attemptId, pending.actions);
     };
 
     return { resolveState, granted, retry };

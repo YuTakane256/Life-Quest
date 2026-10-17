@@ -104,12 +104,21 @@ export function clearWebCloudStores(): void {
  */
 export function registerWebAuthStoreHooks(): () => void {
     let activeUserId: string | null = null;
+    const detachCloudBattle = (): boolean => {
+        const game = useGameStore.getState();
+        if (game.battle.rewardMode !== 'cloud') return false;
+        // 未seedでもサーバーattemptは匿名の移行元ではない。進行/装備は残し一時戦闘だけ離れる。
+        game.resetBattle();
+        return true;
+    };
     return registerAuthLifecycleHooks({
         onLogin: (userId) => {
             // Initial login preserves the anonymous migration source; repeated same-user
             // notifications preserve in-session progress. A -> B must clear before B's
             // migration/sync hooks can inspect the previous account's display cache.
-            const switchedSeededAccount = activeUserId !== null && activeUserId !== userId && cloudSessionSeeded;
+            const switchedAccount = activeUserId !== null && activeUserId !== userId;
+            const switchedSeededAccount = switchedAccount && cloudSessionSeeded;
+            const detachedBattle = switchedAccount && !cloudSessionSeeded && detachCloudBattle();
             activeUserId = userId;
             if (switchedSeededAccount) {
                 clearWebCloudStores();
@@ -117,13 +126,17 @@ export function registerWebAuthStoreHooks(): () => void {
             }
             // クラウド同期の開始より先に、前アカウントの演出・失敗状態を隔離する。
             beginLoginBonusCloudSession(userId);
-            if (switchedSeededAccount) return flushCompletionRewardWrites();
+            if (switchedSeededAccount || detachedBattle) return flushCompletionRewardWrites();
         },
         onLogout: () => {
+            const hadAccount = activeUserId !== null;
             activeUserId = null;
             // cloudSessionSeededの有無に関係なくログインボーナスはアカウント固有。
             clearLoginBonusCloudSession();
-            if (!cloudSessionSeeded) return; // クラウド未シードならローカルデータを守る
+            if (!cloudSessionSeeded) {
+                if (hadAccount && detachCloudBattle()) return flushCompletionRewardWrites();
+                return; // 匿名の移行元データは残す
+            }
             clearWebCloudStores();
             cloudSessionSeeded = false;
             return flushCompletionRewardWrites();
