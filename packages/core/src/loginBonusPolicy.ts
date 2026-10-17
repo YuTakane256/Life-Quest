@@ -1,6 +1,7 @@
 import { EdgeFunctionError } from './edgeFunctions.ts';
 import type { BattleAuthState } from './battleStartPolicy.ts';
 import type { CloudLoginBonusResult } from './gameCloud.ts';
+import { captureAuthSessionGuard } from './authLifecycle.ts';
 
 /** ログインボーナスでもバトルと同じ三値の認証判定を利用する。 */
 export type LoginBonusAuthState = BattleAuthState;
@@ -49,18 +50,26 @@ export async function requestLoginBonusClaim(
     authState: LoginBonusAuthState,
     getCurrentAuthState: () => Promise<LoginBonusAuthState>,
     requestCloudBonus: (expectedUserId: string) => Promise<CloudLoginBonusResult | null>,
+    options: { isActive?: () => boolean; expectedUserId?: string | null } = {},
 ): Promise<LoginBonusClaimResult> {
-    if (authState.kind === 'anonymous') return { kind: 'local-eligible' };
+    const scopeIsCurrent = captureAuthSessionGuard();
+    const isActive = () => scopeIsCurrent() && (options.isActive?.() ?? true);
+    if (!isActive()) return { kind: 'auth-changed' };
     if (authState.kind === 'unavailable') return { kind: 'unavailable' };
-
-    if (!isSameAuthenticatedUser(authState, await getCurrentAuthState())) return { kind: 'auth-changed' };
+    if (options.expectedUserId !== undefined && options.expectedUserId !== (authState.kind === 'authenticated' ? authState.userId : null)) {
+        return { kind: 'auth-changed' };
+    }
+    if (authState.kind === 'anonymous') return { kind: 'local-eligible' };
 
     try {
+        if (!isSameAuthenticatedUser(authState, await getCurrentAuthState()) || !isActive()) return { kind: 'auth-changed' };
         const bonus = await requestCloudBonus(authState.userId);
+        if (!isActive()) return { kind: 'auth-changed' };
         if (!bonus) return { kind: 'retryable-error' };
-        if (!isSameAuthenticatedUser(authState, await getCurrentAuthState())) return { kind: 'auth-changed' };
+        if (!isSameAuthenticatedUser(authState, await getCurrentAuthState()) || !isActive()) return { kind: 'auth-changed' };
         return bonus.granted ? { kind: 'cloud-granted', bonus } : { kind: 'already-claimed', bonus };
     } catch (error) {
+        if (!isActive() || (error instanceof EdgeFunctionError && error.code === 'stale-session')) return { kind: 'auth-changed' };
         if (error instanceof EdgeFunctionError) {
             if (error.code === 'unauthenticated' || error.status === 401) return { kind: 'auth-error' };
             if (error.status !== null && error.status >= 400 && error.status < 500) return { kind: 'rejected' };

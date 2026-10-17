@@ -11,6 +11,8 @@ vi.mock('../platform/auth', () => ({
 
 import { useLoginBonusStore } from './useLoginBonusStore';
 import { beginLoginBonusCloudSession } from './useLoginBonusStore';
+import { clearLoginBonusCloudSession } from './useLoginBonusStore';
+import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { useGameStore } from './useGameStore';
 import { LOGIN_BONUS_CONFIG } from '../config/gameConfig';
 import { claimCloudLoginBonus } from '../platform/gameCloud';
@@ -28,7 +30,7 @@ const BASE_DATE = new Date('2025-03-15T03:00:00.000Z'); // UTC 03:00 = JST 12:00
  * タイマーとは独立に、Promiseの解決だけを進める）。
  */
 async function flushAsync(): Promise<void> {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 12; i++) {
         await Promise.resolve();
     }
 }
@@ -39,8 +41,10 @@ const originalAddXp = useGameStore.getState().addXp;
 const originalGrantChest = useGameStore.getState().grantChest;
 
 function reset(fakeDate: Date = BASE_DATE) {
+    resetAuthLifecycleHooks(); clearLoginBonusCloudSession();
     localStorage.clear();
-    useLoginBonusStore.setState({ lastLoginDate: null, streak: 0, pendingBonus: null });
+    useLoginBonusStore.setState({ lastLoginDate: null, streak: 0, pendingBonus: null,
+        anonymousState: { lastLoginDate: null, streak: 0 }, activeCloudUserId: null, claimStatus: 'idle', claimMessage: null });
     addXpSpy = vi.fn();
     grantChestSpy = vi.fn();
     useGameStore.setState({ addXp: addXpSpy as unknown as typeof originalAddXp, grantChest: grantChestSpy as unknown as typeof originalGrantChest });
@@ -288,7 +292,7 @@ describe('useLoginBonusStore（ローカル経路、クラウド未接続）', (
 });
 
 describe('useLoginBonusStore（クラウド経路）', () => {
-    beforeEach(() => reset());
+    beforeEach(async () => { reset(); await notifyLogin('user-1'); });
 
     afterEach(() => {
         vi.useRealTimers();
@@ -342,6 +346,7 @@ describe('useLoginBonusStore（クラウド経路）', () => {
     it('別アカウントへ切り替えたら前アカウントの受領状態を判定に使わない', async () => {
         useLoginBonusStore.setState({ activeCloudUserId: 'user-a', lastLoginDate: '2025-03-15', streak: 9 });
         getGameAuthStateMock.mockResolvedValue({ kind: 'authenticated', userId: 'user-b' });
+        await notifyLogin('user-b');
         claimCloudLoginBonusMock.mockRejectedValue(new Error('offline'));
 
         await useLoginBonusStore.getState().checkDailyLogin();
@@ -363,12 +368,13 @@ describe('useLoginBonusStore（クラウド経路）', () => {
         await useLoginBonusStore.getState().checkDailyLogin();
         await useLoginBonusStore.getState().retryDailyLogin();
 
-        expect(claimCloudLoginBonusMock).toHaveBeenNthCalledWith(1, 'login-bonus:2025-03-15', 'user-1');
-        expect(claimCloudLoginBonusMock).toHaveBeenNthCalledWith(2, 'login-bonus:2025-03-15', 'user-1');
+        expect(claimCloudLoginBonusMock).toHaveBeenNthCalledWith(1, 'login-bonus:2025-03-15', 'user-1', expect.objectContaining({ isActive: expect.any(Function), expectedUserId: 'user-1' }));
+        expect(claimCloudLoginBonusMock).toHaveBeenNthCalledWith(2, 'login-bonus:2025-03-15', 'user-1', expect.objectContaining({ isActive: expect.any(Function), expectedUserId: 'user-1' }));
     });
 
     it('請求中に別ユーザーへ切り替わった応答は新しい状態へ適用しない', async () => {
         getGameAuthStateMock.mockResolvedValue({ kind: 'authenticated', userId: 'user-a' });
+        await notifyLogin('user-a');
         let resolveClaim!: (value: CloudLoginBonusResult) => void;
         claimCloudLoginBonusMock.mockReturnValue(new Promise((resolve) => { resolveClaim = resolve; }));
 

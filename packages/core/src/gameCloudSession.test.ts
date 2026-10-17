@@ -8,10 +8,11 @@ function deferred<T>() {
     const promise = new Promise<T>((done) => { resolve = done; });
     return { promise, resolve };
 }
-const routes = ['chest', 'synthesis', 'battle-start', 'battle-resolve'] as const;
+const routes = ['chest', 'synthesis', 'battle-start', 'battle-resolve', 'login-bonus'] as const;
 afterEach(() => resetAuthLifecycleHooks());
 describe.each(routes)('%sの送信セッション境界', (route) => {
     function request(client: ReturnType<typeof createGameCloudClient>) {
+        if (route === 'login-bonus') return client.claimLoginBonus('same-key', 'a');
         if (route === 'battle-start') return client.startBattleAttempt(1, 'same-key', 'a');
         if (route === 'battle-resolve') return client.resolveBattleAttempt('attempt', [{ type: 'attack' }],
             { isActive: () => true, expectedUserId: 'a', idempotencyKey: 'same-key' });

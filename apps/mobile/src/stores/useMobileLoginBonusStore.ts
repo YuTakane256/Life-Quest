@@ -13,6 +13,7 @@ import { getTodayJst, isValidYmd, shiftDate } from '@life-quest/core/dates';
 import { calculateLoginBonusXp, LOGIN_BONUS_CONFIG } from '@life-quest/core/loginBonus';
 import { claimCloudLoginBonus } from '../platform/battleCloud';
 import { getGameAuthState } from '../platform/auth';
+import { captureAuthSessionScope, waitForAuthLifecycleSettled } from '@life-quest/core/authLifecycle';
 import { useMobileGameStore } from './useMobileGameStore';
 import type { CharacterState, RewardLedger } from '@life-quest/core/gameState';
 import type { Equipment } from '@life-quest/core/equipment';
@@ -29,6 +30,7 @@ let checkingPromise: Promise<LoginBonusClaimResult> | null = null;
 let checkingGeneration = -1;
 let claimGeneration = 0;
 let retryPending = false;
+let checkingIsCurrent = (): boolean => false;
 
 export interface MobileLoginBonus {
     date: string; // YYYY-MM-DD (JST)
@@ -97,11 +99,10 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
     persist(
         (set, get) => {
             /**
-             * ローカル計算・ローカル付与のフォールバック経路（未接続時、または
-             * クラウド接続エラー時）。次回pullのサーバー正（total_xp/chests丸ごと
-             * 上書き）で収束するため、ここでの多重付与が永続化されることはない。
+             * 匿名確定時だけローカル付与する。失効後のロールバックで新アカウントを
+             * 上書きしない。認証済みの通信エラーはローカル付与へ変換しない。
              */
-            const runLocalBonus = (today: string): void => {
+            const runLocalBonus = (today: string, isActive: () => boolean): void => {
                 const { lastLoginDate, streak } = get();
 
                 const isConsecutive = lastLoginDate === shiftDate(today, -1);
@@ -120,17 +121,22 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
                 };
 
                 try {
+                    if (!isActive()) throw new Error('stale login bonus');
                     gameStore.addXp(xp);
+                    if (!isActive()) throw new Error('stale login bonus');
                     if (isSpecialDay) {
                         gameStore.grantChest(
                             LOGIN_BONUS_CONFIG.SPECIAL_CHEST_TYPE,
                             LOGIN_BONUS_CONFIG.SPECIAL_CHEST_LABEL
                         );
                     }
+                    if (!isActive()) throw new Error('stale login bonus');
                     set({ lastLoginDate: today, streak: newStreak, pendingBonus: bonus });
                 } catch (error) {
+                    if (!isActive()) throw error;
                     try {
                         restoreGameRewardState(gameSnapshot);
+                        if (!isActive()) throw error;
                         set({ lastLoginDate, streak, pendingBonus: null });
                     } catch {
                         // Storage自体が利用不能でも、元の付与エラーを優先して返す。
@@ -150,10 +156,13 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
 
                 checkDailyLogin: () => {
                     const generation = claimGeneration;
-                    if (checkingPromise && checkingGeneration === generation) {
+                    const scope = captureAuthSessionScope();
+                    const isCurrent = () => generation === claimGeneration && scope.isCurrent();
+                    if (checkingPromise && checkingGeneration === generation && checkingIsCurrent()) {
                         retryPending = true;
                         return checkingPromise;
                     }
+                    retryPending = false;
                     // AsyncStorageの復元やゲームストアのhydrationより先に受取状態を
                     // 変更すると、遅れて復元された古い値がサーバー応答を上書きし得る。
                     if (!useMobileLoginBonusStore.persist.hasHydrated() || !useMobileGameStore.getState().hasHydrated) {
@@ -162,9 +171,15 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
 
                     const work = (async (): Promise<LoginBonusClaimResult> => {
                         try {
+                            await waitForAuthLifecycleSettled();
+                            if (!isCurrent()) return { kind: 'auth-changed' };
                             const today = getTodayJst();
                             const authState = await getGameAuthState();
-                            if (generation !== claimGeneration) return { kind: 'auth-changed' };
+                            if (!isCurrent()) return { kind: 'auth-changed' };
+                            if (authState.kind !== 'unavailable' && scope.userId !== (authState.kind === 'authenticated' ? authState.userId : null)) {
+                                set({ claimStatus: 'auth-error', claimMessage: getLoginBonusClaimMessage({ kind: 'auth-changed' }) });
+                                return { kind: 'auth-changed' };
+                            }
 
                             const current = get();
                             if (authState.kind === 'authenticated'
@@ -203,12 +218,14 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
                             const result = await requestLoginBonusClaim(
                             authState,
                             getGameAuthState,
-                            (expectedUserId) => claimCloudLoginBonus(`login-bonus:${today}`, expectedUserId),
+                            (expectedUserId) => claimCloudLoginBonus(`login-bonus:${today}`, expectedUserId, { isActive: isCurrent, expectedUserId }),
+                            { isActive: isCurrent, expectedUserId: scope.userId },
                             );
-                            if (generation !== claimGeneration) return { kind: 'auth-changed' };
+                            if (!isCurrent()) return { kind: 'auth-changed' };
 
                             if (result.kind === 'local-eligible') {
-                            runLocalBonus(today);
+                            runLocalBonus(today, isCurrent);
+                            if (!isCurrent()) return { kind: 'auth-changed' };
                             const state = get();
                             set({
                                 anonymousState: { lastLoginDate: state.lastLoginDate, streak: state.streak },
@@ -241,7 +258,7 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
                         });
                             return result;
                         } catch (error) {
-                            if (generation !== claimGeneration) return { kind: 'auth-changed' };
+                            if (!isCurrent()) return { kind: 'auth-changed' };
                             console.error('checkDailyLogin failed', error);
                             const result: LoginBonusClaimResult = { kind: 'retryable-error' };
                             set({ claimStatus: 'retryable-error', claimMessage: getLoginBonusClaimMessage(result) });
@@ -250,11 +267,12 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
                     })();
                     checkingPromise = work;
                     checkingGeneration = generation;
+                    checkingIsCurrent = isCurrent;
                     void work.finally(() => {
                         if (checkingPromise === work) {
                             checkingPromise = null;
                             checkingGeneration = -1;
-                            if (retryPending) {
+                            if (retryPending && isCurrent()) {
                                 retryPending = false;
                                 void useMobileLoginBonusStore.getState().checkDailyLogin();
                             }
@@ -295,6 +313,7 @@ export function beginMobileLoginBonusCloudSession(userId: string): void {
     const state = useMobileLoginBonusStore.getState();
     if (state.activeCloudUserId === userId) return;
     claimGeneration++;
+    retryPending = false;
     const anonymousState = state.activeCloudUserId === null
         ? { lastLoginDate: state.lastLoginDate, streak: state.streak }
         : state.anonymousState;
@@ -312,6 +331,7 @@ export function beginMobileLoginBonusCloudSession(userId: string): void {
 /** 認証フック用: ログアウト時にクラウド表示を匿名の保存状態へ即時復帰する。 */
 export function clearMobileLoginBonusCloudSession(): void {
     claimGeneration++;
+    retryPending = false;
     const { anonymousState } = useMobileLoginBonusStore.getState();
     useMobileLoginBonusStore.setState({
         ...anonymousState,
