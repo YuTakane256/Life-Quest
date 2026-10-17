@@ -7,7 +7,7 @@ import { useTaskStore, discardWebPendingTaskCompletions } from '../stores/useTas
 import { useGameStore, sanitizeGameStoreState } from '../stores/useGameStore';
 import { useStatsStore } from '../stores/useStatsStore';
 import { clearWebCloudStores, markCloudSessionSeeded as markWeb, registerWebAuthStoreHooks, resetCloudSessionSeeded as resetWeb } from './authStores';
-import { getCompletionRewardGeneration, resetCompletionRewardStorage } from './completionRewards';
+import { flushCompletionRewardWrites, getCompletionRewardGeneration, resetCompletionRewardStorage, withoutCompletionRewardPersistence } from './completionRewards';
 import { useMobileTaskStore, discardMobilePendingTaskCompletions } from '../../apps/mobile/src/stores/useMobileTaskStore';
 import { useMobileGameStore } from '../../apps/mobile/src/stores/useMobileGameStore';
 import { useMobileStatsStore } from '../../apps/mobile/src/stores/useMobileStatsStore';
@@ -139,11 +139,12 @@ describe.each(clients)('$nameの完了待機とアカウント境界（実スト
 
 describe('Webの非同期待機', () => {
     it('旧ロックの遅延失敗を新スコープのエラー表示へ上書きしない', async () => {
+        await flushCompletionRewardWrites();
         const gate = deferred();
         vi.stubGlobal('navigator', { locks: { request: async () => { await gate.promise; throw new Error('old failure'); } } });
         const pending = useGameStore.getState().grantCompletionReward('task:old', 20, getCompletionRewardGeneration());
         await notifyLogin('b');
-        useGameStore.setState({ completionRewardError: 'new scope message' });
+        withoutCompletionRewardPersistence(() => useGameStore.setState({ completionRewardError: 'new scope message' }));
         gate.resolve(); await expect(pending).resolves.toBe(false);
         expect(useGameStore.getState().completionRewardError).toBe('new scope message');
     });
