@@ -1,47 +1,107 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { captureAuthSessionScope, subscribeAuthSessionScope, waitForAuthLifecycleSettled } from '@life-quest/core/authLifecycle';
 import { Download, Upload } from 'lucide-react';
 import { createBackupImportSummary, formatBackupExportedAt, type BackupImportSummary } from '../../utils/backupSummary';
 import { exportAllData, importAllData, MAX_IMPORT_FILE_SIZE, parseBackupImportJson, type BackupData } from '../../utils/dataBackup';
 import { ConfirmDialog } from './ConfirmDialog';
-import { toIsoDatePart } from '../../utils/dateUtils';
 import { withSettledGamePersistence } from '../../platform/completionRewards';
+import { downloadBackupFile, reloadAfterBackupImport } from '../../platform/backupBrowser';
+
+type BackupPhase = 'read' | 'confirm' | 'export' | 'import' | 'reload' | 'error';
+interface BackupOperation {
+    phase: BackupPhase;
+    isActive: () => boolean;
+}
 
 export function DataBackupSettings() {
     const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [showImportConfirm, setShowImportConfirm] = useState(false);
-    const [pendingBackup, setPendingBackup] = useState<BackupData | null>(null);
+    const [pendingBackup, setPendingBackup] = useState<{ data: BackupData; operation: BackupOperation } | null>(null);
     const [backupSummary, setBackupSummary] = useState<BackupImportSummary | null>(null);
+    const [busy, setBusy] = useState<BackupPhase | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const mounted = useRef(false);
+    const current = useRef<BackupOperation | null>(null);
+    const timers = useRef(new Set<number>());
 
-    const showImportError = () => {
+    const invalidate = useCallback(() => {
+        current.current = null;
+        for (const timer of timers.current) window.clearTimeout(timer);
+        timers.current.clear();
+    }, []);
+
+    const reset = useCallback(() => {
+        invalidate();
+        setImportStatus('idle');
+        setBusy(null);
+        setShowImportConfirm(false);
+        setPendingBackup(null);
+        setBackupSummary(null);
+    }, [invalidate]);
+
+    useEffect(() => {
+        mounted.current = true;
+        const unsubscribe = subscribeAuthSessionScope(reset);
+        return () => { mounted.current = false; invalidate(); unsubscribe(); };
+    }, [invalidate, reset]);
+
+    const begin = (phase: BackupPhase) => {
+        if (!mounted.current || ['export', 'import', 'reload'].includes(current.current?.phase ?? '')) return null;
+        reset();
+        const scope = captureAuthSessionScope();
+        const operation: BackupOperation = {
+            phase,
+            isActive: () => mounted.current && current.current === operation && scope.isCurrent(),
+        };
+        current.current = operation;
+        setBusy(phase);
+        return operation;
+    };
+
+    const schedule = (operation: BackupOperation, callback: () => void, delay: number) => {
+        const timer = window.setTimeout(() => {
+            timers.current.delete(timer);
+            if (operation.isActive()) callback();
+        }, delay);
+        timers.current.add(timer);
+    };
+
+    const showImportError = (operation: BackupOperation) => {
+        if (!operation.isActive()) return;
+        operation.phase = 'error';
+        setBusy(null);
         setImportStatus('error');
         setShowImportConfirm(false);
         setPendingBackup(null);
         setBackupSummary(null);
-        setTimeout(() => setImportStatus('idle'), 3000);
+        schedule(operation, reset, 3000);
     };
 
     const handleExport = async () => {
+        const operation = begin('export');
+        if (!operation) return;
         try {
-            const data = await withSettledGamePersistence(() => exportAllData());
-            const json = JSON.stringify(data, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `life-quest-backup-${toIsoDatePart(new Date().toISOString())}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        } catch { showImportError(); }
+            // A new scope is published before its async storage cleanup/initialization finishes.
+            await waitForAuthLifecycleSettled();
+            if (!operation.isActive()) return;
+            // Check inside the lock too: the session may change while persistence settles.
+            const data = await withSettledGamePersistence(() => operation.isActive() ? exportAllData() : null);
+            if (!operation.isActive() || !data) return;
+            downloadBackupFile(data);
+            reset();
+        } catch { showImportError(operation); }
     };
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (fileInputRef.current) fileInputRef.current.value = '';
         if (!file) return;
+        // A newer selection supersedes an older read/preview, but never an active write/export.
+        const operation = begin('read');
+        if (!operation) return;
         // ファイルサイズチェック (5MB 上限)。ここで弾けば巨大ファイルの読み込みを避けられる。
         if (file.size > MAX_IMPORT_FILE_SIZE) {
-            showImportError();
+            showImportError(operation);
             return;
         }
 
@@ -51,50 +111,58 @@ export function DataBackupSettings() {
         const isAllowedMime = file.type === '' || file.type === 'application/json'
             || file.type === 'text/plain' || file.type === 'text/json';
         if (!isJsonExt || !isAllowedMime) {
-            showImportError();
+            showImportError(operation);
             return;
         }
 
         try {
             const text = await file.text();
+            if (!operation.isActive()) return;
             const parsed = parseBackupImportJson(text);
             if (!parsed.ok) {
-                showImportError();
+                showImportError(operation);
                 return;
             }
 
-            setPendingBackup(parsed.data);
+            setPendingBackup({ data: parsed.data, operation });
             setBackupSummary(createBackupImportSummary(parsed.data));
             setShowImportConfirm(true);
+            operation.phase = 'confirm';
+            setBusy(null);
         } catch {
-            showImportError();
+            showImportError(operation);
         }
     };
 
     const handleImportConfirm = async () => {
-        if (!pendingBackup) return;
+        const operation = current.current;
+        if (!pendingBackup || pendingBackup.operation !== operation || operation.phase !== 'confirm' || !operation.isActive()) return;
+        operation.phase = 'import'; // Ref gate also rejects two clicks before React re-renders.
+        setBusy('import');
         try {
-            const success = await withSettledGamePersistence(() => importAllData(pendingBackup));
-            if (success) {
+            await waitForAuthLifecycleSettled();
+            if (!operation.isActive()) return;
+            const success = await withSettledGamePersistence(() => {
+                if (!operation.isActive() || !importAllData(pendingBackup.data)) return false;
+                operation.phase = 'reload';
+                setBusy('reload');
                 setImportStatus('success');
                 setShowImportConfirm(false);
                 setPendingBackup(null);
                 setBackupSummary(null);
-                setTimeout(() => window.location.reload(), 1500);
-                setTimeout(() => setImportStatus('idle'), 3000);
-            } else {
-                showImportError();
-            }
+                // Raw storage has committed; reload is part of that same synchronous operation.
+                // Never cancel rehydration on unmount or leave stale live stores usable for 1.5s.
+                reloadAfterBackupImport();
+                return true;
+            });
+            if (!operation.isActive()) return;
+            if (!success) showImportError(operation);
         } catch {
-            showImportError();
+            showImportError(operation);
         }
     };
 
-    const handleImportCancel = () => {
-        setShowImportConfirm(false);
-        setPendingBackup(null);
-        setBackupSummary(null);
-    };
+    const locked = busy === 'export' || busy === 'import' || busy === 'reload';
 
     return (
         <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
@@ -108,25 +176,30 @@ export function DataBackupSettings() {
             <div className="flex gap-3">
                 <button
                     onClick={handleExport}
+                    disabled={busy !== null || showImportConfirm}
+                    aria-busy={busy === 'export'}
                     className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-all active:scale-95"
                     style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}
                 >
                     <Download size={16} />
-                    保存
+                    {busy === 'export' ? '保存中…' : '保存'}
                 </button>
 
                 <button
                     onClick={() => fileInputRef.current?.click()}
+                    disabled={locked}
+                    aria-busy={busy === 'read' || busy === 'import' || busy === 'reload'}
                     className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-all active:scale-95"
                     style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-default)' }}
                 >
                     <Upload size={16} />
-                    復元
+                    {busy === 'read' ? '読込中…' : busy === 'import' || busy === 'reload' ? '復元中…' : '復元'}
                 </button>
                 <input
                     ref={fileInputRef}
                     type="file"
                     accept=".json"
+                    disabled={locked}
                     onChange={handleFileSelect}
                     className="hidden"
                 />
@@ -136,14 +209,16 @@ export function DataBackupSettings() {
                 open={showImportConfirm}
                 title="データを上書きしますか？"
                 message={<BackupPreview summary={backupSummary} />}
-                confirmLabel="上書きする"
+                confirmLabel={busy === 'import' ? '復元中…' : '上書きする'}
+                confirmDisabled={busy === 'import'}
                 confirmColor="var(--color-text-danger)"
                 onConfirm={handleImportConfirm}
-                onClose={handleImportCancel}
+                onClose={reset}
             />
 
             {importStatus === 'success' && (
                 <div
+                    role="status"
                     className="mt-3 px-4 py-2 rounded-xl text-center text-sm font-medium animate-fade-in"
                     style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--color-accent-emerald)' }}
                 >
@@ -152,6 +227,7 @@ export function DataBackupSettings() {
             )}
             {importStatus === 'error' && (
                 <div
+                    role="alert"
                     className="mt-3 px-4 py-2 rounded-xl text-center text-sm font-medium animate-fade-in"
                     style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--color-text-danger)' }}
                 >
