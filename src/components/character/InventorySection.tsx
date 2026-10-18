@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft,
@@ -16,10 +16,11 @@ import { ITEM_IMAGES, RARITY_COLORS, RARITY_LABELS } from '../../config/equipmen
 import { useGameStore } from '../../stores/useGameStore';
 import type { Equipment, Rarity } from '../../types';
 import { SLOT_ICONS, SLOT_LABELS } from './equipmentPresentation';
-import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
+import { createInventoryConfirmation, filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
 import { useCloudItemSynthesis } from '../../hooks/useCloudItemSynthesis';
 import { getEquipmentRowA11y } from './equipmentRowA11y';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { useInventoryInteractionScope } from '../../hooks/useInventoryInteractionScope';
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
@@ -52,11 +53,16 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
     const [selectedForSynth, setSelectedForSynth] = useState<string[]>([]);
     const [sellFeedback, setSellFeedback] = useState<{ id: string; xp: number } | null>(null);
-    const [sellConfirmItem, setSellConfirmItem] = useState<Equipment | null>(null);
+    const [sellConfirmation, setSellConfirmation] = useState<{ item: Equipment; confirm: () => void } | null>(null);
     const [synthResult, setSynthResult] = useState<Equipment | null>(null);
     const [slotFilter, setSlotFilter] = useState<InventorySlotFilter>('all');
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
+    const pendingConfirmation = useRef<object | null>(null);
+    const interactions = useInventoryInteractionScope(() => {
+        pendingConfirmation.current = null;
+        setSellConfirmation(null); setSelectedForSynth([]); setSellFeedback(null); setSynthResult(null); setInventoryMode('normal');
+    });
 
     const unequippedItems = useMemo(() => equipment.filter((item) => !item.equipped), [equipment]);
     const filteredItems = useMemo(
@@ -76,21 +82,34 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
         [selectedForSynth, unequippedItems]
     );
 
-    const confirmSell = useCallback((itemId: string) => {
+    const confirmSell = (itemId: string) => {
         const xp = sellItem(itemId);
         if (xp <= 0) return;
-        setSellFeedback({ id: itemId, xp });
+        const feedback = { id: itemId, xp };
+        setSellFeedback(feedback);
         setSelectedForSynth((current) => current.filter((id) => id !== itemId));
-        setTimeout(() => setSellFeedback(null), 1500);
-    }, [sellItem]);
+        interactions.schedule(() => setSellFeedback((current) => current === feedback ? null : current), 1500);
+    };
 
-    const handleSellConfirm = useCallback(() => {
-        if (!sellConfirmItem) return;
-        confirmSell(sellConfirmItem.id);
-        setSellConfirmItem(null);
-    }, [sellConfirmItem, confirmSell]);
+    const requestSell = (item: Equipment) => {
+        const isCurrent = interactions.capture();
+        if (!isCurrent()) return;
+        const token = {};
+        pendingConfirmation.current = token;
+        const confirm = createInventoryConfirmation([item], () => useGameStore.getState().equipment,
+            () => isCurrent() && pendingConfirmation.current === token, () => confirmSell(item.id));
+        const confirmation = { item, confirm: () => {
+            confirm();
+            if (pendingConfirmation.current === token) {
+                pendingConfirmation.current = null;
+                setSellConfirmation((current) => current === confirmation ? null : current);
+            }
+        } };
+        setSellConfirmation(confirmation);
+    };
 
-    const toggleSynthSelect = useCallback((itemId: string) => {
+    const toggleSynthSelect = (itemId: string) => {
+        if (!interactions.capture()()) return;
         setSelectedForSynth((current) => {
             if (current.includes(itemId)) return current.filter((id) => id !== itemId);
             if (current.length >= SYNTHESIS_CONFIG.REQUIRED_COUNT) return current;
@@ -100,16 +119,25 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
             if (RARITY_ORDER.indexOf(item.rarity) >= RARITY_ORDER.length - 1) return current;
             return [...current, itemId];
         });
-    }, [synthTargetRarity, unequippedItems]);
+    };
 
-    const handleSynthesize = useCallback(() => {
-        void synthesize(selectedForSynth).then((result) => {
-            if (!result) return;
+    const runSynthesis = (invoke: () => Promise<Equipment | null>) => {
+        const isCurrent = interactions.capture();
+        if (!isCurrent()) return;
+        void invoke().then((result) => {
+            if (!isCurrent() || !result) return;
             setSynthResult(result);
             setSelectedForSynth([]);
-            setTimeout(() => setSynthResult(null), 3000);
+            interactions.schedule(() => setSynthResult((current) => current === result ? null : current), 3000);
         });
-    }, [selectedForSynth, synthesize]);
+    };
+    const handleSynthesize = () => {
+        const ids = [...selectedForSynth];
+        const items = ids.map((id) => equipment.find((item) => item.id === id)).filter((item): item is Equipment => Boolean(item));
+        if (items.length !== ids.length) return;
+        createInventoryConfirmation(items, () => useGameStore.getState().equipment, interactions.capture(),
+            () => runSynthesis(() => synthesize(ids)))();
+    };
 
     const resetMode = useCallback(() => {
         setInventoryMode('normal');
@@ -183,13 +211,13 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
             )}
 
             <ConfirmDialog
-                open={sellConfirmItem !== null}
+                open={sellConfirmation !== null}
                 title="装備を売却しますか？"
-                message={sellConfirmItem ? `「${sellConfirmItem.name}」を売却して +${SELL_XP_BY_RARITY[sellConfirmItem.rarity]} XP を獲得します。この操作は取り消せません。` : ''}
+                message={sellConfirmation ? `「${sellConfirmation.item.name}」を売却して +${SELL_XP_BY_RARITY[sellConfirmation.item.rarity]} XP を獲得します。この操作は取り消せません。` : ''}
                 confirmLabel="売却する"
                 confirmColor="var(--color-accent-gold)"
-                onConfirm={handleSellConfirm}
-                onClose={() => setSellConfirmItem(null)}
+                onConfirm={() => sellConfirmation?.confirm()}
+                onClose={() => { pendingConfirmation.current = null; setSellConfirmation(null); }}
             />
 
             {unequippedItems.length === 0 ? (
@@ -206,7 +234,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
                             isSelected={selectedForSynth.includes(item.id)}
                             synthTargetRarity={synthTargetRarity}
                             onEquip={() => equipItem(item.id)}
-                            onSell={() => setSellConfirmItem(item)}
+                            onSell={() => requestSell(item)}
                             onToggleSynth={() => toggleSynthSelect(item.id)}
                         />
                     ))}
@@ -240,7 +268,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
             {synthHasError && (
                 <div className="mt-2 text-xs text-center" style={{ color: 'var(--color-text-danger)' }}>
                     合成の同期に失敗しました。
-                    <button onClick={() => void retrySynthesize()} className="underline ml-1" style={{ color: 'var(--color-accent-primary)' }}>再送</button>
+                    <button onClick={() => runSynthesis(retrySynthesize)} className="underline ml-1" style={{ color: 'var(--color-accent-primary)' }}>再送</button>
                 </div>
             )}
         </div>

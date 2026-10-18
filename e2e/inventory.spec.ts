@@ -40,3 +40,28 @@ test('opens the full inventory from the character page', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'インベントリ', exact: true })).toBeVisible();
     await expect(page.getByText('インベントリ (7/7)', { exact: true })).toBeVisible();
 });
+
+for (const theme of ['light', 'dark'] as const) {
+    test(`${theme}: inventory sale cancel/confirm and synthesis keep the normal path`, async ({ page }) => {
+        await page.emulateMedia({ colorScheme: theme });
+        await page.goto('/character/inventory');
+        await dismissStartupDialogs(page);
+        await page.getByRole('button', { name: '売却', exact: true }).click();
+        await page.getByRole('button', { name: '木の剣を売却して+5XP獲得', exact: true }).first().click();
+        const dialog = page.getByRole('dialog', { name: '装備を売却しますか？' });
+        await dialog.getByRole('button', { name: 'キャンセル', exact: true }).click();
+        await expect(page.getByText('インベントリ (7/7)', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: '木の剣を売却して+5XP獲得', exact: true }).first().click();
+        await dialog.getByRole('button', { name: '売却する', exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        await expect(page.getByText('インベントリ (6/6)', { exact: true })).toBeVisible();
+        await expect(page.getByText('+5 XP 獲得！', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: '合成', exact: true }).click();
+        for (let index = 0; index < 3; index++) await page.getByRole('checkbox', { name: '木の剣を合成対象に選択', exact: true }).first().click();
+        await page.getByRole('button', { name: '合成する', exact: true }).click();
+        await expect(page.getByText('インベントリ (4/4)', { exact: true })).toBeVisible();
+        await expect(page.getByText(/ランクの装備を合成しました/)).toBeVisible();
+        await page.reload();
+        await expect(page.getByText('インベントリ (4/4)', { exact: true })).toBeVisible();
+    });
+}
