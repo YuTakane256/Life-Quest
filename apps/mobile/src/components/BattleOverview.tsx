@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ChevronRight, RotateCcw, Skull, Swords, Trophy, X } from 'lucide-react-native';
+import { ChevronRight, RotateCcw, Skull, Trophy } from 'lucide-react-native';
 import { ENEMY_IMAGE_KEYS, getMapForStage, type BattleAction } from '@life-quest/core/battle';
 import { getUnlockedBattleSkills } from '@life-quest/core/battleSkills';
 import { getHpDisplayState } from '@life-quest/core/hp';
@@ -58,19 +58,11 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
                 </View>
             </View>
 
-            {ongoing && (
+            {ongoing && skills.length > 0 && (
                 <View style={s.skillsCard}>
                     <View style={s.skillsHeader}>
                         <Text style={s.smallHeading} accessibilityRole="header">スキル</Text>
                         {state.guardTurnsRemaining > 0 && <Text style={s.guard}>防御 {state.guardTurnsRemaining}T</Text>}
-                        <Pressable accessibilityRole="button" accessibilityLabel="通常攻撃" accessibilityHint="1行動で敵の反撃まで進みます"
-                            disabled={busy} onPress={() => onAction({ type: 'attack' })}
-                            style={({ pressed }) => [s.attack, (busy || pressed) && s.disabled]}>
-                            <Swords size={14} color="#fff" /><Text style={s.attackLabel}>攻撃</Text>
-                        </Pressable>
-                        <Pressable accessibilityRole="button" accessibilityLabel="戦闘を閉じる" disabled={busy} onPress={onMap} style={s.close}>
-                            <X size={18} color={p.text.muted} />
-                        </Pressable>
                     </View>
                     <View style={s.skillRow}>
                         {skills.map((skill) => {
@@ -168,9 +160,6 @@ function createStyles(p: ThemePalette) {
         skillsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
         smallHeading: { color: p.text.primary, fontSize: 14, fontWeight: '700', flex: 1 },
         guard: { color: '#fff', backgroundColor: p.accent.sky, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, fontSize: 10 },
-        attack: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44, paddingHorizontal: 12, borderRadius: 8, backgroundColor: p.accent.primary },
-        attackLabel: { color: '#fff', fontSize: 14, fontWeight: '500' },
-        close: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: p.bg.secondary },
         skillRow: { flexDirection: 'row', gap: 8 },
         skillSlot: { flex: 1, minWidth: 0 },
         skill: { flex: 1, minWidth: 0, minHeight: 64, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, gap: 4, justifyContent: 'center', alignItems: 'center', borderWidth: 1, backgroundColor: p.bg.secondary },

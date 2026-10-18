@@ -140,6 +140,14 @@ describe('Mobile parity flow selection', () => {
         expect(yaml).not.toContain('clearState: true');
         expect(yaml).toContain('ステージ 4 スタート');
     });
+    it('battle/map/progression flows wait for automatic combat instead of pressing removed attack controls', () => {
+        for (const name of ['battle', 'map', 'progression']) {
+            const yaml = readFileSync(new URL(`../${getMobileParityFlow(name).path}`, import.meta.url), 'utf8');
+            expect(yaml).not.toMatch(/- tapOn: "通常攻撃"/);
+            expect(yaml).not.toMatch(/- tapOn: "戦闘を閉じる"/);
+            expect(yaml).toContain('visible: "勝利！"');
+        }
+    });
     it('isolates character edits and equipment checks to the guarded memory-only runtime', () => {
         expect(requiresReferenceRuntime('character')).toBe(true);
         const flow = getMobileParityFlow('character');

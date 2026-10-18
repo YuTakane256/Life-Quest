@@ -1,5 +1,5 @@
 appId: com.yutakane.lifequest.parity
-name: Battle portraits skills HP victory and defeat (memory only)
+name: Automatic battle portraits HP victory and defeat (memory only)
 ---
 # The runner requires the guarded battle profile, never clears persistent data.
 - launchApp:
@@ -16,19 +16,16 @@ name: Battle portraits skills HP victory and defeat (memory only)
     timeout: 60000
 - tapOn: "マップ(, tab,.*)?"
 - assertVisible: "最高到達: ステージ 9"
-- tapOn: "ステージ 3 再挑戦"
+- tapOn:
+    text: "ステージ 3 再挑戦"
+    waitToSettleTimeoutMs: 0
 - extendedWaitUntil:
-    visible: "通常攻撃"
+    visible: "強撃.*|勝利！"
     timeout: 10000
-- tapOn: "通常攻撃"
-- waitForAnimationToEnd:
-    timeout: 5000
 - takeScreenshot: "reference-${REFERENCE_THEME}-battle"
-- repeat:
-    times: 2
-    commands:
-      - tapOn: "通常攻撃"
-- assertVisible: "勝利！"
+- extendedWaitUntil:
+    visible: "勝利！"
+    timeout: 10000
 - assertVisible: "15 XP を獲得！"
 - assertNotVisible: "通常攻撃"
 - assertVisible: "次へ"
@@ -41,37 +38,22 @@ name: Battle portraits skills HP victory and defeat (memory only)
     direction: DOWN
 - tapOn: "ステージ 10 スタート"
 - extendedWaitUntil:
-    visible: "通常攻撃"
+    visible: "敗北..."
     timeout: 10000
-- repeat:
-    times: 8
-    commands:
-      - tapOn: "通常攻撃"
-- assertVisible: "敗北..."
 - assertVisible: "レベルを上げて再挑戦しましょう！"
 - assertNotVisible: "通常攻撃"
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: "reference-${REFERENCE_THEME}-defeat"
 - tapOn: "リトライ"
-- assertVisible: "通常攻撃"
-# Guard/cooldown/invalid re-use retains the existing action engine.
+- assertNotVisible: "通常攻撃"
+- assertNotVisible: "戦闘を閉じる"
+# Skills remain manual while normal attacks/cooldowns continue automatically.
+# Exact cooldown boundaries are covered by fake-clock hook/store parity tests.
 - tapOn: "防御態勢"
-- assertVisible: "防御 1T"
-- assertVisible:
-    text: "防御態勢 クールダウン3"
-    enabled: false
-- tapOn: "応急手当"
-- assertVisible:
-    text: "応急手当 クールダウン4"
-    enabled: false
 - tapOn: "強撃"
-- assertVisible:
-    text: "強撃 クールダウン2"
-    enabled: false
-- tapOn: "通常攻撃"
-- assertVisible:
-    text: "強撃 クールダウン1"
-    enabled: false
-- tapOn: "戦闘を閉じる"
+- extendedWaitUntil:
+    visible: "敗北..."
+    timeout: 15000
+- tapOn: "マップへ"
 - assertVisible: "最高到達: ステージ 9"

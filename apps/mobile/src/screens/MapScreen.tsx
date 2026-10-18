@@ -19,6 +19,7 @@ import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
 import { MapOverview, MapStageCard } from '../components/MapOverview';
 import { getBattleImage, getMapImage } from '../assets/mapImages';
 import { BattleOverview } from '../components/BattleOverview';
+import { useAutomaticBattle } from '../hooks/useAutomaticBattle';
 
 export default function MapScreen() {
     const character = useMobileGameStore((state) => state.character);
@@ -35,6 +36,7 @@ export default function MapScreen() {
     const [selectedMapId, setSelectedMapId] = useState(() => getMapForStage(battleProgress.currentStage).id);
     const [notice, setNotice] = useState<string | null>(null);
     const { isStarting: busy, startError, startStage, retry: retryStart, clearError: clearStartError } = useCloudBattleStart();
+    useAutomaticBattle(activeBattle, hasHydrated && !busy);
     const listRef = useRef<FlatList<StageDefinition>>(null);
     const requestedMap = MAP_CONFIG.find((map) => map.id === selectedMapId) ?? MAP_CONFIG[0];
     // A restored account can have less progress than the previously selected area.

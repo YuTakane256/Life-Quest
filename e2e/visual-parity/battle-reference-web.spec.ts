@@ -13,8 +13,8 @@ for (const theme of ['light', 'dark'] as const) {
         // Timers/RAF are paused for exact screenshot state; real clicks are tested separately.
         await stage.getByRole('button', { name: '再挑戦', exact: true }).dispatchEvent('click');
         await expect(page.getByRole('progressbar', { name: '大コウモリ のHP' })).toBeVisible();
-        await page.clock.runFor(1000);
-        await expect(page.getByRole('progressbar', { name: '大コウモリ のHP' })).toHaveAttribute('aria-valuenow', '44');
+        // Native's automatic battle capture is now the initial state before its first tick.
+        await expect(page.getByRole('progressbar', { name: '大コウモリ のHP' })).toHaveAttribute('aria-valuenow', '70');
         const capture = async (name: string) => {
             await waitForWebParityRender(page);
             await page.getByRole('log', { name: 'バトルログ' }).evaluate((element) => { element.scrollTop = element.scrollHeight; });
@@ -23,7 +23,7 @@ for (const theme of ['light', 'dark'] as const) {
             await testInfo.attach(`web-${theme}-${name}`, { path, contentType: 'image/png' });
         };
         await capture('battle');
-        await page.clock.runFor(2000);
+        await page.clock.runFor(3000);
         await expect(page.getByText('勝利！', { exact: true })).toBeVisible();
         await expect(page.getByText('15 XP を獲得！', { exact: true })).toBeVisible();
         await capture('victory');
