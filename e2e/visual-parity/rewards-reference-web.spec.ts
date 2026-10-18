@@ -18,6 +18,9 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(login).toHaveCount(0);
         await page.getByRole('button', { name: /青色の宝箱/ }).click();
         await expect(page.getByText('タップして開ける', { exact: true })).toBeVisible();
+        // Fixed dark scrim needs bright foreground even in light theme.
+        await expect(page.locator('p').filter({ hasText: /^青色の宝箱$/ })).toHaveCSS('color', 'rgb(241, 245, 249)');
+        await expect(page.getByText('タップして開ける', { exact: true })).toHaveCSS('color', 'rgb(203, 213, 225)');
         await capture('chest');
         await page.getByText('タップして開ける', { exact: true }).click();
         await expect(page.getByText('キャラクター解放！', { exact: true })).toBeVisible();

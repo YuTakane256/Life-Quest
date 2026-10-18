@@ -13,7 +13,7 @@ import { LoginBonusOverlay } from './LoginBonusOverlay';
 import { useCloudChestOpen, type UseCloudChestOpenResult } from '../hooks/useCloudChestOpen';
 
 const mocks = vi.hoisted(() => ({ push: vi.fn(), auth: vi.fn(), open: vi.fn(), animation: vi.fn(),
-    motionListeners: new Set<(value: boolean) => void>(), reduced: vi.fn(async () => false) }));
+    theme: 'dark' as 'light' | 'dark', motionListeners: new Set<(value: boolean) => void>(), reduced: vi.fn(async () => false) }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
 } }));
@@ -22,18 +22,18 @@ vi.mock('../platform/battleCloud', () => ({ openCloudChest: mocks.open }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock('../theme/usePalette', async () => {
     const { getMobileThemePalette } = await import('../theme/colors');
-    return { usePalette: () => ({ palette: getMobileThemePalette('dark') }) };
+    return { usePalette: () => ({ palette: getMobileThemePalette(mocks.theme) }) };
 });
 vi.mock('react-native', async () => {
     const { createElement } = await import('react');
     type Props = { children?: ReactNode; visible?: boolean; accessibilityLabel?: string; accessibilityRole?: string;
         disabled?: boolean; onPress?: (event: React.MouseEvent) => void; onRequestClose?: () => void;
-        style?: { minHeight?: number }; source?: unknown };
+        style?: { minHeight?: number; color?: string }; source?: unknown };
     const box = ({ children }: Props) => createElement('div', {}, children);
     const animation = () => ({ start: mocks.animation, stop: vi.fn() });
     class Value { setValue() {} interpolate() { return '0deg'; } }
     return {
-        View: box, ScrollView: box, Text: ({ children }: Props) => createElement('span', {}, children),
+        View: box, ScrollView: box, Text: ({ children, style }: Props) => createElement('span', { style: { color: style?.color } }, children),
         Image: ({ accessibilityLabel }: Props) => createElement('img', { alt: accessibilityLabel }),
         Modal: ({ visible, children, onRequestClose }: Props) => visible ? createElement('div', { role: 'dialog' },
             createElement('button', { 'aria-label': 'OS back', onClick: onRequestClose }), children) : null,
@@ -76,7 +76,7 @@ function chest(overrides: Partial<ChestReward> = {}): ChestReward {
 beforeEach(async () => {
     resetAuthLifecycleHooks(); await notifyLogin('a');
     vi.useFakeTimers(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks();
-    mocks.motionListeners.clear(); mocks.reduced.mockResolvedValue(false);
+    mocks.theme = 'dark'; mocks.motionListeners.clear(); mocks.reduced.mockResolvedValue(false);
     mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' });
     mocks.open.mockReset();
     useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, activeBattle: null,
@@ -110,6 +110,13 @@ describe('Mobileログインボーナスの閉じる位置と所有者', () => {
 });
 
 describe('Mobile宝箱の表示だけの演出', () => {
+    it.each(['light', 'dark'] as const)('%sでも固定暗幕上の文字色を明るく保つ', (theme) => {
+        mocks.theme = theme;
+        useMobileGameStore.setState({ pendingChestReveal: event() }); mount();
+        const text = (label: string) => Array.from(host.querySelectorAll('span')).find((element) => element.textContent === label);
+        expect(text('木の宝箱')?.style.color).toBe('rgb(241, 245, 249)');
+        expect(text('タップして開ける')?.style.color).toBe('rgb(203, 213, 225)');
+    });
     it('開く→900ms演出→装備/能力値表示、1500ms待って閉じる。装備を再付与しない', () => {
         useMobileGameStore.setState({ equipment: [equipment], pendingChestReveal: event() }); mount();
         expect(host.textContent).toContain('タップして開ける');

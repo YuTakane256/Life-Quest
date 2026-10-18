@@ -123,8 +123,9 @@ function styles(p: ThemePalette) {
         backdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.82)' },
         content: { width: '100%', maxWidth: 384, maxHeight: '90%', alignItems: 'center' },
         chest: { width: 192, height: 192 },
-        label: { color: p.text.primary, fontSize: 18, fontWeight: '700', marginTop: 32, textAlign: 'center' },
-        hint: { color: p.text.muted, fontSize: 14, marginTop: 8 },
+        // The scrim is always dark, including light theme.
+        label: { color: '#f1f5f9', fontSize: 18, fontWeight: '700', marginTop: 32, textAlign: 'center' },
+        hint: { color: '#cbd5e1', fontSize: 14, marginTop: 8 },
         glow: { position: 'absolute', width: 300, height: 300, borderRadius: 150, opacity: 0.2 },
         card: { width: '100%', borderWidth: 2, borderRadius: 24, backgroundColor: p.bg.card },
         cardContent: { paddingHorizontal: 28, paddingVertical: 32, alignItems: 'center' },
