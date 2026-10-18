@@ -11,12 +11,17 @@ Webでは作成後も変更できる繰り返し設定が、Mobileでは「作�
 - すでに作成された別IDの次回タスクを一括変更する「シリーズ編集」ではありません。
   Web同様に選択したタスク1件の設定を変更します。
 - 完了済みの編集だけでは再報酬・次回分の追加発行を行いません。
+- iOSでキーボード表示後にフォーカス中の入力欄を計測し、欄全体と下部ボタン用の
+  余白が見える位置までスクロールします。名前・期限・タグ・サブタスクが対象です。
+  文字拡大・キーボードの高さ変更にも追従し、blur/別入力/非表示/手動スクロール/
+  unmount後の遅い計測結果は使いません。Androidの既存キーボード動作は変更しません。
 - フォーム全般のアカウント切替保護や、実アカウントの同期確認を完了した扱いにはしません。
 
 ## 自動回帰
 
 ```bash
 npx vitest run src/hooks/mobileTaskRecurrence.test.tsx \
+  apps/mobile/src/hooks/useTaskKeyboardVisibility.test.ts \
   apps/mobile/src/stores/useMobileTaskStore.test.ts \
   apps/mobile/src/stores/useMobileTaskStore.cloud.test.ts \
   packages/core/src/tasks.test.ts scripts/run-mobile-parity-screenshots.test.mjs
@@ -26,6 +31,7 @@ npx playwright test e2e/task-recurrence.spec.ts \
 
 Native実フォームの4周期の保存・再編集・キャンセルと送信値、保存データ、
 匿名の次回分・報酬、認証済みの場合のサーバー権限を検査します。
+入力欄の計測とキーボード/画面の境界はhook単体でも検査します。
 Webは両テーマ・PC/402pxで編集・キャンセル・実際の保存からの再読み込みを検査します。
 
 ## iOS画面操作の再実行
@@ -45,7 +51,8 @@ node scripts/run-mobile-parity-screenshots.mjs taskForm
 文字サイズの変更前の値を控え、検証後に元へ戻してください。
 
 runnerはparity・クラウド未設定・dailyメモリfixture・両テーマの条件を検査します。
-`clearState:false`で通常データは初期化しません。メモリfixtureは永続化の証拠ではありません。
+`clearState`を実行せず、比較用URLから直接起動するため通常データは初期化しません。
+起動直後にもう一度URLを送る競合も避けます。メモリfixtureは永続化の証拠ではありません。
 検証後は通常の8081へ戻します。
 
 ```bash

@@ -53,6 +53,7 @@ import {
 import { dailyStyles, ui } from '../theme/dailyScreenStyles';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { useTaskUndoToast } from '../hooks/useTaskUndoToast';
+import { useTaskKeyboardVisibility } from '../hooks/useTaskKeyboardVisibility';
 import { useInteractionScope } from '../hooks/useInteractionScope';
 import { getTodayJst } from '../utils/date';
 import { getTaskActionsBottomPadding, TASK_ACTION_LAYOUT, TAB_SCREEN_EDGES } from '../theme/layout';
@@ -92,6 +93,7 @@ export default function TasksScreen() {
     const [sort, setSort] = useState<TaskSort>('dueDate');
     const [showForm, setShowForm] = useState(false);
     const [bottomActionsHeight, setBottomActionsHeight] = useState<number>(TASK_ACTION_LAYOUT.size);
+    const inputVisibility = useTaskKeyboardVisibility(list, getTaskActionsBottomPadding(bottomActionsHeight));
     const [editing, setEditing] = useState<Task | null>(null);
     const [completedOpen, setCompletedOpen] = useState(false);
     const [expandOverrides, setExpandOverrides] = useState<
@@ -355,7 +357,7 @@ export default function TasksScreen() {
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
                 {/* The inner flex viewport shrinks above the iOS keyboard padding. */}
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1 }} onLayout={inputVisibility.onLayout}>
                 <FlatList
                     ref={list}
                     data={open}
@@ -363,6 +365,8 @@ export default function TasksScreen() {
                     renderItem={({ item }) => renderTask(item)}
                     contentContainerStyle={[s.page, { paddingBottom: getTaskActionsBottomPadding(bottomActionsHeight) }]}
                     keyboardShouldPersistTaps="handled"
+                    onScroll={inputVisibility.onScroll}
+                    scrollEventThrottle={16}
                     ListHeaderComponent={
                         <>
                             <View style={s.header}>
@@ -559,6 +563,7 @@ export default function TasksScreen() {
                                 <TaskComposer
                                     key={editing?.id ?? 'new'}
                                     task={editing}
+                                    inputVisibility={inputVisibility}
                                     onClose={() => {
                                         setEditing(null);
                                         setShowForm(false);
@@ -661,9 +666,11 @@ export default function TasksScreen() {
 function TaskComposer({
     task,
     onClose,
+    inputVisibility,
 }: {
     task: Task | null;
     onClose: () => void;
+    inputVisibility: Pick<ReturnType<typeof useTaskKeyboardVisibility>, 'onInputFocus' | 'onInputBlur'>;
 }) {
     const { palette: p } = usePalette();
     const s = dailyStyles(p);
@@ -751,6 +758,8 @@ function TaskComposer({
         <View style={[s.form, { marginBottom: 24 }]}>
             <Field
                 accessibilityLabel="タスク名"
+                onFocus={inputVisibility.onInputFocus}
+                onBlur={inputVisibility.onInputBlur}
                 placeholder="タスク名を入力..."
                 value={name}
                 onChangeText={setName}
@@ -761,6 +770,8 @@ function TaskComposer({
                     <Text style={s.label}>📅 期限</Text>
                     <Field
                         accessibilityLabel="期限 YYYY-MM-DD"
+                        onFocus={inputVisibility.onInputFocus}
+                        onBlur={inputVisibility.onInputBlur}
                         placeholder="YYYY-MM-DD"
                         value={dueDate}
                         onChangeText={setDueDate}
@@ -820,6 +831,8 @@ function TaskComposer({
             <View style={ui.row}>
                 <Field
                     accessibilityLabel="タグを入力"
+                    onFocus={inputVisibility.onInputFocus}
+                    onBlur={inputVisibility.onInputBlur}
                     placeholder="タグを入力"
                     value={tagDraft}
                     onChangeText={setTagDraft}
@@ -851,6 +864,8 @@ function TaskComposer({
             <View style={ui.row}>
                 <Field
                     accessibilityLabel="サブタスクを入力"
+                    onFocus={inputVisibility.onInputFocus}
+                    onBlur={inputVisibility.onInputBlur}
                     placeholder="サブタスクを入力"
                     value={subDraft}
                     onChangeText={setSubDraft}

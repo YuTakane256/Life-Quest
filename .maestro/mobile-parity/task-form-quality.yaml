@@ -5,8 +5,8 @@ name: Task recurrence editing and software keyboard (memory only)
 # Device Hub > Device > Keyboard > Toggle Software Keyboard must be enabled.
 # The Done key assertion deliberately fails if only a hardware keyboard is present.
 - stopApp
-- launchApp:
-    clearState: false
+# The deep link itself cold-launches the app. Do not launch the previous Metro
+# first: sending a second launch URL during startup can time out on iOS 27.
 - openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
 - tapOn:
     text: "開く|Open"
@@ -20,15 +20,14 @@ name: Task recurrence editing and software keyboard (memory only)
     centerElement: true
 - tapOn: "メールを返信するを編集"
 - scrollUntilVisible:
-    element: "タスク名"
+    element: "タグを入力"
     direction: DOWN
     centerElement: true
-- tapOn: "タスク名"
+- tapOn: "タグを入力"
 - assertVisible:
     id: "Done"
 - takeScreenshot: "task-form-${REFERENCE_THEME}-keyboard"
-- eraseText
-- inputText: "Keyboard recurrence"
+- inputText: "keyboard"
 - pressKey: enter
 - scrollUntilVisible:
     element: "繰り返し"
@@ -47,10 +46,14 @@ name: Task recurrence editing and software keyboard (memory only)
 - takeScreenshot: "task-form-${REFERENCE_THEME}-edit"
 - tapOn: "更新"
 - scrollUntilVisible:
-    element: "Keyboard recurrenceを編集"
+    element: "メールを返信するを編集"
     direction: DOWN
     centerElement: true
-- tapOn: "Keyboard recurrenceを編集"
+- tapOn: "メールを返信するを編集"
+- scrollUntilVisible:
+    element: "keyboard ×"
+    direction: DOWN
+    centerElement: true
 - scrollUntilVisible:
     element: "繰り返し"
     direction: DOWN
@@ -68,11 +71,11 @@ name: Task recurrence editing and software keyboard (memory only)
     centerElement: true
 - tapOn: "キャンセル"
 - scrollUntilVisible:
-    element: "Keyboard recurrenceを編集"
+    element: "メールを返信するを編集"
     direction: DOWN
     centerElement: true
 - takeScreenshot: "task-form-${REFERENCE_THEME}-saved"
-- tapOn: "Keyboard recurrenceを編集"
+- tapOn: "メールを返信するを編集"
 - scrollUntilVisible:
     element: "繰り返し"
     direction: DOWN

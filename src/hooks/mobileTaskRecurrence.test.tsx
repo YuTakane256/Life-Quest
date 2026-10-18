@@ -27,7 +27,7 @@ vi.mock('react-native', () => {
         Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
         FlatList: ({ ListHeaderComponent, data, renderItem }: { ListHeaderComponent: ReactNode; data: { id: string }[]; renderItem: (value: { item: { id: string } }) => ReactNode }) =>
             createElement('div', {}, ListHeaderComponent, ...data.map((item) => createElement('div', { key: item.id }, renderItem({ item })))),
-        Keyboard: { dismiss: vi.fn() }, Platform: { OS: 'ios' }, Share: { share: vi.fn(async () => {}) }, StyleSheet: { create: <T,>(value: T) => value },
+        Keyboard: { dismiss: vi.fn(), addListener: () => ({ remove: vi.fn() }) }, Platform: { OS: 'ios' }, Share: { share: vi.fn(async () => {}) }, StyleSheet: { create: <T,>(value: T) => value },
     };
 });
 // Avoid pulling Native image declarations into the Web TypeScript program.
