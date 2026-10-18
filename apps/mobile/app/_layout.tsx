@@ -14,6 +14,7 @@ import { startRewardSync } from '../src/stores/rewardSync';
 import { startStatsLogSeed } from '../src/stores/statsLogSeed';
 import { usePalette } from '../src/theme/usePalette';
 import { LoginBonusOverlay } from '../src/components/LoginBonusOverlay';
+import { ChestOpeningOverlay } from '../src/components/ChestOpeningOverlay';
 
 export default function RootLayout() {
     const { palette, resolvedTheme } = usePalette();
@@ -54,6 +55,7 @@ export default function RootLayout() {
                 <Stack.Screen name="help" options={{ headerShown: false }} />
             </Stack>
             <LoginBonusOverlay />
+            <ChestOpeningOverlay />
         </>
     );
 }

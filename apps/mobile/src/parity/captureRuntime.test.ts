@@ -7,6 +7,20 @@ let restore: (() => void) | undefined;
 afterEach(() => { restore?.(); restore = undefined; });
 
 describe('reference capture safety', () => {
+    it('isolates reward chests and a pending daily login only under the full capture guard', async () => {
+        expect(getCaptureProfile(context, 'rewards')).toBe('rewards');
+        for (const change of [{ development: false }, { theme: undefined }, { variant: 'preview' }, { supabaseKey: 'configured' }]) {
+            expect(() => getCaptureProfile({ ...context, ...change }, 'rewards')).toThrow();
+        }
+        const real = vi.fn(async () => { throw new Error('Real storage must not be touched'); });
+        const storage = Object.fromEntries(['getItem', 'setItem', 'removeItem', 'getMany', 'setMany', 'removeMany', 'getAllKeys', 'clear'].map((key) => [key, real])) as unknown as CaptureStorage;
+        restore = installCaptureRuntime(storage, 'dark', 'rewards');
+        const game = JSON.parse((await storage.getItem('quest-board-game'))!).state;
+        expect(game.chestQueue).toHaveLength(2); expect(game.equipment).toHaveLength(7);
+        expect(game.chestQueue[0].isStarterCharacter).toBe(true);
+        await storage.setItem('quest-board-game', 'opened only in memory');
+        expect(real).not.toHaveBeenCalled();
+    });
     it('only permits battle fixtures inside the existing full isolation guard', () => {
         expect(getCaptureProfile(context, 'battle')).toBe('battle');
         expect(getCaptureProfile(context, undefined)).toBe('daily');

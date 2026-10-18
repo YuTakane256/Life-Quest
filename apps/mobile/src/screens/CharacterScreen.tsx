@@ -64,12 +64,8 @@ export default function CharacterScreen() {
             : [...current, item.id]);
     };
 
-    const handleOpenChest = (chestId: string, label: string) => {
-        void openChest(chestId).then((outcome) => {
-            if (outcome.status !== 'opened') return;
-            setLastRevealText(outcome.equipment ? `${label}から「${outcome.equipment.name}」を入手！` : `${label}を開封した！`);
-        });
-    };
+    // The store publishes a presentation event only after a confirmed open, including retries.
+    const handleOpenChest = (chestId: string) => { void openChest(chestId); };
 
     const handleSell = (item: Equipment) => {
         Alert.alert(

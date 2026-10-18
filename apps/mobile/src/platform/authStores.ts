@@ -31,7 +31,7 @@ export function clearMobileCloudStores(): void {
     invalidatePendingHabitEffects();
     useMobileTaskStore.setState({ tasks: [] });
     useMobileHabitStore.setState({ habits: [], records: [], restDays: [], rewardEligibleDates: [] });
-    useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), activeBattle: null, lastLevelUp: null });
+    useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), activeBattle: null, lastLevelUp: null, pendingChestReveal: null });
     useMobileStatsStore.setState({ taskXpLog: {}, habitLog: {}, seeded: false });
     useMobileTitleStore.setState({ activeTitle: null });
 }
@@ -40,6 +40,7 @@ export function clearMobileCloudStores(): void {
 export function registerMobileAuthStoreHooks(): () => void {
     let pendingOwner = captureAuthSessionScope().userId;
     const unsubscribeScope = subscribeAuthSessionScope(({ userId }) => {
+        useMobileGameStore.getState().clearPendingChestReveal();
         const previous = pendingOwner;
         pendingOwner = userId;
         if (previous !== null && previous !== userId) discardMobilePendingTaskCompletions();

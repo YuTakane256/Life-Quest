@@ -214,13 +214,13 @@ export function ChestOpeningOverlay() {
                     />
                     <p
                         className="mt-8 text-lg font-bold animate-fade-in"
-                        style={{ color: 'var(--color-text-primary)', textShadow: `0 0 16px ${accentColor}` }}
+                        style={{ color: '#f1f5f9', textShadow: `0 0 16px ${accentColor}` }}
                     >
                         {label}
                     </p>
                     <p
                         className="mt-2 text-sm animate-fade-in"
-                        style={{ color: 'var(--color-text-muted)' }}
+                        style={{ color: '#cbd5e1' }}
                     >
                         タップして開ける
                     </p>

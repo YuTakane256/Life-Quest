@@ -170,9 +170,13 @@ const parityStatsState = {
     version: 1,
 };
 
-export type ParityProfile = 'daily' | 'battle';
+export type ParityProfile = 'daily' | 'battle' | 'rewards';
 
 function getParityGame(profile: ParityProfile) {
+    if (profile === 'rewards') return { ...parityGameState, state: { ...parityGameState.state, chestQueue: [
+        { id: 'parity-starter', chestType: 'blue', label: '青色の宝箱', opened: false, equipment: null, isStarterCharacter: true, origin: 'local' },
+        { id: 'parity-wood', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null, origin: 'local' },
+    ] } };
     return profile === 'daily' ? parityGameState : {
         ...parityGameState,
         state: { ...parityGameState.state, battle: { ...parityGameState.state.battle, maxClearedStage: 9 } },
@@ -197,7 +201,7 @@ export function createWebParityStorage(theme: ParityTheme = 'dark', profile: Par
         'quest-board-theme': envelope({ mode: theme }),
         'quest-board-motion': envelope({ mode: 'reduced' }),
         'quest-board-notifications': envelope({ enabled: false, notifiedTaskIds: [], lastHabitReminderDate: null, habitReminderHour: 20 }),
-        'quest-board-login-bonus': envelope({ anonymousState: { lastLoginDate: '2026-08-10', streak: 1 } }, 2),
+        'quest-board-login-bonus': envelope({ anonymousState: { lastLoginDate: profile === 'rewards' ? '2026-08-09' : '2026-08-10', streak: 1 } }, 2),
     };
 }
 
@@ -211,6 +215,6 @@ export function createMobileParityStorage(theme: ParityTheme = 'dark', profile: 
         'quest-board-title': envelope({ activeTitle: '駆け出し冒険者' }),
         'quest-board-mobile-stats': envelope({ ...parityStatsState.state, seeded: true }),
         'quest-board-mobile-settings': envelope({ themeMode: theme, motionMode: 'reduced', notificationsEnabled: false, habitReminderHour: 20, notifiedTaskIds: [], lastHabitReminderDate: null }),
-        'quest-board-mobile-login-bonus': envelope({ anonymousState: { lastLoginDate: '2026-08-10', streak: 1 } }, 2),
+        'quest-board-mobile-login-bonus': envelope({ anonymousState: { lastLoginDate: profile === 'rewards' ? '2026-08-09' : '2026-08-10', streak: 1 } }, 2),
     };
 }

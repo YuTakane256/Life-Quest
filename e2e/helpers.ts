@@ -7,6 +7,6 @@ export async function dismissStartupDialogs(page: Page): Promise<void> {
     } catch {
         return;
     }
-    await loginBonusDialog.getByRole('button', { name: '閉じる' }).click();
+    await loginBonusDialog.getByRole('button', { name: 'ログインボーナスを閉じる', exact: true }).click();
     await loginBonusDialog.waitFor({ state: 'hidden' });
 }
