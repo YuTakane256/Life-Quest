@@ -138,6 +138,7 @@ describe('Webバックアップの実描画・操作と認証境界', () => {
         expect(localStorage.getItem('quest-board-tasks')).not.toContain('old');
         expect(host.querySelector('[role="status"]')?.textContent).toContain('復元しました');
         expect(button('復元中…').disabled).toBe(true);
+        expect(mocks.reload).toHaveBeenCalledTimes(1);
         await act(async () => vi.advanceTimersByTimeAsync(1500)); expect(mocks.reload).toHaveBeenCalledTimes(1);
     });
 
@@ -188,6 +189,7 @@ describe('Webバックアップの実描画・操作と認証境界', () => {
         expect(mocks.settle).toHaveBeenCalledTimes(1); expect(confirm.disabled).toBe(true);
         await act(async () => gate.resolve());
         act(() => button('保存').click()); expect(mocks.settle).toHaveBeenCalledTimes(1);
+        expect(mocks.reload).toHaveBeenCalledTimes(1);
         await act(async () => vi.advanceTimersByTimeAsync(1500)); expect(mocks.reload).toHaveBeenCalledTimes(1);
     });
 
@@ -214,12 +216,22 @@ describe('Webバックアップの実描画・操作と認証境界', () => {
         await act(async () => latest.resolve()); expect(click).toHaveBeenCalledTimes(1);
     });
 
-    it.each(['switch', 'unmount'] as const)('復元成功後の%sでは予約済み再読み込みを取り消す', async (transition) => {
-        await select(file(json('imported'))); await act(async () => button('上書きする').click());
-        expect(vi.getTimerCount()).toBe(1);
+    it.each(['switch', 'unmount'] as const)('復元コミット時点で再読み込みを開始し、待機終了前の%sでも失われない', async (transition) => {
+        await select(file(json('imported')));
+        const completion = deferred<void>();
+        mocks.settle.mockImplementationOnce(async (work: () => unknown) => {
+            const result = work();
+            // Simulate the lock request promise settling later than its storage callback.
+            await completion.promise;
+            return result;
+        });
+        await act(async () => button('上書きする').click());
+        expect(localStorage.getItem('quest-board-tasks')).toContain('imported');
+        expect(mocks.reload).toHaveBeenCalledTimes(1); expect(vi.getTimerCount()).toBe(0);
         if (transition === 'unmount') unmount(); else await act(async () => notifyLogin('b'));
         expect(vi.getTimerCount()).toBe(0);
-        await act(async () => vi.advanceTimersByTimeAsync(3000)); expect(mocks.reload).not.toHaveBeenCalled();
+        await act(async () => { completion.resolve(); await vi.advanceTimersByTimeAsync(3000); });
+        expect(mocks.reload).toHaveBeenCalledTimes(1);
     });
 
     it('エラーの古いタイマーで後から出たエラーを消さない', async () => {

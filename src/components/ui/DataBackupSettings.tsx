@@ -142,19 +142,21 @@ export function DataBackupSettings() {
         try {
             await waitForAuthLifecycleSettled();
             if (!operation.isActive()) return;
-            const success = await withSettledGamePersistence(() => operation.isActive() && importAllData(pendingBackup.data));
-            if (!operation.isActive()) return;
-            if (success) {
+            const success = await withSettledGamePersistence(() => {
+                if (!operation.isActive() || !importAllData(pendingBackup.data)) return false;
                 operation.phase = 'reload';
                 setBusy('reload');
                 setImportStatus('success');
                 setShowImportConfirm(false);
                 setPendingBackup(null);
                 setBackupSummary(null);
-                schedule(operation, reloadAfterBackupImport, 1500);
-            } else {
-                showImportError(operation);
-            }
+                // Raw storage has committed; reload is part of that same synchronous operation.
+                // Never cancel rehydration on unmount or leave stale live stores usable for 1.5s.
+                reloadAfterBackupImport();
+                return true;
+            });
+            if (!operation.isActive()) return;
+            if (!success) showImportError(operation);
         } catch {
             showImportError(operation);
         }
