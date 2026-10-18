@@ -67,7 +67,7 @@ interface MobileTaskStore {
     duplicateTask: (taskId: string) => string | null;
     deleteTask: (taskId: string) => void;
     /** 完了済みタスクをまとめて削除（Undo待機中は除外）。削除件数を返す */
-    deleteCompletedTasks: () => number;
+    deleteCompletedTasks: (approvedTaskIds?: readonly string[]) => number;
     addSubtask: (taskId: string, name: string) => boolean;
     deleteSubtask: (taskId: string, subtaskId: string) => void;
     toggleSubtaskComplete: (taskId: string, subtaskId: string) => void;
@@ -336,12 +336,12 @@ export const useMobileTaskStore = create<MobileTaskStore>()(
                     return duplicate.id;
                 },
 
-                deleteCompletedTasks: () => {
+                deleteCompletedTasks: (approvedTaskIds) => {
                     if (!get().hasHydrated) return 0;
                     const { tasks, pendingCompletions } = get();
                     // 保留中（5秒Undo待ち）のタスクは削除対象から除外する（Webと同一）
                     const pendingIds = new Set(pendingCompletions.map((pending) => pending.taskId));
-                    const remaining = removeCompletedTasks(tasks, pendingIds);
+                    const remaining = removeCompletedTasks(tasks, pendingIds, approvedTaskIds === undefined ? undefined : new Set(approvedTaskIds));
                     const removedIds = tasks
                         .filter((task) => !remaining.includes(task))
                         .map((task) => task.id);

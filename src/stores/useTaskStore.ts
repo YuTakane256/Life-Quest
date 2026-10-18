@@ -406,14 +406,15 @@ export const useTaskStore = create<TaskStoreState>()(
                     void enqueueCloudOperation('delete_task', { p_id: id }, { dependsOnEntityIds: [id] });
                 },
 
-                deleteCompletedTasks: () => {
+                deleteCompletedTasks: (approvedTaskIds) => {
                     const { tasks, pendingCompletions } = get();
                     // 保留中（5秒Undo待ち）のタスクは削除対象から除外する
                     const pendingIds = new Set(pendingCompletions.map((p) => p.taskId));
-                    const remaining = removeCompletedTasks(tasks, pendingIds);
+                    const remaining = removeCompletedTasks(tasks, pendingIds, approvedTaskIds === undefined ? undefined : new Set(approvedTaskIds));
                     const removedIds = tasks
                         .filter((task) => !remaining.includes(task))
                         .map((task) => task.id);
+                    if (removedIds.length === 0) return;
                     set({ tasks: remaining });
                     for (const removedId of removedIds) {
                         void enqueueCloudOperation('delete_task', { p_id: removedId }, { dependsOnEntityIds: [removedId] });
