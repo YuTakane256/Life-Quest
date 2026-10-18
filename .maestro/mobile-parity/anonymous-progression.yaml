@@ -96,13 +96,9 @@ name: Earn starter chest, unlock battle and retain rewards across restart
 - tapOn: "マップ(, tab,.*)?"
 - tapOn: "ステージ 1 スタート"
 - extendedWaitUntil:
-    visible: "通常攻撃"
+    visible: "勝利！"
     timeout: 10000
-- repeat:
-    times: 4
-    commands:
-      - tapOn: "通常攻撃"
-- assertVisible: "勝利！"
+- assertNotVisible: "通常攻撃"
 - assertVisible: "5 XP を獲得！"
 - tapOn: "マップへ"
 - assertVisible: "最高到達: ステージ 1"
