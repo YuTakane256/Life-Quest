@@ -20,7 +20,7 @@ import { createInventoryConfirmation, filterAndSortInventory, type InventoryRari
 import { useCloudItemSynthesis } from '../../hooks/useCloudItemSynthesis';
 import { getEquipmentRowA11y } from './equipmentRowA11y';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
-import { useInventoryInteractionScope } from '../../hooks/useInventoryInteractionScope';
+import { useInteractionScope } from '../../hooks/useInteractionScope';
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
@@ -59,7 +59,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
     const pendingConfirmation = useRef<object | null>(null);
-    const interactions = useInventoryInteractionScope(() => {
+    const interactions = useInteractionScope(() => {
         pendingConfirmation.current = null;
         setSellConfirmation(null); setSelectedForSynth([]); setSellFeedback(null); setSynthResult(null); setInventoryMode('normal');
     });

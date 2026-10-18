@@ -121,7 +121,7 @@ export interface TaskStoreState {
     updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks' | 'recurrence'>>) => void;
     deleteTask: (id: string) => void;
     duplicateTask: (id: string) => string | null; // 既存タスクを複製して新規追加。新タスクIDを返す（元タスクが無ければ null）
-    deleteCompletedTasks: () => void; // 完了タスクを一括削除（保留中は除外）
+    deleteCompletedTasks: (approvedTaskIds?: readonly string[]) => void; // 完了タスクを一括削除（保留中・未承認は除外）
     toggleComplete: (id: string) => void;
     addSubtask: (taskId: string, name: string) => void;
     deleteSubtask: (taskId: string, subtaskId: string) => void;

@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
+import { captureCompletedTaskDeletion } from '@life-quest/core/tasks';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit3, X, ChevronDown, ChevronRight, ListPlus, Repeat, Copy, HelpCircle, Download } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
@@ -11,6 +12,7 @@ import { PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_SORT_ORDER, RECURRENCE_LABEL
 import type { Priority, Recurrence, Task, Subtask } from '../types';
 import { TaskFilters, type DueFilter, type PriorityFilter } from '../components/tasks/TaskFilters';
 import { TaskForm } from '../components/tasks/TaskForm';
+import { useInteractionScope } from '../hooks/useInteractionScope';
 
 export function TasksPage() {
     const navigate = useNavigate();
@@ -18,7 +20,9 @@ export function TasksPage() {
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
-    const [showDeleteCompletedConfirm, setShowDeleteCompletedConfirm] = useState(false);
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ count: number; confirm: () => void; cancel: () => void } | null>(null);
+    const pendingDelete = useRef<object | null>(null);
+    const interactions = useInteractionScope(() => { pendingDelete.current = null; setDeleteConfirmation(null); });
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [name, setName] = useState('');
     const [dueDate, setDueDate] = useState('');
@@ -163,9 +167,27 @@ export function TasksPage() {
         [tasks, pendingIds]
     );
 
-    const handleDeleteCompleted = () => {
-        deleteCompletedTasks();
-        setShowDeleteCompletedConfirm(false);
+    const requestDeleteCompleted = () => {
+        const isCurrent = interactions.capture();
+        if (!isCurrent()) return;
+        const current = useTaskStore.getState();
+        const approval = captureCompletedTaskDeletion(current.tasks, new Set(current.pendingCompletions.map((item) => item.taskId)));
+        if (!approval.count) return;
+        const token = {};
+        pendingDelete.current = token;
+        let used = false;
+        const cancel = () => {
+            used = true;
+            if (pendingDelete.current === token) { pendingDelete.current = null; setDeleteConfirmation(null); }
+        };
+        setDeleteConfirmation({ count: approval.count, cancel, confirm: () => {
+            if (used || !isCurrent() || pendingDelete.current !== token) return;
+            used = true;
+            const latest = useTaskStore.getState();
+            const ids = approval.resolve(latest.tasks, new Set(latest.pendingCompletions.map((item) => item.taskId)));
+            if (ids.length) deleteCompletedTasks(ids);
+            cancel();
+        } });
     };
 
     const handleExportCsv = () => {
@@ -306,7 +328,7 @@ export function TasksPage() {
                 onSortModeChange={setSortMode}
                 onToggleTag={toggleTagFilter}
                 onClearTags={() => setSelectedTags([])}
-                onRequestDeleteCompleted={() => setShowDeleteCompletedConfirm(true)}
+                onRequestDeleteCompleted={requestDeleteCompleted}
             />
 
             {showForm && (
@@ -469,12 +491,12 @@ export function TasksPage() {
 
             {/* 完了タスク一括削除の確認モーダル */}
             <ConfirmDialog
-                open={showDeleteCompletedConfirm}
+                open={deleteConfirmation !== null}
                 title="完了タスクを削除しますか？"
-                message={`完了済みのタスク${deletableCompletedCount}件をまとめて削除します。この操作は取り消せません。`}
+                message={`完了済みのタスク${deleteConfirmation?.count ?? 0}件をまとめて削除します。この操作は取り消せません。`}
                 confirmLabel="削除する"
-                onConfirm={handleDeleteCompleted}
-                onClose={() => setShowDeleteCompletedConfirm(false)}
+                onConfirm={() => deleteConfirmation?.confirm()}
+                onClose={() => deleteConfirmation?.cancel()}
             />
             <button
                 type="button"

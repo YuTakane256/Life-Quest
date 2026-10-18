@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { captureAuthSessionScope, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 
 /** Presentation/confirmation lifetime; does not change reward or network operations. */
-export function useInventoryInteractionScope(reset: () => void) {
+export function useInteractionScope(reset: () => void) {
     const owner = useRef({ active: false, generation: 0, timers: new Set<ReturnType<typeof setTimeout>>() });
     const resetRef = useRef(reset);
     const [, refresh] = useState(0);

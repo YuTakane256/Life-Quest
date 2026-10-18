@@ -443,11 +443,30 @@ export function duplicateTask(input: DuplicateTaskInput): Task | null {
 /**
  * 完了済みタスクをまとめて削除する。
  * excludedTaskIds（5秒Undo待機中のタスク等）は完了済みでも残す（Webと同一ルール）。
+ * approvedTaskIds指定時は、その集合内だけ削除する。空集合なら何も削除しない。
  */
 export function removeCompletedTasks(
     tasks: readonly Task[],
     excludedTaskIds: ReadonlySet<string> = new Set(),
+    approvedTaskIds?: ReadonlySet<string>,
 ): Task[] {
-    return tasks.filter((task) => !task.completed || excludedTaskIds.has(task.id));
+    return tasks.filter((task) => !task.completed || excludedTaskIds.has(task.id)
+        || (approvedTaskIds !== undefined && !approvedTaskIds.has(task.id)));
+}
+
+/** Freeze the records approved by a bulk-delete prompt, including nested edits. */
+export function captureCompletedTaskDeletion(tasks: readonly Task[], excludedTaskIds: ReadonlySet<string> = new Set()) {
+    const fingerprint = (task: Task) => JSON.stringify([
+        task.id, task.name, task.dueDate, task.priority, task.recurrence, task.completed, task.completedAt, task.createdAt,
+        task.tags, task.subtasks.map((item) => [item.id, item.name, item.completed, item.completedAt, item.createdAt]),
+    ]);
+    const approved = new Map(tasks.filter((task) => task.completed && !excludedTaskIds.has(task.id))
+        .map((task) => [task.id, fingerprint(task)]));
+    return {
+        count: approved.size,
+        resolve: (current: readonly Task[], excluded: ReadonlySet<string> = new Set()): string[] => current
+            .filter((task) => task.completed && !excluded.has(task.id) && approved.has(task.id) && approved.get(task.id) === fingerprint(task))
+            .map((task) => task.id),
+    };
 }
 export { escapeCsvValue, tasksToCsv } from './taskCsv.ts';

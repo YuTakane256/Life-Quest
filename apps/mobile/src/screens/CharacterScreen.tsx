@@ -12,7 +12,7 @@ import { CharacterOverview } from '../components/CharacterOverview';
 import { usePalette } from '../theme/usePalette';
 import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
 import { useCloudItemSynthesis } from '../hooks/useCloudItemSynthesis';
-import { useInventoryInteractionScope } from '../hooks/useInventoryInteractionScope';
+import { useInteractionScope } from '../hooks/useInteractionScope';
 
 const RARITY_LABELS: Record<Rarity, string> = {
     common: 'コモン',
@@ -47,7 +47,7 @@ export default function CharacterScreen() {
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
     const pendingConfirmation = useRef<object | null>(null);
-    const interactions = useInventoryInteractionScope(() => {
+    const interactions = useInteractionScope(() => {
         pendingConfirmation.current = null; setSelectedIds([]); setLastReveal(null);
     });
 

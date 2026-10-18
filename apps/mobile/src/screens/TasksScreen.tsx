@@ -35,6 +35,7 @@ import {
 import { isValidYmd, shiftDate } from '@life-quest/core/dates';
 import {
     TASK_LIMITS,
+    captureCompletedTaskDeletion,
     tasksToCsv,
     type Priority,
     type Recurrence,
@@ -52,6 +53,7 @@ import {
 import { dailyStyles, ui } from '../theme/dailyScreenStyles';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { useTaskUndoToast } from '../hooks/useTaskUndoToast';
+import { useInteractionScope } from '../hooks/useInteractionScope';
 import { getTodayJst } from '../utils/date';
 import { getTaskActionsBottomPadding, TASK_ACTION_LAYOUT, TAB_SCREEN_EDGES } from '../theme/layout';
 import { usePalette } from '../theme/usePalette';
@@ -81,6 +83,8 @@ export default function TasksScreen() {
     const s = dailyStyles(p);
     const router = useRouter();
     const list = useRef<FlatList<Task>>(null);
+    const pendingDelete = useRef<object | null>(null);
+    const interactions = useInteractionScope(() => { pendingDelete.current = null; });
     const [query, setQuery] = useState('');
     const [due, setDue] = useState<DueFilter>('all');
     const [priority, setPriority] = useState<'all' | Priority>('all');
@@ -110,6 +114,28 @@ export default function TasksScreen() {
     const deletable = store.tasks.filter(
         (task) => task.completed && !pending.has(task.id),
     ).length;
+    const requestDeleteCompleted = () => {
+        const isCurrent = interactions.capture();
+        if (!isCurrent()) return;
+        const current = useMobileTaskStore.getState();
+        const approval = captureCompletedTaskDeletion(current.tasks, new Set(current.pendingCompletions.map((item) => item.taskId)));
+        if (!approval.count) return;
+        const token = {};
+        pendingDelete.current = token;
+        let used = false;
+        const cancel = () => { used = true; if (pendingDelete.current === token) pendingDelete.current = null; };
+        Alert.alert('完了タスクを削除しますか？', `完了済み${approval.count}件を削除します。この操作は取り消せません。`, [
+            { text: 'キャンセル', style: 'cancel', onPress: cancel },
+            { text: '削除する', style: 'destructive', onPress: () => {
+                if (used || !isCurrent() || pendingDelete.current !== token) return;
+                used = true;
+                const latest = useMobileTaskStore.getState();
+                const ids = approval.resolve(latest.tasks, new Set(latest.pendingCompletions.map((item) => item.taskId)));
+                if (ids.length) store.deleteCompletedTasks(ids);
+                cancel();
+            } },
+        ]);
+    };
     const edit = (task: Task) => {
         setEditing(task);
         setShowForm(true);
@@ -470,24 +496,7 @@ export default function TasksScreen() {
                                 {deletable > 0 && (
                                     <Pressable
                                         accessibilityRole="button"
-                                        onPress={() =>
-                                            Alert.alert(
-                                                '完了タスクを削除しますか？',
-                                                `完了済み${deletable}件を削除します。この操作は取り消せません。`,
-                                                [
-                                                    {
-                                                        text: 'キャンセル',
-                                                        style: 'cancel',
-                                                    },
-                                                    {
-                                                        text: '削除する',
-                                                        style: 'destructive',
-                                                        onPress: () =>
-                                                            store.deleteCompletedTasks(),
-                                                    },
-                                                ],
-                                            )
-                                        }
+                                        onPress={requestDeleteCompleted}
                                         style={[
                                             ui.row,
                                             {
