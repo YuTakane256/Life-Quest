@@ -3,6 +3,7 @@ import { notifyLogin, notifyLogout, registerAuthLifecycleHooks, resetAuthLifecyc
 import { cloudCacheKey, type CloudCache } from '@life-quest/core/cloudCache';
 import { cloudCursorKey, type PullBatch } from '@life-quest/core/cloudPull';
 import { createInactiveCloudSyncState } from '@life-quest/core/cloudSyncState';
+import type { CloudOutboxPublicState } from '@life-quest/core/cloudOutboxController';
 import type { CanonicalTaskSnapshot } from '@life-quest/core/syncSnapshots';
 
 const mocks = vi.hoisted(() => {
@@ -14,6 +15,10 @@ const mocks = vi.hoisted(() => {
         values, rpc, realtime, storage,
         visibleTasks: [] as string[],
         seeded: vi.fn(), bonus: vi.fn(), drain: vi.fn(), retry: vi.fn(),
+        push: { availability: 'ready', pending: 0, inflight: 0, failed: 0, conflict: 0,
+            oldestPendingAt: null, lastPushSuccessAt: null, failureKinds: [] } as CloudOutboxPublicState,
+        pushListeners: [] as Array<(state: CloudOutboxPublicState) => void>,
+        network: [] as Array<(state: { isConnected: boolean | null; isInternetReachable: boolean | null }) => void>,
         client: {
             rpc,
             channel: () => {
@@ -36,7 +41,10 @@ vi.mock('../../apps/mobile/src/platform/supabase', () => ({ getMobileSupabaseCli
 vi.mock('./storage', () => ({ getPlatformStorageAdapter: () => mocks.storage }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: mocks.storage }));
 vi.mock('react-native', () => ({ AppState: { addEventListener: () => ({ remove: vi.fn() }) } }));
-vi.mock('@react-native-community/netinfo', () => ({ default: { addEventListener: () => vi.fn() } }));
+vi.mock('@react-native-community/netinfo', () => ({ default: { addEventListener: (callback: (typeof mocks.network)[number]) => {
+    mocks.network.push(callback);
+    return () => { mocks.network.splice(mocks.network.indexOf(callback), 1); };
+} } }));
 vi.mock('./authStores', () => ({ markCloudSessionSeeded: mocks.seeded }));
 vi.mock('../../apps/mobile/src/platform/authStores', () => ({ markCloudSessionSeeded: mocks.seeded }));
 vi.mock('../stores/useLoginBonusStore', () => ({ requestLoginBonusRecheck: mocks.bonus }));
@@ -55,22 +63,24 @@ vi.mock('../stores/useStatsStore', () => ({ useStatsStore: { getState: () => ({ 
 vi.mock('../stores/useThemeStore', () => ({ useThemeStore: { setState: vi.fn() }, sanitizeThemeMode: vi.fn() }));
 vi.mock('../stores/useMotionStore', () => ({ useMotionStore: { setState: vi.fn() }, sanitizeMotionMode: vi.fn() }));
 vi.mock('../stores/useNotificationStore', () => ({ useNotificationStore: { setState: vi.fn() } }));
-vi.mock('./cloudOutbox', async () => {
-    const { createInactiveCloudSyncState: inactive } = await import('@life-quest/core/cloudSyncState');
-    const state = { ...inactive().push, availability: 'ready' as const };
+vi.mock('./cloudOutbox', () => {
     return {
         drainOutboxAndWait: mocks.drain, retryPendingOutbox: mocks.retry,
-        getWebCloudOutboxState: () => state,
-        subscribeWebCloudOutboxState: () => vi.fn(),
+        getWebCloudOutboxState: () => mocks.push,
+        subscribeWebCloudOutboxState: (callback: (state: CloudOutboxPublicState) => void) => {
+            mocks.pushListeners.push(callback);
+            return () => { mocks.pushListeners.splice(mocks.pushListeners.indexOf(callback), 1); };
+        },
     };
 });
-vi.mock('../../apps/mobile/src/platform/cloudOutbox', async () => {
-    const { createInactiveCloudSyncState: inactive } = await import('@life-quest/core/cloudSyncState');
-    const state = { ...inactive().push, availability: 'ready' as const };
+vi.mock('../../apps/mobile/src/platform/cloudOutbox', () => {
     return {
         drainOutboxAndWait: mocks.drain, retryPendingOutbox: mocks.retry,
-        getMobileCloudOutboxState: () => state,
-        subscribeMobileCloudOutboxState: () => vi.fn(),
+        getMobileCloudOutboxState: () => mocks.push,
+        subscribeMobileCloudOutboxState: (callback: (state: CloudOutboxPublicState) => void) => {
+            mocks.pushListeners.push(callback);
+            return () => { mocks.pushListeners.splice(mocks.pushListeners.indexOf(callback), 1); };
+        },
     };
 });
 
@@ -102,6 +112,8 @@ beforeEach(() => {
     mocks.values.clear();
     mocks.visibleTasks = [];
     mocks.realtime.length = 0;
+    mocks.network.length = 0; mocks.pushListeners.length = 0;
+    Object.assign(mocks.push, { ...createInactiveCloudSyncState().push, availability: 'ready' });
     mocks.storage.getItem.mockReset().mockImplementation(async (key: string) => mocks.values.get(key) ?? null);
     mocks.storage.setItem.mockReset().mockImplementation(async (key: string, value: string) => { mocks.values.set(key, value); });
     mocks.rpc.mockReset().mockResolvedValue({ data: { next_cursor: 0, has_more: false }, error: null });
@@ -113,6 +125,7 @@ afterEach(() => {
     for (const cleanup of cleanups.splice(0).reverse()) cleanup();
     resetAuthLifecycleHooks();
     vi.useRealTimers();
+    vi.restoreAllMocks();
 });
 
 for (const platform of [
@@ -120,6 +133,92 @@ for (const platform of [
     { name: 'Mobile', register: registerMobileCloudSyncHooks, active: getActiveMobileCloudSync, state: getMobileCloudSyncState, start: startMobileCloudSync },
 ]) {
     describe(`${platform.name} cloud sync session boundaries`, () => {
+        const network = (online: boolean | null) => {
+            if (platform.name === 'Web') {
+                if (online !== null) window.dispatchEvent(new Event(online ? 'online' : 'offline'));
+            } else {
+                for (const callback of [...mocks.network]) callback({ isConnected: online === false ? false : true, isInternetReachable: online });
+            }
+        };
+        const start = async () => { cleanups.push(platform.register()); await notifyLogin('a'); await settle(); };
+
+        it('publishes offline/online, preserves offline across unknown, and does not manually send offline', async () => {
+            await start();
+            network(false);
+            expect(platform.state().availability).toBe('offline');
+            network(null);
+            expect(platform.state().availability).toBe('offline');
+            await platform.active()!.syncNow();
+            expect(mocks.retry).not.toHaveBeenCalled();
+            expect(mocks.rpc).not.toHaveBeenCalled();
+            network(true);
+            expect(platform.state().availability).toBe('ready');
+            await platform.active()!.syncNow();
+            expect(mocks.retry).toHaveBeenCalledTimes(1);
+            expect(platform.state().pull).toMatchObject({ phase: 'idle', lastSuccessAt: expect.any(String) });
+        });
+
+        it('coalesces same-tick manual requests and publishes pulling instead of old success', async () => {
+            await start(); await platform.active()!.syncNow();
+            const lastSuccess = platform.state().pull.lastSuccessAt;
+            const retry = deferred<void>(); const response = deferred<{ data: PullBatch; error: null }>();
+            mocks.retry.mockClear().mockReturnValueOnce(retry.promise);
+            mocks.rpc.mockClear().mockReturnValueOnce(response.promise);
+            const first = platform.active()!.syncNow();
+            const second = platform.active()!.syncNow();
+            expect(first).toBe(second); expect(mocks.retry).toHaveBeenCalledTimes(1);
+            retry.resolve(); await settle();
+            expect(platform.state().pull).toEqual({ phase: 'pulling', lastSuccessAt: lastSuccess });
+            expect(platform.state().attention).toBe('waiting'); expect(mocks.rpc).toHaveBeenCalledTimes(1);
+            response.resolve({ data: batch('a'), error: null }); await first;
+            expect(platform.state().pull.phase).toBe('idle');
+        });
+
+        it('settles a rejected retry without raw errors and allows another attempt', async () => {
+            await start();
+            mocks.retry.mockRejectedValueOnce(new Error('private server details'));
+            await expect(platform.active()!.syncNow()).resolves.toBeUndefined();
+            expect(platform.state().pull.phase).toBe('failed');
+            expect(platform.state().attention).toBe('required');
+            expect(JSON.stringify(platform.state())).not.toContain('private');
+            await platform.active()!.syncNow();
+            expect(platform.state().pull.phase).toBe('idle'); expect(mocks.retry).toHaveBeenCalledTimes(2);
+        });
+
+        it('does not invite manual retry for auth-required, but same-user auth recovery can resume', async () => {
+            await start();
+            mocks.push.failureKinds = ['auth-required'];
+            for (const callback of mocks.pushListeners) callback({ ...mocks.push });
+            expect(platform.state().availability).toBe('auth-required');
+            await platform.active()!.syncNow(); expect(mocks.retry).not.toHaveBeenCalled();
+            mocks.push.failureKinds = [];
+            for (const callback of mocks.pushListeners) callback({ ...mocks.push });
+            await notifyLogin('a'); await platform.active()!.syncNow();
+            expect(platform.state().availability).toBe('ready'); expect(mocks.retry).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not pull if connectivity is lost during retry', async () => {
+            await start();
+            const retry = deferred<void>(); mocks.retry.mockReturnValueOnce(retry.promise);
+            const pending = platform.active()!.syncNow(); network(false); retry.resolve(); await pending;
+            expect(mocks.rpc).not.toHaveBeenCalled(); expect(platform.state().availability).toBe('offline');
+        });
+
+        it('old manual failure cannot change B or release B manual request', async () => {
+            await start();
+            let reject!: (error: Error) => void;
+            mocks.retry.mockReturnValueOnce(new Promise<void>((_resolve, fail) => { reject = fail; }));
+            const old = platform.active()!.syncNow();
+            await notifyLogin('b'); await settle();
+            const gate = deferred<void>(); mocks.retry.mockReturnValueOnce(gate.promise);
+            const current = platform.active()!.syncNow(); const stateB = platform.state();
+            reject(new Error('old')); await old;
+            expect(platform.state()).toEqual(stateB);
+            expect(platform.active()!.syncNow()).toBe(current);
+            gate.resolve(); await current;
+            expect(mocks.rpc).toHaveBeenCalledTimes(1);
+        });
+
         it('keeps an in-flight pull valid across a same-user notification', async () => {
             cleanups.push(platform.register());
             await notifyLogin('a');

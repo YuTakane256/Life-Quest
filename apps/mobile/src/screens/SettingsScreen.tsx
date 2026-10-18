@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
-import type { CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
+import { canRequestCloudSync, cloudSyncMessage, isCloudSyncBusy, type CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
 import {
     deleteCurrentAccount,
     cancelPasswordRecovery,
@@ -62,17 +62,6 @@ function formatBytes(bytes: number): string {
     return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
 }
 
-function syncMessage(state: CloudSyncPublicState): string {
-    if (state.availability === 'inactive') return 'ログインすると同期状態を確認できます';
-    if (state.push.failureKinds.includes('auth-required')) return '再ログインすると保留中の同期を再開できます';
-    if (state.push.conflict > 0) return '一部の変更に競合があります。今すぐ同期では自動再送しません';
-    if (state.push.failed > 0) return '一部の変更を同期できませんでした。今すぐ同期では自動再送しません';
-    if (state.pull.phase === 'failed') return 'クラウドの変更を確認できませんでした。接続を確認してください';
-    if (state.push.pending > 0 || state.push.inflight > 0) return `同期を待っている変更: ${state.push.pending + state.push.inflight}件`;
-    if (state.pull.lastSuccessAt === null) return 'クラウドの変更を確認しています';
-    return '同期済み';
-}
-
 async function readStorageSummary(): Promise<StorageSummary> {
     const keys = await AsyncStorage.getAllKeys();
     const appKeys = keys.filter((key) => key.startsWith('quest-board') || key.startsWith('life-quest:'));
@@ -123,6 +112,8 @@ export default function SettingsScreen() {
     const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
     const [syncState, setSyncState] = useState<CloudSyncPublicState>(getMobileCloudSyncState);
     const [syncing, setSyncing] = useState(false);
+    const canSync = !syncing && canRequestCloudSync(syncState);
+    const syncBusy = syncState.availability === 'ready' && (syncing || isCloudSyncBusy(syncState));
 
     // ONにする時はOSの通知許可を要求し、拒否されたらトグルを戻す（Web設定画面と同じ挙動）
     const handleNotificationsToggle = useCallback(async (enabled: boolean) => {
@@ -147,6 +138,7 @@ export default function SettingsScreen() {
         setPasswordConfirmation('');
         setVerificationEmail(null);
         setMessage(null);
+        setSyncing(false);
     }), []);
 
     useEffect(() => {
@@ -167,9 +159,10 @@ export default function SettingsScreen() {
     useEffect(() => subscribePasswordRecoveryState(setRecoveryState), []);
 
     const handleSyncNow = async (): Promise<void> => {
-        if (syncing || syncState.availability !== 'ready') return;
+        if (syncing || !canRequestCloudSync(syncState)) return;
+        const isCurrent = captureAuthSessionGuard();
         setSyncing(true);
-        try { await syncMobileNow(); } finally { setSyncing(false); }
+        try { await syncMobileNow(); } finally { if (mounted.current && isCurrent()) setSyncing(false); }
     };
 
     const handleImportContent = async () => {
@@ -469,7 +462,7 @@ export default function SettingsScreen() {
                             accessibilityLiveRegion="polite"
                             style={[styles.hint, syncState.attention === 'required' && styles.syncWarning]}
                         >
-                            {syncMessage(syncState)}
+                            {cloudSyncMessage(syncState)}
                         </Text>
                         {syncState.pull.lastSuccessAt && syncState.attention !== 'required' && (
                             <Text style={styles.hint}>最終確認: {new Date(syncState.pull.lastSuccessAt).toLocaleString('ja-JP')}</Text>
@@ -477,12 +470,12 @@ export default function SettingsScreen() {
                         <Pressable
                             accessibilityRole="button"
                             accessibilityLabel="今すぐ同期"
-                            accessibilityState={{ disabled: syncing || syncState.availability !== 'ready', busy: syncing }}
-                            disabled={syncing || syncState.availability !== 'ready'}
+                            accessibilityState={{ disabled: !canSync, busy: syncBusy }}
+                            disabled={!canSync}
                             onPress={() => { void handleSyncNow(); }}
-                            style={({ pressed }) => [styles.syncButton, (syncing || syncState.availability !== 'ready' || pressed) && styles.muted]}
+                            style={({ pressed }) => [styles.syncButton, (!canSync || pressed) && styles.muted]}
                         >
-                            <Text style={styles.syncButtonText}>{syncing ? '同期中' : '今すぐ同期'}</Text>
+                            <Text style={styles.syncButtonText}>{syncBusy ? '同期中' : '今すぐ同期'}</Text>
                         </Pressable>
                     </Card>
 

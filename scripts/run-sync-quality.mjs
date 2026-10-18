@@ -33,12 +33,15 @@ export function assertLocalSyncEnvironment(env) {
 const unitFiles = [
     'packages/core/src/cloudPull.test.ts',
     'packages/core/src/cloudCache.test.ts',
+    'packages/core/src/cloudSyncState.test.ts',
     'packages/core/src/syncOutbox.test.ts',
     'packages/core/src/cloudOutboxSession.test.ts',
     'src/platform/cloudSyncSession.test.ts',
+    'src/components/ui/CloudSyncSettings.test.tsx',
     'src/platform/cloudOutboxTransport.test.ts',
     'src/platform/taskCompletionSession.test.ts',
     'apps/mobile/src/platform/cloudOutbox.test.ts',
+    'apps/mobile/src/platform/networkRecovery.test.ts',
 ];
 
 export function syncQualityPlan(args, env) {

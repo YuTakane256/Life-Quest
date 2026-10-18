@@ -37,6 +37,13 @@ describe('createReconnectDetector', () => {
 });
 
 describe('resolveNetworkOnlineState', () => {
+    it.each([
+        { isConnected: null, isInternetReachable: true, expected: null },
+        { isConnected: null, isInternetReachable: null, expected: null },
+        { isConnected: null, isInternetReachable: false, expected: false },
+    ])('接続取得途中でも明示的な切断と不明を区別する: $isInternetReachable', ({ expected, ...state }) => {
+        expect(resolveNetworkOnlineState(state)).toBe(expected);
+    });
     it('isConnected=falseはreachabilityが不明でも明示的なオフラインとして扱う', () => {
         expect(resolveNetworkOnlineState({ isConnected: false, isInternetReachable: null })).toBe(false);
     });
