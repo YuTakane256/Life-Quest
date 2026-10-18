@@ -5,6 +5,15 @@ import { convertLegacyGameSnapshot, convertLegacyHabitSnapshot, convertLegacyTas
 const state = (storage: Record<string, string>, key: string) => JSON.parse(storage[key]);
 
 describe('shared anonymous reference fixture', () => {
+    it.each(['light', 'dark'] as const)('rewards profile has the same chests and daily login state on both platforms (%s)', (theme) => {
+        const web = createWebParityStorage(theme, 'rewards'); const mobile = createMobileParityStorage(theme, 'rewards');
+        const game = convertLegacyGameSnapshot({ game: state(web, 'quest-board-game'), tasks: state(web, 'quest-board-tasks'), habits: state(web, 'quest-board-habits') });
+        expect(state(mobile, 'quest-board-game').state).toEqual(game);
+        expect(game.chestQueue).toHaveLength(2); expect(game.chestQueue[0].isStarterCharacter).toBe(true);
+        expect(state(web, 'quest-board-login-bonus').state.anonymousState.lastLoginDate).toBe('2026-08-09');
+        expect(state(mobile, 'quest-board-mobile-login-bonus').state.anonymousState.lastLoginDate).toBe('2026-08-09');
+        expect(state(createMobileParityStorage(theme), 'quest-board-game').state.chestQueue).toHaveLength(0);
+    });
     it.each(['light', 'dark'] as const)('battle profile only changes fictional progress, equally on both platforms (%s)', (theme) => {
         const web = createWebParityStorage(theme, 'battle');
         const mobile = createMobileParityStorage(theme, 'battle');

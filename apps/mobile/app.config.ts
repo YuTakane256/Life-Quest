@@ -31,8 +31,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     if (captureTheme && (!isParity || !['light', 'dark'].includes(captureTheme))) {
         throw new Error('LIFE_QUEST_PARITY_CAPTURE must be light/dark and requires LIFE_QUEST_APP_VARIANT=parity.');
     }
-    if (captureProfile && (!captureTheme || !isParity || !['daily', 'battle'].includes(captureProfile))) {
-        throw new Error('LIFE_QUEST_PARITY_PROFILE requires parity capture and must be daily/battle.');
+    if (captureProfile && (!captureTheme || !isParity || !['daily', 'battle', 'rewards'].includes(captureProfile))) {
+        throw new Error('LIFE_QUEST_PARITY_PROFILE requires parity capture and must be daily/battle/rewards.');
     }
     const scheme = isParity ? PARITY_SCHEME : isPreview ? PREVIEW_SCHEME : RELEASE_SCHEME;
 

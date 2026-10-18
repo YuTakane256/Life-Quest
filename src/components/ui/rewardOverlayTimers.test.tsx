@@ -79,6 +79,24 @@ const overlays = [
     },
 ];
 
+describe('ログインボーナスの可視閉じるボタン', () => {
+    it('文字の位置そのものを押すと閉じる（カード内の説明文ではない）', () => {
+        useLoginBonusStore.setState({ pendingBonus: bonus() }); mount(LoginBonusOverlay);
+        const button = host.querySelector('button[aria-label="ログインボーナスを閉じる"]');
+        expect(button?.textContent).toContain('タップして閉じる');
+        click(button); advance(300); expect(useLoginBonusStore.getState().pendingBonus).toBeNull();
+    });
+    it('カードの報酬表示を押しても閉じず、閉じるボタンをキーボード操作できる', () => {
+        useLoginBonusStore.setState({ pendingBonus: bonus() }); mount(LoginBonusOverlay);
+        click(host.querySelector('[role="dialog"]')); advance(300);
+        expect(useLoginBonusStore.getState().pendingBonus).not.toBeNull();
+        const button = host.querySelector<HTMLButtonElement>('button[aria-label="ログインボーナスを閉じる"]')!;
+        button.focus(); expect(document.activeElement).toBe(button);
+        expect(button.tagName).toBe('BUTTON'); expect(button.type).toBe('button');
+        click(button); advance(300); expect(useLoginBonusStore.getState().pendingBonus).toBeNull();
+    });
+});
+
 describe.each(overlays)('$nameの通知タイマー（実コンポーネント/実ストア、StrictMode）', (overlay) => {
     function show() { overlay.setEvent(); mount(overlay.Component); overlay.prepare(); }
 

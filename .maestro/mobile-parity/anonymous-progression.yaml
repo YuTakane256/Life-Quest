@@ -60,7 +60,18 @@ name: Earn starter chest, unlock battle and retain rewards across restart
     direction: DOWN
     centerElement: true
 - tapOn: "青色の宝箱を開封する"
-- assertVisible: "青色の宝箱を開封した！"
+- tapOn: "宝箱を開ける"
+- extendedWaitUntil:
+    visible: "キャラクター解放！"
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      text: "閉じる"
+      enabled: true
+    timeout: 10000
+- tapOn:
+    text: "閉じる"
+    enabled: true
 - assertNotVisible: "青色の宝箱を開封する"
 - assertVisible:
     text: "マップ(, tab,.*)?"

@@ -18,6 +18,7 @@ export const mobileParityFlows = Object.freeze({
     character: '.maestro/mobile-parity/character-screen-interactions.yaml',
     map: '.maestro/mobile-parity/map-screen-interactions.yaml',
     battle: '.maestro/mobile-parity/battle-screen-interactions.yaml',
+    rewards: '.maestro/mobile-parity/reward-overlays.yaml',
 });
 
 export function getMobileParityFlow(name = 'screenshots') {
@@ -36,8 +37,11 @@ export function getMaestroTestCommand(flow) {
 }
 
 export function requiresReferenceRuntime(name) {
-    return name === 'reference' || name === 'daily' || name === 'undo' || name === 'character' || name === 'map' || name === 'battle';
+    return name === 'reference' || name === 'daily' || name === 'undo' || name === 'character' || name === 'map' || name === 'battle' || name === 'rewards';
 }
+
+/** Keep the normal inspection server on 8081; reward captures use an isolated second Metro. */
+export function getMobileParityMetroUrl(name) { return name === 'rewards' ? 'http://127.0.0.1:8082' : 'http://127.0.0.1:8081'; }
 
 /** Never mistake seeded in-memory screenshots for persistence evidence. */
 export function assertPersistentParityRuntime(manifest) {
@@ -148,10 +152,10 @@ export function assertReferenceProfile(manifest, flowName) {
     getReferenceTheme(manifest);
     const extra = manifest?.extra?.expoClient?.extra ?? manifest?.extra;
     const profile = extra?.parityCaptureProfile ?? 'daily';
-    if (flowName === 'undo' && extra?.parityLocalOnly !== true) {
+    if ((flowName === 'undo' || flowName === 'rewards') && extra?.parityLocalOnly !== true) {
         throw new Error('Undo flow requires the anonymous parity reference runtime with no Supabase configuration.');
     }
-    if (profile !== (flowName === 'battle' ? 'battle' : 'daily')) {
+    if (profile !== (flowName === 'battle' ? 'battle' : flowName === 'rewards' ? 'rewards' : 'daily')) {
         throw new Error('Battle flow requires LIFE_QUEST_PARITY_PROFILE=battle; other reference flows require the daily profile.');
     }
 }
@@ -223,7 +227,7 @@ async function main(flowName = process.argv[2] ?? 'screenshots') {
 
     let args = getMaestroTestCommand(flow);
     try {
-        const response = await fetch('http://127.0.0.1:8081', {
+        const response = await fetch(getMobileParityMetroUrl(flow.name), {
             headers: { accept: 'application/expo+json', 'expo-platform': 'ios' },
             signal: AbortSignal.timeout(10000),
         });

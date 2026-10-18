@@ -1,0 +1,59 @@
+appId: com.yutakane.lifequest.parity
+name: Reward close target and chest reveal (isolated memory only)
+---
+# Requires the guarded rewards profile on 8082. Normal inspection on 8081 stays running.
+- launchApp:
+    clearState: false
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "ログインボーナスを閉じる"
+    timeout: 60000
+- takeScreenshot: "rewards-${REFERENCE_THEME}-login"
+- tapOn: "ログインボーナスを閉じる"
+- assertNotVisible: "ログインボーナスを閉じる"
+- tapOn: "キャラ(, tab,.*)?"
+- scrollUntilVisible:
+    element: "青色の宝箱を開封する"
+    direction: DOWN
+- tapOn: "青色の宝箱を開封する"
+- assertVisible: "タップして開ける"
+- takeScreenshot: "rewards-${REFERENCE_THEME}-chest"
+- tapOn: "宝箱を開ける"
+- extendedWaitUntil:
+    visible: "キャラクター解放！"
+    timeout: 10000
+- takeScreenshot: "rewards-${REFERENCE_THEME}-starter"
+- extendedWaitUntil:
+    visible:
+      text: "閉じる"
+      enabled: true
+    timeout: 10000
+- tapOn:
+    text: "閉じる"
+    enabled: true
+- assertNotVisible: "キャラクター解放！"
+- tapOn: "木の宝箱を開封する"
+- assertVisible: "タップして開ける"
+- tapOn: "宝箱を開ける"
+- extendedWaitUntil:
+    visible: "インベントリに追加"
+    timeout: 10000
+- takeScreenshot: "rewards-${REFERENCE_THEME}-equipment"
+- extendedWaitUntil:
+    visible:
+      text: "インベントリに追加"
+      enabled: true
+    timeout: 10000
+- tapOn:
+    text: "インベントリに追加"
+    enabled: true
+- scrollUntilVisible:
+    element: "インベントリ（8）"
+    direction: DOWN
+- assertVisible: "インベントリ（8）"

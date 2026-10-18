@@ -36,6 +36,7 @@ function resetStore() {
         activeBattle: null,
         hasHydrated: true,
         lastLevelUp: null,
+        pendingChestReveal: null,
     });
 }
 
@@ -447,8 +448,11 @@ describe('useMobileGameStore', () => {
     });
 
     describe('永続化', () => {
-        it('一時状態（hasHydrated / lastLevelUp）を保存しない', async () => {
+        it('一時状態（hasHydrated / lastLevelUp / pendingChestReveal）を保存しない', async () => {
             useMobileGameStore.getState().addXp(30);
+            useMobileGameStore.setState({ chestQueue: [{ id: 'transient', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null }] });
+            useMobileGameStore.getState().openChest('transient');
+            expect(useMobileGameStore.getState().pendingChestReveal).not.toBeNull();
 
             await vi.waitFor(() => expect(storage.setItem).toHaveBeenCalled());
             const [, serialized] = storage.setItem.mock.calls.at(-1) ?? [];
@@ -456,7 +460,14 @@ describe('useMobileGameStore', () => {
             expect(envelope.version).toBe(GAME_STORE_VERSION);
             expect(envelope.state).not.toHaveProperty('hasHydrated');
             expect(envelope.state).not.toHaveProperty('lastLevelUp');
+            expect(envelope.state).not.toHaveProperty('pendingChestReveal');
             expect(envelope.state).toHaveProperty('rewardLedger');
+        });
+
+        it('古い保存データに演出が混入していても復元しない', () => {
+            const current = useMobileGameStore.getState();
+            const merged = useMobileGameStore.persist.getOptions().merge?.({ pendingChestReveal: { id: 'stale' } }, current);
+            expect(merged?.pendingChestReveal).toBeNull();
         });
 
         it('破損した永続データからは初期状態へ復元する（merge経由のsanitize）', () => {

@@ -32,6 +32,19 @@ vi.mock('../stores/useMobileLoginBonusStore', () => ({
 void AsyncStorage;
 
 describe('Mobileログアウト時のストアクリア（ADR-009）', () => {
+    it.each(['logout', 'switch'])('未seedでも旧宝箱演出は破棄するが報酬は消さない: %s', async (transition) => {
+        const unregister = registerMobileAuthStoreHooks();
+        await notifyLogin('a');
+        useMobileGameStore.setState({ chestQueue: [{ id: 'reveal', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null }] });
+        const equipment = useMobileGameStore.getState().openChest('reveal');
+        expect(useMobileGameStore.getState().pendingChestReveal).not.toBeNull();
+        await notifyLogin('a');
+        expect(useMobileGameStore.getState().pendingChestReveal).not.toBeNull();
+        if (transition === 'logout') await notifyLogout(); else await notifyLogin('b');
+        expect(useMobileGameStore.getState().pendingChestReveal).toBeNull();
+        expect(useMobileGameStore.getState().equipment).toContainEqual(equipment);
+        unregister();
+    });
     function setCloudBattle() {
         useMobileGameStore.getState().startCloudBattle(3, 'attempt-a', {
             player: { attack: 10, defense: 5, maxHp: 50 }, enemy: { stage: 3, name: 'enemy', maxHp: 10, attack: 1, defense: 1, xpReward: 5 },

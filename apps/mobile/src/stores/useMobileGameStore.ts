@@ -82,12 +82,23 @@ export interface ActiveMobileBattle {
     rewardMode: 'local' | 'cloud';
 }
 
+export interface MobileChestRevealEvent {
+    id: string;
+    chestId: string;
+    chestType: ChestType;
+    label: string;
+    equipment: Equipment | null;
+    isStarterCharacter: boolean;
+}
+
 interface MobileGameStore extends GameStateSnapshot {
     battleProgress: MobileBattleProgress;
     hasHydrated: boolean;
     activeBattle: ActiveMobileBattle | null;
     /** 直近のレベルアップ演出用データ（永続化しない） */
     lastLevelUp: LevelUpSummary | null;
+    pendingChestReveal: MobileChestRevealEvent | null;
+    clearPendingChestReveal: () => void;
     setHasHydrated: (value: boolean) => void;
     clearLastLevelUp: () => void;
     updateCharacter: (updates: Partial<Pick<CharacterState, 'name'>> & { avatar?: AvatarId }) => void;
@@ -245,6 +256,8 @@ export const useMobileGameStore = create<MobileGameStore>()(
             hasHydrated: false,
             activeBattle: null,
             lastLevelUp: null,
+            pendingChestReveal: null,
+            clearPendingChestReveal: () => set({ pendingChestReveal: null }),
 
             setHasHydrated: (hasHydrated) => set({ hasHydrated }),
             clearLastLevelUp: () => set({ lastLevelUp: null }),
@@ -329,6 +342,8 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 const template = rollEquipmentTemplate(chest.chestType);
                 const equipment = template ? createEquipmentFromTemplate(createMobileId(), template) : null;
                 set((state) => ({
+                    pendingChestReveal: { id: createMobileId(), chestId, chestType: chest.chestType, label: chest.label,
+                        equipment, isStarterCharacter: chest.isStarterCharacter ?? false },
                     chestQueue: state.chestQueue.map((candidate) =>
                         candidate.id === chestId ? { ...candidate, opened: true, equipment } : candidate
                     ),
@@ -353,6 +368,8 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 const existingItem = get().equipment.find((item) => item.id === itemId);
                 const equipment = existingItem ?? (template && itemId ? createEquipmentFromTemplate(itemId, template) : null);
                 set((state) => ({
+                    pendingChestReveal: { id: createMobileId(), chestId, chestType: chest.chestType, label: chest.label,
+                        equipment, isStarterCharacter: starterCharacter },
                     chestQueue: state.chestQueue.map((candidate) =>
                         candidate.id === chestId ? { ...candidate, opened: true, equipment } : candidate
                     ),
@@ -665,7 +682,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
             name: 'quest-board-game',
             version: GAME_STORE_VERSION,
             storage: createJSONStorage(() => AsyncStorage),
-            // 一時UI状態（hasHydrated / lastLevelUp）は永続化しない
+            // 一時UI状態（hasHydrated / lastLevelUp / pendingChestReveal）は永続化しない
             partialize: (state) => ({
                 character: state.character,
                 equipment: state.equipment,
@@ -686,6 +703,7 @@ export const useMobileGameStore = create<MobileGameStore>()(
                 ),
                 activeBattle: null,
                 lastLevelUp: null,
+                pendingChestReveal: null,
             }),
             onRehydrateStorage: () => (state) => state?.setHasHydrated(true),
         }

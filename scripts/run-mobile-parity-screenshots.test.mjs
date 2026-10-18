@@ -10,6 +10,7 @@ import {
     assertReferenceProfile,
     assertPersistentParityRuntime,
     requiresReferenceRuntime,
+    getMobileParityMetroUrl,
 } from './run-mobile-parity-screenshots.mjs';
 
 describe('getMaestroEnvironment', () => {
@@ -76,6 +77,20 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('uses a second local-only rewards runtime without stopping normal inspection on 8081', () => {
+        expect(getMobileParityMetroUrl('rewards')).toBe('http://127.0.0.1:8082');
+        expect(getMobileParityMetroUrl('battle')).toBe('http://127.0.0.1:8081');
+        expect(requiresReferenceRuntime('rewards')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'dark', parityCaptureProfile: 'rewards' };
+        expect(() => assertReferenceProfile({ extra }, 'rewards')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityCaptureProfile: 'daily' }, { parityCaptureProfile: 'battle' }, { appVariant: 'release' }]) {
+            expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'rewards')).toThrow();
+        }
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('rewards').path}`, import.meta.url), 'utf8');
+        expect(yaml).toContain('clearState: false'); expect(yaml).not.toContain('clearState: true');
+        expect(yaml).toContain('127.0.0.1%3A8082'); expect(yaml).toContain('ログインボーナスを閉じる');
+        expect(yaml).toContain('インベントリ（8）');
+    });
     it('runs undo/add layout checks only in guarded memory-only reference mode', () => {
         expect(requiresReferenceRuntime('undo')).toBe(true);
         const flow = getMobileParityFlow('undo');

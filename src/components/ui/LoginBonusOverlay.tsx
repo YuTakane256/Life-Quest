@@ -79,7 +79,7 @@ export function LoginBonusOverlay() {
             >
                 <button
                     onClick={handleDismiss}
-                    className="absolute top-3 right-3 p-1.5 rounded-lg opacity-60 hover:opacity-100 transition-opacity"
+                    className="absolute top-3 right-3 min-h-11 min-w-11 flex items-center justify-center rounded-lg opacity-60 hover:opacity-100 transition-opacity"
                     style={{ color: 'var(--color-text-muted)' }}
                     aria-label="閉じる"
                 >
@@ -146,9 +146,11 @@ export function LoginBonusOverlay() {
                     )}
                 </div>
 
-                <p className="mt-5 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                <button type="button" onClick={handleDismiss} aria-label="ログインボーナスを閉じる"
+                    className="mt-5 w-full min-h-11 rounded-xl px-4 py-3 text-sm"
+                    style={{ color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg-secondary)' }}>
                     タップして閉じる
-                </p>
+                </button>
             </div>
             </div>
         </>
