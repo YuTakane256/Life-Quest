@@ -30,6 +30,7 @@ export function useTaskKeyboardVisibility(list: RefObject<ScrollTarget | null>, 
 
     useEffect(() => {
         mounted.current = true;
+        measurement.current++;
         if (Platform.OS !== 'ios') return () => { mounted.current = false; };
         const show = (event: KeyboardEvent) => { keyboardTop.current = event.endCoordinates.screenY; reveal(); };
         const subscriptions = [
@@ -37,7 +38,7 @@ export function useTaskKeyboardVisibility(list: RefObject<ScrollTarget | null>, 
             Keyboard.addListener('keyboardDidChangeFrame', show),
             Keyboard.addListener('keyboardDidHide', () => { keyboardTop.current = null; measurement.current++; }),
         ];
-        return () => { mounted.current = false; measurement.current++; subscriptions.forEach((subscription) => subscription.remove()); };
+        return () => { mounted.current = false; subscriptions.forEach((subscription) => subscription.remove()); };
     }, [reveal]);
 
     return {
