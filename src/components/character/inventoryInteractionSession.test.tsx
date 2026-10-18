@@ -200,6 +200,13 @@ describe('Web feedback timer ownership', () => {
         act(() => vi.advanceTimersByTime(2000)); expect(host.textContent).toContain('次の装備 を入手！');
         act(() => vi.advanceTimersByTime(1000)); expect(host.textContent).not.toContain('次の装備 を入手！');
     });
+    it('同一Equipmentオブジェクトの再通知でも表示期間を分離する', async () => {
+        mocks.hasError = true; mocks.retry.mockResolvedValue(result());
+        mount(); await act(async () => button('再送').click());
+        act(() => vi.advanceTimersByTime(1000)); await act(async () => button('再送').click());
+        act(() => vi.advanceTimersByTime(2000)); expect(host.textContent).toContain('を入手！');
+        act(() => vi.advanceTimersByTime(1000)); expect(host.textContent).not.toContain('を入手！');
+    });
 });
 
 describe('Native alert/focus boundary', () => {

@@ -126,9 +126,10 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
         if (!isCurrent()) return;
         void invoke().then((result) => {
             if (!isCurrent() || !result) return;
-            setSynthResult(result);
+            const notification = { ...result };
+            setSynthResult(notification);
             setSelectedForSynth([]);
-            interactions.schedule(() => setSynthResult((current) => current === result ? null : current), 3000);
+            interactions.schedule(() => setSynthResult((current) => current === notification ? null : current), 3000);
         });
     };
     const handleSynthesize = () => {

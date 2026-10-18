@@ -100,7 +100,7 @@ export default function CharacterScreen() {
     const runSynthesis = (invoke: () => Promise<Equipment | null>) => {
         const isCurrent = interactions.capture();
         if (!isCurrent()) return;
-        void invoke().then((result) => { if (isCurrent() && result) setLastReveal(result); });
+        void invoke().then((result) => { if (isCurrent() && result) setLastReveal({ ...result }); });
     };
 
     const handleSynthesize = () => {
