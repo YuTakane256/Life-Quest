@@ -350,7 +350,7 @@ export function toggleSubtask(
 /** タスク完了のUndo猶予（ミリ秒）。Web UI_CONFIG.UNDO_DURATION_MS と同値 */
 export const TASK_UNDO_DURATION_MS = 5000;
 
-export type TaskFieldUpdates = Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>;
+export type TaskFieldUpdates = Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'recurrence' | 'tags' | 'subtasks'>>;
 
 export interface UpdateTaskFieldsOptions {
     /** 現在時刻 (ISO 8601)。サブタスク全完了時の completedAt に使う */

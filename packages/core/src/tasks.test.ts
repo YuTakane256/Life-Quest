@@ -238,6 +238,13 @@ describe('updateTaskFields（#512）', () => {
         createdAt: '2026-07-01T00:00:00.000Z',
     });
 
+    it.each(['none', 'daily', 'weekly', 'monthly'] as const)('繰り返しを%sへ変更しても完了状態・ID・子は維持する', (recurrence) => {
+        const original = base({ recurrence: 'daily', completed: true, completedAt: '2026-07-02T00:00:00.000Z', subtasks: [sub('s1', true)] });
+        const next = updateTaskFields([original], 't1', { recurrence }, { now: '2026-07-03T00:00:00.000Z' });
+        expect(next).toEqual([{ ...original, recurrence }]);
+        expect(original.recurrence).toBe('daily');
+    });
+
     it('subtasksを含まない更新は単純マージ（完了状態を触らない）', () => {
         const tasks = [base({ completed: true, completedAt: '2026-07-02T00:00:00.000Z' })];
         const next = updateTaskFields(tasks, 't1', { name: '改名', priority: 'high' }, { now: '2026-07-03T00:00:00.000Z' });

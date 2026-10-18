@@ -714,7 +714,7 @@ function TaskComposer({
             if (
                 !store.saveTaskEdits(
                     task.id,
-                    { name, dueDate: dueDate || null, priority, tags, subtasks },
+                    { name, dueDate: dueDate || null, priority, recurrence, tags, subtasks },
                     task.subtasks.map((subtask) => subtask.id),
                 )
             ) {
@@ -796,19 +796,12 @@ function TaskComposer({
                 ))}
             </View>
             <Text style={s.label}>繰り返し</Text>
-            {task ? (
-                <Text style={s.name}>
-                    {recurrences.find(([key]) => key === recurrence)?.[1]}
-                    （作成時の設定）
-                </Text>
-            ) : (
-                <Choice
-                    label="繰り返し"
-                    value={recurrence}
-                    options={recurrences}
-                    onChange={setRecurrence}
-                />
-            )}
+            <Choice
+                label="繰り返し"
+                value={recurrence}
+                options={recurrences}
+                onChange={setRecurrence}
+            />
             <Text style={s.label}>タグ</Text>
             <View style={ui.wrap}>
                 {tags.map((tag) => (
