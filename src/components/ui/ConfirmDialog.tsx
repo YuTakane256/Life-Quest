@@ -9,6 +9,7 @@ interface Props {
     cancelLabel?: string;
     /** 確認ボタンの背景色。CSS 変数の指定を想定（例: `var(--color-accent-sky)`）。デフォルトは danger。 */
     confirmColor?: string;
+    confirmDisabled?: boolean;
     onConfirm: () => void;
     onClose: () => void;
 }
@@ -20,6 +21,7 @@ export function ConfirmDialog({
     confirmLabel,
     cancelLabel = 'キャンセル',
     confirmColor = 'var(--color-text-danger)',
+    confirmDisabled = false,
     onConfirm,
     onClose,
 }: Props) {
@@ -50,6 +52,7 @@ export function ConfirmDialog({
                 <div className="flex gap-2">
                     <button
                         onClick={onConfirm}
+                        disabled={confirmDisabled}
                         className="flex-1 py-2.5 rounded-lg text-sm font-medium"
                         style={{ backgroundColor: confirmColor, color: 'white' }}
                     >
