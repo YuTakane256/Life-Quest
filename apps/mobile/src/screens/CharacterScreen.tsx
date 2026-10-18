@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { TAB_SCREEN_EDGES } from '../theme/layout';
 import { type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
-import { filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
+import { createInventoryConfirmation, filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
 import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
 import { getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
@@ -12,6 +12,7 @@ import { CharacterOverview } from '../components/CharacterOverview';
 import { usePalette } from '../theme/usePalette';
 import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
 import { useCloudItemSynthesis } from '../hooks/useCloudItemSynthesis';
+import { useInventoryInteractionScope } from '../hooks/useInventoryInteractionScope';
 
 const RARITY_LABELS: Record<Rarity, string> = {
     common: 'コモン',
@@ -41,10 +42,14 @@ export default function CharacterScreen() {
     const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);
     const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
-    const [lastRevealText, setLastRevealText] = useState<string | null>(null);
+    const [lastReveal, setLastReveal] = useState<Equipment | null>(null);
     const [slotFilter, setSlotFilter] = useState<InventorySlotFilter>('all');
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
+    const pendingConfirmation = useRef<object | null>(null);
+    const interactions = useInventoryInteractionScope(() => {
+        pendingConfirmation.current = null; setSelectedIds([]); setLastReveal(null);
+    });
 
     // 最大2000件になり得るため FlatList で仮想化して描画する
     const inventory = useMemo(
@@ -58,6 +63,7 @@ export default function CharacterScreen() {
         && selectedItems[0].rarity !== 'legendary';
 
     const toggleSelect = (item: Equipment) => {
+        if (!interactions.capture()()) return;
         if (item.equipped) return;
         setSelectedIds((current) => current.includes(item.id)
             ? current.filter((id) => id !== item.id)
@@ -68,39 +74,56 @@ export default function CharacterScreen() {
     const handleOpenChest = (chestId: string) => { void openChest(chestId); };
 
     const handleSell = (item: Equipment) => {
+        const isCurrent = interactions.capture();
+        if (!isCurrent()) return;
+        const token = {};
+        pendingConfirmation.current = token;
+        const confirm = createInventoryConfirmation([item], () => useMobileGameStore.getState().equipment,
+            () => isCurrent() && pendingConfirmation.current === token, () => {
+                setSelectedIds((current) => current.filter((id) => id !== item.id));
+                sellItem(item.id);
+            });
         Alert.alert(
             '装備を売却',
             `「${item.name}」を売却して ${SELL_XP_BY_RARITY[item.rarity]} XP を獲得します。よろしいですか？`,
             [
-                { text: 'キャンセル', style: 'cancel' },
+                { text: 'キャンセル', style: 'cancel', onPress: () => { if (pendingConfirmation.current === token) pendingConfirmation.current = null; } },
                 {
                     text: '売却する',
                     style: 'destructive',
-                    onPress: () => {
-                        setSelectedIds((current) => current.filter((id) => id !== item.id));
-                        sellItem(item.id);
-                    },
+                    onPress: confirm,
                 },
             ],
         );
     };
 
+    const runSynthesis = (invoke: () => Promise<Equipment | null>) => {
+        const isCurrent = interactions.capture();
+        if (!isCurrent()) return;
+        void invoke().then((result) => { if (isCurrent() && result) setLastReveal({ ...result }); });
+    };
+
     const handleSynthesize = () => {
         if (!canSynthesize) return;
+        const isCurrent = interactions.capture();
+        if (!isCurrent()) return;
+        const token = {};
+        pendingConfirmation.current = token;
+        // Only the visible, approved three items are consumed; hidden stale IDs cannot join.
+        const ingredientIds = selectedItems.map((item) => item.id);
+        const confirm = createInventoryConfirmation(selectedItems, () => useMobileGameStore.getState().equipment,
+            () => isCurrent() && pendingConfirmation.current === token, () => {
+                setSelectedIds([]);
+                runSynthesis(() => synthesize(ingredientIds));
+            });
         Alert.alert(
             '装備を合成',
             `選択した${SYNTHESIS_CONFIG.REQUIRED_COUNT}個を消費して、1つ上のレアリティの装備を生成します。よろしいですか？`,
             [
-                { text: 'キャンセル', style: 'cancel' },
+                { text: 'キャンセル', style: 'cancel', onPress: () => { if (pendingConfirmation.current === token) pendingConfirmation.current = null; } },
                 {
                     text: '合成する',
-                    onPress: () => {
-                        const ingredientIds = [...selectedIds];
-                        setSelectedIds([]);
-                        void synthesize(ingredientIds).then((result) => {
-                            if (result) setLastRevealText(`合成で「${result.name}」が誕生！`);
-                        });
-                    },
+                    onPress: confirm,
                 },
             ],
         );
@@ -129,10 +152,10 @@ export default function CharacterScreen() {
                     </Pressable>
                 </View>
             )}
-            {lastRevealText && (
+            {lastReveal && (
                 <View style={styles.banner} accessibilityRole="alert">
-                    <Text style={styles.bannerText}>{lastRevealText}</Text>
-                    <Pressable accessibilityRole="button" accessibilityLabel="入手通知を閉じる" onPress={() => setLastRevealText(null)} hitSlop={10}>
+                    <Text style={styles.bannerText}>{`合成で「${lastReveal.name}」が誕生！`}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel="入手通知を閉じる" onPress={() => setLastReveal((current) => current === lastReveal ? null : current)} hitSlop={10}>
                         <Text style={styles.bannerClose}>×</Text>
                     </Pressable>
                 </View>
@@ -193,7 +216,7 @@ export default function CharacterScreen() {
                     <Pressable
                         accessibilityRole="button"
                         accessibilityLabel="装備合成を再送する"
-                        onPress={() => void retrySynthesize()}
+                        onPress={() => runSynthesis(retrySynthesize)}
                         style={({ pressed }) => [styles.dangerButton, pressed && styles.muted]}
                     >
                         <Text style={styles.dangerButtonText}>再送</Text>

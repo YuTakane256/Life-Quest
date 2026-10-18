@@ -4,6 +4,29 @@ export type InventorySortMode = 'rarity' | 'slot' | 'name';
 export type InventorySlotFilter = 'all' | EquipmentSlot;
 export type InventoryRarityFilter = 'all' | Rarity;
 
+/** A confirmation approves these item values, not whatever later reuses their IDs. */
+export function createInventoryConfirmation(
+    items: readonly Equipment[],
+    getInventory: () => readonly Equipment[],
+    isCurrent: () => boolean,
+    onConfirm: () => void,
+): () => void {
+    const approved = items.map((item) => ({ ...item }));
+    let used = false;
+    return () => {
+        if (used) return;
+        used = true;
+        if (!isCurrent() || approved.length === 0 || new Set(approved.map((item) => item.id)).size !== approved.length) return;
+        const inventory = getInventory();
+        if (!approved.every((item) => {
+            const current = inventory.find((candidate) => candidate.id === item.id);
+            return current && !current.equipped && (Object.keys(item) as (keyof Equipment)[])
+                .every((key) => current[key] === item[key]);
+        })) return;
+        onConfirm();
+    };
+}
+
 const RARITY_RANK: Record<Rarity, number> = Object.fromEntries(
     EQUIPMENT_RARITIES.map((rarity, index) => [rarity, index])
 ) as Record<Rarity, number>;
