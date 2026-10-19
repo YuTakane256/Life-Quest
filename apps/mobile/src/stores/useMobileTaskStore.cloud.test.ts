@@ -75,6 +75,23 @@ describe('Mobileタスク操作のクラウド同期（#505/#512）', () => {
         });
     });
 
+    it.each(['none', 'daily', 'weekly', 'monthly'] as const)('繰り返し編集%sは既存upsertへ送り、認証済みの次回分はサーバーに任せる', (recurrence) => {
+        const store = useMobileTaskStore.getState();
+        store.addTask('編集対象', 'high', { dueDate: '2026-07-10', recurrence: 'daily', tags: ['仕事'] });
+        const id = useMobileTaskStore.getState().tasks[0].id;
+        enqueued.length = 0;
+        expect(store.saveTaskEdits(id, { recurrence, subtasks: [] })).toBe(true);
+        expect(enqueued).toEqual([{ operation: 'upsert_task', payload: {
+            p_id: id, p_name: '編集対象', p_due_date: '2026-07-10', p_priority: 'high', p_recurrence: recurrence, p_tags: ['仕事'],
+        }, options: { dependsOnEntityIds: [id] } }]);
+        expect(rewardCalls).toEqual([]);
+        expect(useMobileTaskStore.getState().tasks).toHaveLength(1);
+        store.toggleTask(id); vi.advanceTimersByTime(5000);
+        expect(ops('complete_task')).toHaveLength(1);
+        expect(rewardCalls).toEqual([id]);
+        expect(useMobileTaskStore.getState().tasks).toHaveLength(1);
+    });
+
     it('完了は5秒のUndo猶予後にcomplete_taskとして確定送信される（#512）', () => {
         useMobileTaskStore.getState().addTask('完了対象');
         const taskId = useMobileTaskStore.getState().tasks[0].id;

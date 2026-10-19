@@ -77,6 +77,19 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('keeps task form checks memory-only, on 8082, and requires a visible software keyboard', () => {
+        expect(getMobileParityMetroUrl('taskForm')).toBe('http://127.0.0.1:8082');
+        expect(requiresReferenceRuntime('taskForm')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
+        expect(() => assertReferenceProfile({ extra }, 'taskForm')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'rewards' }, { parityCaptureProfile: 'battle' }, { appVariant: 'release' }]) {
+            expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'taskForm')).toThrow();
+        }
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('taskForm').path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp');
+        expect(yaml).toContain('127.0.0.1%3A8082');
+        expect(yaml).toContain('id: "Done"'); expect(yaml).toContain('- tapOn: "更新"');
+    });
     it('uses a second local-only rewards runtime without stopping normal inspection on 8081', () => {
         expect(getMobileParityMetroUrl('rewards')).toBe('http://127.0.0.1:8082');
         expect(getMobileParityMetroUrl('battle')).toBe('http://127.0.0.1:8081');
