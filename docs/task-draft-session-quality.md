@@ -56,7 +56,7 @@ xcrun simctl openurl booted 'lifequest-parity://expo-development-client/?url=htt
 ## 実行結果と残項目
 
 2026-10-19: WebはPC/402px・light/darkの8ケース（繰り返し編集の既存回帰を含む）が成功。
-iOS lightの競合・タブ離脱フローも全操作が成功しました。最初のブラウザー起動は
+iOS 27 / iPhone 18 Pro・light/darkの競合・タブ離脱フローも全操作が成功しました。最初のブラウザー起動は
 マージ済みPlaywrightに対応するChromiumが未取得だったため失敗し、取得後の再実行で成功しています。
 
 Webは「編集中の完了」、iOSは「編集中の削除」を使った別の競合シナリオです。
@@ -65,6 +65,14 @@ Webは「編集中の完了」、iOSは「編集中の削除」を使った別�
 | Web light | iOS light |
 | --- | --- |
 | ![Webの完了競合](screenshots/task-draft-quality/web-light.png) | ![iOSの削除競合](screenshots/task-draft-quality/ios-light-conflict.png) |
+
+| Web dark | iOS dark |
+| --- | --- |
+| ![Webの完了競合](screenshots/task-draft-quality/web-dark.png) | ![iOSの削除競合](screenshots/task-draft-quality/ios-dark-conflict.png) |
+
+| タブ復帰後の新しい空フォーム・light | dark |
+| --- | --- |
+| ![前の下書きを持ち込まない](screenshots/task-draft-quality/ios-light-reset.png) | ![前の下書きを持ち込まない](screenshots/task-draft-quality/ios-dark-reset.png) |
 
 最終HEADのCI・独立レビュー・操作画像はPRに記録します。一覧内の直接操作・習慣/メモ等の全入力の境界保護、
 全画面の文字拡大、小画面、Android実機、staging双方向同期・認証/通知は別の確認です。
