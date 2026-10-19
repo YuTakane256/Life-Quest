@@ -1,0 +1,60 @@
+appId: com.yutakane.lifequest.parity
+name: Habit input, memo and confirmation (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "習慣(, tab,.*)?"
+- tapOn: "新しい習慣を追加"
+- tapOn: "習慣名"
+- inputText: "Input habit"
+- pressKey: enter
+- tapOn: "カテゴリを健康にする"
+- takeScreenshot: "habit-input-${REFERENCE_THEME}-form"
+- tapOn: "追加"
+- scrollUntilVisible:
+    element: "Input habitを達成にする"
+    direction: DOWN
+    centerElement: true
+- tapOn: "Input habitを達成にする"
+- tapOn: "今日の一言"
+- inputText: "Saved memo"
+- takeScreenshot: "habit-input-${REFERENCE_THEME}-memo"
+- pressKey: enter
+- assertNotVisible: "習慣メモを保存"
+- assertVisible: "Input habitを未達成にする"
+- takeScreenshot: "habit-input-${REFERENCE_THEME}-saved"
+- tapOn: "新しい習慣を追加"
+- scrollUntilVisible:
+    element: "習慣名"
+    direction: UP
+    centerElement: true
+- tapOn: "習慣名"
+- inputText: "Discard draft"
+- pressKey: enter
+- tapOn: "タスク(, tab,.*)?"
+- tapOn: "習慣(, tab,.*)?"
+- assertVisible: "新しい習慣を追加"
+- assertNotVisible: "習慣追加フォームを閉じる"
+- tapOn: "新しい習慣を追加"
+- assertNotVisible: "Discard draft"
+- scrollUntilVisible:
+    element: "キャンセル"
+    direction: DOWN
+    centerElement: true
+- tapOn: "キャンセル"
+- scrollUntilVisible:
+    element: "今日をお休みにする"
+    direction: UP
+    centerElement: true
+- tapOn: "今日をお休みにする"
+- tapOn: "キャンセル"
+- tapOn: "今日をお休みにする"
+- tapOn: "お休みにする"
+- assertVisible: ".*お休み中.*"
+- takeScreenshot: "habit-input-${REFERENCE_THEME}-rest"
