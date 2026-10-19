@@ -1,0 +1,54 @@
+appId: com.yutakane.lifequest.parity
+name: Task draft conflict and tab ownership (memory only)
+---
+# Requires the daily memory-only runtime on 8082. Never clear normal data.
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "メールを返信するを編集"
+    direction: DOWN
+    centerElement: true
+- tapOn: "メールを返信するを編集"
+- tapOn: "タスク名"
+- eraseText
+- inputText: "Draft conflict"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "メールを返信するを削除"
+    direction: DOWN
+    centerElement: true
+- tapOn: "メールを返信するを削除"
+- scrollUntilVisible:
+    element: "更新"
+    direction: UP
+    centerElement: true
+- tapOn: "更新"
+- assertVisible: "このタスクは変更または削除されています.*"
+- takeScreenshot: "task-draft-${REFERENCE_THEME}-conflict"
+- tapOn: "キャンセル"
+- tapOn: "新しいタスクを追加"
+- tapOn: "タスク名"
+- inputText: "Draft tab reset"
+- pressKey: enter
+- tapOn:
+    text: "習慣.*"
+    index: 0
+- tapOn:
+    text: "タスク.*"
+    index: 0
+- assertVisible: "新しいタスクを追加"
+- assertNotVisible: "タスク追加フォームを閉じる"
+- tapOn: "新しいタスクを追加"
+- assertNotVisible: "Draft tab reset"
+- takeScreenshot: "task-draft-${REFERENCE_THEME}-reset"
+- scrollUntilVisible:
+    element: "キャンセル"
+    direction: DOWN
+    centerElement: true
+- tapOn: "キャンセル"

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-import { captureCompletedTaskDeletion } from '@life-quest/core/tasks';
+import { captureCompletedTaskDeletion, captureTaskEdit } from '@life-quest/core/tasks';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit3, X, ChevronDown, ChevronRight, ListPlus, Repeat, Copy, HelpCircle, Download } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
@@ -22,7 +22,6 @@ export function TasksPage() {
     const [showForm, setShowForm] = useState(false);
     const [deleteConfirmation, setDeleteConfirmation] = useState<{ count: number; confirm: () => void; cancel: () => void } | null>(null);
     const pendingDelete = useRef<object | null>(null);
-    const interactions = useInteractionScope(() => { pendingDelete.current = null; setDeleteConfirmation(null); });
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [name, setName] = useState('');
     const [dueDate, setDueDate] = useState('');
@@ -38,6 +37,12 @@ export function TasksPage() {
     const [subtaskInputs, setSubtaskInputs] = useState<Record<string, string>>({});
     const [formSubtasks, setFormSubtasks] = useState<Subtask[]>([]);
     const [formSubtaskInput, setFormSubtaskInput] = useState('');
+    const [formError, setFormError] = useState('');
+    const formOwnerRef = useRef<object | null>(null);
+    const [formOwner, setFormOwner] = useState<{
+        isCurrent: () => boolean;
+        acceptsTask?: ReturnType<typeof captureTaskEdit>;
+    } | null>(null);
 
     // 全タスクからユニークなタグを抽出
     const allTags = useMemo(() => {
@@ -99,28 +104,58 @@ export function TasksPage() {
     }), [sortedTasks]);
 
     const resetForm = () => {
+        formOwnerRef.current = null;
+        setFormOwner(null);
         setName(''); setDueDate(''); setPriority('medium'); setRecurrence('none');
         setTags([]); setTagInput('');
         setFormSubtasks([]); setFormSubtaskInput('');
+        setFormError('');
+    };
+    const closeForm = () => {
+        resetForm();
+        setShowForm(false);
+        setEditingTask(null);
+    };
+    const interactions = useInteractionScope(() => {
+        pendingDelete.current = null;
+        setDeleteConfirmation(null);
+        closeForm();
+        setSubtaskInputs({});
+        setExpandOverrides({});
+    });
+    const isScreenCurrent = () => interactions.capture()();
+    const isFormCurrent = () => formOwner !== null && formOwnerRef.current === formOwner && formOwner.isCurrent();
+    const beginForm = (task: Task | null) => {
+        if (!isScreenCurrent()) return;
+        resetForm();
+        const owner = { isCurrent: interactions.capture(), acceptsTask: task ? captureTaskEdit(task) : undefined };
+        formOwnerRef.current = owner;
+        setFormOwner(owner);
+        setEditingTask(task);
+        setShowForm(true);
     };
 
     const toggleTaskForm = () => {
-        setEditingTask(null);
-        resetForm();
-        setShowForm((current) => !current);
+        if (!isScreenCurrent()) return;
+        if (showForm) closeForm(); else beginForm(null);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isFormCurrent()) return;
         if (!name.trim()) return;
         if (editingTask) {
+            if (!formOwner?.acceptsTask?.(useTaskStore.getState().tasks.find((task) => task.id === editingTask.id))) {
+                setFormError('このタスクは変更または削除されています。入力内容を確認し、閉じてから編集し直してください。');
+                return;
+            }
+            formOwnerRef.current = null;
             updateTask(editingTask.id, { name: name.trim(), dueDate: dueDate || null, priority, recurrence, tags, subtasks: formSubtasks });
-            setEditingTask(null);
         } else {
+            formOwnerRef.current = null;
             addTask(name.trim(), dueDate || null, priority, recurrence, tags, formSubtasks);
         }
-        resetForm();
-        setShowForm(false);
+        closeForm();
     };
 
     const handleDuplicate = (task: Task) => {
@@ -130,7 +165,8 @@ export function TasksPage() {
     };
 
     const handleEdit = (task: Task) => {
-        setEditingTask(task);
+        if (!isScreenCurrent()) return;
+        beginForm(task);
         setName(task.name);
         setDueDate(task.dueDate || '');
         setPriority(task.priority);
@@ -214,6 +250,7 @@ export function TasksPage() {
 
     const handleAddSubtask = (taskId: string, e: React.FormEvent) => {
         e.preventDefault();
+        if (!isScreenCurrent()) return;
         const value = subtaskInputs[taskId]?.trim();
         if (!value) return;
         addSubtask(taskId, value);
@@ -222,6 +259,7 @@ export function TasksPage() {
     };
 
     const handleAddFormSubtask = () => {
+        if (!isFormCurrent()) return;
         const trimmed = formSubtaskInput.trim();
         if (!trimmed) return;
         const newSubtask: Subtask = {
@@ -243,10 +281,12 @@ export function TasksPage() {
     };
 
     const handleRemoveFormSubtask = (id: string) => {
+        if (!isFormCurrent()) return;
         setFormSubtasks((prev) => prev.filter((s) => s.id !== id));
     };
 
     const handleAddTag = () => {
+        if (!isFormCurrent()) return;
         const trimmed = tagInput.trim();
         if (trimmed && !tags.includes(trimmed)) {
             setTags([...tags, trimmed]);
@@ -265,6 +305,7 @@ export function TasksPage() {
     };
 
     const handleRemoveTag = (tag: string) => {
+        if (!isFormCurrent()) return;
         setTags(tags.filter((t) => t !== tag));
     };
 
@@ -342,17 +383,18 @@ export function TasksPage() {
                     tagInput={tagInput}
                     subtasks={formSubtasks}
                     subtaskInput={formSubtaskInput}
+                    error={formError}
                     onSubmit={handleSubmit}
-                    onCancel={() => { setShowForm(false); setEditingTask(null); resetForm(); }}
-                    onNameChange={setName}
-                    onDueDateChange={setDueDate}
-                    onPriorityChange={setPriority}
-                    onRecurrenceChange={setRecurrence}
-                    onTagInputChange={setTagInput}
+                    onCancel={() => { if (isFormCurrent()) closeForm(); }}
+                    onNameChange={(value) => { if (isFormCurrent()) setName(value); }}
+                    onDueDateChange={(value) => { if (isFormCurrent()) setDueDate(value); }}
+                    onPriorityChange={(value) => { if (isFormCurrent()) setPriority(value); }}
+                    onRecurrenceChange={(value) => { if (isFormCurrent()) setRecurrence(value); }}
+                    onTagInputChange={(value) => { if (isFormCurrent()) setTagInput(value); }}
                     onTagKeyDown={handleTagKeyDown}
                     onAddTag={handleAddTag}
                     onRemoveTag={handleRemoveTag}
-                    onSubtaskInputChange={setFormSubtaskInput}
+                    onSubtaskInputChange={(value) => { if (isFormCurrent()) setFormSubtaskInput(value); }}
                     onSubtaskKeyDown={handleFormSubtaskKeyDown}
                     onAddSubtask={handleAddFormSubtask}
                     onRemoveSubtask={handleRemoveFormSubtask}
@@ -451,7 +493,7 @@ export function TasksPage() {
                                         <input
                                             type="text"
                                             value={subtaskInputs[task.id] || ''}
-                                            onChange={(e) => setSubtaskInputs((prev) => ({ ...prev, [task.id]: e.target.value }))}
+                                            onChange={(e) => { if (isScreenCurrent()) setSubtaskInputs((prev) => ({ ...prev, [task.id]: e.target.value })); }}
                                             placeholder="サブタスクを追加..."
                                             className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
                                             style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}

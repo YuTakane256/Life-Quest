@@ -77,6 +77,19 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('guards draft-conflict/tab tests with a local-only daily memory runtime on 8082', () => {
+        expect(getMobileParityMetroUrl('taskDraft')).toBe('http://127.0.0.1:8082');
+        expect(requiresReferenceRuntime('taskDraft')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'dark' };
+        expect(() => assertReferenceProfile({ extra }, 'taskDraft')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { parityCaptureProfile: 'rewards' }, { appVariant: 'release' }]) {
+            expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'taskDraft')).toThrow();
+        }
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('taskDraft').path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp');
+        expect(yaml).toContain('127.0.0.1%3A8082'); expect(yaml).toContain('このタスクは変更または削除されています');
+        expect(yaml).toContain('Draft tab reset');
+    });
     it('keeps task form checks memory-only, on 8082, and requires a visible software keyboard', () => {
         expect(getMobileParityMetroUrl('taskForm')).toBe('http://127.0.0.1:8082');
         expect(requiresReferenceRuntime('taskForm')).toBe(true);

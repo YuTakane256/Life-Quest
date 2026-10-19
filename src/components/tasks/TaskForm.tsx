@@ -12,6 +12,7 @@ interface TaskFormProps {
     tagInput: string;
     subtasks: Subtask[];
     subtaskInput: string;
+    error?: string;
     onSubmit: (event: FormEvent) => void;
     onCancel: () => void;
     onNameChange: (value: string) => void;
@@ -83,6 +84,7 @@ export function TaskForm(props: TaskFormProps) {
                 </div>
             </div>
 
+            {props.error && <p role="alert" className="mb-3 text-sm" style={{ color: 'var(--color-text-danger)' }}>{props.error}</p>}
             <div className="flex gap-2">
                 <button type="submit" className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>{props.editing ? '更新' : '追加'}</button>
                 <button type="button" onClick={props.onCancel} className="px-4 py-2.5 rounded-lg text-sm transition-colors hover:opacity-70" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button>
