@@ -42,7 +42,7 @@ vi.mock('react-native', () => {
         Text: ({ children }: Props) => createElement('span', {}, children), TextInput: () => null,
         Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
         FlatList: ({ ListHeaderComponent }: { ListHeaderComponent?: ReactNode }) => createElement('div', {}, ListHeaderComponent),
-        Keyboard: { dismiss: vi.fn() }, Platform: { OS: 'ios' }, Share: { share: vi.fn(async () => {}) },
+        Keyboard: { dismiss: vi.fn(), addListener: () => ({ remove: vi.fn() }) }, Platform: { OS: 'ios' }, Share: { share: vi.fn(async () => {}) },
         StyleSheet: { create: <T,>(value: T) => value }, Modal: () => null,
     };
 });

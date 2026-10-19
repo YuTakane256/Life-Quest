@@ -1,0 +1,89 @@
+appId: com.yutakane.lifequest.parity
+name: Task recurrence editing and software keyboard (memory only)
+---
+# Requires the daily memory-only runtime on 8082. Never clear real data.
+# Device Hub > Device > Keyboard > Toggle Software Keyboard must be enabled.
+# The Done key assertion deliberately fails if only a hardware keyboard is present.
+- stopApp
+# The deep link itself cold-launches the app. Do not launch the previous Metro
+# first: sending a second launch URL during startup can time out on iOS 27.
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "メールを返信するを編集"
+    direction: DOWN
+    centerElement: true
+- tapOn: "メールを返信するを編集"
+- scrollUntilVisible:
+    element: "タグを入力"
+    direction: DOWN
+    centerElement: true
+- tapOn: "タグを入力"
+- assertVisible:
+    id: "Done"
+- takeScreenshot: "task-form-${REFERENCE_THEME}-keyboard"
+- inputText: "keyboard"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "繰り返し"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "繰り返し"
+    index: 1
+- assertVisible: "毎月"
+- takeScreenshot: "task-form-${REFERENCE_THEME}-choices"
+- tapOn: "毎週"
+- scrollUntilVisible:
+    element: "更新"
+    direction: DOWN
+    centerElement: true
+- takeScreenshot: "task-form-${REFERENCE_THEME}-edit"
+- tapOn: "更新"
+- scrollUntilVisible:
+    element: "メールを返信するを編集"
+    direction: DOWN
+    centerElement: true
+- tapOn: "メールを返信するを編集"
+- scrollUntilVisible:
+    element: "keyboard ×"
+    direction: DOWN
+    centerElement: true
+- scrollUntilVisible:
+    element: "繰り返し"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "繰り返し"
+    index: 1
+- assertVisible:
+    text: "毎週"
+    selected: true
+- tapOn: "なし"
+- scrollUntilVisible:
+    element: "キャンセル"
+    direction: DOWN
+    centerElement: true
+- tapOn: "キャンセル"
+- scrollUntilVisible:
+    element: "メールを返信するを編集"
+    direction: DOWN
+    centerElement: true
+- takeScreenshot: "task-form-${REFERENCE_THEME}-saved"
+- tapOn: "メールを返信するを編集"
+- scrollUntilVisible:
+    element: "繰り返し"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "繰り返し"
+    index: 1
+- assertVisible:
+    text: "毎週"
+    selected: true
+- tapOn: "閉じる"
