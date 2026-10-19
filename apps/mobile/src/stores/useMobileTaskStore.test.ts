@@ -225,6 +225,38 @@ describe('useMobileTaskStore', () => {
     });
 
     describe('繰り返しタスク', () => {
+        it.each(['none', 'daily', 'weekly', 'monthly'] as const)('編集後の%sを保存し、次の完了時だけ次回分を生成する', (recurrence) => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('変更対象', 'medium', { dueDate: '2026-07-03', recurrence: 'daily' });
+            const original = useMobileTaskStore.getState().tasks[0];
+            expect(store.saveTaskEdits(original.id, { recurrence, subtasks: [] })).toBe(true);
+            expect(useMobileTaskStore.getState().tasks).toEqual([{ ...original, recurrence }]);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+            const [, serialized] = storage.setItem.mock.calls.at(-1)!;
+            expect(JSON.parse(serialized).state.tasks[0].recurrence).toBe(recurrence);
+            // 編集自体では報酬も次回分も作らず、通常の完了確定経路を使う。
+            completeAndConfirm(original.id);
+            const tasks = useMobileTaskStore.getState().tasks;
+            expect(tasks).toHaveLength(recurrence === 'none' ? 1 : 2);
+            if (recurrence !== 'none') expect(tasks.find((item) => item.id !== original.id)).toMatchObject({
+                recurrence, dueDate: { daily: '2026-07-04', weekly: '2026-07-10', monthly: '2026-08-03' }[recurrence], completed: false,
+            });
+            expect(useMobileGameStore.getState().character.totalXp).toBe(XP_CONFIG.REWARD_BY_PRIORITY.medium);
+        });
+
+        it('完了済みの繰り返し変更だけでは報酬・次回分を再発行しない', () => {
+            const store = useMobileTaskStore.getState();
+            store.addTask('完了済み', 'medium');
+            const id = useMobileTaskStore.getState().tasks[0].id;
+            completeAndConfirm(id);
+            const before = useMobileTaskStore.getState().tasks[0];
+            const xp = useMobileGameStore.getState().character.totalXp;
+            expect(store.saveTaskEdits(id, { recurrence: 'weekly', subtasks: [] })).toBe(true);
+            expect(store.saveTaskEdits(id, { recurrence: 'weekly', subtasks: [] })).toBe(true);
+            expect(useMobileTaskStore.getState().tasks).toEqual([{ ...before, recurrence: 'weekly' }]);
+            expect(useMobileGameStore.getState().character.totalXp).toBe(xp);
+        });
+
         it('完了で次回分が生成され、重複しては生成されない', () => {
             useMobileTaskStore.getState().addTask('毎日の運動', 'medium', { dueDate: '2026-07-03', recurrence: 'daily' });
             const id = useMobileTaskStore.getState().tasks[0].id;

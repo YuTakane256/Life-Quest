@@ -321,7 +321,7 @@ export const useTaskStore = create<TaskStoreState>()(
                     }, { trackEntityId: newTask.id });
                 },
 
-                updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'tags' | 'subtasks'>>) => {
+                updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'recurrence' | 'tags' | 'subtasks'>>) => {
                     const now = new Date().toISOString();
 
                     // サブタスクが更新対象に含まれない場合は単純マージ（core側で分岐）
