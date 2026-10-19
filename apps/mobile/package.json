@@ -22,8 +22,8 @@
     "@react-native-community/netinfo": "12.0.1",
     "@supabase/supabase-js": "^2.118.0",
     "expo": "~57.0.27",
-    "expo-application": "~57.0.3",
     "expo-apple-authentication": "~57.0.2",
+    "expo-application": "~57.0.3",
     "expo-auth-session": "~57.0.14",
     "expo-build-properties": "~57.0.22",
     "expo-constants": "~57.0.20",
@@ -41,7 +41,7 @@
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.8.1",
     "react-native-screens": "4.26.2",
-    "react-native-svg": "15.16.0",
+    "react-native-svg": "15.15.4",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
