@@ -77,6 +77,18 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('guards habit input checks with a local-only daily memory runtime on 8082', () => {
+        expect(getMobileParityMetroUrl('habitInput')).toBe('http://127.0.0.1:8082');
+        expect(requiresReferenceRuntime('habitInput')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
+        expect(() => assertReferenceProfile({ extra }, 'habitInput')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { parityCaptureProfile: 'rewards' }, { appVariant: 'release' }]) {
+            expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'habitInput')).toThrow();
+        }
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('habitInput').path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp'); expect(yaml).toContain('127.0.0.1%3A8082');
+        expect(yaml).toContain('Discard draft'); expect(yaml).toContain('Saved memo');
+    });
     it('guards draft-conflict/tab tests with a local-only daily memory runtime on 8082', () => {
         expect(getMobileParityMetroUrl('taskDraft')).toBe('http://127.0.0.1:8082');
         expect(requiresReferenceRuntime('taskDraft')).toBe(true);

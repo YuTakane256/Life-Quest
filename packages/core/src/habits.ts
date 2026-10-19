@@ -29,6 +29,18 @@ export const HABIT_LIMITS = {
     maxMemoLength: 500,
 } as const;
 
+/** Freeze a memo's local target/record. Not a server revision or reward authorization check. */
+export function captureHabitMemoEdit(habit: Habit, record: HabitDailyRecord) {
+    const fingerprint = (target: Habit, entry: HabitDailyRecord) => JSON.stringify([
+        target.id, target.name, target.categoryId, target.createdAt,
+        entry.habitId, entry.date, entry.completed, entry.memo,
+    ]);
+    const original = fingerprint(habit, record);
+    return (target: Habit | undefined, entry: HabitDailyRecord | undefined): boolean =>
+        target !== undefined && entry !== undefined && entry.completed
+        && fingerprint(target, entry) === original;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

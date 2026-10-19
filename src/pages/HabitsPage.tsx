@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
+import { captureHabitMemoEdit } from '@life-quest/core/habits';
 import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown, ChevronRight } from 'lucide-react';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortStore';
@@ -9,6 +10,11 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useModalEscape } from '../hooks/useModalEscape';
 import { HabitHeatmapModal } from '../components/habits/HabitHeatmapModal';
 import { getProgressBarA11y } from '../utils/progressBar';
+import { useInteractionScope } from '../hooks/useInteractionScope';
+
+type InputOwner = { isCurrent: () => boolean };
+type MemoOwner = InputOwner & { habitId: string; date: string; accepts: ReturnType<typeof captureHabitMemoEdit> };
+type RestOwner = InputOwner & { date: string };
 
 const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
     { value: 'createdAt', label: '作成順' },
@@ -20,14 +26,40 @@ const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
 export function HabitsPage() {
     const { habits, dailyRecords, restDays, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak, getHabitCompletionRate } = useHabitStore();
     const { sortMode, setSortMode } = useHabitSortStore();
-    const [showForm, setShowForm] = useState(false);
+    const [formOwner, setFormOwner] = useState<InputOwner | null>(null);
+    const formRef = useRef<InputOwner | null>(null);
+    const showForm = formOwner !== null;
     const [name, setName] = useState('');
     const [selectedCategoryId, setSelectedCategoryId] = useState(DEFAULT_CATEGORY_ID);
-    const [memoTarget, setMemoTarget] = useState<string | null>(null);
+    const [memoOwner, setMemoOwner] = useState<MemoOwner | null>(null);
+    const memoRef = useRef<MemoOwner | null>(null);
+    const memoTarget = memoOwner?.habitId ?? null;
     const [memoText, setMemoText] = useState('');
-    const [showRestConfirm, setShowRestConfirm] = useState(false);
+    const [memoError, setMemoError] = useState('');
+    const [restOwner, setRestOwner] = useState<RestOwner | null>(null);
+    const restRef = useRef<RestOwner | null>(null);
+    const showRestConfirm = restOwner !== null;
     const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
     const [historyHabitId, setHistoryHabitId] = useState<string | null>(null);
+    const closeForm = () => { formRef.current = null; setFormOwner(null); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); };
+    const closeMemo = useCallback(() => { memoRef.current = null; setMemoOwner(null); setMemoText(''); setMemoError(''); }, []);
+    const closeRest = () => { restRef.current = null; setRestOwner(null); };
+    const interactions = useInteractionScope(() => { closeForm(); closeMemo(); closeRest(); setHistoryHabitId(null); });
+    const isScreenCurrent = () => interactions.capture()();
+    const ownsForm = () => formOwner !== null && formRef.current === formOwner && formOwner.isCurrent();
+    const ownsMemo = useCallback(() => memoOwner !== null && memoRef.current === memoOwner && memoOwner.isCurrent(), [memoOwner]);
+    const ownsRest = () => restOwner !== null && restRef.current === restOwner && restOwner.isCurrent();
+    const toggleForm = () => {
+        if (!isScreenCurrent()) return;
+        if (showForm) { closeForm(); return; }
+        const owner = { isCurrent: interactions.capture() };
+        formRef.current = owner; setFormOwner(owner); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID);
+    };
+    const requestRest = () => {
+        if (!isScreenCurrent()) return;
+        const owner = { isCurrent: interactions.capture(), date: getTodayJST() };
+        restRef.current = owner; setRestOwner(owner);
+    };
 
     const today = getTodayJST();
     const isRest = isRestDay(today);
@@ -89,21 +121,46 @@ export function HabitsPage() {
     }, [habits]);
 
     const handleAddHabit = (e: React.FormEvent) => {
-        e.preventDefault(); if (!name.trim()) return;
-        addHabit(name.trim(), selectedCategoryId); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); setShowForm(false);
+        e.preventDefault(); if (!ownsForm() || !name.trim()) return;
+        formRef.current = null;
+        addHabit(name.trim(), selectedCategoryId); closeForm();
     };
 
     const handleToggle = (habitId: string) => {
-        const record = getRecordForHabit(habitId);
+        if (!isScreenCurrent()) return;
+        const date = getTodayJST();
+        const record = useHabitStore.getState().dailyRecords.find((item) => item.habitId === habitId && item.date === date);
         const isCompleting = !record?.completed;
-        toggleHabitCompletion(habitId, today);
-        if (isCompleting) { setMemoTarget(habitId); setMemoText(record?.memo || ''); }
+        toggleHabitCompletion(habitId, date);
+        if (isCompleting) {
+            const current = useHabitStore.getState();
+            const habit = current.habits.find((item) => item.id === habitId);
+            const entry = current.dailyRecords.find((item) => item.habitId === habitId && item.date === date);
+            if (!habit || !entry?.completed) return;
+            const owner = { isCurrent: interactions.capture(), habitId, date, accepts: captureHabitMemoEdit(habit, entry) };
+            memoRef.current = owner; setMemoOwner(owner); setMemoText(entry.memo); setMemoError('');
+        }
     };
 
-    const handleSaveMemo = useCallback(() => { if (memoTarget) { setHabitMemo(memoTarget, today, memoText); setMemoTarget(null); setMemoText(''); } }, [memoTarget, memoText, today, setHabitMemo]);
-    const handleRestDay = () => { setRestDay(today); setShowRestConfirm(false); };
-    const closeMemo = useCallback(() => { setMemoTarget(null); setMemoText(''); }, []);
-    useModalEscape(!!memoTarget, closeMemo);
+    const handleSaveMemo = () => {
+        if (!ownsMemo() || !memoOwner) return;
+        if (getTodayJST() !== memoOwner.date) { setMemoError('日付が変わりました。入力内容を確認し、閉じてから操作し直してください。'); return; }
+        const current = useHabitStore.getState();
+        if (!memoOwner.accepts(current.habits.find((item) => item.id === memoOwner.habitId),
+            current.dailyRecords.find((item) => item.habitId === memoOwner.habitId && item.date === memoOwner.date))) {
+            setMemoError('この習慣または達成記録は変更されています。入力内容を確認し、閉じてから操作し直してください。'); return;
+        }
+        memoRef.current = null;
+        setHabitMemo(memoOwner.habitId, memoOwner.date, memoText); closeMemo();
+    };
+    const handleRestDay = () => {
+        if (!ownsRest() || !restOwner) return;
+        restRef.current = null;
+        if (getTodayJST() === restOwner.date && !useHabitStore.getState().isRestDay(restOwner.date)) setRestDay(restOwner.date);
+        closeRest();
+    };
+    const dismissMemo = useCallback(() => { if (ownsMemo()) closeMemo(); }, [ownsMemo, closeMemo]);
+    useModalEscape(!!memoTarget, dismissMemo);
     const completedCount = habits.filter((h) => getRecordForHabit(h.id)?.completed).length;
     const habitsA11y = useMemo(
         () => getProgressBarA11y(completedCount, habits.length, (now, max) => `本日 ${now} / ${max} 達成`),
@@ -119,8 +176,8 @@ export function HabitsPage() {
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>本日: {completedCount}/{habits.length} 達成{isRest && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--color-accent-sky)', color: 'white' }}>🩹 お休み中</span>}</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={() => setShowRestConfirm(true)} disabled={isRest} aria-label="今日をお休みにする" className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 disabled:opacity-40" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-accent-sky)' }} title="お休み"><HeartPulse size={18} /></button>
-                    <button onClick={() => { setShowForm(!showForm); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); }} aria-label={showForm ? '習慣追加フォームを閉じる' : '新しい習慣を追加'} className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}><Plus size={20} /></button>
+                    <button onClick={requestRest} disabled={isRest} aria-label="今日をお休みにする" className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 disabled:opacity-40" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-accent-sky)' }} title="お休み"><HeartPulse size={18} /></button>
+                    <button onClick={toggleForm} aria-label={showForm ? '習慣追加フォームを閉じる' : '新しい習慣を追加'} className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}><Plus size={20} /></button>
                 </div>
             </div>
 
@@ -178,7 +235,7 @@ export function HabitsPage() {
             {/* 習慣追加フォーム */}
             {showForm && (
                 <form onSubmit={handleAddHabit} className="mb-4 p-4 rounded-xl animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="新しい習慣を入力..." autoFocus className="w-full px-3 py-2.5 rounded-lg text-sm outline-none mb-3" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} />
+                    <input type="text" value={name} onChange={(e) => { if (ownsForm()) setName(e.target.value); }} placeholder="新しい習慣を入力..." autoFocus className="w-full px-3 py-2.5 rounded-lg text-sm outline-none mb-3" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} />
 
                     {/* カテゴリ選択 */}
                     <div className="mb-3">
@@ -190,7 +247,7 @@ export function HabitsPage() {
                                     <button
                                         key={cat.id}
                                         type="button"
-                                        onClick={() => setSelectedCategoryId(cat.id)}
+                                        onClick={() => { if (ownsForm()) setSelectedCategoryId(cat.id); }}
                                         aria-pressed={isSelected}
                                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 hover:scale-105"
                                         style={{
@@ -208,7 +265,7 @@ export function HabitsPage() {
                         </div>
                     </div>
 
-                    <div className="flex gap-2"><button type="submit" className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>追加</button><button type="button" onClick={() => setShowForm(false)} className="px-4 py-2.5 rounded-lg text-sm transition-colors hover:opacity-70" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button></div>
+                    <div className="flex gap-2"><button type="submit" className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>追加</button><button type="button" onClick={() => { if (ownsForm()) closeForm(); }} className="px-4 py-2.5 rounded-lg text-sm transition-colors hover:opacity-70" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>キャンセル</button></div>
                 </form>
             )}
 
@@ -289,6 +346,7 @@ export function HabitsPage() {
                                         >
                                             <button
                                                 onClick={() => handleToggle(habit.id)}
+                                                aria-label={`習慣「${habit.name}」を${isCompleted ? '未達成' : '達成'}にする`}
                                                 className="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
                                                 style={{
                                                     borderColor: isCompleted ? category.color : 'var(--color-accent-secondary)',
@@ -299,7 +357,7 @@ export function HabitsPage() {
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={() => setHistoryHabitId(habit.id)}
+                                                onClick={() => { if (isScreenCurrent()) setHistoryHabitId(habit.id); }}
                                                 className="flex-1 min-w-0 text-left rounded-lg focus:outline-none focus-visible:ring-2"
                                                 style={{ '--tw-ring-color': category.color } as React.CSSProperties}
                                                 aria-label={`「${habit.name}」の達成履歴を表示`}
@@ -350,8 +408,9 @@ export function HabitsPage() {
                         style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
                     >
                         <h3 id="memo-modal-title" className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>📝 一言メモ（任意）</h3>
-                        <input type="text" value={memoText} onChange={(e) => setMemoText(e.target.value)} placeholder="今日の一言..." autoFocus className="w-full px-3 py-2.5 rounded-lg text-sm outline-none mb-4" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} onKeyDown={(e) => { if (e.key === 'Enter') handleSaveMemo(); }} />
-                        <div className="flex gap-2"><button onClick={handleSaveMemo} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>保存</button><button onClick={closeMemo} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>スキップ</button></div>
+                        <input type="text" value={memoText} onChange={(e) => { if (ownsMemo()) setMemoText(e.target.value); }} placeholder="今日の一言..." autoFocus className="w-full px-3 py-2.5 rounded-lg text-sm outline-none mb-4" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} onKeyDown={(e) => { if (e.key === 'Enter') handleSaveMemo(); }} />
+                        {memoError && <p role="alert" className="text-sm mb-3" style={{ color: 'var(--color-text-danger)' }}>{memoError}</p>}
+                        <div className="flex gap-2"><button onClick={handleSaveMemo} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>保存</button><button onClick={dismissMemo} className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>スキップ</button></div>
                     </div>
                 </div>
             )}
@@ -364,7 +423,7 @@ export function HabitsPage() {
                 confirmLabel="お休みにする"
                 confirmColor="var(--color-accent-sky)"
                 onConfirm={handleRestDay}
-                onClose={() => setShowRestConfirm(false)}
+                onClose={() => { if (ownsRest()) closeRest(); }}
             />
 
             {historyHabitId && (() => {
