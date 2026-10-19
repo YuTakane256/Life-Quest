@@ -25,6 +25,7 @@ import {
 } from 'lucide-react-native';
 import {
     areAllHabitsComplete,
+    captureHabitMemoEdit,
     buildHabitHeatmapData,
     getHabitCategoryByIdOrDefault,
     getHabitStreak,
@@ -47,6 +48,7 @@ import { dailyStyles, ui } from '../theme/dailyScreenStyles';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { getTodayJst } from '../utils/date';
 import { usePalette } from '../theme/usePalette';
+import { useInteractionScope } from '../hooks/useInteractionScope';
 import { TAB_SCREEN_EDGES } from '../theme/layout';
 import { useRouter } from 'expo-router';
 import {
@@ -55,20 +57,57 @@ import {
     type HabitSort,
 } from './dailyScreenModel';
 
+type InputOwner = { isCurrent: () => boolean };
+type MemoOwner = InputOwner & { habitId: string; date: string; accepts: ReturnType<typeof captureHabitMemoEdit> };
+
 export default function HabitsScreen() {
     const router = useRouter();
     const store = useMobileHabitStore();
     const { palette: p } = usePalette();
     const s = dailyStyles(p);
-    const [showForm, setShowForm] = useState(false);
+    const [formOwner, setFormOwner] = useState<InputOwner | null>(null);
+    const formRef = useRef<InputOwner | null>(null);
+    const showForm = formOwner !== null;
     const [name, setName] = useState('');
     const [category, setCategory] = useState('other');
     const [error, setError] = useState('');
     const [filter, setFilter] = useState<string | null>(null);
     const [sort, setSort] = useState<HabitSort>('createdAt');
-    const [memoHabit, setMemoHabit] = useState<string | null>(null);
+    const [memoOwner, setMemoOwner] = useState<MemoOwner | null>(null);
+    const memoRef = useRef<MemoOwner | null>(null);
+    const memoHabit = memoOwner?.habitId ?? null;
     const [memo, setMemo] = useState('');
+    const [memoError, setMemoError] = useState('');
+    const restRef = useRef<object | null>(null);
     const [historyId, setHistoryId] = useState<string | null>(null);
+    const closeForm = () => { formRef.current = null; setFormOwner(null); setName(''); setCategory('other'); setError(''); Keyboard.dismiss(); };
+    const closeMemo = () => { memoRef.current = null; setMemoOwner(null); setMemo(''); setMemoError(''); Keyboard.dismiss(); };
+    const interactions = useInteractionScope(() => { closeForm(); closeMemo(); restRef.current = null; setHistoryId(null); });
+    const isScreenCurrent = () => interactions.capture()();
+    const ownsForm = () => formOwner !== null && formRef.current === formOwner && formOwner.isCurrent();
+    const ownsMemo = () => memoOwner !== null && memoRef.current === memoOwner && memoOwner.isCurrent();
+    const toggleForm = () => {
+        if (!isScreenCurrent()) return;
+        if (showForm) { closeForm(); return; }
+        const owner = { isCurrent: interactions.capture() };
+        formRef.current = owner; setFormOwner(owner); setName(''); setCategory('other'); setError('');
+    };
+    const requestRest = () => {
+        if (!isScreenCurrent()) return;
+        const isCurrent = interactions.capture();
+        const date = getTodayJst();
+        const owner = {}; restRef.current = owner;
+        const cancel = () => { if (restRef.current === owner) restRef.current = null; };
+        Alert.alert('🩹 お休みにしますか？', '本当に今日はお休みにしますか？\n未達成デバフは免除されます。', [
+            { text: 'キャンセル', style: 'cancel', onPress: cancel },
+            { text: 'お休みにする', onPress: () => {
+                if (!isCurrent() || restRef.current !== owner) return;
+                restRef.current = null;
+                const current = useMobileHabitStore.getState();
+                if (getTodayJst() === date && !isRestDayOn(current.restDays, date)) current.markRestDay(date);
+            } },
+        ], { onDismiss: cancel });
+    };
     const today = getTodayJst();
     const rest = isRestDayOn(store.restDays, today);
     const completed = new Set(
@@ -106,36 +145,45 @@ export default function HabitsScreen() {
         [store.habits, store.records, store.restDays, filter, sort, today],
     );
     const add = () => {
+        if (!ownsForm()) return;
         if (!name.trim()) {
             setError('習慣名を入力してください。');
             return;
         }
-        if (!store.addHabit(name, category)) {
+        if (!useMobileHabitStore.getState().addHabit(name, category)) {
             setError(
                 '追加できませんでした。読み込み状態や習慣数の上限を確認してください。',
             );
             return;
         }
-        setName('');
-        setCategory('other');
-        setShowForm(false);
-        setError('');
-        Keyboard.dismiss();
+        closeForm();
     };
     const toggle = (habit: Habit) => {
-        const before = store.records.find(
-            (record) => record.habitId === habit.id && record.date === today,
+        if (!isScreenCurrent()) return;
+        const date = getTodayJst();
+        const before = useMobileHabitStore.getState().records.find(
+            (record) => record.habitId === habit.id && record.date === date,
         );
-        store.toggleToday(habit.id, today);
+        store.toggleToday(habit.id, date);
         if (!before?.completed) {
-            setMemoHabit(habit.id);
-            setMemo(before?.memo ?? '');
+            const current = useMobileHabitStore.getState();
+            const target = current.habits.find((item) => item.id === habit.id);
+            const entry = current.records.find((item) => item.habitId === habit.id && item.date === date);
+            if (!target || !entry?.completed) return;
+            const owner = { isCurrent: interactions.capture(), habitId: habit.id, date, accepts: captureHabitMemoEdit(target, entry) };
+            memoRef.current = owner; setMemoOwner(owner); setMemo(entry.memo); setMemoError('');
         }
     };
     const saveMemo = () => {
-        if (memoHabit) store.setHabitMemo(memoHabit, today, memo);
-        setMemoHabit(null);
-        Keyboard.dismiss();
+        if (!ownsMemo() || !memoOwner) return;
+        if (getTodayJst() !== memoOwner.date) { setMemoError('日付が変わりました。入力内容を確認し、閉じてから操作し直してください。'); return; }
+        const current = useMobileHabitStore.getState();
+        if (!memoOwner.accepts(current.habits.find((item) => item.id === memoOwner.habitId),
+            current.records.find((item) => item.habitId === memoOwner.habitId && item.date === memoOwner.date))) {
+            setMemoError('この習慣または達成記録は変更されています。入力内容を確認し、閉じてから操作し直してください。'); return;
+        }
+        memoRef.current = null;
+        current.setHabitMemo(memoOwner.habitId, memoOwner.date, memo); closeMemo();
     };
     const history = store.habits.find((habit) => habit.id === historyId);
     return (
@@ -167,25 +215,7 @@ export default function HabitsScreen() {
                                         color={p.accent.sky}
                                         label="今日をお休みにする"
                                         disabled={rest || !store.hasHydrated}
-                                        onPress={() =>
-                                            Alert.alert(
-                                                '🩹 お休みにしますか？',
-                                                '本当に今日はお休みにしますか？\n未達成デバフは免除されます。',
-                                                [
-                                                    {
-                                                        text: 'キャンセル',
-                                                        style: 'cancel',
-                                                    },
-                                                    {
-                                                        text: 'お休みにする',
-                                                        onPress: () =>
-                                                            store.markRestDay(
-                                                                today,
-                                                            ),
-                                                    },
-                                                ],
-                                            )
-                                        }
+                                        onPress={requestRest}
                                     />
                                     <IconButton
                                         round
@@ -196,12 +226,7 @@ export default function HabitsScreen() {
                                                 ? '習慣追加フォームを閉じる'
                                                 : '新しい習慣を追加'
                                         }
-                                        onPress={() => {
-                                            setShowForm((value) => !value);
-                                            setName('');
-                                            setCategory('other');
-                                            setError('');
-                                        }}
+                                        onPress={toggleForm}
                                     />
                                 </View>
                             </View>
@@ -280,7 +305,7 @@ export default function HabitsScreen() {
                                         accessibilityLabel="習慣名"
                                         placeholder="新しい習慣を入力..."
                                         value={name}
-                                        onChangeText={setName}
+                                        onChangeText={(value) => { if (ownsForm()) setName(value); }}
                                         maxLength={HABIT_LIMITS.maxNameLength}
                                     />
                                     <Text style={s.label}>カテゴリ</Text>
@@ -292,9 +317,7 @@ export default function HabitsScreen() {
                                                 accessibilityLabel={`カテゴリを${cat.name}にする`}
                                                 selected={category === cat.id}
                                                 color={cat.color}
-                                                onPress={() =>
-                                                    setCategory(cat.id)
-                                                }
+                                                onPress={() => { if (ownsForm()) setCategory(cat.id); }}
                                             />
                                         ))}
                                     </View>
@@ -309,8 +332,7 @@ export default function HabitsScreen() {
                                     <FormActions
                                         onSave={add}
                                         onCancel={() => {
-                                            setShowForm(false);
-                                            Keyboard.dismiss();
+                                            if (ownsForm()) closeForm();
                                         }}
                                         disabled={!store.hasHydrated}
                                     />
@@ -451,7 +473,7 @@ export default function HabitsScreen() {
                                 <Pressable
                                     accessibilityRole="button"
                                     accessibilityLabel={`「${item.habit.name}」の達成履歴を表示`}
-                                    onPress={() => setHistoryId(item.habit.id)}
+                                    onPress={() => { if (isScreenCurrent()) setHistoryId(item.habit.id); }}
                                     style={{ flex: 1 }}
                                 >
                                     <View style={ui.wrap}>
@@ -554,19 +576,21 @@ export default function HabitsScreen() {
                 {memoHabit && (
                     <Dialog
                         title="📝 一言メモ（任意）"
-                        onClose={() => setMemoHabit(null)}
+                        onClose={() => { if (ownsMemo()) closeMemo(); }}
                     >
                         <Field
                             accessibilityLabel="今日の一言"
                             placeholder="今日の一言..."
                             value={memo}
-                            onChangeText={setMemo}
+                            onChangeText={(value) => { if (ownsMemo()) setMemo(value); }}
                             maxLength={HABIT_LIMITS.maxMemoLength}
                             onSubmitEditing={saveMemo}
                         />
+                        {memoError !== '' && <Text accessibilityRole="alert" style={s.error}>{memoError}</Text>}
                         <View style={ui.row}>
                             <Pressable
                                 accessibilityRole="button"
+                                accessibilityLabel="習慣メモを保存"
                                 onPress={saveMemo}
                                 style={[
                                     ui.primary,
@@ -577,9 +601,9 @@ export default function HabitsScreen() {
                             </Pressable>
                             <Pressable
                                 accessibilityRole="button"
+                                accessibilityLabel="習慣メモをスキップ"
                                 onPress={() => {
-                                    setMemoHabit(null);
-                                    Keyboard.dismiss();
+                                    if (ownsMemo()) closeMemo();
                                 }}
                                 style={[
                                     ui.cancel,

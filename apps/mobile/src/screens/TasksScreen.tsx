@@ -36,6 +36,7 @@ import { isValidYmd, shiftDate } from '@life-quest/core/dates';
 import {
     TASK_LIMITS,
     captureCompletedTaskDeletion,
+    captureTaskEdit,
     tasksToCsv,
     type Priority,
     type Recurrence,
@@ -85,7 +86,6 @@ export default function TasksScreen() {
     const router = useRouter();
     const list = useRef<FlatList<Task>>(null);
     const pendingDelete = useRef<object | null>(null);
-    const interactions = useInteractionScope(() => { pendingDelete.current = null; });
     const [query, setQuery] = useState('');
     const [due, setDue] = useState<DueFilter>('all');
     const [priority, setPriority] = useState<'all' | Priority>('all');
@@ -95,10 +95,36 @@ export default function TasksScreen() {
     const [bottomActionsHeight, setBottomActionsHeight] = useState<number>(TASK_ACTION_LAYOUT.size);
     const inputVisibility = useTaskKeyboardVisibility(list, getTaskActionsBottomPadding(bottomActionsHeight));
     const [editing, setEditing] = useState<Task | null>(null);
+    const formOwner = useRef<(() => boolean) | null>(null);
+    const formSequence = useRef(0);
+    const [formKey, setFormKey] = useState(0);
     const [completedOpen, setCompletedOpen] = useState(false);
     const [expandOverrides, setExpandOverrides] = useState<
         Record<string, boolean>
     >({});
+    const closeForm = () => {
+        formOwner.current = null;
+        setEditing(null);
+        setShowForm(false);
+        Keyboard.dismiss();
+    };
+    const interactions = useInteractionScope(() => {
+        pendingDelete.current = null;
+        closeForm();
+        setExpandOverrides({});
+    });
+    const isScreenCurrent = () => interactions.capture()();
+    const renderedFormOwner = formOwner.current;
+    const isFormCurrent = () => renderedFormOwner !== null && formOwner.current === renderedFormOwner && renderedFormOwner();
+    const beginForm = (task: Task | null) => {
+        if (!isScreenCurrent()) return;
+        // Each opening owns a fresh callback and component, even for the same task ID.
+        formOwner.current = interactions.capture();
+        setFormKey(++formSequence.current);
+        setEditing(task);
+        setShowForm(true);
+        list.current?.scrollToOffset({ offset: 0, animated: true });
+    };
     const { toast, showUndo: undo } = useTaskUndoToast();
     const today = getTodayJst();
     const selected = useMemo(
@@ -139,9 +165,7 @@ export default function TasksScreen() {
         ]);
     };
     const edit = (task: Task) => {
-        setEditing(task);
-        setShowForm(true);
-        list.current?.scrollToOffset({ offset: 0, animated: true });
+        beginForm(task);
     };
     const toggle = (task: Task) => {
         if (task.subtasks.length > 0) {
@@ -561,13 +585,12 @@ export default function TasksScreen() {
                             )}
                             {showForm && (
                                 <TaskComposer
-                                    key={editing?.id ?? 'new'}
+                                    key={formKey}
                                     task={editing}
+                                    isCurrent={isFormCurrent}
                                     inputVisibility={inputVisibility}
                                     onClose={() => {
-                                        setEditing(null);
-                                        setShowForm(false);
-                                        Keyboard.dismiss();
+                                        if (isFormCurrent()) closeForm();
                                     }}
                                 />
                             )}
@@ -649,12 +672,8 @@ export default function TasksScreen() {
                     toast={toast}
                     onHeightChange={setBottomActionsHeight}
                     onToggleForm={() => {
-                        setEditing(null);
-                        setShowForm((value) => !value);
-                        list.current?.scrollToOffset({
-                            offset: 0,
-                            animated: true,
-                        });
+                        if (!isScreenCurrent()) return;
+                        if (showForm) closeForm(); else beginForm(null);
                     }}
                 />
                 </View>
@@ -667,10 +686,12 @@ function TaskComposer({
     task,
     onClose,
     inputVisibility,
+    isCurrent,
 }: {
     task: Task | null;
     onClose: () => void;
     inputVisibility: Pick<ReturnType<typeof useTaskKeyboardVisibility>, 'onInputFocus' | 'onInputBlur'>;
+    isCurrent: () => boolean;
 }) {
     const { palette: p } = usePalette();
     const s = dailyStyles(p);
@@ -690,6 +711,7 @@ function TaskComposer({
     );
     const [subDraft, setSubDraft] = useState('');
     const [error, setError] = useState('');
+    const [acceptsTask] = useState(() => task ? captureTaskEdit(task) : null);
     const addTag = () => {
         const value = tagDraft.trim();
         if (value && !tags.includes(value) && tags.length < TASK_LIMITS.maxTags)
@@ -703,6 +725,7 @@ function TaskComposer({
         }
     };
     const save = () => {
+        if (!isCurrent()) return;
         if (!name.trim()) {
             setError('タスク名を入力してください。');
             return;
@@ -714,8 +737,8 @@ function TaskComposer({
         const store = useMobileTaskStore.getState();
         let id = task?.id;
         if (task) {
-            if (!store.tasks.some((current) => current.id === task.id)) {
-                setError('このタスクは削除されています。');
+            if (!acceptsTask?.(store.tasks.find((current) => current.id === task.id))) {
+                setError('このタスクは変更または削除されています。入力内容を確認し、閉じてから編集し直してください。');
                 return;
             }
             if (
