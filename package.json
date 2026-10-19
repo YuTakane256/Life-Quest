@@ -49,10 +49,10 @@
   },
   "dependencies": {
     "@life-quest/core": "file:packages/core",
-    "@supabase/supabase-js": "^2.117.3",
-    "lucide-react": "^1.53.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "@supabase/supabase-js": "^2.118.0",
+    "lucide-react": "^1.57.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4",
     "zustand": "^5.0.15"
   },
