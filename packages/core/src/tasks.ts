@@ -454,18 +454,27 @@ export function removeCompletedTasks(
         || (approvedTaskIds !== undefined && !approvedTaskIds.has(task.id)));
 }
 
-/** Freeze the records approved by a bulk-delete prompt, including nested edits. */
-export function captureCompletedTaskDeletion(tasks: readonly Task[], excludedTaskIds: ReadonlySet<string> = new Set()) {
-    const fingerprint = (task: Task) => JSON.stringify([
+function taskFingerprint(task: Task): string {
+    return JSON.stringify([
         task.id, task.name, task.dueDate, task.priority, task.recurrence, task.completed, task.completedAt, task.createdAt,
         task.tags, task.subtasks.map((item) => [item.id, item.name, item.completed, item.completedAt, item.createdAt]),
     ]);
+}
+
+/** Local optimistic edit guard. Same-value pulls are allowed; this is not a server revision check. */
+export function captureTaskEdit(task: Task): (current: Task | undefined) => boolean {
+    const original = taskFingerprint(task);
+    return (current) => current !== undefined && taskFingerprint(current) === original;
+}
+
+/** Freeze the records approved by a bulk-delete prompt, including nested edits. */
+export function captureCompletedTaskDeletion(tasks: readonly Task[], excludedTaskIds: ReadonlySet<string> = new Set()) {
     const approved = new Map(tasks.filter((task) => task.completed && !excludedTaskIds.has(task.id))
-        .map((task) => [task.id, fingerprint(task)]));
+        .map((task) => [task.id, taskFingerprint(task)]));
     return {
         count: approved.size,
         resolve: (current: readonly Task[], excluded: ReadonlySet<string> = new Set()): string[] => current
-            .filter((task) => task.completed && !excluded.has(task.id) && approved.has(task.id) && approved.get(task.id) === fingerprint(task))
+            .filter((task) => task.completed && !excluded.has(task.id) && approved.has(task.id) && approved.get(task.id) === taskFingerprint(task))
             .map((task) => task.id),
     };
 }

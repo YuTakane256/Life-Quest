@@ -20,6 +20,7 @@ export const mobileParityFlows = Object.freeze({
     battle: '.maestro/mobile-parity/battle-screen-interactions.yaml',
     rewards: '.maestro/mobile-parity/reward-overlays.yaml',
     taskForm: '.maestro/mobile-parity/task-form-quality.yaml',
+    taskDraft: '.maestro/mobile-parity/task-draft-quality.yaml',
 });
 
 export function getMobileParityFlow(name = 'screenshots') {
@@ -38,11 +39,11 @@ export function getMaestroTestCommand(flow) {
 }
 
 export function requiresReferenceRuntime(name) {
-    return name === 'reference' || name === 'daily' || name === 'undo' || name === 'character' || name === 'map' || name === 'battle' || name === 'rewards' || name === 'taskForm';
+    return name === 'reference' || name === 'daily' || name === 'undo' || name === 'character' || name === 'map' || name === 'battle' || name === 'rewards' || name === 'taskForm' || name === 'taskDraft';
 }
 
 /** Keep the normal inspection server on 8081; these captures use an isolated second Metro. */
-export function getMobileParityMetroUrl(name) { return name === 'rewards' || name === 'taskForm' ? 'http://127.0.0.1:8082' : 'http://127.0.0.1:8081'; }
+export function getMobileParityMetroUrl(name) { return name === 'rewards' || name === 'taskForm' || name === 'taskDraft' ? 'http://127.0.0.1:8082' : 'http://127.0.0.1:8081'; }
 
 /** Never mistake seeded in-memory screenshots for persistence evidence. */
 export function assertPersistentParityRuntime(manifest) {
@@ -153,7 +154,7 @@ export function assertReferenceProfile(manifest, flowName) {
     getReferenceTheme(manifest);
     const extra = manifest?.extra?.expoClient?.extra ?? manifest?.extra;
     const profile = extra?.parityCaptureProfile ?? 'daily';
-    if ((flowName === 'undo' || flowName === 'rewards' || flowName === 'taskForm') && extra?.parityLocalOnly !== true) {
+    if ((flowName === 'undo' || flowName === 'rewards' || flowName === 'taskForm' || flowName === 'taskDraft') && extra?.parityLocalOnly !== true) {
         throw new Error('Undo flow requires the anonymous parity reference runtime with no Supabase configuration.');
     }
     if (profile !== (flowName === 'battle' ? 'battle' : flowName === 'rewards' ? 'rewards' : 'daily')) {
