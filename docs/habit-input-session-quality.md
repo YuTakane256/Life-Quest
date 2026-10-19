@@ -55,7 +55,7 @@ xcrun simctl openurl booted 'lifequest-parity://expo-development-client/?url=htt
 
 2026-10-19: WebのPC/402px・light/dark計8ケース、全ユニット2,430件（98 skip）、
 core 629件、型検査・lint（既存6警告/0エラー）・Webビルド・Android exportが成功。
-iOS 27 / iPhone 18 Proのlightも全操作が成功しています。メモリfixtureの操作確認は
+iOS 27 / iPhone 18 Proのlight/darkも全操作が成功しています。メモリfixtureの操作確認は
 実データの永続化証拠ではなく、Webの再読み込み検証とは区別します。
 
 同じdailyデータに健康カテゴリの`Input habit`を追加し、`Saved memo`を入力した状態です。
@@ -64,6 +64,14 @@ OS固有の閉じるボタン・文字描画・safe areaは一致対象外です
 | Web light・メモ入力 | iOS light・メモ入力 |
 | --- | --- |
 | ![Webの入力](screenshots/habit-input-quality/web-light-memo.png) | ![Nativeの入力](screenshots/habit-input-quality/ios-light-memo.png) |
+
+| Web dark・メモ入力 | iOS dark・メモ入力 |
+| --- | --- |
+| ![Webの入力](screenshots/habit-input-quality/web-dark-memo.png) | ![Nativeの入力](screenshots/habit-input-quality/ios-dark-memo.png) |
+
+| iOS light・保存後 | iOS dark・保存後 |
+| --- | --- |
+| ![達成状態とメモを保持](screenshots/habit-input-quality/ios-light-saved.png) | ![達成状態とメモを保持](screenshots/habit-input-quality/ios-dark-saved.png) |
 
 Webの日時だけを進めた日付変更時の拒否表示です。Simulatorの日時は変更していません。
 
