@@ -26,6 +26,7 @@ import {
 import {
     areAllHabitsComplete,
     captureHabitMemoEdit,
+    captureHabitDeletion,
     buildHabitHeatmapData,
     getHabitCategoryByIdOrDefault,
     getHabitStreak,
@@ -79,10 +80,11 @@ export default function HabitsScreen() {
     const [memo, setMemo] = useState('');
     const [memoError, setMemoError] = useState('');
     const restRef = useRef<object | null>(null);
+    const deleteRef = useRef<object | null>(null);
     const [historyId, setHistoryId] = useState<string | null>(null);
     const closeForm = () => { formRef.current = null; setFormOwner(null); setName(''); setCategory('other'); setError(''); Keyboard.dismiss(); };
     const closeMemo = () => { memoRef.current = null; setMemoOwner(null); setMemo(''); setMemoError(''); Keyboard.dismiss(); };
-    const interactions = useInteractionScope(() => { closeForm(); closeMemo(); restRef.current = null; setHistoryId(null); });
+    const interactions = useInteractionScope(() => { closeForm(); closeMemo(); restRef.current = null; deleteRef.current = null; setHistoryId(null); });
     const isScreenCurrent = () => interactions.capture()();
     const ownsForm = () => formOwner !== null && formRef.current === formOwner && formOwner.isCurrent();
     const ownsMemo = () => memoOwner !== null && memoRef.current === memoOwner && memoOwner.isCurrent();
@@ -105,6 +107,26 @@ export default function HabitsScreen() {
                 restRef.current = null;
                 const current = useMobileHabitStore.getState();
                 if (getTodayJst() === date && !isRestDayOn(current.restDays, date)) current.markRestDay(date);
+            } },
+        ], { onDismiss: cancel });
+    };
+    const requestDeleteHabit = (habit: Habit) => {
+        const isCurrent = interactions.capture();
+        const current = useMobileHabitStore.getState();
+        const accepts = captureHabitDeletion(habit, current.records);
+        if (!isCurrent() || !accepts(current.habits.find((item) => item.id === habit.id), current.records)) return;
+        const token = {}; deleteRef.current = token;
+        const cancel = () => { if (deleteRef.current === token) deleteRef.current = null; };
+        Alert.alert('習慣を削除しますか？', `「${habit.name}」と達成履歴・メモを削除します。この操作は取り消せません。`, [
+            { text: 'キャンセル', style: 'cancel', onPress: cancel },
+            { text: '削除する', style: 'destructive', onPress: () => {
+                if (!isCurrent() || deleteRef.current !== token) return;
+                cancel();
+                const latest = useMobileHabitStore.getState();
+                if (!accepts(latest.habits.find((item) => item.id === habit.id), latest.records)) {
+                    Alert.alert('削除できませんでした', 'この習慣または達成記録は変更されています。内容を確認し、削除し直してください。'); return;
+                }
+                latest.deleteHabit(habit.id);
             } },
         ], { onDismiss: cancel });
     };
@@ -555,9 +577,7 @@ export default function HabitsScreen() {
                                         icon={Trash2}
                                         label={`「${item.habit.name}」を削除`}
                                         color={p.text.danger}
-                                        onPress={() =>
-                                            store.deleteHabit(item.habit.id)
-                                        }
+                                        onPress={() => requestDeleteHabit(item.habit)}
                                     />
                                 </View>
                             </View>

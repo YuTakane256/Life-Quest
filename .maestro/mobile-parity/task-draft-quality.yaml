@@ -24,6 +24,7 @@ name: Task draft conflict and tab ownership (memory only)
     direction: DOWN
     centerElement: true
 - tapOn: "メールを返信するを削除"
+- tapOn: "削除する"
 - scrollUntilVisible:
     element: "更新"
     direction: UP

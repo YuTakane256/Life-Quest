@@ -41,6 +41,18 @@ export function captureHabitMemoEdit(habit: Habit, record: HabitDailyRecord) {
         && fingerprint(target, entry) === original;
 }
 
+/** Local deletion approval includes the history that deleting this habit will remove. */
+export function captureHabitDeletion(habit: Habit, records: readonly HabitDailyRecord[]) {
+    const fingerprint = (target: Habit, entries: readonly HabitDailyRecord[]) => JSON.stringify([
+        target.id, target.name, target.categoryId, target.createdAt,
+        entries.filter((entry) => entry.habitId === target.id)
+            .map((entry) => JSON.stringify([entry.date, entry.completed, entry.memo])).sort(),
+    ]);
+    const original = fingerprint(habit, records);
+    return (target: Habit | undefined, entries: readonly HabitDailyRecord[]): boolean =>
+        target !== undefined && fingerprint(target, entries) === original;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

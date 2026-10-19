@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-import { captureHabitMemoEdit } from '@life-quest/core/habits';
+import { captureHabitDeletion, captureHabitMemoEdit } from '@life-quest/core/habits';
 import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown, ChevronRight } from 'lucide-react';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortStore';
@@ -24,7 +24,7 @@ const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
 ];
 
 export function HabitsPage() {
-    const { habits, dailyRecords, restDays, addHabit, deleteHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak, getHabitCompletionRate } = useHabitStore();
+    const { habits, dailyRecords, restDays, addHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak, getHabitCompletionRate } = useHabitStore();
     const { sortMode, setSortMode } = useHabitSortStore();
     const [formOwner, setFormOwner] = useState<InputOwner | null>(null);
     const formRef = useRef<InputOwner | null>(null);
@@ -41,10 +41,13 @@ export function HabitsPage() {
     const showRestConfirm = restOwner !== null;
     const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
     const [historyHabitId, setHistoryHabitId] = useState<string | null>(null);
+    const deleteRef = useRef<object | null>(null);
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ name: string; confirm: () => void; cancel: () => void } | null>(null);
+    const [deleteError, setDeleteError] = useState('');
     const closeForm = () => { formRef.current = null; setFormOwner(null); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); };
     const closeMemo = useCallback(() => { memoRef.current = null; setMemoOwner(null); setMemoText(''); setMemoError(''); }, []);
     const closeRest = () => { restRef.current = null; setRestOwner(null); };
-    const interactions = useInteractionScope(() => { closeForm(); closeMemo(); closeRest(); setHistoryHabitId(null); });
+    const interactions = useInteractionScope(() => { closeForm(); closeMemo(); closeRest(); setHistoryHabitId(null); deleteRef.current = null; setDeleteConfirmation(null); setDeleteError(''); });
     const isScreenCurrent = () => interactions.capture()();
     const ownsForm = () => formOwner !== null && formRef.current === formOwner && formOwner.isCurrent();
     const ownsMemo = useCallback(() => memoOwner !== null && memoRef.current === memoOwner && memoOwner.isCurrent(), [memoOwner]);
@@ -59,6 +62,28 @@ export function HabitsPage() {
         if (!isScreenCurrent()) return;
         const owner = { isCurrent: interactions.capture(), date: getTodayJST() };
         restRef.current = owner; setRestOwner(owner);
+    };
+    const requestDeleteHabit = (habit: Habit) => {
+        const isCurrent = interactions.capture();
+        const current = useHabitStore.getState();
+        const accepts = captureHabitDeletion(habit, current.dailyRecords);
+        if (!isCurrent() || !accepts(current.habits.find((item) => item.id === habit.id), current.dailyRecords)) return;
+        const token = {}; deleteRef.current = token; setDeleteError('');
+        let used = false;
+        const cancel = () => {
+            if (deleteRef.current !== token) return;
+            deleteRef.current = null; setDeleteConfirmation(null);
+        };
+        setDeleteConfirmation({ name: habit.name, cancel, confirm: () => {
+            if (used || !isCurrent() || deleteRef.current !== token) return;
+            used = true;
+            const latest = useHabitStore.getState();
+            if (!accepts(latest.habits.find((item) => item.id === habit.id), latest.dailyRecords)) {
+                setDeleteError('この習慣または達成記録は変更されています。内容を確認し、削除し直してください。'); return;
+            }
+            latest.deleteHabit(habit.id);
+            cancel();
+        } });
     };
 
     const today = getTodayJST();
@@ -386,7 +411,7 @@ export function HabitsPage() {
                                             </button>
                                             <div className="flex items-center gap-1">
                                                 <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true" />
-                                                <button onClick={() => deleteHabit(habit.id)} aria-label={`「${habit.name}」を削除`} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
+                                                <button onClick={() => requestDeleteHabit(habit)} aria-label={`「${habit.name}」を削除`} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}><Trash2 size={14} /></button>
                                             </div>
                                         </div>
                                     );
@@ -424,6 +449,16 @@ export function HabitsPage() {
                 confirmColor="var(--color-accent-sky)"
                 onConfirm={handleRestDay}
                 onClose={() => { if (ownsRest()) closeRest(); }}
+            />
+
+            <ConfirmDialog
+                open={deleteConfirmation !== null}
+                title="習慣を削除しますか？"
+                message={<><span className="break-words">「{deleteConfirmation?.name ?? ''}」と達成履歴・メモを削除します。この操作は取り消せません。</span>{deleteError && <p role="alert" className="mt-3" style={{ color: 'var(--color-text-danger)' }}>{deleteError}</p>}</>}
+                confirmLabel="削除する"
+                confirmDisabled={!!deleteError}
+                onConfirm={() => deleteConfirmation?.confirm()}
+                onClose={() => deleteConfirmation?.cancel()}
             />
 
             {historyHabitId && (() => {

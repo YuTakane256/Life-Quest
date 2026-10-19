@@ -20,7 +20,8 @@ export function TasksPage() {
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
-    const [deleteConfirmation, setDeleteConfirmation] = useState<{ count: number; confirm: () => void; cancel: () => void } | null>(null);
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ title: string; message: string; confirm: () => void; cancel: () => void } | null>(null);
+    const [deleteError, setDeleteError] = useState('');
     const pendingDelete = useRef<object | null>(null);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [name, setName] = useState('');
@@ -119,6 +120,7 @@ export function TasksPage() {
     const interactions = useInteractionScope(() => {
         pendingDelete.current = null;
         setDeleteConfirmation(null);
+        setDeleteError('');
         closeForm();
         setSubtaskInputs({});
         setExpandOverrides({});
@@ -209,6 +211,7 @@ export function TasksPage() {
         const current = useTaskStore.getState();
         const approval = captureCompletedTaskDeletion(current.tasks, new Set(current.pendingCompletions.map((item) => item.taskId)));
         if (!approval.count) return;
+        setDeleteError('');
         const token = {};
         pendingDelete.current = token;
         let used = false;
@@ -216,7 +219,7 @@ export function TasksPage() {
             used = true;
             if (pendingDelete.current === token) { pendingDelete.current = null; setDeleteConfirmation(null); }
         };
-        setDeleteConfirmation({ count: approval.count, cancel, confirm: () => {
+        setDeleteConfirmation({ title: '完了タスクを削除しますか？', message: `完了済みのタスク${approval.count}件をまとめて削除します。この操作は取り消せません。`, cancel, confirm: () => {
             if (used || !isCurrent() || pendingDelete.current !== token) return;
             used = true;
             const latest = useTaskStore.getState();
@@ -224,6 +227,34 @@ export function TasksPage() {
             if (ids.length) deleteCompletedTasks(ids);
             cancel();
         } });
+    };
+
+    const requestDeleteTask = (task: Task) => {
+        const isCurrent = interactions.capture();
+        const accepts = captureTaskEdit(task);
+        const current = useTaskStore.getState();
+        if (!isCurrent() || !accepts(current.tasks.find((item) => item.id === task.id))) return;
+        const wasPending = current.pendingCompletions.some((item) => item.taskId === task.id);
+        const token = {};
+        pendingDelete.current = token;
+        setDeleteError('');
+        let used = false;
+        const cancel = () => {
+            if (pendingDelete.current !== token) return;
+            pendingDelete.current = null; setDeleteConfirmation(null);
+        };
+        setDeleteConfirmation({ title: 'タスクを削除しますか？',
+            message: `「${task.name}」とサブタスクを削除します。この操作は取り消せません。`, cancel, confirm: () => {
+                if (used || !isCurrent() || pendingDelete.current !== token) return;
+                used = true; // Consume before mutating; repeated/older callbacks cannot delete again.
+                const latest = useTaskStore.getState();
+                if (!accepts(latest.tasks.find((item) => item.id === task.id))
+                    || wasPending !== latest.pendingCompletions.some((item) => item.taskId === task.id)) {
+                    setDeleteError('このタスクは変更されています。内容を確認し、削除し直してください。'); return;
+                }
+                latest.deleteTask(task.id);
+                cancel();
+            } });
     };
 
     const handleExportCsv = () => {
@@ -465,7 +496,7 @@ export function TasksPage() {
                                 <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                     <button onClick={() => handleDuplicate(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="複製"><Copy size={14} /></button>
                                     <button onClick={() => handleEdit(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="編集"><Edit3 size={14} /></button>
-                                    <button onClick={() => deleteTask(task.id)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }} aria-label="削除"><Trash2 size={14} /></button>
+                                    <button onClick={() => requestDeleteTask(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }} aria-label={`「${task.name}」を削除`}><Trash2 size={14} /></button>
                                 </div>
                             </div>
                             {isExpanded && (
@@ -531,11 +562,12 @@ export function TasksPage() {
                 })()}
             </div>
 
-            {/* 完了タスク一括削除の確認モーダル */}
+            {/* 個別・一括削除は同じ確認枠を使用する。 */}
             <ConfirmDialog
                 open={deleteConfirmation !== null}
-                title="完了タスクを削除しますか？"
-                message={`完了済みのタスク${deleteConfirmation?.count ?? 0}件をまとめて削除します。この操作は取り消せません。`}
+                title={deleteConfirmation?.title ?? ''}
+                message={<><span className="break-words">{deleteConfirmation?.message ?? ''}</span>{deleteError && <p role="alert" className="mt-3" style={{ color: 'var(--color-text-danger)' }}>{deleteError}</p>}</>}
+                confirmDisabled={!!deleteError}
                 confirmLabel="削除する"
                 onConfirm={() => deleteConfirmation?.confirm()}
                 onClose={() => deleteConfirmation?.cancel()}
