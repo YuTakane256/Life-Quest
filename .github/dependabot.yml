@@ -23,6 +23,12 @@ updates:
       # Runtime and CI remain on Node 22. Upgrade its types with Node itself.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # A new Expo SDK requires coordinated module/native-project upgrades,
+      # not an isolated update to expo or one expo-* module. Keep SDK patches.
+      - dependency-name: expo
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-major"]
       # Expo SDK upgrades coordinate these native packages. Keep receiving patch
       # fixes, but do not let the generic production group cross SDK boundaries.
       - dependency-name: react-native
@@ -34,6 +40,12 @@ updates:
           - version-update:semver-minor
           - version-update:semver-major
       - dependency-name: react-native-screens
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+      # SVG is a native ABI dependency too; Lucide peers must not move it past
+      # the version recommended by the installed Expo SDK (#763).
+      - dependency-name: react-native-svg
         update-types:
           - version-update:semver-minor
           - version-update:semver-major
