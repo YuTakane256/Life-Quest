@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     Keyboard,
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react-native';
 import {
     areAllHabitsComplete,
+    captureHabitCompletion,
     captureHabitMemoEdit,
     captureHabitDeletion,
     buildHabitHeatmapData,
@@ -73,6 +74,9 @@ export default function HabitsScreen() {
     const [category, setCategory] = useState('other');
     const [error, setError] = useState('');
     const [filter, setFilter] = useState<string | null>(null);
+    useEffect(() => {
+        if (filter && !store.habits.some((habit) => getHabitCategoryByIdOrDefault(habit.categoryId).id === filter)) setFilter(null);
+    }, [store.habits, filter]);
     const [sort, setSort] = useState<HabitSort>('createdAt');
     const [memoOwner, setMemoOwner] = useState<MemoOwner | null>(null);
     const memoRef = useRef<MemoOwner | null>(null);
@@ -82,10 +86,13 @@ export default function HabitsScreen() {
     const restRef = useRef<object | null>(null);
     const deleteRef = useRef<object | null>(null);
     const [historyId, setHistoryId] = useState<string | null>(null);
+    const [actionError, setActionError] = useState({ message: '' });
+    const screenLifetime = useRef({});
     const closeForm = () => { formRef.current = null; setFormOwner(null); setName(''); setCategory('other'); setError(''); Keyboard.dismiss(); };
     const closeMemo = () => { memoRef.current = null; setMemoOwner(null); setMemo(''); setMemoError(''); Keyboard.dismiss(); };
-    const interactions = useInteractionScope(() => { closeForm(); closeMemo(); restRef.current = null; deleteRef.current = null; setHistoryId(null); });
-    const isScreenCurrent = () => interactions.capture()();
+    const interactions = useInteractionScope(() => { screenLifetime.current = {}; closeForm(); closeMemo(); restRef.current = null; deleteRef.current = null; setHistoryId(null); setFilter(null); setActionError({ message: '' }); });
+    const renderedLifetime = screenLifetime.current;
+    const isScreenCurrent = () => screenLifetime.current === renderedLifetime && interactions.capture()();
     const ownsForm = () => formOwner !== null && formRef.current === formOwner && formOwner.isCurrent();
     const ownsMemo = () => memoOwner !== null && memoRef.current === memoOwner && memoOwner.isCurrent();
     const toggleForm = () => {
@@ -111,6 +118,7 @@ export default function HabitsScreen() {
         ], { onDismiss: cancel });
     };
     const requestDeleteHabit = (habit: Habit) => {
+        if (!isScreenCurrent()) return;
         const isCurrent = interactions.capture();
         const current = useMobileHabitStore.getState();
         const accepts = captureHabitDeletion(habit, current.records);
@@ -180,21 +188,31 @@ export default function HabitsScreen() {
         }
         closeForm();
     };
-    const toggle = (habit: Habit) => {
-        if (!isScreenCurrent()) return;
-        const date = getTodayJst();
-        const before = useMobileHabitStore.getState().records.find(
-            (record) => record.habitId === habit.id && record.date === date,
-        );
-        store.toggleToday(habit.id, date);
-        if (!before?.completed) {
+    const completionAction = (habit: Habit) => {
+        const before = store.records.find((record) => record.habitId === habit.id && record.date === today);
+        const accepts = captureHabitCompletion(habit, before);
+        let used = false;
+        return () => {
+            if (used || !isScreenCurrent()) return;
             const current = useMobileHabitStore.getState();
-            const target = current.habits.find((item) => item.id === habit.id);
-            const entry = current.records.find((item) => item.habitId === habit.id && item.date === date);
-            if (!target || !entry?.completed) return;
-            const owner = { isCurrent: interactions.capture(), habitId: habit.id, date, accepts: captureHabitMemoEdit(target, entry) };
-            memoRef.current = owner; setMemoOwner(owner); setMemo(entry.memo); setMemoError('');
-        }
+            if (!current.hasHydrated) return;
+            if (getTodayJst() !== today || !accepts(current.habits.find((item) => item.id === habit.id),
+                current.records.find((item) => item.habitId === habit.id && item.date === today))) {
+                setActionError({ message: '日付または習慣の内容が変わりました。最新の一覧を確認して操作し直してください。' }); return;
+            }
+            used = true; setActionError({ message: '' });
+            const date = today;
+            store.toggleToday(habit.id, date);
+            if (!isScreenCurrent()) return;
+            if (!before?.completed) {
+                const current = useMobileHabitStore.getState();
+                const target = current.habits.find((item) => item.id === habit.id);
+                const entry = current.records.find((item) => item.habitId === habit.id && item.date === date);
+                if (!target || !entry?.completed) return;
+                const owner = { isCurrent: interactions.capture(), habitId: habit.id, date, accepts: captureHabitMemoEdit(target, entry) };
+                memoRef.current = owner; setMemoOwner(owner); setMemo(entry.memo); setMemoError('');
+            }
+        };
     };
     const saveMemo = () => {
         if (!ownsMemo() || !memoOwner) return;
@@ -255,6 +273,7 @@ export default function HabitsScreen() {
                             {!store.hasHydrated && (
                                 <Text style={s.summary}>読込中</Text>
                             )}
+                            {actionError.message !== '' && <Text accessibilityRole="alert" style={s.error}>{actionError.message}</Text>}
                             {store.habits.length > 0 && (
                                 <View style={{ marginBottom: 16 }}>
                                     <View
@@ -301,17 +320,19 @@ export default function HabitsScreen() {
                                     <Filter size={14} color={p.text.muted} />
                                     <Chip
                                         label="すべて"
+                                        accessibilityLabel="カテゴリ: すべて"
                                         selected={filter === null}
-                                        onPress={() => setFilter(null)}
+                                        onPress={() => { if (isScreenCurrent()) setFilter(null); }}
                                     />
                                     {used.map((cat) => (
                                         <Chip
                                             key={cat.id}
                                             label={`${cat.icon} ${cat.name}`}
+                                            accessibilityLabel={`カテゴリ: ${cat.name}`}
                                             selected={filter === cat.id}
                                             color={cat.color}
                                             onPress={() =>
-                                                setFilter((current) =>
+                                                isScreenCurrent() && setFilter((current) =>
                                                     current === cat.id
                                                         ? null
                                                         : cat.id,
@@ -475,7 +496,8 @@ export default function HabitsScreen() {
                                     accessibilityRole="checkbox"
                                     accessibilityState={{ checked: done }}
                                     accessibilityLabel={`${item.habit.name}を${done ? '未達成' : '達成'}にする`}
-                                    onPress={() => toggle(item.habit)}
+                                    onPress={completionAction(item.habit)}
+                                    disabled={!store.hasHydrated}
                                     hitSlop={6}
                                     style={[
                                         s.checkbox,

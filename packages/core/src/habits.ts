@@ -29,6 +29,17 @@ export const HABIT_LIMITS = {
     maxMemoLength: 500,
 } as const;
 
+/** A rendered day's toggle may only change the habit/record that the user saw. */
+export function captureHabitCompletion(habit: Habit, record: HabitDailyRecord | undefined) {
+    const fingerprint = (target: Habit, entry: HabitDailyRecord | undefined) => JSON.stringify([
+        target.id, target.name, target.categoryId, target.createdAt,
+        entry ? [entry.habitId, entry.date, entry.completed, entry.memo] : null,
+    ]);
+    const original = fingerprint(habit, record);
+    return (target: Habit | undefined, entry: HabitDailyRecord | undefined): boolean =>
+        target !== undefined && fingerprint(target, entry) === original;
+}
+
 /** Freeze a memo's local target/record. Not a server revision or reward authorization check. */
 export function captureHabitMemoEdit(habit: Habit, record: HabitDailyRecord) {
     const fingerprint = (target: Habit, entry: HabitDailyRecord) => JSON.stringify([

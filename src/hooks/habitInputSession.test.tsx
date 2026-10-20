@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
-import type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
+import type { Habit, HabitDailyRecord, RestDay } from '@life-quest/core/habits';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useMobileHabitStore } from '../../apps/mobile/src/stores/useMobileHabitStore';
 import { HabitsPage } from '../pages/HabitsPage';
@@ -11,7 +11,20 @@ import { HabitsPage } from '../pages/HabitsPage';
 const mocks = vi.hoisted(() => ({ enqueue: vi.fn(async (..._args: unknown[]) => true), alert: vi.fn(),
     restConfirm: () => {}, restCancel: () => {}, nativeAdd: () => {}, nativeCancel: () => {},
     presses: new Map<string, () => void>(), blur: () => {}, focus: () => {},
+    capture: (value: unknown) => {
+        if (!value || typeof value !== 'object') return;
+        const props = value as Record<string, unknown>;
+        const label = props['aria-label'];
+        if (typeof label === 'string' && typeof props.onClick === 'function') mocks.presses.set(label, props.onClick as () => void);
+    },
 }));
+vi.mock('react/jsx-runtime', async (original) => { const module = await original<typeof import('react/jsx-runtime')>(); return { ...module,
+    jsx: (...args: Parameters<typeof module.jsx>) => { mocks.capture(args[1]); return module.jsx(...args); },
+    jsxs: (...args: Parameters<typeof module.jsxs>) => { mocks.capture(args[1]); return module.jsxs(...args); },
+}; });
+vi.mock('react/jsx-dev-runtime', async (original) => { const module = await original<typeof import('react/jsx-dev-runtime')>(); return { ...module,
+    jsxDEV: (...args: Parameters<typeof module.jsxDEV>) => { mocks.capture(args[1]); return module.jsxDEV(...args); },
+}; });
 vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isWebCloudOutboxActive: () => false }));
 vi.mock('../../apps/mobile/src/platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isCloudOutboxActive: () => false }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
@@ -90,6 +103,9 @@ afterEach(() => { unmount(); host.remove(); resetAuthLifecycleHooks(); vi.clearA
 
 for (const platform of ['web', 'native'] as const) {
     const store = platform === 'web' ? useHabitStore : useMobileHabitStore;
+    const setState = (partial: { habits?: Habit[]; restDays?: RestDay[] }) => {
+        if (platform === 'web') useHabitStore.setState(partial); else useMobileHabitStore.setState(partial);
+    };
     const setRecords = (records: HabitDailyRecord[]) => { if (platform === 'web') useHabitStore.setState({ dailyRecords: records }); else useMobileHabitStore.setState({ records }); };
     const records = () => platform === 'web' ? useHabitStore.getState().dailyRecords : useMobileHabitStore.getState().records;
     const seed = () => { if (platform === 'web') useHabitStore.setState({ habits: habits() }); else useMobileHabitStore.setState({ habits: habits() }); setRecords([record()]); };
@@ -169,8 +185,10 @@ for (const platform of ['web', 'native'] as const) {
             mount(); await openMemo(); input('今日の一言...', '前日の入力'); vi.setSystemTime(new Date('2026-10-20T00:01:00+09:00')); saveMemo();
             expect(records()).toEqual([record()]); expect(mocks.enqueue).not.toHaveBeenCalled(); expect(host.textContent).toContain('日付が変わりました');
         });
-        it('再描画前に日付が変わっても新しい達成は操作時の日付へ記録する', async () => {
-            mount(); vi.setSystemTime(new Date('2026-10-20T00:01:00+09:00')); await openMemo(); input('今日の一言...', '翌日の入力'); saveMemo();
+        it('日付変更後の最初のタップは最新表示を案内し、確認後のタップだけ翌日に記録する', async () => {
+            mount(); vi.setSystemTime(new Date('2026-10-20T00:01:00+09:00')); await openMemo();
+            expect(records()).toEqual([]); expect(host.textContent).toContain('日付または習慣の内容が変わりました');
+            await openMemo(); input('今日の一言...', '翌日の入力'); saveMemo();
             expect(records()).toEqual([{ ...record(), date: '2026-10-20', memo: '翌日の入力' }]);
         });
         it('お休み確認は一度だけ同じ日に保存する', () => {
@@ -204,5 +222,96 @@ for (const platform of ['web', 'native'] as const) {
             press('習慣メモをスキップ'); press('読書を未達成にする'); await openMemo(); input('今日の一言...', '現在の入力');
             act(save); expect(mocks.enqueue).not.toHaveBeenCalled(); saveMemo(); expect(records()[0].memo).toBe('現在の入力');
         });
+    });
+    describe(`${platform}: habit row actions`, () => {
+        const completeLabel = platform === 'web' ? '習慣「読書」を達成にする' : '読書を達成にする';
+        const reopenLabel = platform === 'web' ? '習慣「読書」を未達成にする' : '読書を未達成にする';
+        const callback = (label: string) => { const action = mocks.presses.get(label); expect(action, label).toBeDefined(); return action!; };
+        const flush = async () => act(async () => { await Promise.resolve(); });
+        it('同じ達成callbackの再実行は反転せずメモも再生成しない', async () => {
+            mount(); const complete = callback(completeLabel); act(() => { complete(); complete(); }); await flush();
+            expect(records()).toEqual([record()]); expect(mocks.enqueue).toHaveBeenCalledOnce();
+            input('今日の一言...', '入力を保持'); act(complete);
+            expect(host.querySelector<HTMLInputElement>('[placeholder="今日の一言..."]')!.value).toBe('入力を保持');
+        });
+        it('通常の未達成化は一度だけ送信し、保存済みメモを保つ', async () => {
+            setRecords([{ ...record(), memo: '記録済み' }]); mount(); const reopen = callback(reopenLabel);
+            act(() => { reopen(); reopen(); }); await flush();
+            expect(records()).toEqual([{ ...record(), completed: false, memo: '記録済み' }]); expect(mocks.enqueue).toHaveBeenCalledOnce();
+        });
+        it.each(['switch', 'logout', 'roundtrip', 'unmount'])('%s後の旧達成・画面開始・カテゴリ操作を拒否する', async (kind) => {
+            const both = [habit(), { ...habit(), id: 'two', name: '運動', categoryId: 'health' }]; setState({ habits: both }); mount();
+            const complete = callback(completeLabel); const add = callback('新しい習慣を追加'); const restAction = callback('今日をお休みにする');
+            const history = callback('「読書」の達成履歴を表示'); const remove = callback('「読書」を削除'); const filter = callback('カテゴリ: 健康');
+            await act(async () => { await transition(kind); setState({ habits: both }); setRecords([]); complete(); add(); restAction(); history(); remove(); filter(); });
+            expect(records()).toEqual([]); expect(mocks.enqueue).not.toHaveBeenCalled(); expect(mocks.alert).not.toHaveBeenCalled();
+            expect(host.querySelector('[placeholder="新しい習慣を入力..."]')).toBeNull();
+            expect(host.textContent).not.toContain('過去180日'); expect(host.textContent).not.toContain('本当に今日はお休み');
+            expect(host.textContent).not.toContain('この操作は取り消せません');
+            if (kind !== 'unmount') expect(button(completeLabel)).toBeTruthy();
+        });
+        it('描画前の直接アカウント切替でも達成を拒否する', async () => {
+            mount(); const complete = callback(completeLabel);
+            await act(async () => { const pending = notifyLogin('b'); setRecords([]); complete(); await pending; });
+            expect(records()).toEqual([]); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it.each(['name', 'categoryId', 'createdAt', 'missing', 'record', 'memo', 'removed-record'])('%s変更後の古い達成を拒否する', async (kind) => {
+            if (kind === 'removed-record') setRecords([{ ...record(), completed: false }]);
+            mount(); const complete = callback(completeLabel); const changed = habit();
+            act(() => {
+                if (kind === 'name') changed.name = '変更後'; if (kind === 'categoryId') changed.categoryId = 'health';
+                if (kind === 'createdAt') changed.createdAt = '2026-10-19T00:00:00Z';
+                setState({ habits: kind === 'missing' ? [] : [changed, { ...habit(), id: 'two', name: '運動' }] });
+                if (kind === 'record') setRecords([record()]); if (kind === 'memo') setRecords([{ ...record(), completed: false, memo: '別の編集' }]);
+                if (kind === 'removed-record') setRecords([]);
+                complete();
+            }); await flush();
+            expect(records()).toEqual(kind === 'record' ? [record()] : kind === 'memo' ? [{ ...record(), completed: false, memo: '別の編集' }] : []);
+            expect(mocks.enqueue).not.toHaveBeenCalled(); expect(host.textContent).toContain('日付または習慣の内容が変わりました');
+        });
+        it('同値pull・同一ユーザー通知・他習慣の更新では旧行も通常どおり達成できる', async () => {
+            mount(); const complete = callback(completeLabel);
+            await act(async () => { await notifyLogin('a'); setState({ habits: structuredClone(habits()) }); setRecords([{ ...record(), habitId: 'two', completed: false, memo: '別の習慣の更新' }]); complete(); }); await flush();
+            expect(records().find((entry) => entry.habitId === 'one')?.completed).toBe(true); expect(mocks.enqueue).toHaveBeenCalledOnce();
+        });
+        it('同日のお休み設定後も達成操作を維持する', async () => {
+            mount(); const complete = callback(completeLabel); act(() => { setState({ restDays: [{ date: DATE, isRest: true }] }); complete(); }); await flush();
+            expect(records()).toEqual([record()]);
+        });
+        it('カテゴリ選択は通常操作・同一ユーザー通知・同値pullで維持する', async () => {
+            setState({ habits: [habit(), { ...habit(), id: 'two', name: '運動', categoryId: 'health' }] }); mount();
+            act(callback('カテゴリ: 健康')); expect(host.querySelector(`[aria-label='${completeLabel}']`)).toBeNull();
+            await act(async () => { await notifyLogin('a'); setState({ habits: structuredClone(store.getState().habits) }); });
+            expect(host.querySelector(`[aria-label='${completeLabel}']`)).toBeNull();
+            act(callback('カテゴリ: すべて')); expect(button(completeLabel)).toBeTruthy();
+        });
+        it('アカウント切替ではカテゴリ選択をリセットする', async () => {
+            const both = [habit(), { ...habit(), id: 'two', name: '運動', categoryId: 'health' }]; setState({ habits: both }); mount();
+            act(callback('カテゴリ: 健康')); await act(async () => { await notifyLogin('b'); setState({ habits: both }); });
+            expect(button(completeLabel)).toBeTruthy();
+        });
+        it('選択カテゴリが削除でなくなったら全件へ戻り、再追加でも勝手に絞らない', () => {
+            const both = [habit(), { ...habit(), id: 'two', name: '運動', categoryId: 'health' }]; setState({ habits: both }); mount();
+            act(callback('カテゴリ: 健康')); act(() => setState({ habits: [habit()] })); expect(button(completeLabel)).toBeTruthy();
+            act(() => setState({ habits: both })); expect(button(completeLabel)).toBeTruthy();
+        });
+        if (platform === 'native') {
+            it('タブ復帰後の旧行は拒否、新しい行は達成できる', async () => {
+                mount(); const complete = callback(completeLabel); const add = callback('新しい習慣を追加'); const restAction = callback('今日をお休みにする');
+                const history = callback('「読書」の達成履歴を表示'); const remove = callback('「読書」を削除');
+                act(() => { mocks.blur(); mocks.focus(); complete(); add(); restAction(); history(); remove(); });
+                expect(records()).toEqual([]); expect(mocks.enqueue).not.toHaveBeenCalled(); expect(mocks.alert).not.toHaveBeenCalled();
+                expect(host.textContent).not.toContain('過去180日'); expect(host.querySelector('[placeholder="新しい習慣を入力..."]')).toBeNull();
+                act(callback(completeLabel)); await flush(); expect(records()).toEqual([record()]);
+            });
+            it('読込前の直接callbackでも達成・メモ表示をしない', () => {
+                useMobileHabitStore.setState({ hasHydrated: false }); mount(); act(callback(completeLabel));
+                expect(records()).toEqual([]); expect(mocks.enqueue).not.toHaveBeenCalled(); expect(host.querySelector('[placeholder="今日の一言..."]')).toBeNull();
+            });
+            it('タブ復帰でカテゴリをリセットする', () => {
+                setState({ habits: [habit(), { ...habit(), id: 'two', name: '運動', categoryId: 'health' }] }); mount();
+                act(callback('カテゴリ: 健康')); act(() => { mocks.blur(); mocks.focus(); }); expect(button(completeLabel)).toBeTruthy();
+            });
+        }
     });
 }

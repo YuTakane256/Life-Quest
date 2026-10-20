@@ -1,0 +1,34 @@
+appId: com.yutakane.lifequest.parity
+name: Habit completion, memo and category recovery (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "習慣(, tab,.*)?"
+- tapOn: "朝に散歩するを達成にする"
+- tapOn: "今日の一言"
+- inputText: "Saved daily memo"
+- pressKey: enter
+- assertVisible: "朝に散歩するを未達成にする"
+- takeScreenshot: "habit-list-${REFERENCE_THEME}-completed"
+- tapOn: "朝に散歩するを未達成にする"
+- assertVisible: "朝に散歩するを達成にする"
+# The native history button groups its text under an accessibility label.
+# Inspect the screenshot for the retained memo; real-store tests assert its value.
+- takeScreenshot: "habit-list-${REFERENCE_THEME}-incomplete"
+- tapOn: "カテゴリ: 健康"
+- assertNotVisible: "「読書を20分続ける」の達成履歴を表示"
+- takeScreenshot: "habit-list-${REFERENCE_THEME}-filtered"
+- tapOn: "タスク(, tab,.*)?"
+- tapOn: "習慣(, tab,.*)?"
+- assertVisible: "「読書を20分続ける」の達成履歴を表示"
+- tapOn: "カテゴリ: 健康"
+- tapOn: "「朝に散歩する」を削除"
+- tapOn: "削除する"
+- assertVisible: "「読書を20分続ける」の達成履歴を表示"
+- takeScreenshot: "habit-list-${REFERENCE_THEME}-reset"
