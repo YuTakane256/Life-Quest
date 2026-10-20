@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { captureCompletedTaskDeletion, captureTaskEdit } from '@life-quest/core/tasks';
+import { captureAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit3, ChevronDown, ChevronRight, Repeat, Copy, HelpCircle, Download } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
@@ -17,12 +18,14 @@ import { useInteractionScope } from '../hooks/useInteractionScope';
 
 export function TasksPage() {
     const navigate = useNavigate();
-    const { tasks, addTask, updateTask, deleteTask, duplicateTask, deleteCompletedTasks, toggleComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
+    const { tasks, addTask, updateTask, duplicateTask, deleteCompletedTasks, toggleComplete, pendingCompletions } = useTaskStore();
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
     const [deleteConfirmation, setDeleteConfirmation] = useState<{ title: string; message: string; confirm: () => void; cancel: () => void } | null>(null);
     const [deleteError, setDeleteError] = useState('');
+    const [actionError, setActionError] = useState('');
+    const screenLifetime = useRef({});
     const pendingDelete = useRef<object | null>(null);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [name, setName] = useState('');
@@ -118,13 +121,26 @@ export function TasksPage() {
         setEditingTask(null);
     };
     const interactions = useInteractionScope(() => {
+        screenLifetime.current = {};
         pendingDelete.current = null;
         setDeleteConfirmation(null);
         setDeleteError('');
+        setActionError('');
         closeForm();
         setExpandOverrides({});
+        setSearchQuery(''); setDueFilter('all'); setPriorityFilter('all'); setSelectedTags([]);
     });
-    const isScreenCurrent = () => interactions.capture()();
+    const renderedLifetime = screenLifetime.current;
+    const isScreenCurrent = () => screenLifetime.current === renderedLifetime && interactions.capture()();
+    const guardTaskAction = (task: Task, action: () => void | boolean) => {
+        const accepts = captureTaskEdit(task);
+        let used = false;
+        return () => {
+            if (used || !isScreenCurrent() || !accepts(useTaskStore.getState().tasks.find((item) => item.id === task.id))) return;
+            used = true;
+            if (action() === false) used = false;
+        };
+    };
     const isFormCurrent = () => formOwner !== null && formOwnerRef.current === formOwner && formOwner.isCurrent();
     const beginForm = (task: Task | null) => {
         if (!isScreenCurrent()) return;
@@ -161,8 +177,20 @@ export function TasksPage() {
 
     const handleDuplicate = (task: Task) => {
         const newId = duplicateTask(task.id);
-        if (!newId) return;
-        showUndo(`「${task.name}」を複製しました`, () => deleteTask(newId));
+        if (!newId) { setActionError('複製できませんでした。タスク数の上限を確認してください。'); return false; }
+        setActionError('');
+        const clone = useTaskStore.getState().tasks.find((item) => item.id === newId);
+        if (!clone) return false;
+        const acceptsClone = captureTaskEdit(clone);
+        const scope = captureAuthSessionScope();
+        showUndo(`「${task.name}」を複製しました`, () => {
+            const current = useTaskStore.getState();
+            if (!scope.isCurrent()) return;
+            const target = current.tasks.find((item) => item.id === newId);
+            if (acceptsClone(target)) current.deleteTask(newId);
+            else if (target && isScreenCurrent()) setActionError('複製後に内容が変更されたため、元に戻せません。必要な場合は内容を確認して削除してください。');
+        });
+        return true;
     };
 
     const handleEdit = (task: Task) => {
@@ -186,7 +214,13 @@ export function TasksPage() {
         }
         if (!task.completed) {
             toggleComplete(task.id);
-            showUndo(`「${task.name}」を完了しました`, () => cancelPendingCompletion(task.id));
+            const pending = useTaskStore.getState().pendingCompletions.find((item) => item.taskId === task.id);
+            if (!pending) return;
+            const scope = captureAuthSessionScope();
+            showUndo(`「${task.name}」を完了しました`, () => {
+                const current = useTaskStore.getState();
+                if (scope.isCurrent() && current.pendingCompletions.find((item) => item.taskId === task.id) === pending) current.cancelPendingCompletion(task.id);
+            });
         } else {
             toggleComplete(task.id);
         }
@@ -205,6 +239,7 @@ export function TasksPage() {
     );
 
     const requestDeleteCompleted = () => {
+        if (!isScreenCurrent()) return;
         const isCurrent = interactions.capture();
         if (!isCurrent()) return;
         const current = useTaskStore.getState();
@@ -229,6 +264,7 @@ export function TasksPage() {
     };
 
     const requestDeleteTask = (task: Task) => {
+        if (!isScreenCurrent()) return;
         const isCurrent = interactions.capture();
         const accepts = captureTaskEdit(task);
         const current = useTaskStore.getState();
@@ -257,14 +293,23 @@ export function TasksPage() {
     };
 
     const handleExportCsv = () => {
-        const csv = tasksToCsv(tasks);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `life-quest-tasks-${getTodayJST()}.csv`;
-        link.click();
-        URL.revokeObjectURL(url);
+        if (!isScreenCurrent()) return;
+        const current = useTaskStore.getState().tasks;
+        if (!current.length) return;
+        setActionError('');
+        let url: string | undefined;
+        try {
+            const csv = tasksToCsv(current);
+            url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `life-quest-tasks-${getTodayJST()}.csv`;
+            link.click();
+        } catch {
+            if (isScreenCurrent()) setActionError('CSVを書き出せませんでした。もう一度お試しください。');
+        } finally {
+            if (url !== undefined) URL.revokeObjectURL(url);
+        }
     };
 
     /** サブタスクの有無を踏まえた既定の展開状態 */
@@ -330,6 +375,7 @@ export function TasksPage() {
     };
 
     const toggleTagFilter = (tag: string) => {
+        if (!isScreenCurrent()) return;
         setSelectedTags((prev) =>
             prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
         );
@@ -375,6 +421,7 @@ export function TasksPage() {
                 </div>
             </div>
 
+            {actionError && <p role="alert" className="text-sm mb-3" style={{ color: 'var(--color-text-danger)' }}>{actionError}</p>}
             <TaskFilters
                 searchQuery={searchQuery}
                 dueFilter={dueFilter}
@@ -383,12 +430,12 @@ export function TasksPage() {
                 allTags={allTags}
                 selectedTags={selectedTags}
                 deletableCompletedCount={deletableCompletedCount}
-                onSearchQueryChange={setSearchQuery}
-                onDueFilterChange={setDueFilter}
-                onPriorityFilterChange={setPriorityFilter}
-                onSortModeChange={setSortMode}
+                onSearchQueryChange={(value) => { if (isScreenCurrent()) setSearchQuery(value); }}
+                onDueFilterChange={(value) => { if (isScreenCurrent()) setDueFilter(value); }}
+                onPriorityFilterChange={(value) => { if (isScreenCurrent()) setPriorityFilter(value); }}
+                onSortModeChange={(value) => { if (isScreenCurrent()) setSortMode(value); }}
                 onToggleTag={toggleTagFilter}
-                onClearTags={() => setSelectedTags([])}
+                onClearTags={() => { if (isScreenCurrent()) setSelectedTags([]); }}
                 onRequestDeleteCompleted={requestDeleteCompleted}
             />
 
@@ -444,7 +491,7 @@ export function TasksPage() {
                             style={{ backgroundColor: task.completed ? 'var(--color-bg-secondary)' : 'var(--color-bg-card)', border: `1px solid ${overdue ? 'var(--color-text-danger)' : 'var(--color-border-default)'}`, opacity: task.completed && !pending ? 0.6 : 1 }}>
                             <div className="group flex items-center gap-2 px-3 py-3">
                                 <button
-                                    onClick={() => toggleExpanded(task)}
+                                    onClick={guardTaskAction(task, () => toggleExpanded(task))}
                                     aria-label={isExpanded ? `タスク「${task.name}」を折りたたむ` : `タスク「${task.name}」を展開`}
                                     className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
                                     style={{ color: 'var(--color-text-muted)' }}
@@ -452,7 +499,7 @@ export function TasksPage() {
                                     {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                                 </button>
                                 <button
-                                    onClick={() => handleToggleComplete(task)}
+                                    onClick={guardTaskAction(task, () => handleToggleComplete(task))}
                                     aria-label={task.completed ? `タスク「${task.name}」を未完了にする` : `タスク「${task.name}」を完了にする`}
                                     className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
                                     style={{ borderColor: task.completed ? 'var(--color-accent-emerald)' : PRIORITY_COLORS[task.priority], backgroundColor: task.completed ? 'var(--color-accent-emerald)' : 'transparent' }}>
@@ -483,8 +530,8 @@ export function TasksPage() {
                                     </div>
                                 </div>
                                 <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => handleDuplicate(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="複製"><Copy size={14} /></button>
-                                    <button onClick={() => handleEdit(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="編集"><Edit3 size={14} /></button>
+                                    <button onClick={guardTaskAction(task, () => handleDuplicate(task))} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="複製"><Copy size={14} /></button>
+                                    <button onClick={guardTaskAction(task, () => handleEdit(task))} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-muted)' }} aria-label="編集"><Edit3 size={14} /></button>
                                     <button onClick={() => requestDeleteTask(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }} aria-label={`「${task.name}」を削除`}><Trash2 size={14} /></button>
                                 </div>
                             </div>
