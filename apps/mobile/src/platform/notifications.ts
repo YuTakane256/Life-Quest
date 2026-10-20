@@ -25,8 +25,11 @@ import { getJstHour, getTodayJst } from '../utils/date';
 import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileSettingsStore } from '../stores/useMobileSettingsStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { captureTaskEdit } from '@life-quest/core/tasks';
+import { createNotificationCheckGate } from '@life-quest/core/notificationCheckScope';
+import { waitForAuthLifecycleSettled } from '@life-quest/core/authLifecycle';
 
-let isRunningChecks = false;
+const checks = createNotificationCheckGate();
 
 /** フォアグラウンドでも通知バナーを表示する（既定は非表示）。起動時に一度呼ぶ。 */
 export function configureNotificationHandler(): void {
@@ -41,13 +44,15 @@ export function configureNotificationHandler(): void {
 }
 
 /** 通知許可を確認し、未確定なら要求する。granted なら true。 */
-export async function ensureNotificationPermission(): Promise<boolean> {
+export async function ensureNotificationPermission(isCurrent: () => boolean = () => true): Promise<boolean> {
     try {
+        if (!isCurrent()) return false;
         const current = await Notifications.getPermissionsAsync();
+        if (!isCurrent()) return false;
         if (current.granted) return true;
         if (!current.canAskAgain) return false;
         const requested = await Notifications.requestPermissionsAsync();
-        return requested.granted;
+        return isCurrent() && requested.granted;
     } catch {
         return false;
     }
@@ -88,13 +93,26 @@ function countIncompleteHabits(date: string): number {
  * アプリ起動時・フォアグラウンド復帰時・一定間隔で呼び出す。
  */
 export async function runMobileNotificationChecks(): Promise<void> {
-    if (isRunningChecks) return;
-    isRunningChecks = true;
+    const check = checks.begin(
+        () => useMobileSettingsStore.getState().notificationsEnabled && useMobileSettingsStore.getState().hasHydrated
+            && useMobileTaskStore.getState().hasHydrated && useMobileHabitStore.getState().hasHydrated && AppState.currentState === 'active',
+        (invalidate) => {
+            const unsubscribe = useMobileSettingsStore.subscribe((state, before) => {
+                if (state.notificationsEnabled !== before.notificationsEnabled || state.hasHydrated !== before.hasHydrated) invalidate();
+            });
+            const subscription = AppState.addEventListener('change', (state) => { if (state !== 'active') invalidate(); });
+            return () => { unsubscribe(); subscription.remove(); };
+        },
+    );
+    if (!check) return;
 
     try {
+        await waitForAuthLifecycleSettled();
+        if (!check.isCurrent()) return;
         const settings = useMobileSettingsStore.getState();
         if (!settings.notificationsEnabled) return;
         if (!(await hasNotificationPermission())) return;
+        if (!check.isCurrent()) return;
 
         const tasks = useMobileTaskStore.getState().tasks;
         // 削除済みタスクのIDを通知履歴から掃除
@@ -106,8 +124,17 @@ export async function runMobileNotificationChecks(): Promise<void> {
             notifiedTaskIds: useMobileSettingsStore.getState().notifiedTaskIds,
         });
         for (const task of dueSoonTasks) {
+            const accepts = captureTaskEdit(task);
+            const canSend = () => {
+                const latest = useMobileTaskStore.getState().tasks.find((candidate) => candidate.id === task.id);
+                return check.isCurrent() && accepts(latest) && latest !== undefined && selectDueSoonTasks([latest], {
+                    nowMs: Date.now(), notifiedTaskIds: useMobileSettingsStore.getState().notifiedTaskIds,
+                }).length > 0;
+            };
+            if (!check.isCurrent()) return;
+            if (!canSend()) continue;
             const delivered = await presentNotification(buildTaskDeadlineNotification(task));
-            if (delivered) useMobileSettingsStore.getState().markTaskNotified(task.id);
+            if (delivered && canSend()) useMobileSettingsStore.getState().markTaskNotified(task.id);
         }
 
         // ── 習慣リマインダー（指定時刻以降、未完了の習慣がある、本日未通知）──
@@ -126,14 +153,21 @@ export async function runMobileNotificationChecks(): Promise<void> {
                 !areAllHabitsComplete(habits, records, today)
             ) {
                 const incompleteCount = countIncompleteHabits(today);
+                const hour = useMobileSettingsStore.getState().habitReminderHour;
+                const fingerprint = () => { const state = useMobileHabitStore.getState(); return JSON.stringify([state.habits, state.records, state.restDays]); };
+                const original = fingerprint();
+                const canSend = () => check.isCurrent() && getTodayJst() === today && fingerprint() === original
+                    && useMobileSettingsStore.getState().habitReminderHour === hour
+                    && shouldSendHabitReminder({ today, lastReminderDate: useMobileSettingsStore.getState().lastHabitReminderDate, currentHour: getJstHour(), reminderHour: hour });
+                if (!canSend()) return;
                 const delivered = await presentNotification(
                     buildHabitReminderNotification(incompleteCount, today)
                 );
-                if (delivered) useMobileSettingsStore.getState().markHabitReminded(today);
+                if (delivered && canSend()) useMobileSettingsStore.getState().markHabitReminded(today);
             }
         }
     } finally {
-        isRunningChecks = false;
+        check.finish();
     }
 }
 
@@ -156,6 +190,7 @@ export function registerNotificationChecks(): () => void {
     const subscription = AppState.addEventListener('change', onChange);
 
     return () => {
+        checks.cancel();
         clearInterval(interval);
         subscription.remove();
     };

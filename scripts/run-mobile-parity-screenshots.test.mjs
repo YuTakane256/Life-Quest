@@ -77,6 +77,14 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('guards notification settings with local-only memory fixtures and no permission request', () => {
+        expect(getMobileParityMetroUrl('notifications')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('notifications')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
+        expect(() => assertReferenceProfile({ extra }, 'notifications')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { appVariant: 'release' }]) expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'notifications')).toThrow();
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('notifications').path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp'); expect(yaml).not.toContain('- tapOn: "習慣リマインダー通知"'); expect(yaml).toContain('127.0.0.1%3A8082');
+    });
     it('guards habit actions with a daily local-only runtime on 8082', () => {
         expect(getMobileParityMetroUrl('habitList')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('habitList')).toBe(true);
         const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };

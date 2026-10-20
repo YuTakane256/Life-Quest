@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { useNotificationStore } from '../../stores/useNotificationStore';
 import {
@@ -7,6 +7,7 @@ import {
     runNotificationChecks,
 } from '../../utils/notifications';
 import { formatReminderHourLabel } from '../../utils/timeLabels';
+import { useInteractionScope } from '../../hooks/useInteractionScope';
 
 export function NotificationSettings() {
     const enabled = useNotificationStore((s) => s.enabled);
@@ -14,22 +15,42 @@ export function NotificationSettings() {
     const reminderHour = useNotificationStore((s) => s.habitReminderHour ?? 20);
     const setReminderHour = useNotificationStore((s) => s.setHabitReminderHour);
     const [permission, setPermission] = useState(getNotificationPermission());
+    const request = useRef<object | null>(null);
+    const [pending, setPending] = useState({ active: false });
+    const lifetime = useRef({});
+    const interactions = useInteractionScope(() => {
+        lifetime.current = {}; request.current = null; setPending({ active: false }); setPermission(getNotificationPermission());
+    });
+    const renderedLifetime = lifetime.current;
+    const renderedRequest = request.current;
+    const isCurrentScreen = () => renderedLifetime === lifetime.current && interactions.capture()();
+    useEffect(() => useNotificationStore.subscribe((state, before) => {
+        if (state.enabled !== before.enabled && request.current) { request.current = null; setPending({ active: false }); }
+    }), []);
 
     const unsupported = permission === 'unsupported';
     const blocked = permission === 'denied';
-    const disabled = unsupported || blocked;
+    const disabled = (unsupported || blocked) && !enabled && !pending.active;
+    let toggleUsed = false;
 
     const handleToggle = async () => {
-        if (enabled) {
-            setEnabled(false);
+        if (toggleUsed || !isCurrentScreen() || request.current !== renderedRequest || useNotificationStore.getState().enabled !== enabled) return;
+        toggleUsed = true;
+        if (pending.active || enabled) {
+            request.current = null; setPending({ active: false });
+            if (useNotificationStore.getState().enabled) setEnabled(false);
             return;
         }
+        if (request.current || useNotificationStore.getState().enabled) return;
+        const owner = {}; request.current = owner; setPending({ active: true });
+        const isCurrent = interactions.capture();
         // ONにする: 必要なら許可を要求する
         let current = getNotificationPermission();
         if (current === 'default') {
             current = await requestNotificationPermission();
-            setPermission(current);
         }
+        if (request.current !== owner || !isCurrent()) return;
+        request.current = null; setPending({ active: false }); setPermission(current);
         if (current === 'granted') {
             setEnabled(true);
             void runNotificationChecks();
@@ -53,11 +74,12 @@ export function NotificationSettings() {
                     onClick={handleToggle}
                     disabled={disabled}
                     role="switch"
-                    aria-checked={enabled}
+                    aria-checked={enabled || pending.active}
+                    aria-busy={pending.active}
                     aria-label="通知のON/OFF"
                     className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
                     style={{
-                        backgroundColor: enabled ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
+                        backgroundColor: enabled || pending.active ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
                         border: '1px solid var(--color-border-default)',
                         opacity: disabled ? 0.4 : 1,
                         cursor: disabled ? 'not-allowed' : 'pointer',
@@ -65,10 +87,12 @@ export function NotificationSettings() {
                 >
                     <span
                         className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
-                        style={{ left: enabled ? '21px' : '2px', backgroundColor: 'white' }}
+                        style={{ left: enabled || pending.active ? '21px' : '2px', backgroundColor: 'white' }}
                     />
                 </button>
             </div>
+
+            {pending.active && <p role="status" className="text-xs mt-3" style={{ color: 'var(--color-text-muted)' }}>通知の許可を確認しています。もう一度OFFにするとアプリの通知を無効のままにできます。</p>}
 
             {unsupported && (
                 <p className="text-xs mt-3" style={{ color: 'var(--color-text-muted)' }}>
@@ -95,7 +119,7 @@ export function NotificationSettings() {
                         <select
                             id="habit-reminder-hour"
                             value={reminderHour}
-                            onChange={(e) => setReminderHour(Number(e.target.value))}
+                            onChange={(e) => { if (isCurrentScreen()) setReminderHour(Number(e.target.value)); }}
                             className="px-2 py-1 rounded text-xs outline-none"
                             style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
                         >

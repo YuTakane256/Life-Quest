@@ -13,7 +13,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 vi.mock('react-native', () => ({
-    AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
+    AppState: { currentState: 'active', addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
 }));
 
 interface MockNotificationRequest {
@@ -69,6 +69,7 @@ describe('runMobileNotificationChecks', () => {
         vi.setSystemTime(new Date('2026-07-13T12:00:00.000Z'));
         vi.clearAllMocks();
         useMobileSettingsStore.setState({
+            hasHydrated: true,
             notificationsEnabled: true,
             habitReminderHour: 20,
             notifiedTaskIds: [],
@@ -166,7 +167,15 @@ describe('runMobileNotificationChecks', () => {
 
 describe('ensureNotificationPermission', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
+        getPermissionsAsync.mockResolvedValue({ granted: true, canAskAgain: true });
+    });
+
+    it('許可状態の取得中に画面寿命を失ったらOSの許可要求を始めない', async () => {
+        let resolve!: (value: { granted: boolean; canAskAgain: boolean }) => void;
+        getPermissionsAsync.mockReturnValueOnce(new Promise((yes) => { resolve = yes; }));
+        let active = true; const pending = ensureNotificationPermission(() => active); active = false;
+        resolve({ granted: false, canAskAgain: true }); expect(await pending).toBe(false); expect(requestPermissionsAsync).not.toHaveBeenCalled();
     });
 
     it('既に許可済みなら再要求しない', async () => {

@@ -1,9 +1,11 @@
-import { act, createElement, type ReactNode } from 'react';
+import { act, createElement, StrictMode, useEffect, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 
-const mocks = vi.hoisted(() => ({ user: vi.fn(), pending: vi.fn(), approve: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), pending: vi.fn(), approve: vi.fn(), permission: vi.fn(), enqueue: vi.fn(async () => true),
+    toggle: (_enabled: boolean) => {}, blur: () => {}, focus: () => {},
+}));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: vi.fn(async () => null), setItem: vi.fn(async () => undefined), getAllKeys: vi.fn(async () => []),
 } }));
@@ -17,10 +19,15 @@ vi.mock('react-native', async () => {
             { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
         TextInput: ({ value, onChangeText, accessibilityLabel }: Props) => element('input',
             { value, onChange: (event) => onChangeText?.(event.currentTarget.value), 'aria-label': accessibilityLabel }),
-        Switch: () => element('input', { type: 'checkbox' }), StyleSheet: { create: <T,>(styles: T) => styles } };
+        Switch: ({ value, onValueChange, disabled, accessibilityLabel }: { value: boolean; onValueChange: (enabled: boolean) => void; disabled?: boolean; accessibilityLabel?: string }) => {
+            mocks.toggle = onValueChange;
+            return element('input', { type: 'checkbox', checked: value, disabled, 'aria-label': accessibilityLabel, onChange: (event) => onValueChange(event.target.checked) });
+        }, StyleSheet: { create: <T,>(styles: T) => styles } };
 });
 vi.mock('react-native-safe-area-context', async () => ({ SafeAreaView: ({ children }: { children: ReactNode }) => createElement('div', null, children) }));
-vi.mock('expo-router', () => ({ router: { push: vi.fn() } }));
+vi.mock('expo-router', () => ({ router: { push: vi.fn() }, useFocusEffect: (setup: () => (() => void) | undefined) => {
+    useEffect(() => { let cleanup = setup(); mocks.blur = () => { cleanup?.(); cleanup = undefined; }; mocks.focus = () => { cleanup = setup(); }; return () => cleanup?.(); }, [setup]);
+} }));
 vi.mock('../components/AppleSignInButton', () => ({ AppleSignInButton: () => null }));
 vi.mock('../theme/usePalette', async () => {
     const { LIGHT_THEME } = await import('@life-quest/core/designTokens');
@@ -33,12 +40,14 @@ vi.mock('../platform/auth', () => ({ getCurrentUser: mocks.user, getPasswordReco
     signOutUser: vi.fn(), signUpWithEmail: vi.fn(), updatePasswordFromRecovery: vi.fn() }));
 vi.mock('../platform/cloudMigration', () => ({ getPendingMobileContent: mocks.pending, approveMobileContentImport: mocks.approve }));
 vi.mock('../platform/supabase', () => ({ readMobileSupabaseEnv: () => ({ url: 'https://example.invalid', anonKey: 'test' }) }));
-vi.mock('../platform/notifications', () => ({ ensureNotificationPermission: vi.fn() }));
+vi.mock('../platform/notifications', () => ({ ensureNotificationPermission: mocks.permission }));
+vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue }));
 vi.mock('../platform/cloudSync', async () => {
     const { createInactiveCloudSyncState } = await import('@life-quest/core/cloudSyncState');
     return { getMobileCloudSyncState: createInactiveCloudSyncState, subscribeMobileCloudSyncState: () => () => undefined, syncMobileNow: vi.fn() };
 });
 import SettingsScreen from './SettingsScreen';
+import { useMobileSettingsStore } from '../stores/useMobileSettingsStore';
 
 let root: Root;
 let container: HTMLDivElement;
@@ -49,11 +58,68 @@ beforeEach(async () => {
     mocks.user.mockReset().mockResolvedValue({ userId: 'a', email: 'a@example.invalid' });
     mocks.pending.mockReset().mockResolvedValue({ tasks: [{ id: 'local' }], habits: [], dailyRecords: [] });
     mocks.approve.mockReset().mockResolvedValue({ status: 'imported' });
+    mocks.permission.mockReset().mockResolvedValue(true); mocks.enqueue.mockClear();
+    useMobileSettingsStore.setState({ hasHydrated: true, notificationsEnabled: false });
     await notifyLogin('a');
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals(); });
 const render = () => act(async () => root.render(createElement(SettingsScreen)));
+
+function deferred() { let resolve!: (granted: boolean) => void; let reject!: () => void; const promise = new Promise<boolean>((yes, no) => { resolve = yes; reject = () => no(new Error('fixture')); }); return { promise, resolve, reject }; }
+const notificationSwitch = () => container.querySelector<HTMLInputElement>('[aria-label="習慣リマインダー通知"]')!;
+describe('Mobile notification permission ownership', () => {
+    it('StrictModeでも通常の許可・時刻・OFF操作を維持する', async () => {
+        await act(async () => root.render(createElement(StrictMode, {}, createElement(SettingsScreen))));
+        await act(async () => mocks.toggle(true)); expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(true);
+        await act(async () => button('通知時刻を22時にする').click()); expect(useMobileSettingsStore.getState().habitReminderHour).toBe(22);
+        await act(async () => mocks.toggle(false)); expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(false);
+    });
+    it('許可待ちにOFFを選んだら、古い許可結果で再びONにしない', async () => {
+        const wait = deferred(); mocks.permission.mockReturnValueOnce(wait.promise); await render();
+        act(() => { mocks.toggle(true); mocks.toggle(true); }); expect(mocks.permission).toHaveBeenCalledOnce(); expect(notificationSwitch().checked).toBe(true);
+        act(() => mocks.toggle(false)); await act(async () => wait.resolve(true));
+        expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(false); expect(notificationSwitch().checked).toBe(false); expect(mocks.enqueue).not.toHaveBeenCalled();
+    });
+    it.each(['switch', 'logout', 'roundtrip', 'blur'])('%s後に戻っても古い許可を反映しない', async (kind) => {
+        const wait = deferred(); mocks.permission.mockReturnValueOnce(wait.promise); await render(); const old = mocks.toggle;
+        act(() => mocks.toggle(true));
+        await act(async () => {
+            if (kind === 'switch') await notifyLogin('b'); if (kind === 'logout') await notifyLogout();
+            if (kind === 'roundtrip') { await notifyLogout(); await notifyLogin('a'); }
+            if (kind === 'blur') { mocks.blur(); mocks.focus(); }
+            wait.resolve(true);
+        });
+        act(() => old(true)); expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(false);
+        expect(mocks.permission).toHaveBeenCalledOnce(); expect(notificationSwitch().checked).toBe(false);
+    });
+    it('アンマウント後に許可を反映しない', async () => {
+        const wait = deferred(); mocks.permission.mockReturnValueOnce(wait.promise); await render(); act(() => mocks.toggle(true));
+        await act(async () => { root.unmount(); wait.resolve(true); }); expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(false);
+    });
+    it('古い拒否・finallyで新しい許可待ちの表示を消さない', async () => {
+        const old = deferred(); const current = deferred(); mocks.permission.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise); await render();
+        act(() => mocks.toggle(true)); act(() => mocks.toggle(false)); act(() => mocks.toggle(true));
+        await act(async () => old.resolve(false)); expect(notificationSwitch().checked).toBe(true); expect(container.textContent).not.toContain('通知が許可されていません');
+        await act(async () => current.resolve(true)); expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(true);
+    });
+    it('同一ユーザー通知と同値pullでは許可待ちを維持する', async () => {
+        const wait = deferred(); mocks.permission.mockReturnValueOnce(wait.promise); await render(); act(() => mocks.toggle(true));
+        await act(async () => { await notifyLogin('a'); useMobileSettingsStore.setState({ notificationsEnabled: false }); wait.resolve(true); });
+        expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(true);
+    });
+    it('同期で設定がON→OFFになった場合は古い許可を反映しない', async () => {
+        const wait = deferred(); mocks.permission.mockReturnValueOnce(wait.promise); await render(); act(() => mocks.toggle(true));
+        await act(async () => { useMobileSettingsStore.setState({ notificationsEnabled: true }); useMobileSettingsStore.setState({ notificationsEnabled: false }); wait.resolve(true); });
+        expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(false);
+    });
+    it('復元前は要求せず、要求失敗は再試行できる', async () => {
+        useMobileSettingsStore.setState({ hasHydrated: false }); await render(); act(() => mocks.toggle(true)); expect(mocks.permission).not.toHaveBeenCalled();
+        await act(async () => useMobileSettingsStore.setState({ hasHydrated: true })); mocks.permission.mockRejectedValueOnce(new Error('fixture'));
+        await act(async () => mocks.toggle(true)); expect(notificationSwitch().checked).toBe(false); expect(container.textContent).toContain('通知が許可されていません');
+        await act(async () => mocks.toggle(true)); expect(useMobileSettingsStore.getState().notificationsEnabled).toBe(true);
+    });
+});
 
 describe('Mobile SettingsScreenの統合UI（native部品はDOMスタブ）', () => {
     it('候補を消したあとも統合完了メッセージを表示する', async () => {

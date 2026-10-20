@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { captureAuthSessionGuard, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -32,6 +32,7 @@ import {
     type MobileThemeMode,
 } from '../stores/useMobileSettingsStore';
 import { usePalette } from '../theme/usePalette';
+import { useInteractionScope } from '../hooks/useInteractionScope';
 
 type Mode = 'signIn' | 'signUp' | 'passwordReset';
 
@@ -83,6 +84,7 @@ export default function SettingsScreen() {
     const setMotionMode = useMobileSettingsStore((state) => state.setMotionMode);
     const notificationsEnabled = useMobileSettingsStore((state) => state.notificationsEnabled);
     const setNotificationsEnabled = useMobileSettingsStore((state) => state.setNotificationsEnabled);
+    const notificationSettingsHydrated = useMobileSettingsStore((state) => state.hasHydrated);
     const habitReminderHour = useMobileSettingsStore((state) => state.habitReminderHour);
     const setHabitReminderHour = useMobileSettingsStore((state) => state.setHabitReminderHour);
 
@@ -110,26 +112,51 @@ export default function SettingsScreen() {
         bytes: 0,
     });
     const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+    const notificationRequest = useRef<object | null>(null);
+    const [notificationPending, setNotificationPending] = useState({ active: false });
+    const notificationLifetime = useRef({});
+    const notificationInteractions = useInteractionScope(() => {
+        notificationLifetime.current = {}; notificationRequest.current = null; setNotificationPending({ active: false }); setNotificationMessage(null);
+    });
+    const renderedNotificationLifetime = notificationLifetime.current;
+    const renderedNotificationRequest = notificationRequest.current;
+    const isNotificationScreenCurrent = () => renderedNotificationLifetime === notificationLifetime.current && notificationInteractions.capture()();
+    useEffect(() => useMobileSettingsStore.subscribe((state, before) => {
+        if ((state.notificationsEnabled !== before.notificationsEnabled || state.hasHydrated !== before.hasHydrated) && notificationRequest.current) {
+            notificationRequest.current = null; setNotificationPending({ active: false });
+        }
+    }), []);
     const [syncState, setSyncState] = useState<CloudSyncPublicState>(getMobileCloudSyncState);
     const [syncing, setSyncing] = useState(false);
     const canSync = !syncing && canRequestCloudSync(syncState);
     const syncBusy = syncState.availability === 'ready' && (syncing || isCloudSyncBusy(syncState));
 
     // ONにする時はOSの通知許可を要求し、拒否されたらトグルを戻す（Web設定画面と同じ挙動）
-    const handleNotificationsToggle = useCallback(async (enabled: boolean) => {
+    let notificationToggleUsed = false;
+    const handleNotificationsToggle = async (enabled: boolean) => {
+        if (notificationToggleUsed || !isNotificationScreenCurrent() || !useMobileSettingsStore.getState().hasHydrated
+            || notificationRequest.current !== renderedNotificationRequest
+            || useMobileSettingsStore.getState().notificationsEnabled !== notificationsEnabled) return;
+        notificationToggleUsed = true;
         setNotificationMessage(null);
         if (!enabled) {
-            setNotificationsEnabled(false);
+            notificationRequest.current = null; setNotificationPending({ active: false });
+            if (useMobileSettingsStore.getState().notificationsEnabled) setNotificationsEnabled(false);
             return;
         }
-        const granted = await ensureNotificationPermission();
+        if (notificationRequest.current || useMobileSettingsStore.getState().notificationsEnabled) return;
+        const owner = {}; notificationRequest.current = owner; setNotificationPending({ active: true });
+        const isCurrent = notificationInteractions.capture();
+        let granted = false;
+        try { granted = await ensureNotificationPermission(() => notificationRequest.current === owner && isCurrent()); } catch { /* Keep app notifications disabled on permission errors. */ }
+        if (notificationRequest.current !== owner || !isCurrent()) return;
+        notificationRequest.current = null; setNotificationPending({ active: false });
         if (granted) {
             setNotificationsEnabled(true);
         } else {
-            setNotificationsEnabled(false);
             setNotificationMessage('通知が許可されていません。端末の設定アプリから通知を許可してください。');
         }
-    }, [setNotificationsEnabled]);
+    };
 
     useEffect(() => subscribeAuthSessionScope(() => {
         setDeleteConfirming(false);
@@ -504,13 +531,16 @@ export default function SettingsScreen() {
                                 <Text style={styles.hint}>{habitReminderHour}:00</Text>
                             </View>
                             <Switch
-                                value={notificationsEnabled}
+                                value={notificationsEnabled || notificationPending.active}
+                                disabled={!notificationSettingsHydrated}
+                                accessibilityState={{ busy: notificationPending.active, disabled: !notificationSettingsHydrated }}
                                 onValueChange={(enabled) => { void handleNotificationsToggle(enabled); }}
                                 trackColor={{ false: palette.bg.tertiary, true: palette.accent.primary }}
                                 thumbColor="#ffffff"
                                 accessibilityLabel="習慣リマインダー通知"
                             />
                         </View>
+                        {notificationPending.active && <Text accessibilityRole="alert" style={styles.hint}>通知の許可を確認しています。もう一度OFFにするとアプリの通知を無効のままにできます。</Text>}
                         {notificationMessage && (
                             <Text accessibilityRole="alert" style={styles.hint}>{notificationMessage}</Text>
                         )}
@@ -521,7 +551,7 @@ export default function SettingsScreen() {
                                     accessibilityRole="radio"
                                     accessibilityState={{ selected: habitReminderHour === hour }}
                                     accessibilityLabel={`通知時刻を${hour}時にする`}
-                                    onPress={() => setHabitReminderHour(hour)}
+                                    onPress={() => { if (isNotificationScreenCurrent() && useMobileSettingsStore.getState().hasHydrated) setHabitReminderHour(hour); }}
                                     style={[styles.timeChip, habitReminderHour === hour && styles.timeChipActive]}
                                 >
                                     <Text style={[styles.timeChipText, habitReminderHour === hour && styles.timeChipTextActive]}>

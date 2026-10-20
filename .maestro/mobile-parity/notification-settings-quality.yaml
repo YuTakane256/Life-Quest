@@ -1,0 +1,31 @@
+appId: com.yutakane.lifequest.parity
+name: Notification hour settings without OS permission or delivery (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "設定(, tab,.*)?"
+- scrollUntilVisible:
+    element: "通知時刻を22時にする"
+    direction: DOWN
+    centerElement: true
+# Do not enable notifications: OS permissions and actual delivery are separate release checks.
+- tapOn: "通知時刻を22時にする"
+- assertVisible: "22:00"
+- tapOn: "通知時刻を7時にする"
+- assertVisible: "7:00"
+- tapOn: "通知時刻を20時にする"
+- assertVisible: "20:00"
+- takeScreenshot: "notification-${REFERENCE_THEME}-off"
+- tapOn: "タスク(, tab,.*)?"
+- tapOn: "設定(, tab,.*)?"
+- scrollUntilVisible:
+    element: "通知時刻を20時にする"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "20:00"
