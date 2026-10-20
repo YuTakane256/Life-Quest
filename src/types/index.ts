@@ -123,7 +123,7 @@ export interface TaskStoreState {
     duplicateTask: (id: string) => string | null; // 既存タスクを複製して新規追加。新タスクIDを返す（元タスクが無ければ null）
     deleteCompletedTasks: (approvedTaskIds?: readonly string[]) => void; // 完了タスクを一括削除（保留中・未承認は除外）
     toggleComplete: (id: string) => void;
-    addSubtask: (taskId: string, name: string) => void;
+    addSubtask: (taskId: string, name: string) => boolean;
     deleteSubtask: (taskId: string, subtaskId: string) => void;
     toggleSubtaskComplete: (taskId: string, subtaskId: string) => void;
     cancelPendingCompletion: (taskId: string) => void;

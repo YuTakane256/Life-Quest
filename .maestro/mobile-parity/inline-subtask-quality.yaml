@@ -1,0 +1,69 @@
+appId: com.yutakane.lifequest.parity
+name: Inline subtask input and stale drafts (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "サブタスクを追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "サブタスクを追加"
+- inputText: "Inline step"
+- pressKey: enter
+- assertVisible: "サブタスクInline stepを完了にする"
+- takeScreenshot: "inline-${REFERENCE_THEME}-added"
+- tapOn: "サブタスクInline stepを完了にする"
+- tapOn: "サブタスクInline stepを未完了にする"
+- tapOn: "サブタスクInline stepを削除"
+- assertNotVisible: "サブタスクInline stepを完了にする"
+# Reset only the memory fixture so the next capture matches the fresh Web conflict case.
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "サブタスクを追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "サブタスクを追加"
+- inputText: "Kept draft"
+- scrollUntilVisible:
+    element: "サブタスク優先順位を書き出すを未完了にする"
+    direction: UP
+    centerElement: true
+- tapOn: "サブタスク優先順位を書き出すを未完了にする"
+- scrollUntilVisible:
+    element: "今週の計画を整理するにサブタスクを追加"
+    direction: DOWN
+    centerElement: true
+- tapOn: "今週の計画を整理するにサブタスクを追加"
+- assertVisible: "このタスクは変更されています.*"
+- tapOn: "サブタスクを追加"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "入力をやり直す"
+    direction: DOWN
+    centerElement: true
+- takeScreenshot: "inline-${REFERENCE_THEME}-conflict"
+- tapOn: "入力をやり直す"
+- tapOn: "サブタスクを追加"
+- inputText: "Retry step"
+- pressKey: enter
+- assertVisible: "サブタスクRetry stepを完了にする"
+- tapOn: "サブタスクを追加"
+- inputText: "Discard draft"
+- tapOn: "習慣(, tab,.*)?"
+- tapOn: "タスク(, tab,.*)?"
+- scrollUntilVisible:
+    element: "サブタスクを追加"
+    direction: DOWN
+    centerElement: true
+- assertNotVisible: "Discard draft"
+- takeScreenshot: "inline-${REFERENCE_THEME}-reset"

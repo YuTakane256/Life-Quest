@@ -477,10 +477,10 @@ export const useTaskStore = create<TaskStoreState>()(
 
                 addSubtask: (taskId: string, name: string) => {
                     const trimmedName = clampString(name.trim(), UI_CONFIG.MAX_SUBTASK_NAME_LENGTH);
-                    if (!trimmedName) return;
+                    if (!trimmedName) return false;
 
                     const task = get().tasks.find((candidate) => candidate.id === taskId);
-                    if (!task || task.subtasks.length >= MAX_SUBTASKS_PER_TASK) return;
+                    if (!task || task.subtasks.length >= MAX_SUBTASKS_PER_TASK) return false;
 
                     const pending = get().pendingCompletions.find((p) => p.taskId === taskId);
                     clearPendingCompletionTimer(pending);
@@ -514,6 +514,7 @@ export const useTaskStore = create<TaskStoreState>()(
                         { p_id: newSubtaskId, p_task_id: taskId, p_name: trimmedName },
                         { dependsOnEntityIds: [taskId], trackEntityId: newSubtaskId },
                     );
+                    return true;
                 },
 
                 deleteSubtask: (taskId: string, subtaskId: string) => {
