@@ -33,6 +33,7 @@ import {
     X,
 } from 'lucide-react-native';
 import { isValidYmd, shiftDate } from '@life-quest/core/dates';
+import { captureAuthSessionScope } from '@life-quest/core/authLifecycle';
 import {
     TASK_LIMITS,
     captureCompletedTaskDeletion,
@@ -86,6 +87,9 @@ export default function TasksScreen() {
     const router = useRouter();
     const list = useRef<FlatList<Task>>(null);
     const pendingDelete = useRef<object | null>(null);
+    const screenLifetime = useRef({});
+    const pendingShare = useRef<object | null>(null);
+    const [sharing, setSharing] = useState(false);
     const [query, setQuery] = useState('');
     const [due, setDue] = useState<DueFilter>('all');
     const [priority, setPriority] = useState<'all' | Priority>('all');
@@ -109,11 +113,38 @@ export default function TasksScreen() {
         Keyboard.dismiss();
     };
     const interactions = useInteractionScope(() => {
+        screenLifetime.current = {};
+        pendingShare.current = null; setSharing(false);
         pendingDelete.current = null;
         closeForm();
         setExpandOverrides({});
+        setQuery(''); setDue('all'); setPriority('all'); setTags([]); setCompletedOpen(false);
     });
-    const isScreenCurrent = () => interactions.capture()();
+    const renderedLifetime = screenLifetime.current;
+    const isScreenCurrent = () => screenLifetime.current === renderedLifetime && interactions.capture()();
+    const guardTaskAction = (task: Task, action: () => void | boolean) => {
+        const accepts = captureTaskEdit(task);
+        let used = false;
+        return () => {
+            const current = useMobileTaskStore.getState();
+            if (used || !isScreenCurrent() || !current.hasHydrated || !accepts(current.tasks.find((item) => item.id === task.id))) return;
+            used = true;
+            if (action() === false) used = false;
+        };
+    };
+    const shareCsv = async () => {
+        const current = useMobileTaskStore.getState();
+        if (!isScreenCurrent() || pendingShare.current || !current.hasHydrated || !current.tasks.length) return;
+        const owner = {}; const isCurrent = interactions.capture();
+        pendingShare.current = owner; setSharing(true);
+        try {
+            await Share.share({ title: 'Life Quest タスク', message: tasksToCsv(current.tasks) });
+        } catch {
+            if (pendingShare.current === owner && isCurrent()) Alert.alert('共有できませんでした', 'もう一度お試しください。');
+        } finally {
+            if (pendingShare.current === owner && isCurrent()) { pendingShare.current = null; setSharing(false); }
+        }
+    };
     const renderedFormOwner = formOwner.current;
     const isFormCurrent = () => renderedFormOwner !== null && formOwner.current === renderedFormOwner && renderedFormOwner();
     const beginForm = (task: Task | null) => {
@@ -143,6 +174,7 @@ export default function TasksScreen() {
         (task) => task.completed && !pending.has(task.id),
     ).length;
     const requestDeleteCompleted = () => {
+        if (!isScreenCurrent()) return;
         const isCurrent = interactions.capture();
         if (!isCurrent()) return;
         const current = useMobileTaskStore.getState();
@@ -165,6 +197,7 @@ export default function TasksScreen() {
         ]);
     };
     const requestDeleteTask = (task: Task) => {
+        if (!isScreenCurrent()) return;
         const isCurrent = interactions.capture();
         const accepts = captureTaskEdit(task);
         const current = useMobileTaskStore.getState();
@@ -196,21 +229,38 @@ export default function TasksScreen() {
         }
         store.toggleTask(task.id);
         if (!task.completed) {
+            const pending = useMobileTaskStore.getState().pendingCompletions.find((item) => item.taskId === task.id);
+            if (!pending) return;
+            const scope = captureAuthSessionScope();
             setCompletedOpen(true);
-            undo(`「${task.name}」を完了しました`, () =>
-                store.cancelPendingCompletion(task.id),
-            );
+            undo(`「${task.name}」を完了しました`, () => {
+                const current = useMobileTaskStore.getState();
+                if (scope.isCurrent() && current.pendingCompletions.find((item) => item.taskId === task.id) === pending) current.cancelPendingCompletion(task.id);
+            });
         }
     };
     const duplicate = (task: Task) => {
         const id = store.duplicateTask(task.id);
-        if (id)
-            undo(`「${task.name}」を複製しました`, () => store.deleteTask(id));
-        else
+        if (id) {
+            const clone = useMobileTaskStore.getState().tasks.find((item) => item.id === id);
+            if (!clone) return false;
+            const acceptsClone = captureTaskEdit(clone);
+            const scope = captureAuthSessionScope();
+            undo(`「${task.name}」を複製しました`, () => {
+                const current = useMobileTaskStore.getState();
+                if (!scope.isCurrent()) return;
+                const target = current.tasks.find((item) => item.id === id);
+                if (acceptsClone(target)) current.deleteTask(id);
+                else if (target && isScreenCurrent()) Alert.alert('元に戻せませんでした', '複製後に内容が変更されています。必要な場合は内容を確認して削除してください。');
+            });
+            return true;
+        } else {
             Alert.alert(
                 '複製できませんでした',
                 'タスク数の上限に達している可能性があります。',
             );
+            return false;
+        }
     };
     const renderTask = (task: Task) => {
         const expanded = expandOverrides[task.id] ?? task.subtasks.length > 0;
@@ -241,18 +291,18 @@ export default function TasksScreen() {
                     <IconButton
                         icon={expanded ? ChevronDown : ChevronRight}
                         label={`タスク「${task.name}」を${expanded ? '折りたたむ' : '展開'}`}
-                        onPress={() =>
+                        onPress={guardTaskAction(task, () =>
                             setExpandOverrides((current) => ({
                                 ...current,
                                 [task.id]: !expanded,
                             }))
-                        }
+                        )}
                     />
                     <Pressable
                         accessibilityRole="checkbox"
                         accessibilityState={{ checked: task.completed }}
                         accessibilityLabel={`${task.name}を${task.completed ? '未完了' : '完了'}にする`}
-                        onPress={() => toggle(task)}
+                        onPress={guardTaskAction(task, () => toggle(task))}
                         hitSlop={5}
                         style={[
                             s.checkbox,
@@ -269,7 +319,7 @@ export default function TasksScreen() {
                         {task.completed && <Check size={12} color="#fff" />}
                     </Pressable>
                     <Pressable
-                        onLongPress={() => edit(task)}
+                        onLongPress={guardTaskAction(task, () => edit(task))}
                         accessibilityLabel={task.name}
                         style={{ flex: 1 }}
                     >
@@ -377,12 +427,12 @@ export default function TasksScreen() {
                         <IconButton
                             icon={Copy}
                             label={`${task.name}を複製`}
-                            onPress={() => duplicate(task)}
+                            onPress={guardTaskAction(task, () => duplicate(task))}
                         />
                         <IconButton
                             icon={Edit3}
                             label={`${task.name}を編集`}
-                            onPress={() => edit(task)}
+                            onPress={guardTaskAction(task, () => edit(task))}
                         />
                         <IconButton
                             icon={Trash2}
@@ -433,20 +483,8 @@ export default function TasksScreen() {
                                         icon={Download}
                                         label="タスクをCSVで共有"
                                         color={p.accent.emerald}
-                                        disabled={!store.tasks.length}
-                                        onPress={() => {
-                                            void Share.share({
-                                                title: 'Life Quest タスク',
-                                                message: tasksToCsv(
-                                                    store.tasks,
-                                                ),
-                                            }).catch(() =>
-                                                Alert.alert(
-                                                    '共有できませんでした',
-                                                    'もう一度お試しください。',
-                                                ),
-                                            );
-                                        }}
+                                        disabled={!store.tasks.length || !store.hasHydrated || sharing}
+                                        onPress={() => { void shareCsv(); }}
                                     />
                                     <IconButton
                                         round
@@ -478,7 +516,7 @@ export default function TasksScreen() {
                                     accessibilityLabel="タスクを検索"
                                     placeholder="タスクを検索..."
                                     value={query}
-                                    onChangeText={setQuery}
+                                    onChangeText={(value) => { if (isScreenCurrent()) setQuery(value); }}
                                     style={{
                                         flex: 1,
                                         borderWidth: 0,
@@ -491,7 +529,7 @@ export default function TasksScreen() {
                                     <IconButton
                                         icon={X}
                                         label="検索をクリア"
-                                        onPress={() => setQuery('')}
+                                        onPress={() => { if (isScreenCurrent()) setQuery(''); }}
                                     />
                                 )}
                             </View>
@@ -509,7 +547,7 @@ export default function TasksScreen() {
                                         label={label}
                                         accessibilityLabel={`期限フィルター ${label}`}
                                         selected={due === key}
-                                        onPress={() => setDue(key)}
+                                        onPress={() => { if (isScreenCurrent()) setDue(key); }}
                                     />
                                 ))}
                             </View>
@@ -531,7 +569,7 @@ export default function TasksScreen() {
                                                 ? undefined
                                                 : p.priority[key]
                                         }
-                                        onPress={() => setPriority(key)}
+                                        onPress={() => { if (isScreenCurrent()) setPriority(key); }}
                                     />
                                 ))}
                             </View>
@@ -541,7 +579,7 @@ export default function TasksScreen() {
                                     label="並び替え"
                                     value={sort}
                                     options={TASK_SORT_OPTIONS}
-                                    onChange={setSort}
+                                    onChange={(value) => { if (isScreenCurrent()) setSort(value); }}
                                 />
                                 {deletable > 0 && (
                                     <Pressable
@@ -584,7 +622,7 @@ export default function TasksScreen() {
                                             label={tag}
                                             accessibilityLabel={`タグ絞り込み ${tag}`}
                                             selected={tags.includes(tag)}
-                                            onPress={() =>
+                                            onPress={() => { if (isScreenCurrent())
                                                 setTags((current) =>
                                                     current.includes(tag)
                                                         ? current.filter(
@@ -592,15 +630,15 @@ export default function TasksScreen() {
                                                                   value !== tag,
                                                           )
                                                         : [...current, tag],
-                                                )
-                                            }
+                                                );
+                                            }}
                                         />
                                     ))}
                                     {tags.length > 0 && (
                                         <IconButton
                                             icon={X}
                                             label="タグ絞り込みをクリア"
-                                            onPress={() => setTags([])}
+                                            onPress={() => { if (isScreenCurrent()) setTags([]); }}
                                         />
                                     )}
                                 </View>
@@ -648,9 +686,7 @@ export default function TasksScreen() {
                                     accessibilityState={{
                                         expanded: completedOpen,
                                     }}
-                                    onPress={() =>
-                                        setCompletedOpen((value) => !value)
-                                    }
+                                    onPress={() => { if (isScreenCurrent()) setCompletedOpen((value) => !value); }}
                                     style={[
                                         ui.row,
                                         {

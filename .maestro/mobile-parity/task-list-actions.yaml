@@ -1,0 +1,51 @@
+appId: com.yutakane.lifequest.parity
+name: Task list actions, Undo and CSV sharing (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "メールを返信するを完了にする"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "メールを返信するを完了にする"
+    waitToSettleTimeoutMs: 200
+- tapOn:
+    text: "取消する"
+    waitToSettleTimeoutMs: 200
+- assertVisible: "メールを返信するを完了にする"
+- tapOn:
+    text: "メールを返信するを複製"
+    waitToSettleTimeoutMs: 200
+- tapOn:
+    text: "取消する"
+    waitToSettleTimeoutMs: 200
+- scrollUntilVisible:
+    element: "タスクを検索"
+    direction: UP
+    centerElement: true
+- takeScreenshot: "task-list-${REFERENCE_THEME}-reset"
+- tapOn: "タスクを検索"
+- inputText: "No match"
+- pressKey: enter
+- takeScreenshot: "task-list-${REFERENCE_THEME}-filtered"
+- tapOn: "タスクをCSVで共有"
+- extendedWaitUntil:
+    visible: "ポップアップを閉じる|閉じる|Close"
+    timeout: 30000
+- takeScreenshot: "task-list-${REFERENCE_THEME}-share"
+- tapOn: "ポップアップを閉じる|閉じる|Close"
+- tapOn: "習慣(, tab,.*)?"
+- tapOn: "タスク(, tab,.*)?"
+- assertNotVisible: "No match"
+- scrollUntilVisible:
+    element: "メールを返信するを完了にする"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "メールを返信するを完了にする"
