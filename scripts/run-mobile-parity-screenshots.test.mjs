@@ -77,6 +77,17 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('guards habit actions with a daily local-only runtime on 8082', () => {
+        expect(getMobileParityMetroUrl('habitList')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('habitList')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
+        expect(() => assertReferenceProfile({ extra }, 'habitList')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { appVariant: 'release' }]) {
+            expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'habitList')).toThrow();
+        }
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('habitList').path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp'); expect(yaml).toContain('127.0.0.1%3A8082');
+        expect(yaml).toContain('Saved daily memo'); expect(yaml).toContain('カテゴリ: 健康');
+    });
     it('guards task list and CSV checks with a daily local-only runtime on 8082', () => {
         expect(getMobileParityMetroUrl('taskList')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('taskList')).toBe(true);
         const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };

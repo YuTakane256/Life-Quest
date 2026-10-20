@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
-import { captureHabitDeletion, captureHabitMemoEdit } from '@life-quest/core/habits';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { captureHabitCompletion, captureHabitDeletion, captureHabitMemoEdit } from '@life-quest/core/habits';
 import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown, ChevronRight } from 'lucide-react';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortStore';
@@ -40,15 +40,21 @@ export function HabitsPage() {
     const restRef = useRef<RestOwner | null>(null);
     const showRestConfirm = restOwner !== null;
     const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
+    useEffect(() => {
+        if (filterCategoryId && !habits.some((habit) => (habit.categoryId || DEFAULT_CATEGORY_ID) === filterCategoryId)) setFilterCategoryId(null);
+    }, [habits, filterCategoryId]);
     const [historyHabitId, setHistoryHabitId] = useState<string | null>(null);
     const deleteRef = useRef<object | null>(null);
     const [deleteConfirmation, setDeleteConfirmation] = useState<{ name: string; confirm: () => void; cancel: () => void } | null>(null);
     const [deleteError, setDeleteError] = useState('');
+    const [actionError, setActionError] = useState({ message: '' });
+    const screenLifetime = useRef({});
     const closeForm = () => { formRef.current = null; setFormOwner(null); setName(''); setSelectedCategoryId(DEFAULT_CATEGORY_ID); };
     const closeMemo = useCallback(() => { memoRef.current = null; setMemoOwner(null); setMemoText(''); setMemoError(''); }, []);
     const closeRest = () => { restRef.current = null; setRestOwner(null); };
-    const interactions = useInteractionScope(() => { closeForm(); closeMemo(); closeRest(); setHistoryHabitId(null); deleteRef.current = null; setDeleteConfirmation(null); setDeleteError(''); });
-    const isScreenCurrent = () => interactions.capture()();
+    const interactions = useInteractionScope(() => { screenLifetime.current = {}; closeForm(); closeMemo(); closeRest(); setHistoryHabitId(null); setFilterCategoryId(null); setActionError({ message: '' }); deleteRef.current = null; setDeleteConfirmation(null); setDeleteError(''); });
+    const renderedLifetime = screenLifetime.current;
+    const isScreenCurrent = () => screenLifetime.current === renderedLifetime && interactions.capture()();
     const ownsForm = () => formOwner !== null && formRef.current === formOwner && formOwner.isCurrent();
     const ownsMemo = useCallback(() => memoOwner !== null && memoRef.current === memoOwner && memoOwner.isCurrent(), [memoOwner]);
     const ownsRest = () => restOwner !== null && restRef.current === restOwner && restOwner.isCurrent();
@@ -64,6 +70,7 @@ export function HabitsPage() {
         restRef.current = owner; setRestOwner(owner);
     };
     const requestDeleteHabit = (habit: Habit) => {
+        if (!isScreenCurrent()) return;
         const isCurrent = interactions.capture();
         const current = useHabitStore.getState();
         const accepts = captureHabitDeletion(habit, current.dailyRecords);
@@ -137,7 +144,7 @@ export function HabitsPage() {
         return { groups, statsMap };
         // dailyRecords も並び順（ストリーク/達成率）に影響するため依存に含める
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [habits, filterCategoryId, sortMode, dailyRecords, getHabitStreak, getHabitCompletionRate]);
+    }, [habits, filterCategoryId, sortMode, dailyRecords, restDays, today, getHabitStreak, getHabitCompletionRate]);
 
     // 使用中のカテゴリID一覧（フィルタータブ用）
     const usedCategoryIds = useMemo(() => {
@@ -151,20 +158,32 @@ export function HabitsPage() {
         addHabit(name.trim(), selectedCategoryId); closeForm();
     };
 
-    const handleToggle = (habitId: string) => {
-        if (!isScreenCurrent()) return;
-        const date = getTodayJST();
-        const record = useHabitStore.getState().dailyRecords.find((item) => item.habitId === habitId && item.date === date);
-        const isCompleting = !record?.completed;
-        toggleHabitCompletion(habitId, date);
-        if (isCompleting) {
+    const completionAction = (habit: Habit) => {
+        const renderedRecord = getRecordForHabit(habit.id);
+        const accepts = captureHabitCompletion(habit, renderedRecord);
+        let used = false;
+        return () => {
+            if (used || !isScreenCurrent()) return;
             const current = useHabitStore.getState();
-            const habit = current.habits.find((item) => item.id === habitId);
-            const entry = current.dailyRecords.find((item) => item.habitId === habitId && item.date === date);
-            if (!habit || !entry?.completed) return;
-            const owner = { isCurrent: interactions.capture(), habitId, date, accepts: captureHabitMemoEdit(habit, entry) };
-            memoRef.current = owner; setMemoOwner(owner); setMemoText(entry.memo); setMemoError('');
-        }
+            if (getTodayJST() !== today || !accepts(current.habits.find((item) => item.id === habit.id),
+                current.dailyRecords.find((item) => item.habitId === habit.id && item.date === today))) {
+                setActionError({ message: '日付または習慣の内容が変わりました。最新の一覧を確認して操作し直してください。' }); return;
+            }
+            used = true; setActionError({ message: '' });
+            const date = today;
+            const habitId = habit.id;
+            const isCompleting = !renderedRecord?.completed;
+            toggleHabitCompletion(habitId, date);
+            if (!isScreenCurrent()) return;
+            if (isCompleting) {
+                const current = useHabitStore.getState();
+                const habit = current.habits.find((item) => item.id === habitId);
+                const entry = current.dailyRecords.find((item) => item.habitId === habitId && item.date === date);
+                if (!habit || !entry?.completed) return;
+                const owner = { isCurrent: interactions.capture(), habitId, date, accepts: captureHabitMemoEdit(habit, entry) };
+                memoRef.current = owner; setMemoOwner(owner); setMemoText(entry.memo); setMemoError('');
+            }
+        };
     };
 
     const handleSaveMemo = () => {
@@ -206,6 +225,8 @@ export function HabitsPage() {
                 </div>
             </div>
 
+            {actionError.message && <p role="alert" className="text-sm mb-3" style={{ color: 'var(--color-text-danger)' }}>{actionError.message}</p>}
+
             {/* プログレスバー */}
             {habits.length > 0 && <div className="mb-4"><div
                 className="w-full h-2 rounded-full overflow-hidden"
@@ -227,7 +248,8 @@ export function HabitsPage() {
                 <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
                     <Filter size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
                     <button
-                        onClick={() => setFilterCategoryId(null)}
+                        onClick={() => { if (isScreenCurrent()) setFilterCategoryId(null); }}
+                        aria-label="カテゴリ: すべて"
                         aria-pressed={filterCategoryId === null}
                         className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200"
                         style={{
@@ -241,7 +263,8 @@ export function HabitsPage() {
                     {usedCategoryIds.map((cat) => (
                         <button
                             key={cat.id}
-                            onClick={() => setFilterCategoryId(filterCategoryId === cat.id ? null : cat.id)}
+                            onClick={() => { if (isScreenCurrent()) setFilterCategoryId(filterCategoryId === cat.id ? null : cat.id); }}
+                            aria-label={`カテゴリ: ${cat.name}`}
                             aria-pressed={filterCategoryId === cat.id}
                             className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200"
                             style={{
@@ -370,7 +393,7 @@ export function HabitsPage() {
                                             }}
                                         >
                                             <button
-                                                onClick={() => handleToggle(habit.id)}
+                                                onClick={completionAction(habit)}
                                                 aria-label={`習慣「${habit.name}」を${isCompleted ? '未達成' : '達成'}にする`}
                                                 className="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
                                                 style={{
