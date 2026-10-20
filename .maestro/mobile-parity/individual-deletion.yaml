@@ -1,0 +1,34 @@
+appId: com.yutakane.lifequest.parity
+name: Individual task and habit deletion (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "今週の計画を整理するを削除"
+    direction: DOWN
+    centerElement: true
+- tapOn: "今週の計画を整理するを削除"
+- assertVisible: "タスクを削除しますか？"
+- takeScreenshot: "task-delete-${REFERENCE_THEME}"
+- tapOn: "キャンセル"
+- assertVisible: "今週の計画を整理するを削除"
+- tapOn: "今週の計画を整理するを削除"
+- tapOn: "削除する"
+- assertNotVisible: "今週の計画を整理するを削除"
+- assertVisible: "メールを返信するを削除"
+- tapOn: "習慣(, tab,.*)?"
+- tapOn: "「読書を20分続ける」を削除"
+- assertVisible: "習慣を削除しますか？"
+- takeScreenshot: "habit-delete-${REFERENCE_THEME}"
+- tapOn: "キャンセル"
+- assertVisible: "「読書を20分続ける」を削除"
+- tapOn: "「読書を20分続ける」を削除"
+- tapOn: "削除する"
+- assertNotVisible: "「読書を20分続ける」を削除"
+- assertVisible: "「朝に散歩する」を削除"

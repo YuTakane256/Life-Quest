@@ -164,6 +164,28 @@ export default function TasksScreen() {
             } },
         ]);
     };
+    const requestDeleteTask = (task: Task) => {
+        const isCurrent = interactions.capture();
+        const accepts = captureTaskEdit(task);
+        const current = useMobileTaskStore.getState();
+        if (!isCurrent() || !accepts(current.tasks.find((item) => item.id === task.id))) return;
+        const wasPending = current.pendingCompletions.some((item) => item.taskId === task.id);
+        const token = {}; pendingDelete.current = token;
+        const cancel = () => { if (pendingDelete.current === token) pendingDelete.current = null; };
+        Alert.alert('タスクを削除しますか？', `「${task.name}」とサブタスクを削除します。この操作は取り消せません。`, [
+            { text: 'キャンセル', style: 'cancel', onPress: cancel },
+            { text: '削除する', style: 'destructive', onPress: () => {
+                if (!isCurrent() || pendingDelete.current !== token) return;
+                cancel();
+                const latest = useMobileTaskStore.getState();
+                if (!accepts(latest.tasks.find((item) => item.id === task.id))
+                    || wasPending !== latest.pendingCompletions.some((item) => item.taskId === task.id)) {
+                    Alert.alert('削除できませんでした', 'このタスクは変更されています。内容を確認し、削除し直してください。'); return;
+                }
+                latest.deleteTask(task.id);
+            } },
+        ], { onDismiss: cancel });
+    };
     const edit = (task: Task) => {
         beginForm(task);
     };
@@ -366,7 +388,7 @@ export default function TasksScreen() {
                             icon={Trash2}
                             label={`${task.name}を削除`}
                             color={p.text.danger}
-                            onPress={() => store.deleteTask(task.id)}
+                            onPress={() => requestDeleteTask(task)}
                         />
                     </View>
                 </View>
