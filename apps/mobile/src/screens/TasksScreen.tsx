@@ -943,9 +943,34 @@ function Subtasks({ task }: { task: Task }) {
     const store = useMobileTaskStore();
     const { palette: p } = usePalette();
     const s = dailyStyles(p);
-    const [draft, setDraft] = useState('');
+    const [draft, setDraft] = useState({ text: '', error: '' });
+    const owner = useRef<{ accepts: ReturnType<typeof captureTaskEdit>; isCurrent: () => boolean } | null>(null);
+    const lifetime = useRef({});
+    const reset = () => { owner.current = null; lifetime.current = {}; setDraft({ text: '', error: '' }); };
+    const interactions = useInteractionScope(reset);
+    const renderedLifetime = lifetime.current;
+    const isCurrent = () => lifetime.current === renderedLifetime && interactions.capture()();
+    const renderedOwner = owner.current;
+    const acceptsRow = captureTaskEdit(task);
+    const canAct = () => isCurrent() && acceptsRow(useMobileTaskStore.getState().tasks.find((item) => item.id === task.id));
+    const change = (text: string) => {
+        if (!isCurrent()) return;
+        if (!text) { reset(); return; }
+        owner.current ??= { accepts: captureTaskEdit(task), isCurrent: interactions.capture() };
+        setDraft({ text, error: '' });
+    };
     const add = () => {
-        if (store.addSubtask(task.id, draft)) setDraft('');
+        if (!isCurrent() || !renderedOwner || owner.current !== renderedOwner || !renderedOwner.isCurrent() || !draft.text.trim()) return;
+        const current = useMobileTaskStore.getState();
+        if (!renderedOwner.accepts(current.tasks.find((item) => item.id === task.id))) {
+            setDraft((value) => ({ ...value, error: 'このタスクは変更されています。入力内容を確認し、「入力をやり直す」から追加し直してください。' })); return;
+        }
+        owner.current = null;
+        if (current.addSubtask(task.id, draft.text)) reset();
+        else {
+            owner.current = renderedOwner;
+            setDraft((value) => ({ ...value, error: '追加できませんでした。読み込み状態やサブタスク数の上限を確認してください。' }));
+        }
     };
     return (
         <View
@@ -975,9 +1000,7 @@ function Subtasks({ task }: { task: Task }) {
                         accessibilityRole="checkbox"
                         accessibilityState={{ checked: subtask.completed }}
                         accessibilityLabel={`サブタスク${subtask.name}を${subtask.completed ? '未完了' : '完了'}にする`}
-                        onPress={() =>
-                            store.toggleSubtaskComplete(task.id, subtask.id)
-                        }
+                        onPress={() => { if (canAct()) store.toggleSubtaskComplete(task.id, subtask.id); }}
                         style={[
                             s.checkbox,
                             {
@@ -1012,7 +1035,7 @@ function Subtasks({ task }: { task: Task }) {
                         icon={X}
                         label={`サブタスク${subtask.name}を削除`}
                         color={p.text.danger}
-                        onPress={() => store.deleteSubtask(task.id, subtask.id)}
+                        onPress={() => { if (canAct()) store.deleteSubtask(task.id, subtask.id); }}
                     />
                 </View>
             ))}
@@ -1020,8 +1043,8 @@ function Subtasks({ task }: { task: Task }) {
                 <Field
                     accessibilityLabel="サブタスクを追加"
                     placeholder="サブタスクを追加..."
-                    value={draft}
-                    onChangeText={setDraft}
+                    value={draft.text}
+                    onChangeText={change}
                     onSubmitEditing={add}
                     maxLength={TASK_LIMITS.maxSubtaskNameLength}
                     style={{ flex: 1, minHeight: 36, paddingVertical: 8 }}
@@ -1033,6 +1056,12 @@ function Subtasks({ task }: { task: Task }) {
                     onPress={add}
                 />
             </View>
+            {draft.error !== '' && <View style={{ gap: 8 }}>
+                <Text accessibilityRole="alert" style={{ color: p.text.danger }}>{draft.error}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="入力をやり直す" onPress={() => { if (isCurrent()) reset(); }}>
+                    <Text style={{ color: p.accent.primary, textDecorationLine: 'underline' }}>入力をやり直す</Text>
+                </Pressable>
+            </View>}
         </View>
     );
 }

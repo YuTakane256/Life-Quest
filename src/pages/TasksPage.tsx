@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { captureCompletedTaskDeletion, captureTaskEdit } from '@life-quest/core/tasks';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Edit3, X, ChevronDown, ChevronRight, ListPlus, Repeat, Copy, HelpCircle, Download } from 'lucide-react';
+import { Plus, Trash2, Edit3, ChevronDown, ChevronRight, Repeat, Copy, HelpCircle, Download } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useTaskSortStore } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/snackbarContext';
@@ -12,11 +12,12 @@ import { PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_SORT_ORDER, RECURRENCE_LABEL
 import type { Priority, Recurrence, Task, Subtask } from '../types';
 import { TaskFilters, type DueFilter, type PriorityFilter } from '../components/tasks/TaskFilters';
 import { TaskForm } from '../components/tasks/TaskForm';
+import { TaskSubtasks } from '../components/tasks/TaskSubtasks';
 import { useInteractionScope } from '../hooks/useInteractionScope';
 
 export function TasksPage() {
     const navigate = useNavigate();
-    const { tasks, addTask, updateTask, deleteTask, duplicateTask, deleteCompletedTasks, toggleComplete, addSubtask, deleteSubtask, toggleSubtaskComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
+    const { tasks, addTask, updateTask, deleteTask, duplicateTask, deleteCompletedTasks, toggleComplete, cancelPendingCompletion, pendingCompletions } = useTaskStore();
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
     const [showForm, setShowForm] = useState(false);
@@ -35,7 +36,6 @@ export function TasksPage() {
     const [dueFilter, setDueFilter] = useState<DueFilter>('all');
     const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
     const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
-    const [subtaskInputs, setSubtaskInputs] = useState<Record<string, string>>({});
     const [formSubtasks, setFormSubtasks] = useState<Subtask[]>([]);
     const [formSubtaskInput, setFormSubtaskInput] = useState('');
     const [formError, setFormError] = useState('');
@@ -122,7 +122,6 @@ export function TasksPage() {
         setDeleteConfirmation(null);
         setDeleteError('');
         closeForm();
-        setSubtaskInputs({});
         setExpandOverrides({});
     });
     const isScreenCurrent = () => interactions.capture()();
@@ -278,16 +277,6 @@ export function TasksPage() {
         const current = isTaskExpanded(task);
         setExpandOverrides((prev) => ({ ...prev, [task.id]: !current }));
     }, [isTaskExpanded]);
-
-    const handleAddSubtask = (taskId: string, e: React.FormEvent) => {
-        e.preventDefault();
-        if (!isScreenCurrent()) return;
-        const value = subtaskInputs[taskId]?.trim();
-        if (!value) return;
-        addSubtask(taskId, value);
-        setSubtaskInputs((prev) => ({ ...prev, [taskId]: '' }));
-        setExpandOverrides((prev) => ({ ...prev, [taskId]: true }));
-    };
 
     const handleAddFormSubtask = () => {
         if (!isFormCurrent()) return;
@@ -499,47 +488,7 @@ export function TasksPage() {
                                     <button onClick={() => requestDeleteTask(task)} className="p-1.5 rounded-lg transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }} aria-label={`「${task.name}」を削除`}><Trash2 size={14} /></button>
                                 </div>
                             </div>
-                            {isExpanded && (
-                                <div className="px-4 pb-4 pl-12 animate-fade-in">
-                                    <div className="flex flex-col gap-2 mb-3">
-                                        {subtasks.map((subtask) => (
-                                            <div key={subtask.id} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>
-                                                <button
-                                                    onClick={() => toggleSubtaskComplete(task.id, subtask.id)}
-                                                    aria-label={subtask.completed ? `サブタスク「${subtask.name}」を未完了にする` : `サブタスク「${subtask.name}」を完了にする`}
-                                                    className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-200"
-                                                    style={{ borderColor: subtask.completed ? 'var(--color-accent-emerald)' : 'var(--color-text-muted)', backgroundColor: subtask.completed ? 'var(--color-accent-emerald)' : 'transparent' }}>
-                                                    {subtask.completed && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
-                                                </button>
-                                                <span className={`flex-1 min-w-0 text-sm ${subtask.completed ? 'line-through' : ''}`} style={{ color: subtask.completed ? 'var(--color-text-muted)' : 'var(--color-text-secondary)' }}>
-                                                    {subtask.name}
-                                                </span>
-                                                <button onClick={() => deleteSubtask(task.id, subtask.id)} aria-label={`サブタスク「${subtask.name}」を削除`} className="p-1 rounded transition-colors hover:opacity-70" style={{ color: 'var(--color-text-danger)' }}>
-                                                    <X size={14} />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <form onSubmit={(e) => handleAddSubtask(task.id, e)} className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={subtaskInputs[task.id] || ''}
-                                            onChange={(e) => { if (isScreenCurrent()) setSubtaskInputs((prev) => ({ ...prev, [task.id]: e.target.value })); }}
-                                            placeholder="サブタスクを追加..."
-                                            className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
-                                            style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
-                                        />
-                                        <button
-                                            type="submit"
-                                            aria-label={`タスク「${task.name}」にサブタスクを追加`}
-                                            className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors hover:opacity-90"
-                                            style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}
-                                        >
-                                            <ListPlus size={16} />
-                                        </button>
-                                    </form>
-                                </div>
-                            )}
+                            {isExpanded && <TaskSubtasks task={task} />}
                         </div>
                         );
                     };

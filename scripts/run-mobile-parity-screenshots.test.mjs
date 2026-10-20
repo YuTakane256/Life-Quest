@@ -77,6 +77,18 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('guards inline subtask checks with a daily local-only runtime on 8082', () => {
+        expect(getMobileParityMetroUrl('inlineSubtask')).toBe('http://127.0.0.1:8082');
+        expect(requiresReferenceRuntime('inlineSubtask')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
+        expect(() => assertReferenceProfile({ extra }, 'inlineSubtask')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { appVariant: 'release' }]) {
+            expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'inlineSubtask')).toThrow();
+        }
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('inlineSubtask').path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp'); expect(yaml).toContain('127.0.0.1%3A8082');
+        expect(yaml).toContain('Discard draft'); expect(yaml).toContain('Kept draft');
+    });
     it('guards individual deletion with a local-only daily memory runtime on 8082', () => {
         expect(getMobileParityMetroUrl('individualDeletion')).toBe('http://127.0.0.1:8082');
         expect(requiresReferenceRuntime('individualDeletion')).toBe(true);
