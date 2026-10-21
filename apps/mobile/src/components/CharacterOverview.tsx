@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Image, Keyboard, Pressable, Text, View } from 'react-native';
 import {
-    Check,
     Edit2,
     Gem,
     Milestone,
@@ -11,7 +10,7 @@ import {
     Sword,
 } from 'lucide-react-native';
 import { EQUIPMENT_SLOTS } from '@life-quest/core/equipment';
-import { GAME_STATE_LIMITS, type AvatarId } from '@life-quest/core/gameState';
+import { buildCharacterProfileUpdate, captureCharacterProfile, PROFILE_CHANGED_MESSAGE, type CharacterProfile } from '@life-quest/core/characterProfile';
 import {
     calculateNextLevelXp,
     calculateXpProgress,
@@ -21,10 +20,10 @@ import { getUpcomingMilestones } from '@life-quest/core/rewards';
 import { AVATAR_IMAGES, getChestImage, getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
-import { buildCharacterProfileUpdate } from '../screens/characterScreenModel';
 import { characterOverviewStyles } from '../theme/characterOverviewStyles';
 import { usePalette } from '../theme/usePalette';
-import { Dialog, Field } from './DailyScreenUI';
+import { CharacterProfileEditor } from './CharacterProfileEditor';
+import { useInteractionScope } from '../hooks/useInteractionScope';
 
 const slots = {
     weapon: { label: '武器', Icon: Sword },
@@ -55,7 +54,17 @@ export function CharacterOverview({
     const activeTitle = useMobileTitleStore((state) => state.activeTitle);
     const { palette: p } = usePalette();
     const s = characterOverviewStyles(p);
-    const [editing, setEditing] = useState(false);
+    type Owner = { isCurrent: () => boolean; accepts: ReturnType<typeof captureCharacterProfile> };
+    const ownerRef = useRef<Owner | null>(null);
+    const [draft, setDraft] = useState<(CharacterProfile & { owner: Owner; error: string }) | null>(null);
+    const interactions = useInteractionScope(() => { ownerRef.current = null; setDraft(null); Keyboard.dismiss(); });
+    const isCurrentDraft = () => draft !== null && ownerRef.current === draft.owner && draft.owner.isCurrent();
+    const openEditor = () => {
+        const current = useMobileGameStore.getState(); const accepts = captureCharacterProfile(character);
+        if (!interactions.capture()() || !current.hasHydrated || !accepts(current.character)) return;
+        const owner = { isCurrent: interactions.capture(), accepts };
+        ownerRef.current = owner; setDraft({ name: character.name, avatar: character.avatar, owner, error: '' });
+    };
     const stats = getEffectiveStats();
     const progress = calculateXpProgress(character.totalXp, character.level);
     const nextXp = calculateNextLevelXp(character.level);
@@ -67,8 +76,19 @@ export function CharacterOverview({
     const upcoming = getUpcomingMilestones(gachaCount);
     const chests = chestQueue.filter((chest) => !chest.opened);
     const closeEditor = () => {
+        if (!isCurrentDraft()) return;
         Keyboard.dismiss();
-        setEditing(false);
+        ownerRef.current = null; setDraft(null);
+    };
+    const saveProfile = () => {
+        if (!draft || !isCurrentDraft()) return;
+        const current = useMobileGameStore.getState();
+        if (!current.hasHydrated || !draft.owner.accepts(current.character)) {
+            setDraft((value) => value?.owner === draft.owner ? { ...value, error: !current.hasHydrated ? '保存データを読み込み中です。完了後にもう一度保存してください。' : PROFILE_CHANGED_MESSAGE } : value); return;
+        }
+        ownerRef.current = null;
+        current.updateCharacter(buildCharacterProfileUpdate(draft.name, draft.avatar));
+        Keyboard.dismiss(); setDraft(null);
     };
 
     return (
@@ -77,7 +97,7 @@ export function CharacterOverview({
                 <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="プロフィールを編集"
-                    onPress={() => setEditing(true)}
+                    onPress={openEditor}
                     style={s.edit}
                 >
                     <Edit2 size={16} color={p.text.muted} accessible={false} />
@@ -378,104 +398,17 @@ export function CharacterOverview({
                     })}
                 </View>
             </View>
-            {editing && (
-                <ProfileEditor
-                    name={character.name}
-                    avatar={character.avatar}
+            {draft && (
+                <CharacterProfileEditor
+                    name={draft.name}
+                    avatar={draft.avatar}
+                    error={draft.error}
+                    onNameChange={(name) => { if (isCurrentDraft()) setDraft((value) => value?.owner === draft.owner ? { ...value, name } : value); }}
+                    onAvatarChange={(avatar) => { if (isCurrentDraft()) setDraft((value) => value?.owner === draft.owner ? { ...value, avatar } : value); }}
+                    onSave={saveProfile}
                     onClose={closeEditor}
                 />
             )}
         </View>
-    );
-}
-
-function ProfileEditor({
-    name,
-    avatar,
-    onClose,
-}: {
-    name: string;
-    avatar: AvatarId;
-    onClose: () => void;
-}) {
-    const [draftName, setDraftName] = useState(name);
-    const [draftAvatar, setDraftAvatar] = useState(avatar);
-    const { palette: p } = usePalette();
-    const s = characterOverviewStyles(p);
-    const save = () => {
-        useMobileGameStore
-            .getState()
-            .updateCharacter(
-                buildCharacterProfileUpdate(draftName, draftAvatar),
-            );
-        onClose();
-    };
-    return (
-        <Dialog title="プロフィール編集" onClose={onClose}>
-            <Text style={s.editorLabel}>名前</Text>
-            <Field
-                accessibilityLabel="キャラクター名"
-                value={draftName}
-                onChangeText={setDraftName}
-                maxLength={GAME_STATE_LIMITS.maxCharacterNameLength}
-                placeholder="名前を入力"
-                style={s.editorInput}
-            />
-            <Text style={s.editorLabel}>アバター</Text>
-            <View style={s.avatarOptions}>
-                {(['female', 'male'] as const).map((option) => {
-                    const selected = draftAvatar === option;
-                    const label = option === 'female' ? '女性' : '男性';
-                    return (
-                        <Pressable
-                            key={option}
-                            accessibilityRole="radio"
-                            accessibilityLabel={`アバターを${label}にする`}
-                            accessibilityState={{ selected }}
-                            onPress={() => setDraftAvatar(option)}
-                            style={[
-                                s.avatarOption,
-                                {
-                                    borderColor: selected
-                                        ? p.accent.primary
-                                        : p.border.default,
-                                    backgroundColor: selected
-                                        ? p.bg.secondary
-                                        : 'transparent',
-                                },
-                            ]}
-                        >
-                            <View style={[s.avatar, s.editorAvatar]}>
-                                <Image
-                                    source={AVATAR_IMAGES[option]}
-                                    style={s.avatarImage}
-                                    accessible={false}
-                                />
-                            </View>
-                            <Text style={s.countLabel}>{label}</Text>
-                            {selected && (
-                                <Check
-                                    size={14}
-                                    color={p.accent.primary}
-                                    style={{
-                                        position: 'absolute',
-                                        top: 8,
-                                        right: 8,
-                                    }}
-                                    accessible={false}
-                                />
-                            )}
-                        </Pressable>
-                    );
-                })}
-            </View>
-            <Pressable
-                accessibilityRole="button"
-                onPress={save}
-                style={s.editorSave}
-            >
-                <Text style={s.editorSaveText}>保存する</Text>
-            </Pressable>
-        </Dialog>
     );
 }

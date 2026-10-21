@@ -1,0 +1,52 @@
+appId: com.yutakane.lifequest.parity
+name: Profile UI interactions - software keyboard NOT VERIFIED
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "キャラ(, tab,.*)?"
+- tapOn: "プロフィールを編集"
+- tapOn: "キャラクター名"
+- eraseText
+- inputText: "Cancelled draft"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "キャンセル"
+    direction: DOWN
+    centerElement: true
+    speed: 30
+- tapOn: "キャンセル"
+- tapOn: "プロフィールを編集"
+- assertVisible: "星見ユウ"
+- assertNotVisible: "Cancelled draft"
+- tapOn: "キャラクター名"
+- eraseText
+- inputText: "Portfolio hero"
+- pressKey: enter
+- scrollUntilVisible:
+    element: "アバターを男性にする"
+    direction: DOWN
+    centerElement: true
+    speed: 30
+- tapOn: "アバターを男性にする"
+- takeScreenshot: "profile-${REFERENCE_THEME}-editor"
+- scrollUntilVisible:
+    element: "保存する"
+    direction: DOWN
+    centerElement: true
+    speed: 30
+- tapOn: "保存する"
+- tapOn: "プロフィールを編集"
+- assertVisible: "Portfolio hero"
+- scrollUntilVisible:
+    element: "プロフィール編集を閉じる"
+    direction: UP
+    centerElement: false
+    speed: 30
+- tapOn: "プロフィール編集を閉じる"
+- assertNotVisible: "プロフィール編集"

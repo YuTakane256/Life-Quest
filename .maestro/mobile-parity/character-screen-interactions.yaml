@@ -23,7 +23,7 @@ name: Character profile and equipment (memory only)
 - inputText: "Cancelled draft"
 - pressKey: enter
 - tapOn: "アバターを男性にする"
-- tapOn: "閉じる"
+- tapOn: "プロフィール編集を閉じる"
 - assertVisible: "星見ユウ"
 - assertNotVisible: "Cancelled draft"
 - tapOn: "プロフィールを編集"

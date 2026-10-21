@@ -77,6 +77,17 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it.each(['profile', 'profileUi'])('guards %s with local-only daily memory data', (flow) => {
+        expect(getMobileParityMetroUrl(flow)).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime(flow)).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
+        expect(() => assertReferenceProfile({ extra }, flow)).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { parityCaptureProfile: 'rewards' }, { appVariant: 'release' }]) expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, flow)).toThrow();
+        const keyboard = readFileSync(new URL(`../${getMobileParityFlow('profile').path}`, import.meta.url), 'utf8');
+        const ui = readFileSync(new URL(`../${getMobileParityFlow('profileUi').path}`, import.meta.url), 'utf8');
+        for (const yaml of [keyboard, ui]) { expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp'); }
+        expect(ui).toContain('127.0.0.1%3A8082'); expect(ui).toContain('Cancelled draft'); expect(ui).toContain('プロフィール編集を閉じる');
+        expect(keyboard).toContain('file: character-profile-interactions.yaml'); expect(keyboard).toContain('id: "Done"');
+    });
     it('guards achievement/title interaction checks with a local-only daily memory fixture', () => {
         expect(getMobileParityMetroUrl('achievements')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('achievements')).toBe(true);
         const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };

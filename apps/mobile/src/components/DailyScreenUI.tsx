@@ -23,6 +23,7 @@ export function IconButton({
     round = false,
     filled = false,
     disabled = false,
+    size,
 }: {
     icon: LucideIcon;
     label: string;
@@ -31,6 +32,7 @@ export function IconButton({
     round?: boolean;
     filled?: boolean;
     disabled?: boolean;
+    size?: number;
 }) {
     const { palette: p } = usePalette();
     return (
@@ -41,8 +43,8 @@ export function IconButton({
             onPress={onPress}
             hitSlop={4}
             style={({ pressed }) => ({
-                width: round ? 40 : 24,
-                height: round ? 40 : 28,
+                width: size ?? (round ? 40 : 24),
+                height: size ?? (round ? 40 : 28),
                 borderRadius: round ? 20 : 6,
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -272,10 +274,14 @@ export function Dialog({
     title,
     onClose,
     children,
+    closeLabel = '閉じる',
+    closeTargetSize,
 }: {
     title: string;
     onClose: () => void;
     children: ReactNode;
+    closeLabel?: string;
+    closeTargetSize?: number;
 }) {
     const { palette: p } = usePalette();
     return (
@@ -314,7 +320,7 @@ export function Dialog({
                         >
                             {title}
                         </Text>
-                        <IconButton icon={X} label="閉じる" onPress={onClose} />
+                        <IconButton icon={X} label={closeLabel} size={closeTargetSize} onPress={onClose} />
                     </View>
                     <ScrollView
                         keyboardShouldPersistTaps="handled"

@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react';
-import { Check, Edit2, History, Milestone, Package, Sparkles, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Edit2, History, Milestone, Package, Sparkles } from 'lucide-react';
 import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stores/useGameStore';
 import { getProgressBarA11y } from '../utils/progressBar';
 import { getUpcomingMilestones } from '@life-quest/core/rewards';
-import { GAME_STATE_LIMITS } from '@life-quest/core/gameState';
+import { buildCharacterProfileUpdate, captureCharacterProfile, PROFILE_CHANGED_MESSAGE, type CharacterProfile } from '@life-quest/core/characterProfile';
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS } from '../config/equipmentAssets';
 import type { Equipment, EquipmentSlot } from '../types';
 import heroImg from '@life-quest/assets/images/hero.png';
 import heroMaleImg from '@life-quest/assets/images/hero_male.png';
-import { useModalEscape } from '../hooks/useModalEscape';
+import { useInteractionScope } from '../hooks/useInteractionScope';
+import { ProfileEditor } from '../components/character/ProfileEditor';
 import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
 import { useTitleStore } from '../stores/useTitleStore';
 import { InventorySection } from '../components/character/InventorySection';
@@ -36,13 +37,30 @@ export function CharacterPage() {
     const chestQueue = useGameStore((state) => state.chestQueue);
     const unequipItem = useGameStore((state) => state.unequipItem);
     const { openingChestId, errorChestId, openChest, retry: retryOpenChest } = useCloudChestOpen();
-    const updateCharacter = useGameStore((state) => state.updateCharacter);
     const autoEquipBest = useGameStore((state) => state.autoEquipBest);
     const activeTitle = useTitleStore((state) => state.activeTitle);
 
-    const [isEditingProfile, setIsEditingProfile] = useState(false);
-    const [editName, setEditName] = useState(character.name);
-    const [editAvatar, setEditAvatar] = useState(character.avatar);
+    type Owner = { isCurrent: () => boolean; accepts: ReturnType<typeof captureCharacterProfile> };
+    const ownerRef = useRef<Owner | null>(null);
+    const [draft, setDraft] = useState<(CharacterProfile & { owner: Owner; error: string }) | null>(null);
+    const interactions = useInteractionScope(() => { ownerRef.current = null; setDraft(null); });
+    const isCurrentDraft = () => draft !== null && ownerRef.current === draft.owner && draft.owner.isCurrent();
+    const closeEditor = () => { if (isCurrentDraft()) { ownerRef.current = null; setDraft(null); } };
+    const openEditor = () => {
+        const accepts = captureCharacterProfile(character);
+        if (!interactions.capture()() || !accepts(useGameStore.getState().character)) return;
+        const owner = { isCurrent: interactions.capture(), accepts };
+        ownerRef.current = owner; setDraft({ name: character.name, avatar: character.avatar, owner, error: '' });
+    };
+    const saveProfile = () => {
+        if (!draft || !isCurrentDraft()) return;
+        if (!draft.owner.accepts(useGameStore.getState().character)) {
+            setDraft((value) => value?.owner === draft.owner ? { ...value, error: PROFILE_CHANGED_MESSAGE } : value); return;
+        }
+        ownerRef.current = null;
+        useGameStore.getState().updateCharacter(buildCharacterProfileUpdate(draft.name, draft.avatar));
+        setDraft(null);
+    };
 
     const effectiveStats = useMemo(() => calculateEffectiveStats(character, equipment), [character, equipment]);
     const xpProgress = useMemo(() => calculateXpProgress(character.totalXp, character.level), [character.totalXp, character.level]);
@@ -60,15 +78,13 @@ export function CharacterPage() {
     const openedChests = useMemo(() => [...chestQueue].filter((chest) => chest.opened).reverse(), [chestQueue]);
     const upcomingMilestones = useMemo(() => getUpcomingMilestones(gachaCount, 3), [gachaCount]);
 
-    useModalEscape(isEditingProfile, () => setIsEditingProfile(false));
-
     return (
         <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-28">
             <div className="rounded-2xl p-5 mb-4 relative" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', filter: debuff.active ? 'brightness(0.7)' : undefined }}>
                 <button
-                    onClick={() => { setEditName(character.name); setEditAvatar(character.avatar); setIsEditingProfile(true); }}
+                    onClick={openEditor}
                     aria-label="プロフィールを編集"
-                    className="absolute top-4 right-4 p-2 rounded-lg transition-colors z-10"
+                    className="absolute top-[10px] right-[10px] min-h-11 min-w-11 flex items-center justify-center rounded-lg transition-colors z-10"
                     style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}
                 >
                     <Edit2 size={16} />
@@ -223,49 +239,10 @@ export function CharacterPage() {
                 </div>
             )}
 
-            {isEditingProfile && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}>
-                    <div role="dialog" aria-modal="true" aria-labelledby="profile-edit-title" className="w-full max-w-sm rounded-2xl p-5 animate-scale-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 id="profile-edit-title" className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>プロフィール編集</h3>
-                            <button onClick={() => setIsEditingProfile(false)} aria-label="プロフィール編集を閉じる" className="p-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}><X size={20} /></button>
-                        </div>
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>名前</label>
-                            <input type="text" value={editName} onChange={(event) => setEditName(event.target.value)} className="w-full px-3 py-2.5 rounded-xl text-base outline-none" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }} placeholder="名前を入力" maxLength={GAME_STATE_LIMITS.maxCharacterNameLength} />
-                        </div>
-                        <div className="mb-6">
-                            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>アバター</label>
-                            <div className="grid grid-cols-2 gap-3">
-                                <AvatarOption avatar="female" selected={editAvatar === 'female'} image={heroImg} label="女性" onSelect={setEditAvatar} />
-                                <AvatarOption avatar="male" selected={editAvatar === 'male'} image={heroMaleImg} label="男性" onSelect={setEditAvatar} />
-                            </div>
-                        </div>
-                        <button onClick={() => { updateCharacter({ name: editName.trim() || '名無し', avatar: editAvatar }); setIsEditingProfile(false); }} className="w-full py-3 rounded-xl text-base font-bold flex flex-col items-center gap-2 transition-transform active:scale-95" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
-                            保存する
-                        </button>
-                    </div>
-                </div>
-            )}
+            {draft && <ProfileEditor name={draft.name} avatar={draft.avatar} error={draft.error} onClose={closeEditor} onSave={saveProfile}
+                onNameChange={(name) => { if (isCurrentDraft()) setDraft((value) => value?.owner === draft.owner ? { ...value, name } : value); }}
+                onAvatarChange={(avatar) => { if (isCurrentDraft()) setDraft((value) => value?.owner === draft.owner ? { ...value, avatar } : value); }} />}
         </div>
-    );
-}
-
-function AvatarOption({ avatar, selected, image, label, onSelect }: {
-    avatar: 'female' | 'male';
-    selected: boolean;
-    image: string;
-    label: string;
-    onSelect: (avatar: 'female' | 'male') => void;
-}) {
-    return (
-        <button onClick={() => onSelect(avatar)} className="p-3 rounded-xl border flex flex-col items-center gap-2 transition-all relative" style={{ backgroundColor: selected ? 'var(--color-bg-secondary)' : 'transparent', borderColor: selected ? 'var(--color-accent-primary)' : 'var(--color-border-default)' }}>
-            <div className="w-14 h-14 rounded-lg overflow-hidden" style={{ background: 'linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary))' }}>
-                <img src={image} alt={`${label} option`} className="w-full h-full object-cover" />
-            </div>
-            <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>{label}</span>
-            {selected && <Check size={14} className="absolute top-2 right-2" style={{ color: 'var(--color-accent-primary)' }} />}
-        </button>
     );
 }
 
