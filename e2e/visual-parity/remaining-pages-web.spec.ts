@@ -26,7 +26,7 @@ test('renders the deterministic dark habits reference at 390x844', async ({ page
 test('renders the deterministic dark statistics reference at 390x844', async ({ page }) => {
     await page.goto('/stats');
     await expect(page.getByRole('heading', { name: '統計', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '今週のXP', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '直近7日間のXP', exact: true })).toBeVisible();
     await expect(page.getByText('⚡ 合計 245 XP', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: '🏅 実績', exact: true })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'メインナビゲーション' })).toBeVisible();

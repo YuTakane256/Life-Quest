@@ -8,6 +8,9 @@ import {
     STATS_DISPLAY_DAYS,
     summarizeStats,
     getStatsDayValue,
+    getWeeklyTaskXp,
+    getStatsBestRecords,
+    formatStatsStreakRange,
 } from '@life-quest/core/stats';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useGameStore } from '../stores/useGameStore';
@@ -17,31 +20,6 @@ import { useJstToday } from '../hooks/useJstToday';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
 import { getProgressBarA11y } from '../utils/progressBar';
 import { getHeatmapCellLabel } from '../utils/statsHeatmapA11y';
-
-/** 日付セットから最長連続日数とその開始/終了日を返す */
-function computeLongestConsecutive(dateSet: Set<string>): { count: number; start: string; end: string } {
-    const dates = [...dateSet].sort();
-    if (dates.length === 0) return { count: 0, start: '', end: '' };
-    let maxLen = 1;
-    let maxStart = dates[0];
-    let maxEnd = dates[0];
-    let curLen = 1;
-    let curStart = dates[0];
-    for (let i = 1; i < dates.length; i++) {
-        if (shiftDate(dates[i - 1], 1) === dates[i]) {
-            curLen++;
-        } else {
-            curLen = 1;
-            curStart = dates[i];
-        }
-        if (curLen > maxLen) {
-            maxLen = curLen;
-            maxStart = curStart;
-            maxEnd = dates[i];
-        }
-    }
-    return { count: maxLen, start: maxStart, end: maxEnd };
-}
 
 // ─── ヒートマップ色定義 ─────────────────────────────────────────
 const TASK_COLORS = [
@@ -60,13 +38,6 @@ const HABIT_COLORS = [
 ];
 
 const WEEKDAY_LABELS = ['', '月', '', '水', '', '金', ''];
-const WEEKDAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
-
-/** YYYY-MM-DD の曜日名を返す */
-function getWeekdayName(date: string): string {
-    return WEEKDAY_NAMES[new Date(date + 'T00:00:00Z').getUTCDay()];
-}
-
 // 濃淡しきい値は @life-quest/core/stats に移動し、Mobileと共有する
 const getTaskLevel = getTaskHeatmapLevel;
 const getHabitLevel = getHabitHeatmapLevel;
@@ -94,44 +65,9 @@ export function StatsPage() {
     const weeks = useMemo(() => groupByWeeks(dates), [dates]);
     const monthLabels = useMemo(() => getMonthLabels(weeks), [weeks]);
 
-    // 直近7日間のXP集計
-    const weeklyXp = useMemo(() => {
-        const perDay = generateDateRangeCore(7, today).map((date) => ({ date, xp: taskXpLog[date] || 0 }));
-        const total = perDay.reduce((sum, d) => sum + d.xp, 0);
-        const max = Math.max(...perDay.map((d) => d.xp), 0);
-        return { perDay, total, max };
-    }, [taskXpLog, today]);
-
-    // 自己ベスト記録（全期間集計）
-    const bestRecords = useMemo(() => {
-        // 1日の最高XP
-        let bestXp = 0;
-        let bestXpDate = '';
-        for (const [date, xp] of Object.entries(taskXpLog)) {
-            if (xp > bestXp) {
-                bestXp = xp;
-                bestXpDate = date;
-            }
-        }
-
-        // 最長アクティブ連続日数（XP獲得した連続日）
-        const activeDateSet = new Set(
-            Object.entries(taskXpLog)
-                .filter(([, xp]) => xp > 0)
-                .map(([date]) => date)
-        );
-        const longestActive = computeLongestConsecutive(activeDateSet);
-
-        // 最長全習慣達成連続日数
-        const perfectDateSet = new Set(
-            Object.entries(habitLog)
-                .filter(([, log]) => log.allComplete)
-                .map(([date]) => date)
-        );
-        const longestPerfect = computeLongestConsecutive(perfectDateSet);
-
-        return { bestXp, bestXpDate, longestActive, longestPerfect };
-    }, [taskXpLog, habitLog]);
+    const weeklyXp = useMemo(() => getWeeklyTaskXp(taskXpLog, today), [taskXpLog, today]);
+    const bestRecords = useMemo(() => getStatsBestRecords(taskXpLog, habitLog), [taskXpLog, habitLog]);
+    const [showWeeklyDetails, setShowWeeklyDetails] = useState(false);
 
     const achievementProgress = useMemo(() => {
         const activeDays = Object.values(taskXpLog).filter((xp) => xp > 0).length;
@@ -154,31 +90,24 @@ export function StatsPage() {
     const detailDate = selectedDate && dates.includes(selectedDate) ? selectedDate : today;
     const selectDate = (date: string) => setSelectedDate(date === today ? null : date);
 
-    return (
-        <div className="app-page max-w-lg mx-auto px-4 pt-6 pb-8 grid grid-cols-1 md:grid-cols-2 gap-x-5">
-            {/* ヘッダー */}
-            <div className="order-1 md:col-span-2 flex flex-wrap items-end justify-between gap-3 mb-4">
-                <div>
-                    <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>統計</h1>
-                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>日々の積み重ねと自己ベスト</p>
-                </div>
-                    <span className="text-[11px] px-2 py-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>過去{TOTAL_DAYS}日</span>
-            </div>
-
-            {/* 今週のXPサマリー */}
-            <div className="order-5 rounded-xl p-4 mb-5 md:mb-0" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>今週のXP</h2>
-                    <span className="text-sm font-bold" style={{ color: 'var(--color-accent-primary)' }}>
-                        ⚡ 合計 {weeklyXp.total.toLocaleString()} XP
+    const reviewCards = (
+        <>
+            {/* 直近7日間のタスクXP（習慣モード中も意味を変えない） */}
+            <section aria-label="直近7日間のXP" className="order-5 min-w-0 rounded-xl p-4 mb-5 md:mb-0" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>直近7日間のXP</h2>
+                    <span className="text-sm font-bold min-w-0 max-w-full break-all" style={{ color: 'var(--color-accent-primary)' }}>
+                        ⚡ 合計 {weeklyXp.total.toLocaleString('ja-JP')} XP
                     </span>
                 </div>
-                <div className="flex items-stretch gap-1.5" style={{ height: '88px' }}>
-                    {weeklyXp.perDay.map(({ date, xp }) => {
+                <p className="text-[11px] mb-3" style={{ color: 'var(--color-text-muted)' }}>タスクXPのみ。今日を含む7日間（日本時間）。</p>
+                <div className="overflow-x-auto max-w-full">
+                <div className="flex items-stretch gap-1.5" style={{ minWidth: 260 }}>
+                    {weeklyXp.perDay.map(({ date, xp, weekday }) => {
                         const barPct = weeklyXp.max > 0 ? (xp / weeklyXp.max) * 100 : 0;
                         return (
-                            <div key={date} className="flex-1 flex flex-col items-center">
-                                <div className="flex-1 flex items-end w-full">
+                            <div key={date} className="flex-1 min-w-0 flex flex-col items-center" role="img" aria-label={`${date}（${weekday}）: ${xp.toLocaleString('ja-JP')} XP`}>
+                                <div className="flex items-end w-full" style={{ height: 72 }}>
                                     <div
                                         className="w-full rounded-t transition-all"
                                         title={`${date}: ${xp} XP`}
@@ -189,42 +118,50 @@ export function StatsPage() {
                                         }}
                                     />
                                 </div>
-                                <span className="text-[10px] mt-1" style={{ color: 'var(--color-text-muted)' }}>{getWeekdayName(date)}</span>
-                                <span className="text-[9px]" style={{ color: 'var(--color-text-muted)' }}>{xp}</span>
+                                <span aria-hidden="true" className="mt-1" style={{ color: 'var(--color-text-muted)', fontSize: 10 }}>{weekday}</span>
+                                <span aria-hidden="true" className="max-w-full break-all" style={{ color: 'var(--color-text-muted)', fontSize: 9 }}>{xp.toLocaleString('ja-JP')}</span>
                             </div>
                         );
                     })}
                 </div>
-            </div>
+                </div>
+                <button type="button" aria-expanded={showWeeklyDetails} aria-controls="weekly-xp-details" onClick={() => setShowWeeklyDetails((value) => !value)} className="w-full min-h-11 px-3 mt-2 rounded-lg text-xs text-left" style={{ color: 'var(--color-text-primary)', backgroundColor: 'var(--color-bg-secondary)' }}>7日間の内訳</button>
+                {showWeeklyDetails && <ul id="weekly-xp-details" className="mt-2 space-y-2 text-xs">
+                    {weeklyXp.perDay.map(({ date, xp, weekday }) => <li key={date} className="flex flex-wrap gap-2 justify-between" style={{ color: 'var(--color-text-primary)', overflowWrap: 'anywhere' }}><span>{date}（{weekday}）</span><span>{xp.toLocaleString('ja-JP')} XP</span></li>)}
+                </ul>}
+            </section>
 
             {/* 自己ベスト記録 */}
-            <div className="order-6 rounded-xl p-4 mb-5 md:mb-0" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+            <section aria-label="自己ベスト記録" className="order-6 min-w-0 rounded-xl p-4 mb-5 md:mb-0" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
                 <h2 className="text-sm font-semibold mb-3 flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
                     <span>🏆</span>自己ベスト記録
                 </h2>
+                <p className="text-[11px] mb-3" style={{ color: 'var(--color-text-muted)' }}>保存済みの全期間。同率の場合は最初の達成日を表示します。</p>
                 <div className="flex flex-col gap-2">
                     <BestRecordRow
                         icon="⚡"
                         label="1日の最高XP"
-                        value={bestRecords.bestXp > 0 ? `${bestRecords.bestXp.toLocaleString()} XP` : '—'}
+                        value={bestRecords.bestXp > 0 ? `${bestRecords.bestXp.toLocaleString('ja-JP')} XP` : '—'}
                         detail={bestRecords.bestXpDate}
                     />
                     <BestRecordRow
                         icon="🔥"
                         label="最長アクティブ連続"
                         value={bestRecords.longestActive.count > 0 ? `${bestRecords.longestActive.count}日` : '—'}
-                        detail={formatStreakRange(bestRecords.longestActive)}
+                        detail={formatStatsStreakRange(bestRecords.longestActive)}
                     />
                     <BestRecordRow
                         icon="🌟"
                         label="最長 全習慣達成連続"
                         value={bestRecords.longestPerfect.count > 0 ? `${bestRecords.longestPerfect.count}日` : '—'}
-                        detail={formatStreakRange(bestRecords.longestPerfect)}
+                        detail={formatStatsStreakRange(bestRecords.longestPerfect)}
                     />
                 </div>
-            </div>
+            </section>
 
-            {/* 実績 */}
+        </>
+    );
+    const achievementsCard = (
             <div className="order-7 md:col-span-2 rounded-xl p-4 mb-5 mt-0 md:mt-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
                 <div className="flex items-center justify-between gap-3 mb-3">
                     <h2 className="text-sm font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
@@ -279,6 +216,17 @@ export function StatsPage() {
                 )}
             </div>
 
+    );
+
+    return (
+        <div className="app-page max-w-lg mx-auto px-4 pt-6 pb-8 grid grid-cols-1 md:grid-cols-2 gap-x-5">
+            <div className="order-1 md:col-span-2 flex flex-wrap items-end justify-between gap-3 mb-4">
+                <div>
+                    <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>統計</h1>
+                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>日々の積み重ねと自己ベスト</p>
+                </div>
+                <span className="text-[11px] px-2 py-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>過去{TOTAL_DAYS}日</span>
+            </div>
             {/* セグメントコントロール */}
             <div className="order-2 md:col-span-2 flex rounded-xl p-1 mb-4" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
                 {(['tasks', 'habits'] as TabMode[]).map((tab) => (
@@ -445,15 +393,17 @@ export function StatsPage() {
                 </div>
             </div>
 
+            {reviewCards}
+            {achievementsCard}
         </div>
     );
 }
 
 function SummaryCard({ label, value, icon }: { label: string; value: number; icon: string }) {
     return (
-        <div className="rounded-xl px-4 py-3" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+        <div className="min-w-0 rounded-xl px-4 py-3" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
             <div className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>{icon} {label}</div>
-            <div className="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{value.toLocaleString()}</div>
+            <div className="text-xl font-bold break-all" style={{ color: 'var(--color-text-primary)' }}>{value.toLocaleString()}</div>
         </div>
     );
 }
@@ -515,21 +465,15 @@ function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
 
 function BestRecordRow({ icon, label, value, detail }: { icon: string; label: string; value: string; detail: string }) {
     return (
-        <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--color-bg-secondary)', overflowWrap: 'anywhere' }}>
             <div className="flex items-center gap-2 min-w-0">
                 <span className="text-base flex-shrink-0">{icon}</span>
-                <span className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
+                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
             </div>
-            <div className="flex flex-col items-end flex-shrink-0">
+            <div className="flex flex-col items-end min-w-0 max-w-full">
                 <span className="text-sm font-bold" style={{ color: 'var(--color-accent-gold)' }}>{value}</span>
                 {detail && <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{detail}</span>}
             </div>
         </div>
     );
-}
-
-function formatStreakRange(record: { count: number; start: string; end: string }): string {
-    if (record.count === 0) return '';
-    if (record.count === 1) return record.start;
-    return `${record.start} 〜 ${record.end}`;
 }

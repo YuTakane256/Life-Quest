@@ -36,7 +36,7 @@ test('statistics uses wider grids on PC and stacked content on phone without pag
     const summary = page.getByText('⚡ 合計XP', { exact: true }).locator('..').locator('..');
     const summaryColumns = await summary.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
     expect(summaryColumns).toBe(desktop ? 4 : 2);
-    const weekly = (await page.getByRole('heading', { name: '今週のXP', exact: true }).boundingBox())!;
+    const weekly = (await page.getByRole('heading', { name: '直近7日間のXP', exact: true }).boundingBox())!;
     const best = (await page.getByRole('heading', { name: /自己ベスト記録$/ }).boundingBox())!;
     if (desktop) {
         expect(Math.abs(weekly.y - best.y)).toBeLessThan(1);

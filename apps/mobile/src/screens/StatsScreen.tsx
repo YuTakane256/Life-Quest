@@ -13,6 +13,9 @@ import {
     STATS_DISPLAY_DAYS,
     summarizeStats,
     getStatsDayValue,
+    getWeeklyTaskXp,
+    getStatsBestRecords,
+    formatStatsStreakRange,
 } from '@life-quest/core/stats';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '@life-quest/core/achievements';
 import { getProgressBarA11y } from '@life-quest/core/progressA11y';
@@ -52,6 +55,7 @@ export default function StatsScreen() {
     const today = useJstToday();
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [datePickerOpen, setDatePickerOpen] = useState(false);
+    const [showWeeklyDetails, setShowWeeklyDetails] = useState(false);
     useFocusEffect(useCallback(() => () => setDatePickerOpen(false), []));
     // Web StatsPage.tsx と同一: ヒートマップ・実績とも永続ログ（taskXpLog/habitLog）が単一の情報源
     const taskXpByDate = taskXpLog;
@@ -62,6 +66,8 @@ export default function StatsScreen() {
     const monthLabels = useMemo(() => getMonthLabels(weeks), [weeks]);
 
     const stats = useMemo(() => summarizeStats(dates, taskXpLog, habitLog, mode), [dates, taskXpLog, habitLog, mode]);
+    const weeklyXp = useMemo(() => getWeeklyTaskXp(taskXpLog, today), [taskXpLog, today]);
+    const bestRecords = useMemo(() => getStatsBestRecords(taskXpLog, habitLog), [taskXpLog, habitLog]);
     const detailDate = selectedDate && dates.includes(selectedDate) ? selectedDate : today;
     const selectDate = (date: string) => setSelectedDate(date === today ? null : date);
 
@@ -222,6 +228,41 @@ export default function StatsScreen() {
                         </View>
                     </View>
 
+                    <View testID="stats-weekly-card" style={styles.card}>
+                        <View style={styles.weeklyHeader}>
+                            <Text accessibilityRole="header" style={styles.sectionTitle}>直近7日間のXP</Text>
+                            <Text style={styles.weeklyTotal}>⚡ 合計 {weeklyXp.total.toLocaleString('ja-JP')} XP</Text>
+                        </View>
+                        <Text style={styles.note}>タスクXPのみ。今日を含む7日間（日本時間）。</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.weeklyChartContent}>
+                            <View style={styles.weeklyBars}>
+                                {weeklyXp.perDay.map(({ date, xp, weekday }) => (
+                                    <View key={date} style={styles.weeklyColumn} accessible accessibilityRole="text" accessibilityLabel={`${date}（${weekday}）: ${xp.toLocaleString('ja-JP')} XP`}>
+                                        <View style={styles.weeklyTrack}>
+                                            <View style={[styles.weeklyBar, { height: `${weeklyXp.max > 0 ? xp / weeklyXp.max * 100 : 0}%`, backgroundColor: xp > 0 ? palette.accent.primary : palette.border.default }]} />
+                                        </View>
+                                        <Text allowFontScaling={false} style={styles.weeklyWeekday}>{weekday}</Text>
+                                        <Text allowFontScaling={false} style={styles.weeklyValue}>{xp.toLocaleString('ja-JP')}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </ScrollView>
+                        <Pressable accessibilityRole="button" accessibilityLabel="7日間の内訳" accessibilityState={{ expanded: showWeeklyDetails }} style={styles.dateButton} onPress={() => setShowWeeklyDetails((value) => !value)}>
+                            <Text style={styles.dateButtonText}>7日間の内訳</Text>
+                        </Pressable>
+                        {showWeeklyDetails && <View testID="weekly-xp-details" style={styles.weeklyDetails}>
+                            {weeklyXp.perDay.map(({ date, xp, weekday }) => <View key={date} testID={`weekly-xp-${date}`} style={styles.weeklyDetailRow} accessible accessibilityLabel={`${date}（${weekday}）: ${xp.toLocaleString('ja-JP')} XP`}>
+                                <Text style={styles.dateButtonText}>{date}（{weekday}）</Text><Text style={styles.dateButtonText}>{xp.toLocaleString('ja-JP')} XP</Text>
+                            </View>)}
+                        </View>}
+                    </View>
+                    <View testID="stats-best-card" style={styles.card}>
+                        <Text accessibilityRole="header" style={styles.sectionTitle}>🏆 自己ベスト記録</Text>
+                        <Text style={styles.note}>保存済みの全期間。同率の場合は最初の達成日を表示します。</Text>
+                        <BestRecordRow icon="⚡" label="1日の最高XP" value={bestRecords.bestXp > 0 ? `${bestRecords.bestXp.toLocaleString('ja-JP')} XP` : '—'} detail={bestRecords.bestXpDate} styles={styles} />
+                        <BestRecordRow icon="🔥" label="最長アクティブ連続" value={bestRecords.longestActive.count > 0 ? `${bestRecords.longestActive.count}日` : '—'} detail={formatStatsStreakRange(bestRecords.longestActive)} styles={styles} />
+                        <BestRecordRow icon="🌟" label="最長 全習慣達成連続" value={bestRecords.longestPerfect.count > 0 ? `${bestRecords.longestPerfect.count}日` : '—'} detail={formatStatsStreakRange(bestRecords.longestPerfect)} styles={styles} />
+                    </View>
                     {achievementsCard}
                     <Text style={styles.note}>
                         保存済みの達成ログを表示します。タスクや習慣を削除しても、過去の達成記録は残ります。
@@ -253,6 +294,13 @@ function SummaryCard({ label, value, styles }: { label: string; value: string; s
             <Text style={styles.summaryValue}>{value}</Text>
         </View>
     );
+}
+
+function BestRecordRow({ icon, label, value, detail, styles }: { icon: string; label: string; value: string; detail: string; styles: Styles }) {
+    return <View style={styles.bestRow}>
+        <View style={styles.bestLabel}><Text accessibilityElementsHidden>{icon}</Text><Text style={[styles.dateButtonText, styles.bestLabelText]}>{label}</Text></View>
+        <View style={styles.bestValueGroup}><Text style={styles.bestValue}>{value}</Text>{detail ? <Text style={styles.note}>{detail}</Text> : null}</View>
+    </View>;
 }
 
 /** Web StatsPage.tsx の AchievementRow と同一の情報構造（アイコン・タイトル・説明・進捗バー）。 */
@@ -324,6 +372,22 @@ function createStyles(palette: ThemePalette) {
     dayDetail: { color: palette.text.primary, fontSize: 12, padding: 10, borderRadius: 8, backgroundColor: palette.bg.secondary },
     pickerHeader: { padding: 16, gap: 12 },
     pickerList: { padding: 16, gap: 8 },
+    weeklyHeader: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+    weeklyTotal: { color: palette.accent.primary, fontSize: 14, fontWeight: '700', maxWidth: '100%', flexShrink: 1 },
+    weeklyChartContent: { flexGrow: 1 },
+    weeklyBars: { flex: 1, minWidth: 260, flexDirection: 'row', gap: 6 },
+    weeklyColumn: { flex: 1, minWidth: 0, alignItems: 'center', gap: 3 },
+    weeklyTrack: { height: 72, width: '100%', justifyContent: 'flex-end' },
+    weeklyBar: { minHeight: 3, width: '100%', borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+    weeklyWeekday: { color: palette.text.muted, fontSize: 10 },
+    weeklyValue: { color: palette.text.muted, fontSize: 9, maxWidth: '100%' },
+    weeklyDetails: { gap: 8 },
+    weeklyDetailRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
+    bestRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, backgroundColor: palette.bg.secondary, padding: 12, borderRadius: 8 },
+    bestLabel: { flexDirection: 'row', flexShrink: 1, alignItems: 'center', gap: 8 },
+    bestLabelText: { flexShrink: 1 },
+    bestValueGroup: { alignItems: 'flex-end', maxWidth: '100%' },
+    bestValue: { color: palette.accent.gold, fontSize: 14, fontWeight: '700' },
     monthRow: { height: 16 },
     monthLabel: { position: 'absolute', color: palette.text.muted, fontSize: 10, fontWeight: '700' },
     heatmapRow: { flexDirection: 'row', gap: 4 },

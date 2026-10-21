@@ -10,10 +10,62 @@ import {
     STATS_DISPLAY_DAYS,
     summarizeStats,
     getStatsDayValue,
+    getWeeklyTaskXp,
+    getStatsBestRecords,
+    formatStatsStreakRange,
 } from './stats.ts';
 import { msUntilNextJstDay } from './dates.ts';
 import { createHabit } from './habits.ts';
 import type { Task } from './tasks.ts';
+
+describe('直近7日間XPと保存済み全期間の自己ベスト', () => {
+    it('月曜日でも先週の日付を含む直近7日を返し、記録なしは0とする', () => {
+        const result = getWeeklyTaskXp({ '2026-08-03': 999, '2026-08-04': 20, '2026-08-09': 35, '2026-08-10': 45, '2026-08-11': 999 }, '2026-08-10');
+        expect(result.total).toBe(100); expect(result.max).toBe(45); expect(result.perDay).toHaveLength(7);
+        expect(result.perDay[0]).toEqual({ date: '2026-08-04', xp: 20, weekday: '火' });
+        expect(result.perDay[6]).toEqual({ date: '2026-08-10', xp: 45, weekday: '月' });
+        expect(result.perDay[1].xp).toBe(0);
+    });
+    it('年/うるう日の境界と翌日の再集計に追従する', () => {
+        expect(getWeeklyTaskXp({}, '2026-01-02').perDay[0].date).toBe('2025-12-27');
+        expect(getWeeklyTaskXp({}, '2024-03-01').perDay[5]).toEqual({ date: '2024-02-29', xp: 0, weekday: '木' });
+        expect(getWeeklyTaskXp({ '2026-08-04': 20 }, '2026-08-11').total).toBe(0);
+    });
+    it('空のグラフはゼロで、自己ベストは未記録と空の日付範囲になる', () => {
+        expect(getWeeklyTaskXp({}, '2026-08-10')).toMatchObject({ total: 0, max: 0 });
+        const best = getStatsBestRecords({}, {});
+        expect(best).toEqual({ bestXp: 0, bestXpDate: '', longestActive: { count: 0, start: '', end: '' }, longestPerfect: { count: 0, start: '', end: '' } });
+        expect(formatStatsStreakRange(best.longestActive)).toBe('');
+    });
+    it('119日より古い記録も自己ベストには含み、0XP/部分達成は連続を切る', () => {
+        const best = getStatsBestRecords({ '2025-01-01': 100, '2025-01-02': 20, '2025-01-03': 0, '2025-01-04': 10 }, {
+            '2025-01-01': { count: 2, allComplete: true }, '2025-01-02': { count: 3, allComplete: false }, '2025-01-03': { count: 2, allComplete: true },
+        });
+        expect(best).toEqual({ bestXp: 100, bestXpDate: '2025-01-01', longestActive: { count: 2, start: '2025-01-01', end: '2025-01-02' }, longestPerfect: { count: 1, start: '2025-01-01', end: '2025-01-01' } });
+    });
+    it('同率はログの挿入順でなく最初の達成日/区間に決定する', () => {
+        const entries: [string, number][] = [['2026-05-11', 50], ['2026-05-10', 50], ['2026-04-02', 50], ['2026-04-01', 50]];
+        const a = getStatsBestRecords(Object.fromEntries(entries), {});
+        const b = getStatsBestRecords(Object.fromEntries([...entries].reverse()), {});
+        expect(a).toEqual(b); expect(a.bestXpDate).toBe('2026-04-01');
+        expect(a.longestActive).toEqual({ count: 2, start: '2026-04-01', end: '2026-04-02' });
+    });
+    it('連続区間は年・月・うるう日をまたぎ、期間表示も一致する', () => {
+        const active = getStatsBestRecords({ '2025-12-31': 10, '2026-01-01': 10 }, {}).longestActive;
+        expect(formatStatsStreakRange(active)).toBe('2025-12-31 〜 2026-01-01');
+        const perfect = getStatsBestRecords({}, Object.fromEntries(['2024-02-28', '2024-02-29', '2024-03-01'].map((date) => [date, { count: 1, allComplete: true }]))).longestPerfect;
+        expect(perfect.count).toBe(3);
+        expect(formatStatsStreakRange({ count: 1, start: '2026-08-10', end: '2026-08-10' })).toBe('2026-08-10');
+    });
+    it('ログを並べ替えたり書き換えたりせず、大きな値もそのまま読み取る', () => {
+        const xp = Object.freeze({ '2026-08-10': 1_000_000_000_000, '2026-08-09': 5 });
+        const habits = Object.freeze({ '2026-08-10': Object.freeze({ count: 1, allComplete: true }) });
+        const before = JSON.stringify({ xp, habits });
+        expect(getWeeklyTaskXp(xp, '2026-08-10').total).toBe(1_000_000_000_005);
+        expect(getStatsBestRecords(xp, habits).bestXp).toBe(1_000_000_000_000);
+        expect(JSON.stringify({ xp, habits })).toBe(before);
+    });
+});
 
 describe('保存済みログの119日集計', () => {
     const today = '2026-08-10';

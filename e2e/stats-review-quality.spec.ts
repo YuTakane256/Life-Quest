@@ -37,7 +37,7 @@ for (const theme of ['light', 'dark'] as const) test.describe(theme, () => {
         await expect(date.locator('option').first()).toHaveText('2026-08-11');
         await expect(date.locator('option').last()).toHaveText('2026-04-15');
         // Browser default may be UTC or America/Los_Angeles: labels are calendar-day based.
-        const weekly = page.getByRole('heading', { name: '今週のXP', exact: true }).locator('..').locator('..');
+        const weekly = page.getByRole('region', { name: '直近7日間のXP', exact: true });
         const lastBar = weekly.locator('[title]').last();
         await expect(lastBar).toHaveAttribute('title', '2026-08-11: 0 XP');
         await expect(lastBar.locator('..').locator('..').getByText('火', { exact: true })).toBeVisible();
