@@ -162,13 +162,13 @@ export function StatsPage() {
         </>
     );
     const achievementsCard = (
-            <div className="order-7 md:col-span-2 rounded-xl p-4 mb-5 mt-0 md:mt-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                <div className="flex items-center justify-between gap-3 mb-3">
+            <section aria-label="実績と称号" className="order-7 min-w-0 md:col-span-2 rounded-xl p-4 mb-5 mt-0 md:mt-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', overflowWrap: 'anywhere' }}>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                     <h2 className="text-sm font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
                         <span>🏅</span>実績
                     </h2>
-                    <span className="text-xs font-bold" style={{ color: 'var(--color-accent-gold)' }}>
-                        {achievementProgress.filter((achievement) => achievement.unlocked).length}/{achievementProgress.length}
+                    <span className="text-xs font-bold" style={{ color: 'var(--color-text-secondary)' }}>
+                        {achievementProgress.filter((achievement) => achievement.unlocked).length}/{achievementProgress.length} 達成
                     </span>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -176,24 +176,24 @@ export function StatsPage() {
                         <AchievementRow key={achievement.id} achievement={achievement} />
                     ))}
                 </div>
-                {unlockedTitles.length > 0 && (
-                    <div className="mt-3">
-                        <div className="text-[11px] leading-relaxed mb-2" style={{ color: 'var(--color-text-muted)' }}>
-                            獲得称号: <span style={{ color: 'var(--color-accent-gold)' }}>{unlockedTitles.join(' / ')}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
+                    <div className="mt-4" role="group" aria-label="表示する称号">
+                        <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>表示する称号</h3>
+                        <p className="text-xs my-2" role="status" style={{ color: 'var(--color-text-primary)' }}>表示中: {selectedTitle ?? '称号なし'}</p>
+                        <p className="text-xs mb-2" style={{ color: 'var(--color-text-secondary)' }}>{unlockedTitles.length > 0 ? '獲得した称号をキャラ画面に表示できます。' : '実績を達成すると称号を選べます。'}</p>
+                        {unlockedTitles.length > 0 && <div className="flex flex-wrap gap-2">
                             <button
                                 type="button"
                                 onClick={() => setActiveTitle(null)}
                                 aria-pressed={selectedTitle === null}
-                                className="px-2 py-1 rounded-full text-[10px] font-semibold transition-all active:scale-95"
+                                aria-label="称号なしを選択する"
+                                className="min-h-11 min-w-11 max-w-full px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
                                 style={{
                                     backgroundColor: selectedTitle === null ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
-                                    color: selectedTitle === null ? 'white' : 'var(--color-text-muted)',
+                                    color: selectedTitle === null ? 'white' : 'var(--color-text-secondary)',
                                     border: '1px solid var(--color-border-default)',
                                 }}
                             >
-                                称号なし
+                                {selectedTitle === null && <span aria-hidden="true">✓ </span>}称号なし
                             </button>
                             {unlockedTitles.map((title) => (
                                 <button
@@ -201,20 +201,20 @@ export function StatsPage() {
                                     type="button"
                                     onClick={() => setActiveTitle(title)}
                                     aria-pressed={selectedTitle === title}
-                                    className="px-2 py-1 rounded-full text-[10px] font-semibold transition-all active:scale-95"
+                                    aria-label={`「${title}」を選択する`}
+                                    className="min-h-11 min-w-11 max-w-full px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
                                     style={{
-                                        backgroundColor: selectedTitle === title ? 'var(--color-accent-gold)' : 'var(--color-bg-secondary)',
+                                        backgroundColor: selectedTitle === title ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
                                         color: selectedTitle === title ? 'white' : 'var(--color-text-secondary)',
                                         border: '1px solid var(--color-border-default)',
                                     }}
                                 >
-                                    {title}
+                                    {selectedTitle === title && <span aria-hidden="true">✓ </span>}{title}
                                 </button>
                             ))}
-                        </div>
+                        </div>}
                     </div>
-                )}
-            </div>
+            </section>
 
     );
 
@@ -413,30 +413,31 @@ function AchievementRow({ achievement }: { achievement: AchievementProgress }) {
     const a11y = getProgressBarA11y(
         achievement.current,
         achievement.target,
-        (now, max) => (achievement.unlocked ? `達成・${achievement.rewardTitle}` : `${now} / ${max}`),
+        () => `${achievement.unlocked ? '達成' : '未達成'}・${achievement.current.toLocaleString('ja-JP')} / ${achievement.target.toLocaleString('ja-JP')}・獲得称号: ${achievement.rewardTitle}`,
     );
     return (
-        <div className="rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--color-bg-secondary)', opacity: achievement.unlocked ? 1 : 0.78 }}>
-            <div className="flex items-start justify-between gap-3 mb-2">
-                <div className="flex items-start gap-2 min-w-0">
+        <div data-testid={`achievement-${achievement.id}`} className="min-w-0 rounded-lg px-3 py-3" style={{ backgroundColor: 'var(--color-bg-secondary)', overflowWrap: 'anywhere' }}>
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                <div className="flex items-start gap-2 min-w-0 flex-1 basis-40">
                     <span className="text-base flex-shrink-0" aria-hidden="true">{achievement.icon}</span>
                     <div className="min-w-0">
-                        <div className="text-xs font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>{achievement.title}</div>
-                        <div className="text-[10px] truncate" style={{ color: 'var(--color-text-muted)' }}>{achievement.description}</div>
+                        <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{achievement.title}</h3>
+                        <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>{achievement.description}</p>
                     </div>
                 </div>
                 <span
-                    className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0"
+                    className="text-xs px-2 py-1 rounded-lg max-w-full"
                     style={{
                         backgroundColor: achievement.unlocked ? 'rgba(245, 158, 11, 0.18)' : 'var(--color-bg-card)',
-                        color: achievement.unlocked ? 'var(--color-accent-gold)' : 'var(--color-text-muted)',
+                        color: 'var(--color-text-primary)',
                         border: '1px solid var(--color-border-default)',
                     }}
                     aria-hidden="true"
                 >
-                    {achievement.unlocked ? achievement.rewardTitle : `${achievement.current.toLocaleString()}/${achievement.target.toLocaleString()}`}
+                    {achievement.unlocked ? '達成' : '未達成'} · {achievement.current.toLocaleString('ja-JP')}/{achievement.target.toLocaleString('ja-JP')}
                 </span>
             </div>
+            <p className="text-xs mb-2" style={{ color: 'var(--color-text-secondary)' }}>獲得称号: {achievement.rewardTitle}</p>
             <div
                 className="h-1.5 rounded-full overflow-hidden"
                 style={{ backgroundColor: 'var(--color-bg-card)' }}

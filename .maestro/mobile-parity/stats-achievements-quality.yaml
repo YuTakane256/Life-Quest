@@ -1,0 +1,76 @@
+appId: com.yutakane.lifequest.parity
+name: Achievement conditions and title selection (daily memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "統計(, tab,.*)?"
+- scrollUntilVisible:
+    element: "2/6 達成"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 50
+- assertVisible: "2/6 達成"
+- takeScreenshot: "achievements-${REFERENCE_THEME}-overview"
+- scrollUntilVisible:
+    element:
+      id: "achievement-steady_worker"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 30
+- assertVisible: "XPを獲得した日を7日作る"
+- assertVisible: "獲得称号: 習慣の芽"
+- scrollUntilVisible:
+    element: "全習慣達成日を3日作る"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 30
+- assertVisible: "全習慣達成日を3日作る"
+- scrollUntilVisible:
+    element: "ステージ20を突破する"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 30
+- assertVisible: "ステージ20を突破する"
+- scrollUntilVisible:
+    element: "「習慣の芽」を選択する"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 30
+- tapOn: "「習慣の芽」を選択する"
+- scrollUntilVisible:
+    element: "表示中: 習慣の芽"
+    direction: UP
+    centerElement: true
+    timeout: 60000
+    speed: 30
+- assertVisible: "表示中: 習慣の芽"
+- takeScreenshot: "achievements-${REFERENCE_THEME}-selected"
+- tapOn: "キャラ(, tab,.*)?"
+- assertVisible: "習慣の芽"
+- tapOn: "統計(, tab,.*)?"
+- scrollUntilVisible:
+    element: "称号なしを選択する"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 30
+- tapOn: "称号なしを選択する"
+- scrollUntilVisible:
+    element: "表示中: 称号なし"
+    direction: UP
+    centerElement: true
+    timeout: 60000
+    speed: 30
+- assertVisible: "表示中: 称号なし"
+- takeScreenshot: "achievements-${REFERENCE_THEME}-none"

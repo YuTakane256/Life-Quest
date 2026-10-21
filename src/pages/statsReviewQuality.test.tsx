@@ -5,8 +5,8 @@ import type { HabitDayActivity } from '@life-quest/core/stats';
 const mocks = vi.hoisted(() => ({
     today: '2026-08-10', logs: { taskXpLog: {} as Record<string, number>, habitLog: {} as Record<string, HabitDayActivity> },
     game: { character: { totalXp: 60 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [] },
-    title: { activeTitle: null, setActiveTitle: () => {} },
-    press: new Map<string, () => void>(), styles: new Map<string, unknown>(), focused: true,
+    title: { activeTitle: null as string | null, setActiveTitle: vi.fn<(title: string | null) => void>() },
+    press: new Map<string, () => void>(), styles: new Map<string, unknown>(), textProps: new Map<string, unknown>(), focused: true,
 }));
 vi.mock('../stores/useStatsStore', () => ({ useStatsStore: () => mocks.logs }));
 vi.mock('../stores/useGameStore', () => ({ useGameStore: (selector: (state: unknown) => unknown) => selector(mocks.game) }));
@@ -21,14 +21,14 @@ vi.mock('expo-router', () => ({ useFocusEffect: (setup: () => void | (() => void
     const focused = mocks.focused; useEffect(() => focused ? setup() : undefined, [focused, setup]);
 } }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; testID?: string; accessibilityLabel?: string; accessibilityRole?: string; disabled?: boolean; onPress?: () => void; style?: unknown; visible?: boolean };
-    const View = ({ children, testID }: Props) => createElement('div', { 'data-testid': testID }, children);
+    type Props = { children?: ReactNode; testID?: string; accessibilityLabel?: string; accessibilityRole?: string; accessibilityValue?: { now: number; max: number; text: string }; accessibilityState?: { selected: boolean }; disabled?: boolean; onPress?: () => void; style?: unknown; visible?: boolean; numberOfLines?: number };
+    const View = ({ children, testID, accessibilityRole, accessibilityLabel, accessibilityValue }: Props) => createElement('div', { 'data-testid': testID, role: accessibilityRole, 'aria-label': accessibilityLabel, 'aria-valuenow': accessibilityValue?.now, 'aria-valuemax': accessibilityValue?.max, 'aria-valuetext': accessibilityValue?.text }, children);
     return { View, ScrollView: View, StyleSheet: { create: <T,>(value: T) => value },
         Modal: ({ visible, children }: Props) => visible ? createElement('div', { role: 'dialog' }, children) : null,
-        Text: ({ children, testID }: Props) => createElement('span', { 'data-testid': testID }, children),
-        Pressable: ({ children, accessibilityLabel, onPress, disabled, style }: Props) => {
+        Text: (props: Props) => { if (typeof props.children === 'string') mocks.textProps.set(props.children, props); return createElement('span', { 'data-testid': props.testID }, props.children); },
+        Pressable: ({ children, accessibilityLabel, onPress, disabled, style, accessibilityState }: Props) => {
             if (accessibilityLabel) { mocks.press.set(accessibilityLabel, onPress!); mocks.styles.set(accessibilityLabel, style); }
-            return createElement('button', { 'aria-label': accessibilityLabel, disabled, onClick: onPress }, children);
+            return createElement('button', { 'aria-label': accessibilityLabel, 'aria-pressed': accessibilityState?.selected, disabled, onClick: onPress }, children);
         },
     };
 });
@@ -45,7 +45,52 @@ const best = () => host.querySelector('[aria-label="自己ベスト記録"], [da
 beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); mocks.today = '2026-08-10'; mocks.focused = true; mocks.press.clear(); mocks.styles.clear();
     mocks.logs = { taskXpLog: { '2026-08-09': 20, '2026-08-10': 30, '2026-01-01': 999 }, habitLog: { '2026-08-10': { count: 2, allComplete: true } } };
+    mocks.game = { character: { totalXp: 60 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [] };
+    mocks.title.activeTitle = null; mocks.title.setActiveTitle.mockReset(); mocks.title.setActiveTitle.mockImplementation((title) => { mocks.title.activeTitle = title; }); mocks.textProps.clear();
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+});
+describe.each([false, true])('実績と称号 mobile=%s', (mobile) => {
+    const card = () => host.querySelector('[aria-label="実績と称号"], [data-testid="stats-achievements-card"]')!;
+    const row = (id: string) => card().querySelector(`[data-testid="achievement-${id}"]`)!;
+    it('全6実績の条件・進捗・報酬を省略せず表示し、未達成と達成を区別する', () => {
+        render(mobile);
+        expect(card().querySelectorAll('[data-testid^="achievement-"]')).toHaveLength(6);
+        expect(card().textContent).toContain('1/6 達成');
+        expect(row('first_level_up').textContent).toContain('達成 · 60/30');
+        expect(row('steady_worker').textContent).toContain('XPを獲得した日を7日作る');
+        expect(row('steady_worker').textContent).toContain('未達成 · 3/7');
+        expect(row('steady_worker').textContent).toContain('獲得称号: 習慣の芽');
+        const bar = row('first_level_up').querySelector('[role="progressbar"]')!;
+        expect(bar.getAttribute('aria-valuenow')).toBe('30'); expect(bar.getAttribute('aria-valuemax')).toBe('30');
+        expect(bar.getAttribute('aria-valuetext')).toBe('達成・60 / 30・獲得称号: 駆け出し冒険者');
+        expect(card().querySelector('.truncate')).toBeNull();
+        if (mobile) expect(mocks.textProps.get('XPを獲得した日を7日作る')).not.toHaveProperty('numberOfLines');
+    });
+    it('獲得済みの称号だけを選択でき、選択・解除を保存操作へ渡し表示も追従する', () => {
+        render(mobile); expect(button('「駆け出し冒険者」を選択する')).toBeTruthy();
+        expect(card().querySelector('[aria-label="「習慣の芽」を選択する"]')).toBeNull();
+        const logs = JSON.stringify(mocks.logs); press('「駆け出し冒険者」を選択する'); render(mobile);
+        expect(mocks.title.setActiveTitle).toHaveBeenLastCalledWith('駆け出し冒険者');
+        expect(button('「駆け出し冒険者」を選択する').getAttribute('aria-pressed')).toBe('true');
+        expect(card().textContent).toContain('表示中: 駆け出し冒険者');
+        press('称号なしを選択する'); render(mobile); expect(mocks.title.setActiveTitle).toHaveBeenLastCalledWith(null);
+        expect(button('称号なしを選択する').getAttribute('aria-pressed')).toBe('true');
+        expect(card().textContent).toContain('表示中: 称号なし'); expect(JSON.stringify(mocks.logs)).toBe(logs);
+        if (mobile) {
+            const style = (mocks.styles.get('「駆け出し冒険者」を選択する') as unknown[])[0] as Record<string, unknown>;
+            expect(style.minHeight).toBe(44); expect(style.minWidth).toBe(44); expect(style).not.toHaveProperty('height');
+        }
+    });
+    it('全達成・ログ更新・空の状態を最新値へ戻し、閲覧だけで保存や称号解除を行わない', () => {
+        mocks.game = { ...mocks.game, character: { totalXp: 1_000_000_000_000 }, battle: { maxClearedStage: 20 }, battleProgress: { maxClearedStage: 20 }, equipment: Array(10).fill(null) as never[] };
+        mocks.logs = { taskXpLog: Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`2026-08-0${i + 1}`, 10])), habitLog: Object.fromEntries(Array.from({ length: 3 }, (_, i) => [`2026-08-0${i + 1}`, { count: 1, allComplete: true }])) };
+        mocks.title.activeTitle = '古城の勝者'; render(mobile);
+        expect(card().textContent).toContain('6/6 達成'); expect(card().textContent).toContain('1,000,000,000,000/30'); expect(card().textContent).toContain('表示中: 古城の勝者');
+        mocks.logs = { taskXpLog: {}, habitLog: {} }; mocks.game = { ...mocks.game, character: { totalXp: 0 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [] }; render(mobile);
+        expect(card().textContent).toContain('0/6 達成'); expect(card().textContent).toContain('実績を達成すると称号を選べます。');
+        expect(card().textContent).toContain('表示中: 称号なし'); expect(card().querySelectorAll('button')).toHaveLength(0);
+        expect(mocks.title.setActiveTitle).not.toHaveBeenCalled();
+    });
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 describe.each([false, true])('日別振り返り mobile=%s', (mobile) => {

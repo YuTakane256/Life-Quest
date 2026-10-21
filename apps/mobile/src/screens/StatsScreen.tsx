@@ -76,7 +76,7 @@ export default function StatsScreen() {
         : getHabitHeatmapLevel(habitActivity[date]?.count ?? 0, habitActivity[date]?.allComplete ?? false);
     const colors = mode === 'tasks' ? heatmapColors.tasks : heatmapColors.habits;
 
-    // 実績・称号（Web StatsPage.tsx と同一のsnapshotセマンティクス。称号の選択UIは#514スコープ）
+    // 実績・称号は保存済みログと現在の成長状態から導出する。
     const achievementProgress = useMemo(
         () => getAchievementProgress(buildAchievementSnapshot({ taskXpLog, habitLog, totalXp, maxStage, equipmentCount })),
         [taskXpLog, habitLog, totalXp, maxStage, equipmentCount],
@@ -85,50 +85,49 @@ export default function StatsScreen() {
     const unlockedCount = achievementProgress.filter((achievement) => achievement.unlocked).length;
     const selectedTitle = activeTitle && unlockedTitles.includes(activeTitle) ? activeTitle : null;
     const achievementsCard = (
-                    <View style={styles.card}>
+                    <View testID="stats-achievements-card" style={styles.card}>
                         <View style={styles.cardHeader}>
                             <Text accessibilityRole="header" style={styles.sectionTitle}>🏅 実績</Text>
-                            <Text style={styles.achievementCount}>{unlockedCount}/{achievementProgress.length}</Text>
+                            <Text style={styles.achievementCount}>{unlockedCount}/{achievementProgress.length} 達成</Text>
                         </View>
                         <View style={styles.achievementList}>
                             {achievementProgress.map((achievement) => (
                                 <AchievementRow key={achievement.id} achievement={achievement} styles={styles} />
                             ))}
                         </View>
-                        {unlockedTitles.length > 0 && (
-                            <View>
-                                <Text style={styles.titlesText}>
-                                    獲得称号: <Text style={styles.titlesValue}>{unlockedTitles.join(' / ')}</Text>
-                                </Text>
+                            <View style={styles.titleSelection}>
+                                <Text accessibilityRole="header" style={styles.sectionTitle}>表示する称号</Text>
+                                <Text testID="stats-selected-title" accessibilityLiveRegion="polite" style={styles.selectedTitle}>表示中: {selectedTitle ?? '称号なし'}</Text>
+                                <Text style={styles.titlesText}>{unlockedTitles.length > 0 ? '獲得した称号をキャラ画面に表示できます。' : '実績を達成すると称号を選べます。'}</Text>
+                                {unlockedTitles.length > 0 &&
                                 <View style={styles.titleChipRow}>
                                     <Pressable
-                                        accessibilityRole="radio"
+                                        accessibilityRole="button"
                                         accessibilityState={{ selected: selectedTitle === null }}
                                         accessibilityLabel="称号なしを選択する"
                                         onPress={() => setActiveTitle(null)}
                                         style={[styles.titleChip, selectedTitle === null && styles.titleChipActive]}
                                     >
                                         <Text style={[styles.titleChipText, selectedTitle === null && styles.titleChipTextActive]}>
-                                            称号なし
+                                            {selectedTitle === null ? '✓ ' : ''}称号なし
                                         </Text>
                                     </Pressable>
                                     {unlockedTitles.map((title) => (
                                         <Pressable
                                             key={title}
-                                            accessibilityRole="radio"
+                                            accessibilityRole="button"
                                             accessibilityState={{ selected: selectedTitle === title }}
                                             accessibilityLabel={`「${title}」を選択する`}
                                             onPress={() => setActiveTitle(title)}
-                                            style={[styles.titleChip, selectedTitle === title && styles.titleChipGold]}
+                                            style={[styles.titleChip, selectedTitle === title && styles.titleChipActive]}
                                         >
-                                            <Text style={[styles.titleChipText, selectedTitle === title && styles.titleChipTextGold]}>
-                                                {title}
+                                            <Text style={[styles.titleChipText, selectedTitle === title && styles.titleChipTextActive]}>
+                                                {selectedTitle === title ? '✓ ' : ''}{title}
                                             </Text>
                                         </Pressable>
                                     ))}
-                                </View>
+                                </View>}
                             </View>
-                        )}
                     </View>
     );
 
@@ -309,24 +308,25 @@ function AchievementRow({ achievement, styles }: { achievement: AchievementProgr
     const a11y = getProgressBarA11y(
         achievement.current,
         achievement.target,
-        (current, max) => (achievement.unlocked ? `達成・${achievement.rewardTitle}` : `${current} / ${max}`),
+        () => `${achievement.unlocked ? '達成' : '未達成'}・${achievement.current.toLocaleString('ja-JP')} / ${achievement.target.toLocaleString('ja-JP')}・獲得称号: ${achievement.rewardTitle}`,
     );
     return (
-        <View style={[styles.achievementRow, !achievement.unlocked && styles.achievementRowLocked]}>
+        <View testID={`achievement-${achievement.id}`} style={styles.achievementRow}>
             <View style={styles.achievementHeader}>
                 <View style={styles.achievementLabel}>
                     <Text style={styles.achievementIcon} accessibilityElementsHidden>{achievement.icon}</Text>
                     <View style={styles.flex}>
-                        <Text style={styles.achievementTitle} numberOfLines={1}>{achievement.title}</Text>
-                        <Text style={styles.achievementDescription} numberOfLines={1}>{achievement.description}</Text>
+                        <Text accessibilityRole="header" style={styles.achievementTitle}>{achievement.title}</Text>
+                        <Text style={styles.achievementDescription}>{achievement.description}</Text>
                     </View>
                 </View>
                 <View style={[styles.achievementBadge, achievement.unlocked && styles.achievementBadgeUnlocked]} accessibilityElementsHidden>
-                    <Text style={[styles.achievementBadgeText, achievement.unlocked && styles.achievementBadgeTextUnlocked]}>
-                        {achievement.unlocked ? achievement.rewardTitle : `${achievement.current}/${achievement.target}`}
+                    <Text style={styles.achievementBadgeText}>
+                        {achievement.unlocked ? '達成' : '未達成'} · {achievement.current.toLocaleString('ja-JP')}/{achievement.target.toLocaleString('ja-JP')}
                     </Text>
                 </View>
             </View>
+            <Text style={styles.achievementReward}>獲得称号: {achievement.rewardTitle}</Text>
             <View
                 style={styles.achievementTrack}
                 accessibilityRole={a11y.max > 0 ? 'progressbar' : undefined}
@@ -358,7 +358,7 @@ function createStyles(palette: ThemePalette) {
     summaryLabel: { color: palette.text.muted, fontSize: 11, fontWeight: '700' },
     summaryValue: { color: palette.text.primary, fontSize: 20, fontWeight: '800' },
     card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, gap: 8 },
-    cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    cardHeader: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' },
     sectionTitle: { color: palette.text.primary, fontSize: 15, fontWeight: '800' },
     modeSwitch: { flexDirection: 'row', backgroundColor: palette.bg.secondary, borderRadius: 8, padding: 2 },
     modeSegment: { minHeight: 44, flex: 1, padding: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
@@ -400,30 +400,28 @@ function createStyles(palette: ThemePalette) {
     legendText: { color: palette.text.muted, fontSize: 10 },
     note: { color: palette.text.muted, fontSize: 11, lineHeight: 16 },
     flex: { flex: 1 },
-    achievementCount: { color: palette.accent.gold, fontSize: 12, fontWeight: '800' },
+    achievementCount: { color: palette.text.secondary, fontSize: 12, fontWeight: '800' },
     achievementList: { gap: 8 },
     achievementRow: { backgroundColor: palette.bg.secondary, borderRadius: 8, padding: 10, gap: 6 },
-    achievementRowLocked: { opacity: 0.78 },
-    achievementHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
-    achievementLabel: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, flex: 1 },
+    achievementHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+    achievementLabel: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 0 },
     achievementIcon: { fontSize: 16 },
     achievementTitle: { color: palette.text.primary, fontSize: 12, fontWeight: '700' },
-    achievementDescription: { color: palette.text.muted, fontSize: 10 },
-    achievementBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 999, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1 },
+    achievementDescription: { color: palette.text.secondary, fontSize: 12, marginTop: 4 },
+    achievementReward: { color: palette.text.secondary, fontSize: 12 },
+    achievementBadge: { maxWidth: '100%', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1 },
     achievementBadgeUnlocked: { backgroundColor: 'rgba(245, 158, 11, 0.18)' },
-    achievementBadgeText: { color: palette.text.muted, fontSize: 10 },
-    achievementBadgeTextUnlocked: { color: palette.accent.gold },
+    achievementBadgeText: { color: palette.text.primary, fontSize: 12 },
     achievementTrack: { height: 6, borderRadius: 3, backgroundColor: palette.bg.card, overflow: 'hidden' },
     achievementFill: { height: '100%', borderRadius: 3, backgroundColor: palette.accent.primary },
     achievementFillUnlocked: { backgroundColor: palette.accent.gold },
-    titlesText: { color: palette.text.muted, fontSize: 11, lineHeight: 16 },
-    titlesValue: { color: palette.accent.gold },
+    titleSelection: { marginTop: 8, gap: 8 },
+    selectedTitle: { color: palette.text.primary, fontSize: 12 },
+    titlesText: { color: palette.text.secondary, fontSize: 12 },
     titleChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-    titleChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1 },
+    titleChip: { minHeight: 44, minWidth: 44, maxWidth: '100%', justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1 },
     titleChipActive: { backgroundColor: palette.accent.primary },
-    titleChipGold: { backgroundColor: 'rgba(245, 158, 11, 0.85)' },
-    titleChipText: { color: palette.text.muted, fontSize: 10, fontWeight: '700' },
+    titleChipText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700', flexShrink: 1 },
     titleChipTextActive: { color: 'white' },
-    titleChipTextGold: { color: 'white' },
     });
 }
