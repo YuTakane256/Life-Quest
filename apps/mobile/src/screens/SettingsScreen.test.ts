@@ -1,10 +1,14 @@
 import { act, createElement, StrictMode, useEffect, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import type { AccountDeletionResult } from '@life-quest/core/accountDeletion';
 
 const mocks = vi.hoisted(() => ({ user: vi.fn(), pending: vi.fn(), approve: vi.fn(), permission: vi.fn(), enqueue: vi.fn(async () => true),
     toggle: (_enabled: boolean) => {}, blur: () => {}, focus: () => {},
+    blurs: new Set<() => void>(), focuses: new Set<() => void>(), remove: vi.fn(),
+    deleteText: (_value: string) => {}, deletePress: () => {},
+    identities: new Set<(userId: string | null) => void>(),
 }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: vi.fn(async () => null), setItem: vi.fn(async () => undefined), getAllKeys: vi.fn(async () => []),
@@ -15,10 +19,14 @@ vi.mock('react-native', async () => {
         onPress?: () => void; disabled?: boolean; value?: string; onChangeText?: (text: string) => void };
     const box = ({ children }: Props) => element('div', null, children);
     return { View: box, ScrollView: box, Text: ({ children }: Props) => element('span', null, children),
-        Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => element('button',
-            { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
-        TextInput: ({ value, onChangeText, accessibilityLabel }: Props) => element('input',
-            { value, onChange: (event) => onChangeText?.(event.currentTarget.value), 'aria-label': accessibilityLabel }),
+        Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => {
+            if (accessibilityLabel === 'アカウントを完全に削除する') mocks.deletePress = onPress!;
+            return element('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children);
+        },
+        TextInput: ({ value, onChangeText, accessibilityLabel }: Props) => {
+            if (accessibilityLabel === '退会確認文字') mocks.deleteText = onChangeText!;
+            return element('input', { value, onChange: (event) => onChangeText?.(event.currentTarget.value), 'aria-label': accessibilityLabel });
+        },
         Switch: ({ value, onValueChange, disabled, accessibilityLabel }: { value: boolean; onValueChange: (enabled: boolean) => void; disabled?: boolean; accessibilityLabel?: string }) => {
             mocks.toggle = onValueChange;
             return element('input', { type: 'checkbox', checked: value, disabled, 'aria-label': accessibilityLabel, onChange: (event) => onValueChange(event.target.checked) });
@@ -26,7 +34,11 @@ vi.mock('react-native', async () => {
 });
 vi.mock('react-native-safe-area-context', async () => ({ SafeAreaView: ({ children }: { children: ReactNode }) => createElement('div', null, children) }));
 vi.mock('expo-router', () => ({ router: { push: vi.fn() }, useFocusEffect: (setup: () => (() => void) | undefined) => {
-    useEffect(() => { let cleanup = setup(); mocks.blur = () => { cleanup?.(); cleanup = undefined; }; mocks.focus = () => { cleanup = setup(); }; return () => cleanup?.(); }, [setup]);
+    useEffect(() => {
+        let cleanup = setup(); const blur = () => { cleanup?.(); cleanup = undefined; }; const focus = () => { cleanup = setup(); };
+        mocks.blurs.add(blur); mocks.focuses.add(focus); mocks.blur = () => [...mocks.blurs].forEach((callback) => callback()); mocks.focus = () => [...mocks.focuses].forEach((callback) => callback());
+        return () => { cleanup?.(); mocks.blurs.delete(blur); mocks.focuses.delete(focus); };
+    }, [setup]);
 } }));
 vi.mock('../components/AppleSignInButton', () => ({ AppleSignInButton: () => null }));
 vi.mock('../theme/usePalette', async () => {
@@ -34,8 +46,9 @@ vi.mock('../theme/usePalette', async () => {
     return { usePalette: () => ({ palette: LIGHT_THEME, resolvedTheme: 'light' }) };
 });
 vi.mock('../platform/auth', () => ({ getCurrentUser: mocks.user, getPasswordRecoveryState: () => 'idle',
+    subscribeAccountDeletionIdentity: (listener: (userId: string | null) => void) => { mocks.identities.add(listener); return () => { mocks.identities.delete(listener); }; },
     subscribePasswordRecoveryState: () => () => undefined,
-    deleteCurrentAccount: vi.fn(), cancelPasswordRecovery: vi.fn(), requestPasswordReset: vi.fn(),
+    deleteCurrentAccount: mocks.remove, cancelPasswordRecovery: vi.fn(), requestPasswordReset: vi.fn(),
     resendEmailVerification: vi.fn(), signInWithEmail: vi.fn(), signInWithApple: vi.fn(), signInWithGoogle: vi.fn(),
     signOutUser: vi.fn(), signUpWithEmail: vi.fn(), updatePasswordFromRecovery: vi.fn() }));
 vi.mock('../platform/cloudMigration', () => ({ getPendingMobileContent: mocks.pending, approveMobileContentImport: mocks.approve }));
@@ -59,9 +72,52 @@ beforeEach(async () => {
     mocks.pending.mockReset().mockResolvedValue({ tasks: [{ id: 'local' }], habits: [], dailyRecords: [] });
     mocks.approve.mockReset().mockResolvedValue({ status: 'imported' });
     mocks.permission.mockReset().mockResolvedValue(true); mocks.enqueue.mockClear();
+    mocks.remove.mockReset().mockResolvedValue({ ok: false, message: 'fixture: 未送信' });
     useMobileSettingsStore.setState({ hasHydrated: true, notificationsEnabled: false });
     await notifyLogin('a');
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+});
+
+describe('Mobile退会UIの確認対象と画面寿命', () => {
+    const open = () => act(() => button('アカウントを削除する').click());
+    const type = (value = '削除') => act(() => mocks.deleteText(value));
+    it('SDK切替が共有scopeへ未反映でも古い確認を失効し、旧対象で開き直せない', async () => {
+        await render(); open(); type(); const old = mocks.deletePress;
+        act(() => mocks.identities.forEach((event) => event('b'))); open();
+        expect(container.querySelector('[aria-label="退会確認文字"]')).toBeNull();
+        act(() => { mocks.identities.forEach((event) => event('a')); old(); });
+        expect(mocks.remove).not.toHaveBeenCalled(); expect(captureAuthSessionScope().userId).toBe('a');
+    });
+    it('対象を明示し正確な確認文字と連打防止を適用する', async () => {
+        let resolve!: (value: AccountDeletionResult) => void;
+        mocks.remove.mockReturnValueOnce(new Promise<AccountDeletionResult>((yes) => { resolve = yes; }));
+        await render(); open(); expect(container.textContent).toContain('「a@example.invalid」のクラウド');
+        type('削除 '); expect(button('アカウントを完全に削除する').disabled).toBe(true); type();
+        const old = mocks.deletePress; act(() => { old(); old(); }); expect(mocks.remove).toHaveBeenCalledOnce();
+        expect(mocks.remove.mock.calls[0][0].userId).toBe('a');
+        await act(async () => resolve({ ok: false, message: '再確認の案内' })); expect(container.textContent).toContain('再確認の案内');
+    });
+    it.each(['switch', 'logout', 'roundtrip', 'blur', 'cancel', 'unmount'])('%s後の古い確認は送信しない', async (kind) => {
+        await render(); open(); type(); const old = mocks.deletePress;
+        await act(async () => {
+            if (kind === 'switch') { mocks.user.mockResolvedValue({ userId: 'b', email: 'b@example.invalid' }); await notifyLogin('b'); }
+            if (kind === 'logout') await notifyLogout();
+            if (kind === 'roundtrip') { await notifyLogout(); await notifyLogin('a'); }
+            if (kind === 'blur') { mocks.blur(); mocks.focus(); }
+            if (kind === 'cancel') button('退会をキャンセルする').click();
+            if (kind === 'unmount') root.unmount();
+        });
+        act(() => old()); expect(mocks.remove).not.toHaveBeenCalled();
+    });
+    it('自分の退会によるログアウト後に片付け失敗の案内も表示する', async () => {
+        mocks.remove.mockImplementationOnce(async () => {
+            mocks.user.mockResolvedValue(null); await notifyLogout();
+            return { ok: false, message: 'アカウントは削除されました。アプリを再起動してください。', completionScope: captureAuthSessionScope().isCurrent };
+        });
+        await render(); open(); type(); await act(async () => mocks.deletePress());
+        expect(container.textContent).toContain('アカウントは削除されました。アプリを再起動');
+        expect(container.querySelector('[aria-label="退会確認文字"]')).toBeNull();
+    });
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals(); });
 const render = () => act(async () => root.render(createElement(SettingsScreen)));

@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { createAccountDeletionConfirmation } from '@life-quest/core/accountDeletion';
 import { captureAuthSessionGuard, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
 import { canRequestCloudSync, cloudSyncMessage, isCloudSyncBusy, type CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
 import {
     deleteCurrentAccount,
+    subscribeAccountDeletionIdentity,
     cancelPasswordRecovery,
     getPasswordRecoveryState,
     requestPasswordReset,
@@ -99,11 +101,14 @@ export default function SettingsScreen() {
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [message, setMessage] = useState<string | null>(null);
     const [authBusy, setBusy] = useState(false);
-    const [deleteConfirming, setDeleteConfirming] = useState(false);
-    const [deleteText, setDeleteText] = useState('');
+    const [deletion] = useState(() => createAccountDeletionConfirmation(deleteCurrentAccount, subscribeAccountDeletionIdentity));
+    const deleteState = useSyncExternalStore(deletion.subscribe, deletion.getSnapshot);
+    const deleteConfirming = deleteState.confirmation !== null;
+    const deleteText = deleteState.text;
+    useFocusEffect(useCallback(() => deletion.activate(), [deletion]));
     const { currentUser, pendingContent, importMessage, checking, importing, refreshAccount,
         dismissPendingContent, importContent } = useMobileAccountImport();
-    const busy = authBusy || importing;
+    const busy = authBusy || importing || deleteState.busy;
     const mounted = useRef(false);
     const [storageSummary, setStorageSummary] = useState<StorageSummary>({
         loading: true,
@@ -159,8 +164,6 @@ export default function SettingsScreen() {
     };
 
     useEffect(() => subscribeAuthSessionScope(() => {
-        setDeleteConfirming(false);
-        setDeleteText('');
         setPassword('');
         setPasswordConfirmation('');
         setVerificationEmail(null);
@@ -308,21 +311,7 @@ export default function SettingsScreen() {
         setBusy(false);
     };
 
-    const handleDelete = async (): Promise<void> => {
-        if (busy || deleteText !== '削除') return;
-        setBusy(true);
-        setMessage(null);
-        const result = await deleteCurrentAccount();
-        if (result.ok) {
-            await refreshAccount();
-            setDeleteConfirming(false);
-            setDeleteText('');
-            setMessage(result.manualAppleRevocationRequired
-                ? 'アカウントとクラウドデータを削除しました。Appleの「Apple IDを使用中のApp」からもLife Questの連携を削除してください。'
-                : 'アカウントとクラウドデータを削除しました');
-        } else setMessage(result.message);
-        setBusy(false);
-    };
+    const handleDelete = () => { if (!authBusy && !importing) void deletion.submit(deleteState.confirmation, deleteText); };
 
     return (
         <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
@@ -393,20 +382,20 @@ export default function SettingsScreen() {
                                         accessibilityRole="button"
                                         accessibilityLabel="アカウントを削除する"
                                         disabled={busy}
-                                        onPress={() => setDeleteConfirming(true)}
+                                        onPress={() => { if (!busy && deletion.open(currentUser)) setMessage(null); }}
                                         style={({ pressed }) => [styles.deleteLink, (busy || pressed) && styles.muted]}
                                     >
                                         <Text style={styles.deleteLinkText}>アカウントを削除</Text>
                                     </Pressable>
                                 ) : (
                                     <View style={styles.deletePanel}>
-                                        <Text style={styles.hint}>クラウド上のデータは完全に削除されます。確認のため「削除」と入力してください。</Text>
-                                        <TextInput value={deleteText} onChangeText={setDeleteText} placeholder="削除" placeholderTextColor={palette.text.muted} accessibilityLabel="退会確認文字" style={styles.input} />
+                                        <Text style={styles.hint}>「{deleteState.confirmation?.email ?? 'Appleアカウント'}」のクラウド上のデータは完全に削除されます。確認のため「削除」と入力してください。</Text>
+                                        <TextInput value={deleteText} onChangeText={(value) => deletion.setText(deleteState.confirmation, value)} placeholder="削除" placeholderTextColor={palette.text.muted} accessibilityLabel="退会確認文字" style={styles.input} />
                                         <View style={styles.formActions}>
                                             <Pressable accessibilityRole="button" accessibilityLabel="アカウントを完全に削除する" accessibilityState={{ disabled: busy || deleteText !== '削除', busy }} disabled={busy || deleteText !== '削除'} onPress={() => { void handleDelete(); }} style={({ pressed }) => [styles.deleteButton, (busy || deleteText !== '削除' || pressed) && styles.muted]}>
                                                 <Text style={styles.primaryButtonText}>{busy ? '削除中' : '完全に削除する'}</Text>
                                             </Pressable>
-                                            <Pressable accessibilityRole="button" accessibilityLabel="退会をキャンセルする" disabled={busy} onPress={() => { setDeleteConfirming(false); setDeleteText(''); }}><Text style={styles.linkText}>キャンセル</Text></Pressable>
+                                            <Pressable accessibilityRole="button" accessibilityLabel="退会をキャンセルする" disabled={busy} onPress={() => deletion.cancel(deleteState.confirmation)}><Text style={styles.linkText}>キャンセル</Text></Pressable>
                                         </View>
                                     </View>
                                 )}
@@ -481,6 +470,7 @@ export default function SettingsScreen() {
                             </View>
                         )}
                         {message && <Text accessibilityRole="alert" style={styles.message}>{message}</Text>}
+                        {deleteState.message && <Text accessibilityRole="alert" style={styles.message}>{deleteState.message}</Text>}
                     </Card>
 
                     <Card title="同期" styles={styles}>
