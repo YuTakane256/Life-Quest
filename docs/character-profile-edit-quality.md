@@ -49,8 +49,13 @@ DB/API/保存形式/報酬量/同期経路は変更しない。これは端末�
 専用parity ID/8082/クラウド設定なし/dailyメモリfixtureで確認する。
 キーボードのあるフローは`node scripts/run-mobile-parity-screenshots.mjs profile`。
 `Done`キーの実表示を必須とし、入力欄のフォーカスだけでは合格にしない。
-初回はシミュレーターの画面内キーボードが非表示のため、この条件で停止した。
-Device Hubの一時表示の許可を確認中で、設定を無断では変更していない。
+初回は`Done`キーを確認できず停止したが、Device Hubのキーボード設定を変更せずに
+再実行した通常dark・通常light・拡大lightでは、画面内キーボードの実表示と入力欄を画像でも確認した。
+初回の原因を設定の無効化と断定しない。設定変更への追加回答は不要。
+通常darkは`2026-10-22_013806`、通常lightは`2026-10-22_014022`で成功した。
+light/accessibility-largeも`2026-10-22_014339`で、取消・保存・再編集と実キーボードを含む
+`profile`全体が成功した。拡大時も入力欄がキーボードに隠れず、決定キーで閉じて操作を続けられる。
+これらはメモリfixture内の保存/再編集であり、通常データの永続化やクラウド同期の証拠ではない。
 
 別途、キーボード検証を含まない`node scripts/run-mobile-parity-screenshots.mjs profileUi`で、
 名前/アバター・取消・保存・再編集・閉じるを確認する。`profile`も同じUIフローを呼び出してからキーボードの実表示を検証する。
@@ -76,8 +81,22 @@ OSヘッダー・モーダル位置・文字描画の違いは残す。キーボ
 | --- | --- |
 | ![](screenshots/profile-edit/web-light-large-text.png) | ![](screenshots/profile-edit/ios-light-large-editor.png) |
 
+画面内キーボードの実表示：iOS/light/accessibility-large。入力欄と決定キーを目視確認した。
+全フローではキーボードを閉じてから保存・取消・閉じる操作を確認している。
+
+![iOS拡大文字・ソフトウェアキーボード表示](screenshots/profile-edit/ios-light-large-keyboard.png)
+
+検証後は使用した8082のMetroと専用parityアプリだけを停止し、シミュレーターの文字サイズを
+元の`large`へ戻した。キーボード設定は変更せず、通常版/サインイン済みデータは初期化していない。
+
 ## 残る範囲
 
 実アカウントの競合/復元、Android/実端末、VoiceOver/TalkBack全面、キャラ画面全体の拡大文字対応は後続。
 通常データは初期化せず、README画像を追加しない。計画④の継続で、⑤の配布/ストア提出には進まない。
 PR後にGPT-6.1 Sol・エフォート中の独立レビューと最終HEADのCI3つを確認し、自動マージしない。
+
+独立レビューではコードの修正必須の指摘なし。認証/セッション/Native blur・競合・一度だけの保存、
+Webのフォーカス/スクロール、共有Dialogの既定値維持を確認した。
+独立実行のテストは65件＋既存モデル/Escapeの6件が成功。
+通常起動は一時ファイルの権限で停止したため、`--configLoader runner --cache false`で検証した。
+実キーボードの3条件も確認済み。最終マージ判断は資料更新後の最終HEADのCI結果と合わせて行う。
