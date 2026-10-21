@@ -10,6 +10,7 @@ import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
 import { canRequestCloudSync, cloudSyncMessage, isCloudSyncBusy, type CloudSyncPublicState } from '@life-quest/core/cloudSyncState';
 import {
     deleteCurrentAccount,
+    subscribeAccountDeletionIdentity,
     cancelPasswordRecovery,
     getPasswordRecoveryState,
     requestPasswordReset,
@@ -100,7 +101,7 @@ export default function SettingsScreen() {
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [message, setMessage] = useState<string | null>(null);
     const [authBusy, setBusy] = useState(false);
-    const [deletion] = useState(() => createAccountDeletionConfirmation(deleteCurrentAccount));
+    const [deletion] = useState(() => createAccountDeletionConfirmation(deleteCurrentAccount, subscribeAccountDeletionIdentity));
     const deleteState = useSyncExternalStore(deletion.subscribe, deletion.getSnapshot);
     const deleteConfirming = deleteState.confirmation !== null;
     const deleteText = deleteState.text;

@@ -13,7 +13,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signInWithAppleNative } from './appleSignIn';
-import { createAccountDeletionOperation, type AccountDeletionApproval, type AccountDeletionResult } from '@life-quest/core/accountDeletion';
+import { createAccountDeletionOperation, type AccountDeletionApproval, type AccountDeletionResult, type SubscribeAccountDeletionIdentity } from '@life-quest/core/accountDeletion';
 
 export type AuthResult =
     | { ok: true; emailVerificationPending?: boolean; manualAppleRevocationRequired?: boolean }
@@ -426,7 +426,16 @@ export async function deleteCurrentAccount(approval: AccountDeletionApproval): P
     return deleteAccountOperation(approval);
 }
 
+/** Independent of deferred recovery/pending-reward restoration in the main auth listener. */
+export const subscribeAccountDeletionIdentity: SubscribeAccountDeletionIdentity = (listener) => {
+    const client = getMobileSupabaseClient();
+    if (!client) return () => {};
+    const { data } = client.auth.onAuthStateChange((_event, session) => listener(session?.user.id ?? null));
+    return () => data.subscription.unsubscribe();
+};
+
 const deleteAccountOperation = createAccountDeletionOperation({
+    subscribeSessionIdentity: subscribeAccountDeletionIdentity,
     getSessionUserId: async () => { const { data, error } = await getMobileSupabaseClient()!.auth.getSession(); if (error) throw error; return data.session?.user.id ?? null; },
     invokeDelete: (options) => getMobileEdgeFunctionInvoker()!('delete_account', {}, options),
     detachRewards: () => detachPendingRewardOperations({ suppressAnonymousRecovery: true }),

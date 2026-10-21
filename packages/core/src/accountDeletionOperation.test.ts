@@ -8,7 +8,8 @@ beforeEach(async () => { resetAuthLifecycleHooks(); await notifyLogin('a'); });
 afterEach(resetAuthLifecycleHooks);
 function setup() {
     const deps = { getSessionUserId: vi.fn(async () => 'a' as string | null), invokeDelete: vi.fn(async (_options: unknown) => ({} as { apple_revocation?: unknown })),
-        detachRewards: vi.fn(), cleanup: vi.fn(async (_userId: string, _active: () => boolean) => {}), signOut: vi.fn(async () => {}), setAnonymous: vi.fn() };
+        detachRewards: vi.fn(), cleanup: vi.fn(async (_userId: string, _active: () => boolean) => {}), signOut: vi.fn(async () => {}), setAnonymous: vi.fn(),
+        subscribeSessionIdentity: vi.fn((_listener: (userId: string | null) => void) => () => {}) };
     return { deps, run: createAccountDeletionOperation(deps), approval: { userId: 'a', isActive: () => true } };
 }
 describe('confirmed account deletion operation', () => {
@@ -38,6 +39,27 @@ describe('confirmed account deletion operation', () => {
     it('同一ユーザー通知とトークン更新を許容する', async () => {
         const { deps, run, approval } = setup(); const wait = deferred<string | null>(); deps.getSessionUserId.mockReturnValueOnce(wait.promise);
         const pending = run(approval); await Promise.resolve(); await notifyLogin('a'); wait.resolve('a'); expect((await pending).ok).toBe(true);
+    });
+    it.each(['session', 'rpc', 'cleanup'] as const)('SDKの切替をlifecycleより先に検出する（%s待機）', async (stage) => {
+        const { deps, run, approval } = setup(); const wait = deferred<void>();
+        if (stage === 'session') deps.getSessionUserId.mockImplementationOnce(async () => { await wait.promise; return 'a'; });
+        if (stage === 'rpc') deps.invokeDelete.mockImplementationOnce(async () => { await wait.promise; return {}; });
+        if (stage === 'cleanup') deps.cleanup.mockReturnValueOnce(wait.promise);
+        const pending = run(approval);
+        const called = stage === 'session' ? deps.getSessionUserId : stage === 'rpc' ? deps.invokeDelete : deps.cleanup;
+        await vi.waitFor(() => expect(called).toHaveBeenCalledOnce());
+        const event = deps.subscribeSessionIdentity.mock.calls[0][0]; event('b'); event('a');
+        expect(captureAuthSessionScope().userId).toBe('a'); wait.resolve(); expect((await pending).ok).toBe(false);
+        expect(deps.signOut).not.toHaveBeenCalled(); expect(deps.setAnonymous).not.toHaveBeenCalled();
+        if (stage !== 'cleanup') expect(deps.cleanup).not.toHaveBeenCalled();
+    });
+    it.each(['normal', 'returning-account'])('SDKの自分のsignOutと、null後の復帰を区別する（%s）', async (kind) => {
+        const { deps, run, approval } = setup(); deps.signOut.mockImplementationOnce(async () => {
+            const event = deps.subscribeSessionIdentity.mock.calls[0][0]; event(null); event(null);
+            if (kind === 'returning-account') event('a');
+        });
+        expect((await run(approval)).ok).toBe(kind === 'normal');
+        expect(deps.setAnonymous).toHaveBeenCalledTimes(kind === 'normal' ? 1 : 0);
     });
     it('認証初期化を待ってからセッションを照会する', async () => {
         const wait = deferred<void>(); registerAuthLifecycleHooks({ onLogin: () => wait.promise });

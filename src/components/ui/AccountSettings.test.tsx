@@ -5,6 +5,7 @@ import { captureAuthSessionScope, notifyLogin, notifyLogout, resetAuthLifecycleH
 import type { AccountDeletionResult } from '@life-quest/core/accountDeletion';
 
 const mocks = vi.hoisted(() => ({ user: vi.fn(), remove: vi.fn(), change: (_value: string) => {}, submit: () => {},
+    identities: new Set<(userId: string | null) => void>(),
     capture: (value: unknown) => {
         const props = value as Record<string, unknown> | null;
         if (props?.['aria-label'] === '退会確認文字') mocks.change = (value) => (props.onChange as (event: unknown) => void)({ target: { value } });
@@ -19,6 +20,7 @@ vi.mock('react/jsx-dev-runtime', async (original) => { const module = await orig
 }; });
 vi.mock('../../platform/supabase', () => ({ readWebSupabaseEnv: () => ({ url: 'https://example.invalid', anonKey: 'fixture' }) }));
 vi.mock('../../platform/auth', () => ({ getCurrentUser: mocks.user, deleteCurrentAccount: mocks.remove,
+    subscribeAccountDeletionIdentity: (listener: (userId: string | null) => void) => { mocks.identities.add(listener); return () => { mocks.identities.delete(listener); }; },
     getPasswordRecoveryState: () => 'idle', getGoogleOAuthState: () => ({ status: 'idle' }),
     subscribePasswordRecoveryState: () => () => {}, subscribeGoogleOAuthState: () => () => {}, subscribeAppleOAuthState: () => () => {},
     cancelPasswordRecovery: vi.fn(), requestPasswordReset: vi.fn(), resendEmailVerification: vi.fn(), signInWithEmail: vi.fn(),
@@ -81,5 +83,13 @@ describe('Web退会UIの確認対象と操作寿命', () => {
         await render(); await act(async () => notifyLogin('b'));
         await act(async () => old.resolve({ userId: 'a', email: 'a@example.invalid' }));
         expect(host.textContent).toContain('b@example.invalid'); expect(host.textContent).not.toContain('a@example.invalid');
+    });
+    it('SDK A→B→Aが共有scopeより先でも古い確認を失効する', async () => {
+        await render(); open(); type(); const old = mocks.submit;
+        act(() => { mocks.identities.forEach((event) => event('b')); });
+        expect(host.querySelector('[aria-label="退会確認文字"]')).toBeNull();
+        open(); expect(host.querySelector('[aria-label="退会確認文字"]')).toBeNull();
+        act(() => { mocks.identities.forEach((event) => event('a')); old(); });
+        expect(mocks.remove).not.toHaveBeenCalled(); expect(captureAuthSessionScope().userId).toBe('a');
     });
 });

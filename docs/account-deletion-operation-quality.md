@@ -9,6 +9,9 @@ Issue: [#785](https://github.com/YuTakane256/Life-Quest/issues/785)。計画④�
   認証切替・ログアウト/再ログイン・取消/再確認・アンマウント・Nativeタブ離脱後の古い確認を拒否する。
 - 同じ有効な退会要求の連打をまとめる。SDKセッションを照会し、表示した本人と一致するときだけ
   既存の共有Invokerへ `expectedUserId` / `isActive` を渡す。JWT照会・401更新後も別人のトークンでは送らない。
+- 確認画面と要求それぞれでSDKの認証イベントを直接購読する。Mobileの報酬復元が待機中で、
+  共有ライフサイクルの切替が未反映でも旧確認/要求を失効させる。要求前のSDK A→B→Aも旧承認を復活させない。
+  購読は画面破棄/要求完了時に解除し、SDK callback内では非同期SDK処理をawaitしない。
 - RPC応答・端末片付け・ログアウトの待機後に帰属を再確認する。片付けの各工程の開始前にも確認し、
   切替後に新アカウントの同期停止・メモリ初期化・ログアウトを開始しない。
 - 自分の退会によるログアウトは成功として扱い、完了した匿名スコープでのみ成功/片付け失敗の案内を表示する。
@@ -27,6 +30,7 @@ Webのアカウント照会も認証切替時に更新し、遅延した旧照�
   後始末の順序/失敗・旧finallyと新要求、通常退会/Apple案内を確認する。
 - `src/platform/accountDeletionAdapters.test.ts`: Web/Mobileの実認証service＋共有operation。
   SDK/Invoker/端末片付けをスタブ化し、対象制約の接続、local signOut、SDKの返却error、未設定/セッション不一致を確認する。
+  実Mobile auth listenerの報酬復元を保留し、SDKはB・共有scopeはAの窓でも旧要求が後始末しないことも再現する。
 - `AccountSettings.test.tsx` / `SettingsScreen.test.ts`: 実UI＋共有確認コントローラー。
   React StrictMode、対象/確認文字、連打、認証切替/画面破棄後の旧ボタン、完了/再確認案内を検証する。
 - 既存のcore端末片付けテスト、Web/Mobile認証テスト、アプリ全体テスト・型検査・lint・buildを維持する。

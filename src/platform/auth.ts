@@ -15,7 +15,7 @@ import { getWebEdgeFunctionInvoker } from './edgeFunctions';
 import { cleanupDeletedWebAccount } from './accountDeletion';
 import { flushCompletionRewardWrites } from './completionRewards';
 import { hasPersistedCloudGame, prepareWebAnonymousSession } from './authStores';
-import { createAccountDeletionOperation, type AccountDeletionApproval, type AccountDeletionResult } from '@life-quest/core/accountDeletion';
+import { createAccountDeletionOperation, type AccountDeletionApproval, type AccountDeletionResult, type SubscribeAccountDeletionIdentity } from '@life-quest/core/accountDeletion';
 
 export type AuthResult =
     | { ok: true; emailVerificationPending?: boolean; manualAppleRevocationRequired?: boolean }
@@ -415,7 +415,16 @@ export async function deleteCurrentAccount(approval: AccountDeletionApproval): P
     return deleteAccountOperation(approval);
 }
 
+/** Watch SDK identity synchronously; normal lifecycle initialization may still be pending. */
+export const subscribeAccountDeletionIdentity: SubscribeAccountDeletionIdentity = (listener) => {
+    const client = getWebSupabaseClient();
+    if (!client) return () => {};
+    const { data } = client.auth.onAuthStateChange((_event, session) => listener(session?.user.id ?? null));
+    return () => data.subscription.unsubscribe();
+};
+
 const deleteAccountOperation = createAccountDeletionOperation({
+    subscribeSessionIdentity: subscribeAccountDeletionIdentity,
     getSessionUserId: async () => { const { data, error } = await getWebSupabaseClient()!.auth.getSession(); if (error) throw error; return data.session?.user.id ?? null; },
     invokeDelete: (options) => getWebEdgeFunctionInvoker()!('delete_account', {}, options),
     detachRewards: detachPendingWebRewardOperations,

@@ -4,6 +4,7 @@ import { createAccountDeletionConfirmation } from '@life-quest/core/accountDelet
 import { CloudOff, UserRound } from 'lucide-react';
 import {
     deleteCurrentAccount,
+    subscribeAccountDeletionIdentity,
     cancelPasswordRecovery,
     getCurrentUser,
     getGoogleOAuthState,
@@ -40,7 +41,7 @@ export function AccountSettings() {
     const [googleOAuthState, setGoogleOAuthState] = useState(getGoogleOAuthState);
     const [message, setMessage] = useState<string | null>(null);
     const [authBusy, setBusy] = useState(false);
-    const [deletion] = useState(() => createAccountDeletionConfirmation(deleteCurrentAccount));
+    const [deletion] = useState(() => createAccountDeletionConfirmation(deleteCurrentAccount, subscribeAccountDeletionIdentity));
     const deleteState = useSyncExternalStore(deletion.subscribe, deletion.getSnapshot);
     const busy = authBusy || deleteState.busy;
     const deleteConfirming = deleteState.confirmation !== null;

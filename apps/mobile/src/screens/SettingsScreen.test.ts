@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({ user: vi.fn(), pending: vi.fn(), approve: vi.f
     toggle: (_enabled: boolean) => {}, blur: () => {}, focus: () => {},
     blurs: new Set<() => void>(), focuses: new Set<() => void>(), remove: vi.fn(),
     deleteText: (_value: string) => {}, deletePress: () => {},
+    identities: new Set<(userId: string | null) => void>(),
 }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: vi.fn(async () => null), setItem: vi.fn(async () => undefined), getAllKeys: vi.fn(async () => []),
@@ -45,6 +46,7 @@ vi.mock('../theme/usePalette', async () => {
     return { usePalette: () => ({ palette: LIGHT_THEME, resolvedTheme: 'light' }) };
 });
 vi.mock('../platform/auth', () => ({ getCurrentUser: mocks.user, getPasswordRecoveryState: () => 'idle',
+    subscribeAccountDeletionIdentity: (listener: (userId: string | null) => void) => { mocks.identities.add(listener); return () => { mocks.identities.delete(listener); }; },
     subscribePasswordRecoveryState: () => () => undefined,
     deleteCurrentAccount: mocks.remove, cancelPasswordRecovery: vi.fn(), requestPasswordReset: vi.fn(),
     resendEmailVerification: vi.fn(), signInWithEmail: vi.fn(), signInWithApple: vi.fn(), signInWithGoogle: vi.fn(),
@@ -79,6 +81,13 @@ beforeEach(async () => {
 describe('Mobile退会UIの確認対象と画面寿命', () => {
     const open = () => act(() => button('アカウントを削除する').click());
     const type = (value = '削除') => act(() => mocks.deleteText(value));
+    it('SDK切替が共有scopeへ未反映でも古い確認を失効し、旧対象で開き直せない', async () => {
+        await render(); open(); type(); const old = mocks.deletePress;
+        act(() => mocks.identities.forEach((event) => event('b'))); open();
+        expect(container.querySelector('[aria-label="退会確認文字"]')).toBeNull();
+        act(() => { mocks.identities.forEach((event) => event('a')); old(); });
+        expect(mocks.remove).not.toHaveBeenCalled(); expect(captureAuthSessionScope().userId).toBe('a');
+    });
     it('対象を明示し正確な確認文字と連打防止を適用する', async () => {
         let resolve!: (value: AccountDeletionResult) => void;
         mocks.remove.mockReturnValueOnce(new Promise<AccountDeletionResult>((yes) => { resolve = yes; }));

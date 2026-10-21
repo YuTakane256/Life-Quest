@@ -10,6 +10,8 @@ import { captureAuthSessionScope, notifyLogout, subscribeAuthSessionScope, waitF
 import type { EdgeFunctionCallOptions } from './edgeFunctions.ts';
 
 export interface AccountDeletionApproval { userId: string; isActive: () => boolean }
+/** Direct SDK identity events, before deferred reward restoration/lifecycle hooks. */
+export type SubscribeAccountDeletionIdentity = (listener: (userId: string | null) => void) => () => void;
 export type AccountDeletionResult = (
     | { ok: true; manualAppleRevocationRequired?: boolean }
     | { ok: false; message: string }
@@ -22,6 +24,7 @@ export interface AccountDeletionOperationDeps {
     cleanup: (userId: string, isCurrent: () => boolean) => Promise<void>;
     signOut: () => Promise<void>;
     setAnonymous: () => void;
+    subscribeSessionIdentity: SubscribeAccountDeletionIdentity;
 }
 
 /** Only a confirmed identity may be deleted. Never retry an uncertain destructive request automatically. */
@@ -38,6 +41,8 @@ export function createAccountDeletionOperation(deps: AccountDeletionOperationDep
             let finishing = false;
             let committed = false;
             let invalid = false;
+            let sdkLoggedOut = false;
+            let unsubscribeSdk = () => {};
             let logoutScope: ReturnType<typeof captureAuthSessionScope> | null = null;
             const ownsLogout = () => logoutScope?.isCurrent() === true;
             const unsubscribe = subscribeAuthSessionScope((next) => {
@@ -46,6 +51,10 @@ export function createAccountDeletionOperation(deps: AccountDeletionOperationDep
             });
             const current = () => !invalid && scope.isCurrent();
             try {
+                unsubscribeSdk = deps.subscribeSessionIdentity((userId) => {
+                    if (finishing && userId === null) { sdkLoggedOut = true; return; }
+                    if (userId !== approval.userId || sdkLoggedOut) invalid = true;
+                });
                 await waitForAuthLifecycleSettled();
                 if (!current() || !approval.isActive()) return stale();
                 const userId = await deps.getSessionUserId();
@@ -74,7 +83,7 @@ export function createAccountDeletionOperation(deps: AccountDeletionOperationDep
                 return current()
                     ? { ok: false, message: committed ? '退会結果を確認できませんでした。自動では再送しません。再ログインしてアカウントの状態を確認してください。' : 'アカウントの確認に失敗しました。削除要求は送信していません。接続を確認して操作し直してください。' }
                     : stale();
-            } finally { unsubscribe(); if (active === owner) active = null; }
+            } finally { unsubscribeSdk(); unsubscribe(); if (active === owner) active = null; }
         })();
         return owner.promise;
     };
@@ -89,10 +98,14 @@ export interface AccountDeletionViewState {
 }
 
 /** Platform-independent confirmation ownership. Activation is a mounted/focused view, not an auth session. */
-export function createAccountDeletionConfirmation(deleteAccount: (approval: AccountDeletionApproval) => Promise<AccountDeletionResult>) {
+export function createAccountDeletionConfirmation(
+    deleteAccount: (approval: AccountDeletionApproval) => Promise<AccountDeletionResult>,
+    subscribeSessionIdentity: SubscribeAccountDeletionIdentity = () => () => {},
+) {
     let state: AccountDeletionViewState = { confirmation: null, text: '', busy: false, message: null };
     let view: object | null = null;
     let request: object | null = null;
+    let sdkUserId: string | null = null;
     const listeners = new Set<() => void>();
     const publish = (patch: Partial<AccountDeletionViewState>) => { state = { ...state, ...patch }; listeners.forEach((listener) => listener()); };
     const owns = (owner: AccountDeletionConfirmation | null) => !!owner && state.confirmation === owner && owner.isActive();
@@ -101,16 +114,26 @@ export function createAccountDeletionConfirmation(deleteAccount: (approval: Acco
         subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
         activate: () => {
             const token = {}; view = token;
-            const unsubscribe = subscribeAuthSessionScope(({ userId }) => {
+            sdkUserId = captureAuthSessionScope().userId;
+            let observedSdk = false;
+            const clear = (userId: string | null) => {
                 // A successful deletion logs out. Keep its pending UI receipt only in that anonymous scope.
                 if (userId !== null) request = null;
                 publish({ confirmation: null, text: '', busy: false, message: null });
+            };
+            const unsubscribe = subscribeAuthSessionScope(({ userId }) => { if (view !== token) return; if (!observedSdk) sdkUserId = userId; clear(userId); });
+            const unsubscribeSdk = subscribeSessionIdentity((userId) => {
+                if (view !== token) return;
+                observedSdk = true;
+                if (sdkUserId === userId) return;
+                sdkUserId = userId;
+                clear(userId);
             });
-            return () => { unsubscribe(); if (view === token) { view = null; request = null; publish({ confirmation: null, text: '', busy: false, message: null }); } };
+            return () => { unsubscribeSdk(); unsubscribe(); if (view === token) { view = null; request = null; publish({ confirmation: null, text: '', busy: false, message: null }); } };
         },
         open: (user: { userId: string; email: string | null } | null) => {
             const token = view; const scope = captureAuthSessionScope();
-            if (!token || !user || state.busy || user.userId !== scope.userId) return;
+            if (!token || !user || state.busy || user.userId !== scope.userId || user.userId !== sdkUserId) return;
             const owner: AccountDeletionConfirmation = { userId: user.userId, email: user.email,
                 isActive: () => view === token && state.confirmation === owner && scope.isCurrent() };
             publish({ confirmation: owner, text: '', message: null });
