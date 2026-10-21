@@ -56,6 +56,12 @@ export function getTodayJst(): string {
     return formatYmd(getJstNow());
 }
 
+/** JSTの次の午前0時まで。タイマーは端末TZや夏時間に依存させない。 */
+export function msUntilNextJstDay(now = Date.now()): number {
+    const day = 24 * 60 * 60 * 1000;
+    return day - ((now + JST_OFFSET_HOURS * 60 * 60 * 1000) % day + day) % day;
+}
+
 /** 現在のJSTの時（0〜23）を返す。 */
 export function getJstHour(): number {
     return getJstNow().getUTCHours();

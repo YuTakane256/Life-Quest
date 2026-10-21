@@ -7,9 +7,44 @@ import {
     getMonthLabels,
     getTaskHeatmapLevel,
     groupDatesByWeeks,
+    STATS_DISPLAY_DAYS,
+    summarizeStats,
+    getStatsDayValue,
 } from './stats.ts';
+import { msUntilNextJstDay } from './dates.ts';
 import { createHabit } from './habits.ts';
 import type { Task } from './tasks.ts';
+
+describe('保存済みログの119日集計', () => {
+    const today = '2026-08-10';
+    const dates = generateDateRange(STATS_DISPLAY_DAYS, today);
+    const xp = { '2026-08-07': 10, '2026-08-08': 20, '2026-08-09': 0, '2026-08-10': 30, '2026-01-01': 999, '2026-08-11': 999 };
+    const habits = { '2026-08-07': { count: 2, allComplete: true }, '2026-08-08': { count: 3, allComplete: true }, '2026-08-09': { count: 1, allComplete: false }, '2026-08-10': { count: 2, allComplete: true } };
+    it('タスクは期間内だけを数え、現在と最長の連続を区別する', () => {
+        expect(dates).toHaveLength(119);
+        expect(summarizeStats(dates, xp, habits, 'tasks')).toEqual({ total: 60, activeDays: 3, currentStreak: 1, maxStreak: 2 });
+    });
+    it('習慣は合計達成数と全達成日数を区別する', () => {
+        expect(summarizeStats(dates, xp, habits, 'habits')).toEqual({ total: 8, activeDays: 3, currentStreak: 1, maxStreak: 2 });
+    });
+    it('初日境界を含み、欠損日と翌日の未達成は連続を切る', () => {
+        expect(summarizeStats(dates, { [dates[0]]: 5 }, {}, 'tasks')).toEqual({ total: 5, activeDays: 1, currentStreak: 0, maxStreak: 1 });
+        expect(summarizeStats(generateDateRange(119, '2026-08-11'), xp, habits, 'habits').currentStreak).toBe(0);
+        expect(summarizeStats([], {}, {}, 'tasks')).toEqual({ total: 0, activeDays: 0, currentStreak: 0, maxStreak: 0 });
+    });
+    it('日別詳細は濃淡でなく実数と全達成を示し、ログを書き換えない', () => {
+        const before = JSON.stringify({ xp, habits });
+        expect(getStatsDayValue(today, xp, habits, 'tasks')).toBe('30 XP');
+        expect(getStatsDayValue(today, xp, habits, 'habits')).toBe('2個達成 (全達成!)');
+        expect(getStatsDayValue('2026-08-06', xp, habits, 'tasks')).toBe('0 XP');
+        expect(getStatsDayValue('2026-08-06', xp, habits, 'habits')).toBe('0個達成');
+        summarizeStats(dates, xp, habits, 'tasks'); expect(JSON.stringify({ xp, habits })).toBe(before);
+    });
+    it.each([
+        ['2026-08-10T14:59:59.999Z', 1], ['2026-08-10T15:00:00.000Z', 86400000],
+        ['2025-12-31T14:59:00.000Z', 60000], ['2024-02-28T15:00:00.000Z', 86400000],
+    ])('JST午前0時までの待機 %s', (time, ms) => { expect(msUntilNextJstDay(Date.parse(time))).toBe(ms); });
+});
 
 describe('ヒートマップ濃淡レベル', () => {
     it.each([

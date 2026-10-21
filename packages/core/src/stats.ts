@@ -5,14 +5,50 @@
  * 同一ルール。日付計算はUTCベースの純関数で、`today`（JSTのYYYY-MM-DD）を
  * 注入して決定的にテストできる。
  *
- * 集計はストアの現在データからの導出（completedAt / 習慣レコード）。
- * Webの統計ページはstatsStoreのイベントログを使っており、統合は
- * canonical統計契約の後続課題（Epic #473）。
+ * build* は初回シード用の現存データからの導出。表示は両クライアントとも
+ * 永続統計ログを用い、削除後も達成した事実を残す（statsLog参照）。
  */
 import { areAllHabitsComplete, type Habit, type HabitDailyRecord } from './habits.ts';
 import { isoToJstYmd, shiftDate } from './dates.ts';
 import { XP_CONFIG } from './progression.ts';
 import { getSubtaskRewardXp, type Task } from './tasks.ts';
+
+/** Web/Mobileの振り返り期間。今日を含む119日（17週）。 */
+export const STATS_DISPLAY_DAYS = 119;
+export type StatsMode = 'tasks' | 'habits';
+
+/** 現存するタスク/習慣ではなく、保存済みの日別ログから表示用集計を導出する。 */
+export function summarizeStats(
+    dates: readonly string[],
+    taskXpLog: Readonly<Record<string, number>>,
+    habitLog: Readonly<Record<string, HabitDayActivity>>,
+    mode: StatsMode,
+) {
+    let total = 0;
+    let activeDays = 0;
+    let currentStreak = 0;
+    let maxStreak = 0;
+    for (const date of dates) {
+        const active = mode === 'tasks' ? (taskXpLog[date] ?? 0) > 0 : (habitLog[date]?.allComplete ?? false);
+        total += mode === 'tasks' ? (taskXpLog[date] ?? 0) : (habitLog[date]?.count ?? 0);
+        if (active) { activeDays += 1; currentStreak += 1; }
+        else currentStreak = 0;
+        maxStreak = Math.max(maxStreak, currentStreak);
+    }
+    return { total, activeDays, currentStreak, maxStreak };
+}
+
+/** 日別詳細と読み上げで同じ値を使う。濃淡レベルではなく実数を伝える。 */
+export function getStatsDayValue(
+    date: string,
+    taskXpLog: Readonly<Record<string, number>>,
+    habitLog: Readonly<Record<string, HabitDayActivity>>,
+    mode: StatsMode,
+): string {
+    if (mode === 'tasks') return `${(taskXpLog[date] ?? 0).toLocaleString('ja-JP')} XP`;
+    const { count = 0, allComplete = false } = habitLog[date] ?? {};
+    return `${count.toLocaleString('ja-JP')}個達成${allComplete ? ' (全達成!)' : ''}`;
+}
 
 // ─── ヒートマップ濃淡レベル ───────────────────────────────────
 

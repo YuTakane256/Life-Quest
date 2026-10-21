@@ -35,7 +35,7 @@ name: Capture shared fictional Web/Mobile reference (no persistent writes)
 - tapOn: "作成順"
 - tapOn: "統計(, tab,.*)?"
 - extendedWaitUntil:
-    visible: "今日のXP"
+    visible: "⚡ 合計XP"
     timeout: 10000
 - waitForAnimationToEnd:
     timeout: 5000

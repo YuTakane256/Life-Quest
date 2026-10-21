@@ -77,6 +77,15 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('guards stats browsing with local-only daily memory data and no reset', () => {
+        expect(getMobileParityMetroUrl('stats')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('stats')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
+        expect(() => assertReferenceProfile({ extra }, 'stats')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { appVariant: 'release' }]) expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'stats')).toThrow();
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('stats').path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp'); expect(yaml).toContain('127.0.0.1%3A8082');
+        expect(yaml).toContain('stats-day-detail'); expect(yaml).toContain('2026-08-09を選択');
+    });
     it('guards help keyboard/navigation checks with a local-only daily fixture', () => {
         expect(getMobileParityMetroUrl('help')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('help')).toBe(true);
         const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
