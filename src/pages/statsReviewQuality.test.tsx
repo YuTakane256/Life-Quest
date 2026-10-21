@@ -40,6 +40,8 @@ const render = (mobile: boolean) => act(() => root.render(createElement(StrictMo
 const button = (name: string) => [...host.querySelectorAll('button')].find((node) => node.getAttribute('aria-label') === name || node.textContent === name)!;
 const press = (name: string) => act(() => button(name).click());
 const detail = () => host.querySelector('[aria-label="日別統計"], [data-testid="stats-day-detail"]')!.textContent;
+const weekly = () => host.querySelector('[aria-label="直近7日間のXP"], [data-testid="stats-weekly-card"]')!;
+const best = () => host.querySelector('[aria-label="自己ベスト記録"], [data-testid="stats-best-card"]')!;
 beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); mocks.today = '2026-08-10'; mocks.focused = true; mocks.press.clear(); mocks.styles.clear();
     mocks.logs = { taskXpLog: { '2026-08-09': 20, '2026-08-10': 30, '2026-01-01': 999 }, habitLog: { '2026-08-10': { count: 2, allComplete: true } } };
@@ -76,6 +78,24 @@ describe.each([false, true])('日別振り返り mobile=%s', (mobile) => {
         expect(detail()).toBe('2026-04-14: 0 XP'); expect(button('前の日').disabled).toBe(true);
         if (mobile) expect(host.querySelector('[role="dialog"]')).toBeNull();
         mocks.today = '2026-08-11'; render(mobile); expect(detail()).toBe('2026-08-11: 0 XP');
+    });
+    it('週間XP・全期間ベスト・実績の順で表示し、習慣モードでもタスクXPと明示する', () => {
+        render(mobile); expect(weekly().textContent).toContain('⚡ 合計 50 XP'); expect(weekly().textContent).toContain('タスクXPのみ');
+        expect(best().textContent).toContain('999 XP'); expect(best().textContent).toContain('2026-01-01');
+        const text = host.textContent!; expect(text.indexOf('XP獲得ヒートマップ')).toBeLessThan(text.indexOf('直近7日間のXP'));
+        expect(text.indexOf('直近7日間のXP')).toBeLessThan(text.indexOf('自己ベスト記録')); expect(text.indexOf('自己ベスト記録')).toBeLessThan(text.indexOf('🏅'));
+        habits(); expect(weekly().textContent).toContain('⚡ 合計 50 XP');
+    });
+    it('7日の内訳を開閉でき、日付・ログ・消去後の最新値に更新する', () => {
+        render(mobile); press('7日間の内訳');
+        const contents = () => host.querySelector('#weekly-xp-details, [data-testid="weekly-xp-details"]')!;
+        expect(contents().children).toHaveLength(7); expect(contents().textContent).toContain('2026-08-10（月）30 XP');
+        mocks.logs = { ...mocks.logs, taskXpLog: { '2026-08-10': 80 } }; render(mobile);
+        expect(weekly().textContent).toContain('⚡ 合計 80 XP'); expect(best().textContent).toContain('80 XP'); expect(best().textContent).not.toContain('999 XP');
+        mocks.today = '2026-08-11'; render(mobile); expect(contents().textContent).toContain('2026-08-11（火）0 XP');
+        mocks.logs = { taskXpLog: {}, habitLog: {} }; render(mobile);
+        expect(weekly().textContent).toContain('⚡ 合計 0 XP'); expect(best().textContent).not.toContain('80 XP'); expect(best().textContent).toContain('—');
+        press('7日間の内訳'); expect(contents()).toBeNull();
     });
 });
 it('Nativeの一覧を閉じる/タブ離脱で選択せず戻り、操作領域は44pt以上', () => {

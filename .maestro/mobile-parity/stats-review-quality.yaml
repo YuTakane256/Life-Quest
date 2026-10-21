@@ -52,6 +52,81 @@ name: Stats period, daily detail and selection (memory only)
     speed: 65
 - assertVisible: "2026-08-10: 1個達成"
 - scrollUntilVisible:
+    element:
+      id: "stats-weekly-card"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 65
+- assertVisible: "直近7日間のXP"
+- assertVisible: "⚡ 合計 245 XP"
+- takeScreenshot: "milestones-${REFERENCE_THEME}-weekly"
+- scrollUntilVisible:
+    element: "7日間の内訳"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 65
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn: "7日間の内訳"
+- extendedWaitUntil:
+    visible:
+      id: "weekly-xp-2026-08-04"
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: "weekly-xp-2026-08-10"
+    direction: DOWN
+    centerElement: false
+    timeout: 60000
+    speed: 30
+- assertVisible: "2026-08-10（月）: 45 XP"
+- takeScreenshot: "milestones-${REFERENCE_THEME}-breakdown"
+- scrollUntilVisible:
+    element: "7日間の内訳"
+    direction: UP
+    centerElement: true
+    timeout: 60000
+    speed: 65
+- tapOn: "7日間の内訳"
+- scrollUntilVisible:
+    element: "🏆 自己ベスト記録"
+    direction: DOWN
+    centerElement: false
+    timeout: 60000
+    speed: 30
+- assertVisible: "🏆 自己ベスト記録"
+- scrollUntilVisible:
+    element: "50 XP"
+    direction: DOWN
+    centerElement: false
+    timeout: 60000
+    speed: 30
+- assertVisible: "50 XP"
+- scrollUntilVisible:
+    element: "2026-08-08"
+    direction: DOWN
+    centerElement: false
+    timeout: 60000
+    speed: 30
+- assertVisible: "2026-08-08"
+- scrollUntilVisible:
+    element: "2026-08-04 〜 2026-08-10"
+    direction: DOWN
+    centerElement: false
+    timeout: 60000
+    speed: 30
+- assertVisible: "2026-08-04 〜 2026-08-10"
+- scrollUntilVisible:
+    element: "2026-08-08 〜 2026-08-09"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 30
+- assertVisible: "2026-08-08 〜 2026-08-09"
+- takeScreenshot: "milestones-${REFERENCE_THEME}-best"
+- scrollUntilVisible:
     element: "前の日"
     direction: UP
     centerElement: true

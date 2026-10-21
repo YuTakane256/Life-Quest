@@ -17,6 +17,60 @@ import { getSubtaskRewardXp, type Task } from './tasks.ts';
 export const STATS_DISPLAY_DAYS = 119;
 export type StatsMode = 'tasks' | 'habits';
 
+const WEEKDAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+
+/** 月曜始まりの「今週」ではなく、JSTの今日を含む直近7日。未記録日は0。 */
+export function getWeeklyTaskXp(taskXpLog: Readonly<Record<string, number>>, today: string) {
+    const perDay = generateDateRange(7, today).map((date) => ({
+        date, xp: taskXpLog[date] ?? 0, weekday: WEEKDAY_NAMES[weekdayOf(date)],
+    }));
+    return {
+        perDay,
+        total: perDay.reduce((sum, day) => sum + day.xp, 0),
+        max: Math.max(...perDay.map((day) => day.xp), 0),
+    };
+}
+
+export interface ConsecutiveStatsRecord { count: number; start: string; end: string }
+
+/** 入力はサニタイズ済みログの暦日。同率なら最初に達成した区間を表示する。 */
+function longestConsecutiveDates(dates: string[]): ConsecutiveStatsRecord {
+    dates.sort();
+    let best: ConsecutiveStatsRecord = { count: 0, start: '', end: '' };
+    let count = 0;
+    let start = '';
+    let previous = '';
+    for (const date of dates) {
+        if (previous && shiftDate(previous, 1) === date) count += 1;
+        else { count = 1; start = date; }
+        if (count > best.count) best = { count, start, end: date };
+        previous = date;
+    }
+    return best;
+}
+
+/** 119日の表示期間とは別に、保存済みログ全体の自己ベストを導出。ログ自体は更新しない。 */
+export function getStatsBestRecords(
+    taskXpLog: Readonly<Record<string, number>>,
+    habitLog: Readonly<Record<string, HabitDayActivity>>,
+) {
+    let bestXp = 0;
+    let bestXpDate = '';
+    for (const [date, xp] of Object.entries(taskXpLog).sort(([left], [right]) => left.localeCompare(right))) {
+        if (xp > bestXp) { bestXp = xp; bestXpDate = date; }
+    }
+    return {
+        bestXp, bestXpDate,
+        longestActive: longestConsecutiveDates(Object.keys(taskXpLog).filter((date) => taskXpLog[date] > 0)),
+        longestPerfect: longestConsecutiveDates(Object.keys(habitLog).filter((date) => habitLog[date].allComplete)),
+    };
+}
+
+export function formatStatsStreakRange(record: ConsecutiveStatsRecord): string {
+    if (record.count === 0) return '';
+    return record.count === 1 ? record.start : `${record.start} 〜 ${record.end}`;
+}
+
 /** 現存するタスク/習慣ではなく、保存済みの日別ログから表示用集計を導出する。 */
 export function summarizeStats(
     dates: readonly string[],
