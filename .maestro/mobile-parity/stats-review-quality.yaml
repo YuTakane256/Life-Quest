@@ -1,0 +1,67 @@
+appId: com.yutakane.lifequest.parity
+name: Stats period, daily detail and selection (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "統計(, tab,.*)?"
+- assertVisible: "過去119日"
+- takeScreenshot: "stats-${REFERENCE_THEME}-overview"
+- scrollUntilVisible:
+    element:
+      id: "stats-day-detail"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 65
+- assertVisible: "2026-08-10: 45 XP"
+- scrollUntilVisible:
+    element: "前の日"
+    direction: UP
+    centerElement: true
+    timeout: 60000
+    speed: 65
+- tapOn: "前の日"
+- assertVisible: "2026-08-09: 35 XP"
+- tapOn: "統計の日付を選択"
+- assertVisible: "日付選択を閉じる"
+- tapOn: "2026-08-09を選択"
+- assertNotVisible: "日付選択を閉じる"
+- assertVisible: "2026-08-09: 35 XP"
+- takeScreenshot: "stats-${REFERENCE_THEME}-daily"
+- tapOn: "今日"
+- assertVisible: "2026-08-10: 45 XP"
+- scrollUntilVisible:
+    element: "統計を習慣に切り替える"
+    direction: UP
+    centerElement: false
+    timeout: 60000
+    speed: 65
+- tapOn: "統計を習慣に切り替える"
+- scrollUntilVisible:
+    element:
+      id: "stats-day-detail"
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+    speed: 65
+- assertVisible: "2026-08-10: 1個達成"
+- scrollUntilVisible:
+    element: "前の日"
+    direction: UP
+    centerElement: true
+    timeout: 60000
+    speed: 65
+- tapOn: "前の日"
+- assertVisible: "2026-08-09: 2個達成 (全達成!)"
+- takeScreenshot: "stats-${REFERENCE_THEME}-habit-detail"
+- tapOn: "統計の日付を選択"
+- tapOn: "日付選択を閉じる"
+- assertVisible: "2026-08-09: 2個達成 (全達成!)"
+- tapOn: "今日"
+- assertVisible: "2026-08-10: 1個達成"

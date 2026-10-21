@@ -5,11 +5,15 @@ import {
     getMonthLabels as getMonthLabelsCore,
     getTaskHeatmapLevel,
     groupDatesByWeeks,
+    STATS_DISPLAY_DAYS,
+    summarizeStats,
+    getStatsDayValue,
 } from '@life-quest/core/stats';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useGameStore } from '../stores/useGameStore';
 import { useTitleStore } from '../stores/useTitleStore';
-import { getTodayJST, shiftDate } from '../utils/dateUtils';
+import { shiftDate } from '../utils/dateUtils';
+import { useJstToday } from '../hooks/useJstToday';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
 import { getProgressBarA11y } from '../utils/progressBar';
 import { getHeatmapCellLabel } from '../utils/statsHeatmapA11y';
@@ -60,17 +64,12 @@ const WEEKDAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
 
 /** YYYY-MM-DD の曜日名を返す */
 function getWeekdayName(date: string): string {
-    return WEEKDAY_NAMES[new Date(date + 'T00:00:00+09:00').getDay()];
+    return WEEKDAY_NAMES[new Date(date + 'T00:00:00Z').getUTCDay()];
 }
 
 // 濃淡しきい値は @life-quest/core/stats に移動し、Mobileと共有する
 const getTaskLevel = getTaskHeatmapLevel;
 const getHabitLevel = getHabitHeatmapLevel;
-
-/** 過去N日分の日付配列を生成 (YYYY-MM-DD)。実体はcoreと共有。 */
-function generateDateRange(days: number): string[] {
-    return generateDateRangeCore(days, getTodayJST());
-}
 
 /** 日付を週ごとにグループ化。実体はcoreと共有（TZ非依存のUTC計算）。 */
 const groupByWeeks = groupDatesByWeeks;
@@ -89,18 +88,19 @@ export function StatsPage() {
     const activeTitle = useTitleStore((s) => s.activeTitle);
     const setActiveTitle = useTitleStore((s) => s.setActiveTitle);
 
-    const TOTAL_DAYS = 119;
-    const dates = useMemo(() => generateDateRange(TOTAL_DAYS), []);
+    const today = useJstToday();
+    const TOTAL_DAYS = STATS_DISPLAY_DAYS;
+    const dates = useMemo(() => generateDateRangeCore(TOTAL_DAYS, today), [TOTAL_DAYS, today]);
     const weeks = useMemo(() => groupByWeeks(dates), [dates]);
     const monthLabels = useMemo(() => getMonthLabels(weeks), [weeks]);
 
     // 直近7日間のXP集計
     const weeklyXp = useMemo(() => {
-        const perDay = generateDateRange(7).map((date) => ({ date, xp: taskXpLog[date] || 0 }));
+        const perDay = generateDateRangeCore(7, today).map((date) => ({ date, xp: taskXpLog[date] || 0 }));
         const total = perDay.reduce((sum, d) => sum + d.xp, 0);
         const max = Math.max(...perDay.map((d) => d.xp), 0);
         return { perDay, total, max };
-    }, [taskXpLog]);
+    }, [taskXpLog, today]);
 
     // 自己ベスト記録（全期間集計）
     const bestRecords = useMemo(() => {
@@ -149,69 +149,20 @@ export function StatsPage() {
     const selectedTitle = activeTitle && unlockedTitles.includes(activeTitle) ? activeTitle : null;
 
     // 集計値
-    const stats = useMemo(() => {
-        if (mode === 'tasks') {
-            let totalXp = 0;
-            let activeDays = 0;
-            let currentStreak = 0;
-            let maxStreak = 0;
-            let tempStreak = 0;
-
-            for (const date of dates) {
-                const xp = taskXpLog[date] || 0;
-                totalXp += xp;
-                if (xp > 0) {
-                    activeDays++;
-                    tempStreak++;
-                    maxStreak = Math.max(maxStreak, tempStreak);
-                } else {
-                    tempStreak = 0;
-                }
-            }
-            for (let i = dates.length - 1; i >= 0; i--) {
-                if ((taskXpLog[dates[i]] || 0) > 0) currentStreak++;
-                else break;
-            }
-
-            return { totalXp, activeDays, currentStreak, maxStreak };
-        } else {
-            let totalCompletions = 0;
-            let perfectDays = 0;
-            let currentStreak = 0;
-            let maxStreak = 0;
-            let tempStreak = 0;
-
-            for (const date of dates) {
-                const log = habitLog[date];
-                const count = log?.count || 0;
-                totalCompletions += count;
-                if (log?.allComplete) {
-                    perfectDays++;
-                    tempStreak++;
-                    maxStreak = Math.max(maxStreak, tempStreak);
-                } else {
-                    tempStreak = 0;
-                }
-            }
-            for (let i = dates.length - 1; i >= 0; i--) {
-                if (habitLog[dates[i]]?.allComplete) currentStreak++;
-                else break;
-            }
-            return { totalXp: totalCompletions, activeDays: perfectDays, currentStreak, maxStreak };
-        }
-    }, [mode, dates, taskXpLog, habitLog]);
-
-    const [tooltipInfo, setTooltipInfo] = useState<{ date: string; value: string } | null>(null);
+    const stats = useMemo(() => summarizeStats(dates, taskXpLog, habitLog, mode), [mode, dates, taskXpLog, habitLog]);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const detailDate = selectedDate && dates.includes(selectedDate) ? selectedDate : today;
+    const selectDate = (date: string) => setSelectedDate(date === today ? null : date);
 
     return (
         <div className="app-page max-w-lg mx-auto px-4 pt-6 pb-8 grid grid-cols-1 md:grid-cols-2 gap-x-5">
             {/* ヘッダー */}
-            <div className="order-1 md:col-span-2 flex items-end justify-between gap-3 mb-4">
+            <div className="order-1 md:col-span-2 flex flex-wrap items-end justify-between gap-3 mb-4">
                 <div>
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>統計</h1>
                     <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>日々の積み重ねと自己ベスト</p>
                 </div>
-                <span className="text-[11px] px-2 py-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>過去{TOTAL_DAYS}日</span>
+                    <span className="text-[11px] px-2 py-1 rounded-lg" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-default)' }}>過去{TOTAL_DAYS}日</span>
             </div>
 
             {/* 今週のXPサマリー */}
@@ -335,7 +286,7 @@ export function StatsPage() {
                         key={tab}
                         onClick={() => setMode(tab)}
                         aria-pressed={mode === tab}
-                        className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200"
+                        className="flex-1 min-h-11 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200"
                         style={{
                             backgroundColor: mode === tab ? 'var(--color-accent-primary)' : 'transparent',
                             color: mode === tab ? 'white' : 'var(--color-text-muted)',
@@ -350,7 +301,7 @@ export function StatsPage() {
             <div className="order-3 md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <SummaryCard
                     label={mode === 'tasks' ? '合計XP' : '合計達成数'}
-                    value={stats.totalXp}
+                    value={stats.total}
                     icon={mode === 'tasks' ? '⚡' : '✅'}
                 />
                 <SummaryCard
@@ -363,8 +314,8 @@ export function StatsPage() {
             </div>
 
             {/* ヒートマップ */}
-            <div className="order-4 md:col-span-2 rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
-                <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="order-4 md:col-span-2 min-w-0 rounded-xl p-4 mb-5" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                     <div>
                         <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                             {mode === 'tasks' ? 'XP獲得ヒートマップ' : '習慣達成ヒートマップ'}
@@ -377,6 +328,8 @@ export function StatsPage() {
                 </div>
 
                 {/* 月ラベル */}
+                <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+                <div style={{ width: 26 + weeks.length * 15 }}>
                 <div className="flex ml-7 mb-1 gap-0" style={{ position: 'relative' }}>
                     {monthLabels.map(({ label, weekIndex }, i) => (
                         <div
@@ -393,7 +346,7 @@ export function StatsPage() {
                 </div>
 
                 {/* ヒートマップ本体 */}
-                <div className="flex gap-0 mt-5" style={{ overflowX: 'auto' }}>
+                <div className="flex gap-0 mt-5">
                     {/* 曜日ラベル */}
                     <div className="flex flex-col gap-[2px] mr-1 flex-shrink-0">
                         {WEEKDAY_LABELS.map((label, i) => (
@@ -409,7 +362,7 @@ export function StatsPage() {
 
                     {/* 週ごとのカラム */}
                     {weeks.map((week, wi) => (
-                        <div key={wi} className="flex flex-col gap-[2px]">
+                        <div key={wi} className="flex flex-col gap-[2px]" style={{ marginRight: 2 }}>
                             {week.map((date, di) => {
                                 if (date === '') {
                                     return (
@@ -444,27 +397,39 @@ export function StatsPage() {
                                             width: '13px',
                                             height: '13px',
                                             backgroundColor: color,
+                                            boxShadow: detailDate === date ? 'inset 0 0 0 1px var(--color-text-primary)' : undefined,
                                             '--tw-ring-color': 'var(--color-accent-primary)',
                                         } as React.CSSProperties}
-                                        onClick={() => setTooltipInfo(tooltipInfo?.date === date ? null : { date, value: tooltipText })}
-                                        onMouseEnter={() => setTooltipInfo({ date, value: tooltipText })}
-                                        onMouseLeave={() => setTooltipInfo(null)}
-                                        onFocus={() => setTooltipInfo({ date, value: tooltipText })}
-                                        onBlur={() => setTooltipInfo(null)}
+                                        aria-pressed={detailDate === date}
+                                        onClick={() => selectDate(date)}
+                                        onFocus={() => selectDate(date)}
                                     />
                                 );
                             })}
                         </div>
                     ))}
                 </div>
+                </div>
+                </div>
 
-                {/* ツールチップ */}
-                {tooltipInfo && (
-                    <div className="mt-3 text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>
-                        <span style={{ color: 'var(--color-text-muted)' }}>{tooltipInfo.date}</span>
-                        <span className="ml-2 font-medium">{tooltipInfo.value}</span>
-                    </div>
-                )}
+                {/* 小さいセルを押さなくても全日付に移動できる代替操作。詳細は常に現在のログから導出する。 */}
+                <div className="mt-3 flex flex-wrap gap-2 items-center text-xs" aria-label="日別統計の操作">
+                    <label className="flex flex-wrap items-center gap-2 min-w-0">
+                        日付を選択
+                        <select aria-label="統計の日付" value={detailDate} onChange={(event) => selectDate(event.target.value)}
+                            className="min-h-11 max-w-full rounded-lg px-2" style={{ color: 'var(--color-text-primary)', backgroundColor: 'var(--color-bg-secondary)' }}>
+                            {[...dates].reverse().map((date) => <option key={date} value={date}>{date}</option>)}
+                        </select>
+                    </label>
+                    <button type="button" className="min-h-11 px-3 rounded-lg disabled:opacity-40" disabled={detailDate === dates[0]} onClick={() => selectDate(shiftDate(detailDate, -1))}>前の日</button>
+                    <button type="button" className="min-h-11 px-3 rounded-lg disabled:opacity-40" disabled={detailDate === today} onClick={() => selectDate(shiftDate(detailDate, 1))}>次の日</button>
+                    <button type="button" className="min-h-11 px-3 rounded-lg" onClick={() => setSelectedDate(null)}>今日</button>
+                </div>
+                <div role="status" aria-label="日別統計" className="mt-2 text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>
+                    {detailDate}: {getStatsDayValue(detailDate, taskXpLog, habitLog, mode)}
+                </div>
+                <p className="mt-2 text-[10px]" style={{ color: 'var(--color-text-muted)' }}>日本時間・今日を含む{TOTAL_DAYS}日間。現在の連続記録は今日まで途切れず続いた日数です。記録のない日は0として表示します。</p>
+                <p className="mt-2 text-[10px]" style={{ color: 'var(--color-text-muted)' }}>保存済みの達成ログを表示します。タスクや習慣を削除しても、過去の達成記録は残ります。</p>
 
                 {/* 凡例 */}
                 <div className="flex items-center justify-end gap-1 mt-3">

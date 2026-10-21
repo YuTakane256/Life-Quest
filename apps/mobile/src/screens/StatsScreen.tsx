@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { PAGE_HEADING, TAB_SCREEN_EDGES } from '../theme/layout';
@@ -9,21 +10,21 @@ import {
     getMonthLabels,
     getTaskHeatmapLevel,
     groupDatesByWeeks,
+    STATS_DISPLAY_DAYS,
+    summarizeStats,
+    getStatsDayValue,
 } from '@life-quest/core/stats';
 import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '@life-quest/core/achievements';
 import { getProgressBarA11y } from '@life-quest/core/progressA11y';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
-import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { buildAchievementSnapshot } from '../utils/achievementSnapshot';
-import { getTodayJst } from '../utils/date';
+import { shiftDate } from '../utils/date';
+import { useJstToday } from '../hooks/useJstToday';
 import { usePalette } from '../theme/usePalette';
 
 type HeatmapMode = 'tasks' | 'habits';
-
-/** ヒートマップの表示期間（12週） */
-const HEATMAP_DAYS = 84;
 
 // 濃淡スケールはWebのStatsPageと同一（level 0 は背景色）
 function getHeatmapColors(palette: ThemePalette) {
@@ -35,7 +36,6 @@ function getHeatmapColors(palette: ThemePalette) {
 const WEEKDAY_LABELS = ['', '月', '', '水', '', '金', ''];
 
 export default function StatsScreen() {
-    const habitsCount = useMobileHabitStore((state) => state.habits.length);
     const taskXpLog = useMobileStatsStore((state) => state.taskXpLog);
     const habitLog = useMobileStatsStore((state) => state.habitLog);
     const totalXp = useMobileGameStore((state) => state.character.totalXp);
@@ -49,20 +49,21 @@ export default function StatsScreen() {
     const styles = useMemo(() => createStyles(palette), [palette]);
     const heatmapColors = useMemo(() => getHeatmapColors(palette), [palette]);
 
-    const today = getTodayJst();
+    const today = useJstToday();
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [datePickerOpen, setDatePickerOpen] = useState(false);
+    useFocusEffect(useCallback(() => () => setDatePickerOpen(false), []));
     // Web StatsPage.tsx と同一: ヒートマップ・実績とも永続ログ（taskXpLog/habitLog）が単一の情報源
     const taskXpByDate = taskXpLog;
     const habitActivity = habitLog;
 
-    const dates = useMemo(() => generateDateRange(HEATMAP_DAYS, today), [today]);
+    const dates = useMemo(() => generateDateRange(STATS_DISPLAY_DAYS, today), [today]);
     const weeks = useMemo(() => groupDatesByWeeks(dates), [dates]);
     const monthLabels = useMemo(() => getMonthLabels(weeks), [weeks]);
 
-    const last7Days = useMemo(() => generateDateRange(7, today), [today]);
-    const weekXp = last7Days.reduce((sum, date) => sum + (taskXpByDate[date] ?? 0), 0);
-    const last30Days = useMemo(() => generateDateRange(30, today), [today]);
-    const allCompleteCount = last30Days.filter((date) => habitActivity[date]?.allComplete).length;
-    const todayHabitCount = habitActivity[today]?.count ?? 0;
+    const stats = useMemo(() => summarizeStats(dates, taskXpLog, habitLog, mode), [dates, taskXpLog, habitLog, mode]);
+    const detailDate = selectedDate && dates.includes(selectedDate) ? selectedDate : today;
+    const selectDate = (date: string) => setSelectedDate(date === today ? null : date);
 
     const levelFor = (date: string): number => mode === 'tasks'
         ? getTaskHeatmapLevel(taskXpByDate[date] ?? 0)
@@ -77,27 +78,10 @@ export default function StatsScreen() {
     const unlockedTitles = useMemo(() => getUnlockedTitles(achievementProgress), [achievementProgress]);
     const unlockedCount = achievementProgress.filter((achievement) => achievement.unlocked).length;
     const selectedTitle = activeTitle && unlockedTitles.includes(activeTitle) ? activeTitle : null;
-
-    return (
-        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
-            <ScrollView contentContainerStyle={styles.scroll}>
-                <View style={styles.content}>
-                    <Text style={styles.title}>統計</Text>
-
-                    {/* サマリー */}
-                    <View style={styles.summaryRow}>
-                        <SummaryCard label="今日のXP" value={`${taskXpByDate[today] ?? 0}`} styles={styles} />
-                        <SummaryCard label="7日間XP" value={`${weekXp}`} styles={styles} />
-                    </View>
-                    <View style={styles.summaryRow}>
-                        <SummaryCard label="今日の習慣" value={`${todayHabitCount}/${habitsCount}`} styles={styles} />
-                        <SummaryCard label="30日全達成" value={`${allCompleteCount}日`} styles={styles} />
-                    </View>
-
-                    {/* 実績（Web StatsPage.tsxの情報順序: サマリー→実績→ヒートマップ） */}
+    const achievementsCard = (
                     <View style={styles.card}>
                         <View style={styles.cardHeader}>
-                            <Text style={styles.sectionTitle}>🏅 実績</Text>
+                            <Text accessibilityRole="header" style={styles.sectionTitle}>🏅 実績</Text>
                             <Text style={styles.achievementCount}>{unlockedCount}/{achievementProgress.length}</Text>
                         </View>
                         <View style={styles.achievementList}>
@@ -140,31 +124,46 @@ export default function StatsScreen() {
                             </View>
                         )}
                     </View>
+    );
 
+    return (
+        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
+            <ScrollView contentContainerStyle={styles.scroll}>
+                <View style={styles.content}>
+                    <Text accessibilityRole="header" style={styles.title}>統計</Text>
+                    <Text style={styles.note}>日々の積み重ねと自己ベスト</Text>
+                    <Text style={styles.note}>過去{STATS_DISPLAY_DAYS}日</Text>
+                    <View style={styles.modeSwitch}>
+                        {([['tasks', 'タスク'], ['habits', '習慣']] as const).map(([value, label]) => (
+                            <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: mode === value }}
+                                accessibilityLabel={`統計を${label}に切り替える`} onPress={() => setMode(value)}
+                                style={[styles.modeSegment, mode === value && styles.modeSegmentActive]}>
+                                <Text style={[styles.modeText, mode === value && styles.modeTextActive]}>{label}</Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                    <View style={styles.summaryRow}>
+                        <SummaryCard label={mode === 'tasks' ? '⚡ 合計XP' : '✅ 合計達成数'} value={stats.total.toLocaleString('ja-JP')} styles={styles} />
+                        <SummaryCard label={mode === 'tasks' ? '📅 アクティブ日数' : '📅 全達成日数'} value={String(stats.activeDays)} styles={styles} />
+                    </View>
+                    <View style={styles.summaryRow}>
+                        <SummaryCard label="🔥 現在の連続記録" value={String(stats.currentStreak)} styles={styles} />
+                        <SummaryCard label="🏆 最長連続記録" value={String(stats.maxStreak)} styles={styles} />
+                    </View>
                     {/* ヒートマップ */}
                     <View style={styles.card}>
                         <View style={styles.cardHeader}>
-                            <Text style={styles.sectionTitle}>アクティビティ（12週）</Text>
-                            <View style={styles.modeSwitch}>
-                                {([['tasks', 'タスク'], ['habits', '習慣']] as const).map(([value, label]) => (
-                                    <Pressable
-                                        key={value}
-                                        accessibilityRole="radio"
-                                        accessibilityState={{ selected: mode === value }}
-                                        accessibilityLabel={`ヒートマップを${label}に切り替える`}
-                                        onPress={() => setMode(value)}
-                                        style={[styles.modeSegment, mode === value && styles.modeSegmentActive]}
-                                    >
-                                        <Text style={[styles.modeText, mode === value && styles.modeTextActive]}>{label}</Text>
-                                    </Pressable>
-                                ))}
-                            </View>
+                            <Text accessibilityRole="header" style={styles.sectionTitle}>{mode === 'tasks' ? 'XP獲得ヒートマップ' : '習慣達成ヒートマップ'}</Text>
                         </View>
-
-                        <View style={styles.monthRow}>
+                        <Text style={styles.note}>{mode === 'tasks' ? '濃い日ほど獲得XPが多い日です' : '濃い日ほど多くの習慣を達成しています'}</Text>
+                        <Text style={styles.note}>セルを選択して詳細</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator>
+                        <View>
+                        <View style={styles.monthRow} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
                             {monthLabels.map(({ label, weekIndex }) => (
                                 <Text
                                     key={`${label}-${weekIndex}`}
+                                    allowFontScaling={false}
                                     style={[styles.monthLabel, { left: 20 + weekIndex * 15 }]}
                                 >
                                     {label}
@@ -173,30 +172,46 @@ export default function StatsScreen() {
                         </View>
 
                         <View style={styles.heatmapRow}>
-                            <View style={styles.weekdayColumn}>
+                            <View style={styles.weekdayColumn} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
                                 {WEEKDAY_LABELS.map((label, index) => (
-                                    <Text key={index} style={styles.weekdayLabel}>{label}</Text>
+                                    <Text key={index} allowFontScaling={false} style={styles.weekdayLabel}>{label}</Text>
                                 ))}
                             </View>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                                 <View style={styles.grid}>
                                     {weeks.map((week, weekIndex) => (
                                         <View key={weekIndex} style={styles.weekColumn}>
                                             {week.map((date, dayIndex) => (
-                                                <View
+                                                <Pressable
                                                     key={`${weekIndex}-${dayIndex}`}
-                                                    accessibilityLabel={date ? `${date} レベル${levelFor(date)}` : undefined}
+                                                    accessible={Boolean(date)}
+                                                    accessibilityRole={date ? 'button' : undefined}
+                                                    accessibilityLabel={date ? `${date}: ${getStatsDayValue(date, taskXpLog, habitLog, mode)}` : undefined}
+                                                    accessibilityState={{ selected: detailDate === date, disabled: !date }}
+                                                    disabled={!date}
+                                                    onPress={() => selectDate(date)}
                                                     style={[
                                                         styles.cell,
-                                                        { backgroundColor: date ? colors[levelFor(date)] : 'transparent' },
+                                                        { backgroundColor: date ? colors[levelFor(date)] : 'transparent', borderWidth: date === detailDate ? 1 : 0, borderColor: palette.text.primary },
                                                     ]}
                                                 />
                                             ))}
                                         </View>
                                     ))}
                                 </View>
-                            </ScrollView>
                         </View>
+                        </View>
+                        </ScrollView>
+
+                        <View style={styles.dateControls}>
+                            <Pressable accessibilityRole="button" accessibilityLabel="統計の日付を選択" style={styles.dateButton} onPress={() => setDatePickerOpen(true)}>
+                                <Text style={styles.dateButtonText}>日付を選択: {detailDate}</Text>
+                            </Pressable>
+                            <Pressable accessibilityRole="button" accessibilityLabel="前の日" accessibilityState={{ disabled: detailDate === dates[0] }} disabled={detailDate === dates[0]} style={[styles.dateButton, detailDate === dates[0] && styles.disabled]} onPress={() => selectDate(shiftDate(detailDate, -1))}><Text style={styles.dateButtonText}>前の日</Text></Pressable>
+                            <Pressable accessibilityRole="button" accessibilityLabel="次の日" accessibilityState={{ disabled: detailDate === today }} disabled={detailDate === today} style={[styles.dateButton, detailDate === today && styles.disabled]} onPress={() => selectDate(shiftDate(detailDate, 1))}><Text style={styles.dateButtonText}>次の日</Text></Pressable>
+                            <Pressable accessibilityRole="button" accessibilityLabel="今日" style={styles.dateButton} onPress={() => setSelectedDate(null)}><Text style={styles.dateButtonText}>今日</Text></Pressable>
+                        </View>
+                        <Text testID="stats-day-detail" accessibilityLiveRegion="polite" style={styles.dayDetail}>{detailDate}: {getStatsDayValue(detailDate, taskXpLog, habitLog, mode)}</Text>
+                        <Text style={styles.note}>日本時間・今日を含む{STATS_DISPLAY_DAYS}日間。現在の連続記録は今日まで途切れず続いた日数です。記録のない日は0として表示します。</Text>
 
                         <View style={styles.legendRow}>
                             <Text style={styles.legendText}>少</Text>
@@ -207,11 +222,26 @@ export default function StatsScreen() {
                         </View>
                     </View>
 
+                    {achievementsCard}
                     <Text style={styles.note}>
-                        タスクXPは完了したタスク・サブタスクから算出しています。削除したタスクは集計に含まれません。
+                        保存済みの達成ログを表示します。タスクや習慣を削除しても、過去の達成記録は残ります。
                     </Text>
                 </View>
             </ScrollView>
+            <Modal visible={datePickerOpen} animationType="none" onRequestClose={() => setDatePickerOpen(false)}>
+                <SafeAreaView style={styles.safeArea}>
+                    <View style={styles.pickerHeader}>
+                        <Text accessibilityRole="header" style={styles.sectionTitle}>統計の日付を選択</Text>
+                        <Pressable accessibilityRole="button" accessibilityLabel="日付選択を閉じる" style={styles.dateButton} onPress={() => setDatePickerOpen(false)}><Text style={styles.dateButtonText}>閉じる</Text></Pressable>
+                    </View>
+                    <ScrollView contentContainerStyle={styles.pickerList}>
+                        {[...dates].reverse().map((date) => <Pressable key={date} accessibilityRole="radio" accessibilityLabel={`${date}を選択`} accessibilityState={{ selected: date === detailDate }}
+                            style={[styles.dateButton, date === detailDate && styles.modeSegmentActive]} onPress={() => { selectDate(date); setDatePickerOpen(false); }}>
+                            <Text style={styles.dateButtonText}>{date}: {getStatsDayValue(date, taskXpLog, habitLog, mode)}</Text>
+                        </Pressable>)}
+                    </ScrollView>
+                </SafeAreaView>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -276,17 +306,24 @@ function createStyles(palette: ThemePalette) {
     content: { width: '100%', maxWidth: LAYOUT_TOKENS.page.maxWidth, alignSelf: 'center', paddingHorizontal: LAYOUT_TOKENS.page.horizontal, gap: 12 },
     title: { color: palette.text.primary, ...PAGE_HEADING, paddingTop: LAYOUT_TOKENS.page.top },
     summaryRow: { flexDirection: 'row', gap: 12 },
-    summaryCard: { flex: 1, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, paddingVertical: 14, alignItems: 'center', gap: 4 },
+    summaryCard: { flex: 1, minWidth: 0, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 12, padding: 12, gap: 4 },
     summaryLabel: { color: palette.text.muted, fontSize: 11, fontWeight: '700' },
     summaryValue: { color: palette.text.primary, fontSize: 20, fontWeight: '800' },
     card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: LAYOUT_TOKENS.card.radius, padding: LAYOUT_TOKENS.card.padding, gap: 8 },
     cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     sectionTitle: { color: palette.text.primary, fontSize: 15, fontWeight: '800' },
     modeSwitch: { flexDirection: 'row', backgroundColor: palette.bg.secondary, borderRadius: 8, padding: 2 },
-    modeSegment: { height: 28, paddingHorizontal: 12, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-    modeSegmentActive: { backgroundColor: palette.bg.cardHover },
+    modeSegment: { minHeight: 44, flex: 1, padding: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+    modeSegmentActive: { backgroundColor: palette.accent.primary },
     modeText: { color: palette.text.muted, fontSize: 12, fontWeight: '700' },
-    modeTextActive: { color: palette.text.primary },
+    modeTextActive: { color: 'white' },
+    dateControls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    dateButton: { minHeight: 44, maxWidth: '100%', padding: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: palette.bg.secondary },
+    dateButtonText: { color: palette.text.primary, fontSize: 12 },
+    disabled: { opacity: 0.4 },
+    dayDetail: { color: palette.text.primary, fontSize: 12, padding: 10, borderRadius: 8, backgroundColor: palette.bg.secondary },
+    pickerHeader: { padding: 16, gap: 12 },
+    pickerList: { padding: 16, gap: 8 },
     monthRow: { height: 16 },
     monthLabel: { position: 'absolute', color: palette.text.muted, fontSize: 10, fontWeight: '700' },
     heatmapRow: { flexDirection: 'row', gap: 4 },

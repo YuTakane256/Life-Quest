@@ -72,7 +72,7 @@ name: Smoke anonymous Mobile task and habit persistence
 # Accept legacy React Navigation labels as well as the custom accessible tabs.
 - tapOn: "統計(, tab,.*)?"
 - extendedWaitUntil:
-    visible: "今日のXP"
+    visible: "⚡ 合計XP"
     timeout: 5000
 - tapOn: "キャラ(, tab,.*)?"
 - extendedWaitUntil:
