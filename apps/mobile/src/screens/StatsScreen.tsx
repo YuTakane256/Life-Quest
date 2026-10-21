@@ -237,7 +237,7 @@ export default function StatsScreen() {
                     <ScrollView contentContainerStyle={styles.pickerList}>
                         {[...dates].reverse().map((date) => <Pressable key={date} accessibilityRole="radio" accessibilityLabel={`${date}を選択`} accessibilityState={{ selected: date === detailDate }}
                             style={[styles.dateButton, date === detailDate && styles.modeSegmentActive]} onPress={() => { selectDate(date); setDatePickerOpen(false); }}>
-                            <Text style={styles.dateButtonText}>{date}: {getStatsDayValue(date, taskXpLog, habitLog, mode)}</Text>
+                            <Text style={[styles.dateButtonText, date === detailDate && styles.modeTextActive]}>{date}: {getStatsDayValue(date, taskXpLog, habitLog, mode)}</Text>
                         </Pressable>)}
                     </ScrollView>
                 </SafeAreaView>
