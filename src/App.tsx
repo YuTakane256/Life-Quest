@@ -10,7 +10,7 @@ import { CompletionRewardNotice } from './components/ui/CompletionRewardNotice';
 import { ThemeController } from './components/ui/ThemeController';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { useLoginBonusStore } from './stores/useLoginBonusStore';
-import { runNotificationChecks } from './utils/notifications';
+import { cancelNotificationChecks, runNotificationChecks } from './utils/notifications';
 import { NOTIFICATION_CONFIG } from './config/gameConfig';
 import './App.css';
 
@@ -73,7 +73,7 @@ function App() {
         const intervalId = window.setInterval(() => {
             void runNotificationChecks();
         }, NOTIFICATION_CONFIG.CHECK_INTERVAL_MS);
-        return () => window.clearInterval(intervalId);
+        return () => { window.clearInterval(intervalId); cancelNotificationChecks(); };
     }, []);
 
     return (

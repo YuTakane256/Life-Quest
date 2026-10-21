@@ -120,6 +120,10 @@
       "types": "./src/notifications.ts",
       "import": "./src/notifications.ts"
     },
+    "./notificationCheckScope": {
+      "types": "./src/notificationCheckScope.ts",
+      "import": "./src/notificationCheckScope.ts"
+    },
     "./dates": {
       "types": "./src/dates.ts",
       "import": "./src/dates.ts"

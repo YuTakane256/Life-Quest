@@ -17,6 +17,9 @@ import { getTodayJST, getJSTHour } from './dateUtils';
 import { useNotificationStore } from '../stores/useNotificationStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useHabitStore } from '../stores/useHabitStore';
+import { captureTaskEdit } from '@life-quest/core/tasks';
+import { createNotificationCheckGate } from '@life-quest/core/notificationCheckScope';
+import { waitForAuthLifecycleSettled } from '@life-quest/core/authLifecycle';
 
 // 判定条件・文言はcoreへ移設した（Mobileと共有）。ここはWeb固有の表示だけを担う。
 export { resolveHabitReminderHour } from '../core/notifications';
@@ -24,7 +27,8 @@ export { resolveHabitReminderHour } from '../core/notifications';
 const ICON_URL = '/pwa-192x192.png';
 const BADGE_URL = '/favicon.png';
 
-let isRunningNotificationChecks = false;
+const checks = createNotificationCheckGate();
+export const cancelNotificationChecks = checks.cancel;
 
 function getNotificationApi(): typeof Notification | null {
     try {
@@ -82,13 +86,14 @@ async function getServiceWorkerRegistration(): Promise<ServiceWorkerRegistration
  * Service Worker が使える場合はそちら経由（インストール済みPWAで確実）、
  * 無ければ通常の Notification を使う。
  */
-async function showAppNotification({ title, body, tag }: NotificationContent): Promise<boolean> {
+async function showAppNotification({ title, body, tag }: NotificationContent, isCurrent: () => boolean): Promise<boolean> {
     // coreのbuilderでカット済みだが、上流の漏れによる巨大通知への防御として必ずここでもカットする
     const safeTitle = title.slice(0, NOTIFICATION_TEXT_MAX);
     const safeBody = body.slice(0, NOTIFICATION_TEXT_MAX);
     const options: NotificationOptions = { body: safeBody, tag, icon: ICON_URL, badge: BADGE_URL };
 
     const registration = await getServiceWorkerRegistration();
+    if (!isCurrent()) return false;
     if (registration) {
         try {
             await registration.showNotification(safeTitle, options);
@@ -124,10 +129,20 @@ function countIncompleteHabits(date: string): number {
  * アプリ起動時および一定間隔で呼び出す。
  */
 export async function runNotificationChecks(): Promise<void> {
-    if (isRunningNotificationChecks) return;
-    isRunningNotificationChecks = true;
+    const check = checks.begin(
+        () => useNotificationStore.getState().enabled && getNotificationPermission() === 'granted' && document.visibilityState === 'visible',
+        (invalidate) => {
+            const unsubscribe = useNotificationStore.subscribe((state, before) => { if (state.enabled !== before.enabled) invalidate(); });
+            const visibility = () => { if (document.visibilityState !== 'visible') invalidate(); };
+            document.addEventListener('visibilitychange', visibility);
+            return () => { unsubscribe(); document.removeEventListener('visibilitychange', visibility); };
+        },
+    );
+    if (!check) return;
 
     try {
+        await waitForAuthLifecycleSettled();
+        if (!check.isCurrent()) return;
         const notificationStore = useNotificationStore.getState();
         if (!notificationStore.enabled) return;
         if (getNotificationPermission() !== 'granted') return;
@@ -142,8 +157,17 @@ export async function runNotificationChecks(): Promise<void> {
             notifiedTaskIds: useNotificationStore.getState().notifiedTaskIds,
         });
         for (const task of dueSoonTasks) {
-            const delivered = await showAppNotification(buildTaskDeadlineNotification(task));
-            if (delivered) useNotificationStore.getState().markTaskNotified(task.id);
+            const accepts = captureTaskEdit(task);
+            const canSend = () => {
+                const latest = useTaskStore.getState().tasks.find((candidate) => candidate.id === task.id);
+                return check.isCurrent() && accepts(latest) && latest !== undefined && selectDueSoonTasks([latest], {
+                    nowMs: Date.now(), notifiedTaskIds: useNotificationStore.getState().notifiedTaskIds,
+                }).length > 0;
+            };
+            if (!check.isCurrent()) return;
+            if (!canSend()) continue;
+            const delivered = await showAppNotification(buildTaskDeadlineNotification(task), canSend);
+            if (delivered && canSend()) useNotificationStore.getState().markTaskNotified(task.id);
         }
 
         // ── 習慣リマインダー（指定時刻以降、未完了の習慣がある、本日未通知）──
@@ -163,13 +187,19 @@ export async function runNotificationChecks(): Promise<void> {
                 !habitStore.areAllHabitsComplete(today)
             ) {
                 const incompleteCount = countIncompleteHabits(today);
+                const hour = useNotificationStore.getState().habitReminderHour;
+                const fingerprint = () => { const state = useHabitStore.getState(); return JSON.stringify([state.habits, state.dailyRecords, state.restDays]); };
+                const original = fingerprint();
+                const canSend = () => check.isCurrent() && getTodayJST() === today && fingerprint() === original
+                    && useNotificationStore.getState().habitReminderHour === hour
+                    && shouldSendHabitReminder({ today, lastReminderDate: useNotificationStore.getState().lastHabitReminderDate, currentHour: getJSTHour(), reminderHour: hour });
                 const delivered = await showAppNotification(
-                    buildHabitReminderNotification(incompleteCount, today)
+                    buildHabitReminderNotification(incompleteCount, today), canSend,
                 );
-                if (delivered) useNotificationStore.getState().markHabitReminded(today);
+                if (delivered && canSend()) useNotificationStore.getState().markHabitReminded(today);
             }
         }
     } finally {
-        isRunningNotificationChecks = false;
+        check.finish();
     }
 }
