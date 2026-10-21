@@ -27,6 +27,7 @@ export const mobileParityFlows = Object.freeze({
     taskList: '.maestro/mobile-parity/task-list-actions.yaml',
     habitList: '.maestro/mobile-parity/habit-list-actions.yaml',
     notifications: '.maestro/mobile-parity/notification-settings-quality.yaml',
+    help: '.maestro/mobile-parity/help-navigation-quality.yaml',
 });
 
 export function getMobileParityFlow(name = 'screenshots') {
@@ -45,11 +46,11 @@ export function getMaestroTestCommand(flow) {
 }
 
 export function requiresReferenceRuntime(name) {
-    return name === 'reference' || name === 'daily' || name === 'undo' || name === 'character' || name === 'map' || name === 'battle' || name === 'rewards' || name === 'taskForm' || name === 'taskDraft' || name === 'habitInput' || name === 'individualDeletion' || name === 'inlineSubtask' || name === 'taskList' || name === 'habitList' || name === 'notifications';
+    return name === 'help' || name === 'reference' || name === 'daily' || name === 'undo' || name === 'character' || name === 'map' || name === 'battle' || name === 'rewards' || name === 'taskForm' || name === 'taskDraft' || name === 'habitInput' || name === 'individualDeletion' || name === 'inlineSubtask' || name === 'taskList' || name === 'habitList' || name === 'notifications';
 }
 
 /** Keep the normal inspection server on 8081; these captures use an isolated second Metro. */
-export function getMobileParityMetroUrl(name) { return name === 'rewards' || name === 'taskForm' || name === 'taskDraft' || name === 'habitInput' || name === 'individualDeletion' || name === 'inlineSubtask' || name === 'taskList' || name === 'habitList' || name === 'notifications' ? 'http://127.0.0.1:8082' : 'http://127.0.0.1:8081'; }
+export function getMobileParityMetroUrl(name) { return name === 'help' || name === 'rewards' || name === 'taskForm' || name === 'taskDraft' || name === 'habitInput' || name === 'individualDeletion' || name === 'inlineSubtask' || name === 'taskList' || name === 'habitList' || name === 'notifications' ? 'http://127.0.0.1:8082' : 'http://127.0.0.1:8081'; }
 
 /** Never mistake seeded in-memory screenshots for persistence evidence. */
 export function assertPersistentParityRuntime(manifest) {
@@ -160,7 +161,7 @@ export function assertReferenceProfile(manifest, flowName) {
     getReferenceTheme(manifest);
     const extra = manifest?.extra?.expoClient?.extra ?? manifest?.extra;
     const profile = extra?.parityCaptureProfile ?? 'daily';
-    if ((flowName === 'undo' || flowName === 'rewards' || flowName === 'taskForm' || flowName === 'taskDraft' || flowName === 'habitInput' || flowName === 'individualDeletion' || flowName === 'inlineSubtask' || flowName === 'taskList' || flowName === 'habitList' || flowName === 'notifications') && extra?.parityLocalOnly !== true) {
+    if ((flowName === 'help' || flowName === 'undo' || flowName === 'rewards' || flowName === 'taskForm' || flowName === 'taskDraft' || flowName === 'habitInput' || flowName === 'individualDeletion' || flowName === 'inlineSubtask' || flowName === 'taskList' || flowName === 'habitList' || flowName === 'notifications') && extra?.parityLocalOnly !== true) {
         throw new Error('Undo flow requires the anonymous parity reference runtime with no Supabase configuration.');
     }
     if (profile !== (flowName === 'battle' ? 'battle' : flowName === 'rewards' ? 'rewards' : 'daily')) {

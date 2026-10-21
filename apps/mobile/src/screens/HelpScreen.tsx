@@ -1,23 +1,36 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
+    Keyboard,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
     View,
-    type LayoutChangeEvent,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { filterHelpSections, HELP_SECTIONS } from '@life-quest/core/help';
 import type { ThemePalette } from '@life-quest/core/designTokens';
 import { usePalette } from '../theme/usePalette';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 export default function HelpScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const scrollRef = useRef<ScrollView>(null);
-    const sectionOffsets = useRef<Record<string, number>>({});
+    const contentRef = useRef<View>(null);
+    const searchRef = useRef<TextInput>(null);
+    const sections = useRef(new Map<string, View>());
+    const navigation = useRef({ active: false, generation: 0, layout: '' });
+    const { width, height, fontScale } = useWindowDimensions();
+    const layout = `${width}:${height}:${fontScale}`;
+    navigation.current.layout = layout;
+    const reducedMotion = useReducedMotion();
+    useFocusEffect(useCallback(() => {
+        navigation.current.active = true;
+        return () => { navigation.current.active = false; navigation.current.generation++; };
+    }, []));
 
     const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);
@@ -27,15 +40,21 @@ export default function HelpScreen() {
         [searchQuery]
     );
 
-    const handleSectionLayout = (sectionId: string, event: LayoutChangeEvent) => {
-        sectionOffsets.current[sectionId] = event.nativeEvent.layout.y;
-    };
-
     const handleSectionJump = (sectionId: string) => {
-        const y = sectionOffsets.current[sectionId];
-        if (y === undefined) return;
-        scrollRef.current?.scrollTo({ y, animated: true });
+        if (!navigation.current.active || !filteredSections.some((section) => section.id === sectionId)) return;
+        const section = sections.current.get(sectionId); const content = contentRef.current;
+        if (!section || !content) return;
+        const generation = ++navigation.current.generation;
+        Keyboard.dismiss();
+        // Measure against scroll content, not the nested list's cached local y.
+        section.measureLayout(content, (_x, y) => {
+            if (!navigation.current.active || navigation.current.generation !== generation || navigation.current.layout !== layout
+                || sections.current.get(sectionId) !== section || contentRef.current !== content || !Number.isFinite(y)) return;
+            scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: !reducedMotion });
+        }, () => {});
     };
+    const changeSearch = (value: string) => { navigation.current.generation++; setSearchQuery(value); };
+    const clearSearch = () => { changeSearch(''); searchRef.current?.focus(); };
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -43,20 +62,26 @@ export default function HelpScreen() {
                 <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="戻る"
-                    onPress={() => router.back()}
+                    onPress={() => { Keyboard.dismiss(); if (router.canGoBack()) router.back(); else router.replace('/settings'); }}
                     style={({ pressed }) => [styles.backButton, pressed && styles.muted]}
                 >
                     <Text style={styles.backSymbol}>‹</Text>
                 </Pressable>
-                <Text style={styles.title}>使い方</Text>
+                <Text accessibilityRole="header" style={styles.title}>使い方</Text>
             </View>
 
-            <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll}>
-                <View style={styles.content}>
+            <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets onScrollBeginDrag={() => { navigation.current.generation++; }}>
+                <View ref={contentRef} collapsable={false} testID="help-scroll-content" style={styles.content}>
                     <View style={styles.searchRow}>
                         <TextInput
+                            ref={searchRef}
+                            testID="help-search"
                             value={searchQuery}
-                            onChangeText={setSearchQuery}
+                            onChangeText={changeSearch}
+                            returnKeyType="search"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            onSubmitEditing={() => Keyboard.dismiss()}
                             placeholder="キーワードで検索"
                             placeholderTextColor={palette.text.muted}
                             accessibilityLabel="ヘルプをキーワードで検索"
@@ -66,18 +91,18 @@ export default function HelpScreen() {
                             <Pressable
                                 accessibilityRole="button"
                                 accessibilityLabel="検索をクリア"
-                                onPress={() => setSearchQuery('')}
-                                hitSlop={8}
+                                onPress={clearSearch}
                                 style={styles.clearButton}
                             >
-                                <Text style={styles.clearButtonText}>×</Text>
+                                <Text allowFontScaling={false} style={styles.clearButtonText}>×</Text>
                             </Pressable>
                         )}
                     </View>
 
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="ヘルプセクション">
+                    <Text accessibilityLiveRegion="polite" style={styles.resultCount}>{filteredSections.length}件のヘルプセクション</Text>
+                    <View accessibilityLabel="ヘルプセクション">
                         <View style={styles.chipRow}>
-                            {HELP_SECTIONS.map((section) => (
+                            {filteredSections.map((section) => (
                                 <Pressable
                                     key={section.id}
                                     accessibilityRole="button"
@@ -90,11 +115,12 @@ export default function HelpScreen() {
                                 </Pressable>
                             ))}
                         </View>
-                    </ScrollView>
+                    </View>
 
                     {filteredSections.length === 0 && (
                         <View style={styles.emptyCard}>
                             <Text style={styles.emptyText}>一致する項目がありません</Text>
+                            <Pressable accessibilityRole="button" accessibilityLabel="すべての使い方を表示" onPress={clearSearch} style={styles.showAllButton}><Text style={styles.showAllText}>すべての使い方を表示</Text></Pressable>
                         </View>
                     )}
 
@@ -102,10 +128,12 @@ export default function HelpScreen() {
                         {filteredSections.map((section) => (
                             <View
                                 key={section.id}
-                                onLayout={(event) => handleSectionLayout(section.id, event)}
+                                ref={(node) => { if (node) sections.current.set(section.id, node); else sections.current.delete(section.id); }}
+                                collapsable={false}
+                                testID={`help-section-${section.id}`}
                                 style={styles.card}
                             >
-                                <Text style={styles.sectionTitle}>
+                                <Text accessibilityRole="header" accessibilityLabel={section.title} style={styles.sectionTitle}>
                                     <Text style={styles.sectionIcon}>{section.icon}</Text> {section.title}
                                 </Text>
                                 <View style={styles.itemList}>
@@ -129,21 +157,24 @@ function createStyles(palette: ThemePalette) {
     return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
-    backButton: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1 },
-    backSymbol: { color: palette.text.secondary, fontSize: 22, lineHeight: 22, marginLeft: -2 },
-    title: { color: palette.text.primary, fontSize: 22, fontWeight: '800' },
+    backButton: { minWidth: 44, minHeight: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1 },
+    backSymbol: { color: palette.text.secondary, fontSize: 22 },
+    title: { flexShrink: 1, color: palette.text.primary, fontSize: 22, fontWeight: '800' },
     scroll: { paddingBottom: 32 },
     content: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, gap: 12 },
     searchRow: { position: 'relative', justifyContent: 'center' },
-    searchInput: { height: 44, borderRadius: 10, paddingHorizontal: 14, paddingRight: 36, color: palette.text.primary, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, fontSize: 14 },
-    clearButton: { position: 'absolute', right: 8, width: 26, height: 26, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+    searchInput: { minHeight: 44, paddingVertical: 10, borderRadius: 10, paddingHorizontal: 14, paddingRight: 52, color: palette.text.primary, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, fontSize: 14 },
+    clearButton: { position: 'absolute', right: 4, width: 44, height: 44, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
     clearButtonText: { color: palette.text.muted, fontSize: 18, lineHeight: 18 },
-    chipRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
-    chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: 8, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1 },
+    resultCount: { color: palette.text.muted, fontSize: 12 },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 2 },
+    chip: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1 },
     chipIcon: { fontSize: 13 },
-    chipText: { color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
+    chipText: { flexShrink: 1, color: palette.text.secondary, fontSize: 12, fontWeight: '700' },
     emptyCard: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 16 },
     emptyText: { color: palette.text.muted, fontSize: 13 },
+    showAllButton: { minHeight: 44, justifyContent: 'center', marginTop: 8 },
+    showAllText: { color: palette.accent.primary, fontSize: 13, textDecorationLine: 'underline' },
     sectionList: { gap: 12 },
     card: { backgroundColor: palette.bg.card, borderColor: palette.border.default, borderWidth: 1, borderRadius: 10, padding: 16, gap: 8 },
     sectionTitle: { color: palette.text.primary, fontSize: 14, fontWeight: '800' },
