@@ -13,6 +13,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signInWithAppleNative } from './appleSignIn';
+import { createAccountDeletionOperation, type AccountDeletionApproval, type AccountDeletionResult } from '@life-quest/core/accountDeletion';
 
 export type AuthResult =
     | { ok: true; emailVerificationPending?: boolean; manualAppleRevocationRequired?: boolean }
@@ -418,30 +419,21 @@ export async function signOutUser(): Promise<AuthResult> {
 }
 
 /** 現在の認証アカウントを削除する。サーバー成功前にはローカル状態を変更しない。 */
-export async function deleteCurrentAccount(): Promise<AuthResult> {
+export async function deleteCurrentAccount(approval: AccountDeletionApproval): Promise<AccountDeletionResult> {
     const client = getMobileSupabaseClient();
     const invoke = getMobileEdgeFunctionInvoker();
     if (!client || !invoke) return notConfigured();
-    const { data } = await client.auth.getSession();
-    const userId = data.session?.user.id;
-    if (!userId) return { ok: false, message: 'ログインが必要です' };
-    let deletion: { apple_revocation?: unknown };
-    try {
-        deletion = await invoke<{ apple_revocation?: unknown }>('delete_account');
-    } catch {
-        return { ok: false, message: '退会処理に失敗しました。データはそのまま保持されています。' };
-    }
-    let cleanupFailed = false;
-    detachPendingRewardOperations({ suppressAnonymousRecovery: true });
-    try { await cleanupDeletedMobileAccount(userId); } catch { cleanupFailed = true; }
-    // cleanup失敗時も削除済みアカウントのセッションは残さない。全工程を試みた後に必ず実行する。
-    try { await client.auth.signOut({ scope: 'local' }); } catch { cleanupFailed = true; }
-    try { await notifyLogout(); } catch { cleanupFailed = true; }
-    setGameRewardAuthorityState('anonymous');
-    return cleanupFailed
-        ? { ok: false, message: 'アカウントは削除されました。一部の端末データを削除できませんでした。アプリを再起動してください。' }
-        : { ok: true, manualAppleRevocationRequired: deletion.apple_revocation === 'manual_required' };
+    return deleteAccountOperation(approval);
 }
+
+const deleteAccountOperation = createAccountDeletionOperation({
+    getSessionUserId: async () => { const { data, error } = await getMobileSupabaseClient()!.auth.getSession(); if (error) throw error; return data.session?.user.id ?? null; },
+    invokeDelete: (options) => getMobileEdgeFunctionInvoker()!('delete_account', {}, options),
+    detachRewards: () => detachPendingRewardOperations({ suppressAnonymousRecovery: true }),
+    cleanup: cleanupDeletedMobileAccount,
+    signOut: async () => { const { error } = await getMobileSupabaseClient()!.auth.signOut({ scope: 'local' }); if (error) throw error; },
+    setAnonymous: () => setGameRewardAuthorityState('anonymous'),
+});
 
 export async function getCurrentUser(): Promise<AuthUserInfo | null> {
     const client = getMobileSupabaseClient();

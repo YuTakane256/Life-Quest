@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { captureAuthSessionScope, subscribeAuthSessionScope, waitForAuthLifecycleSettled } from '@life-quest/core/authLifecycle';
+import { createAccountDeletionConfirmation } from '@life-quest/core/accountDeletion';
 import { CloudOff, UserRound } from 'lucide-react';
 import {
     deleteCurrentAccount,
@@ -37,29 +39,47 @@ export function AccountSettings() {
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [googleOAuthState, setGoogleOAuthState] = useState(getGoogleOAuthState);
     const [message, setMessage] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
-    const [deleteConfirming, setDeleteConfirming] = useState(false);
-    const [deleteText, setDeleteText] = useState('');
+    const [authBusy, setBusy] = useState(false);
+    const [deletion] = useState(() => createAccountDeletionConfirmation(deleteCurrentAccount));
+    const deleteState = useSyncExternalStore(deletion.subscribe, deletion.getSnapshot);
+    const busy = authBusy || deleteState.busy;
+    const deleteConfirming = deleteState.confirmation !== null;
+    const deleteText = deleteState.text;
+    const mounted = useRef(false);
+    const refreshGeneration = useRef(0);
+    const refreshAccount = useCallback(async () => {
+        const scope = captureAuthSessionScope(); const generation = ++refreshGeneration.current;
+        const active = () => mounted.current && generation === refreshGeneration.current && scope.isCurrent();
+        try {
+            await waitForAuthLifecycleSettled();
+            if (!active()) return;
+            const user = await getCurrentUser();
+            if (active()) setCurrentUser(user?.userId === scope.userId ? user : null);
+        } catch { if (active()) setCurrentUser(null); }
+    }, []);
 
     useEffect(() => {
-        let cancelled = false;
-        void getCurrentUser().then((user) => {
-            if (!cancelled) setCurrentUser(user);
+        mounted.current = true;
+        const deactivate = deletion.activate();
+        const unsubscribe = subscribeAuthSessionScope(() => {
+            setCurrentUser(null); setPassword(''); setPasswordConfirmation(''); setVerificationEmail(null); setMessage(null);
+            void refreshAccount();
         });
-        return () => { cancelled = true; };
-    }, []);
+        void refreshAccount();
+        return () => { mounted.current = false; unsubscribe(); deactivate(); };
+    }, [deletion, refreshAccount]);
 
     useEffect(() => subscribePasswordRecoveryState(setRecoveryState), []);
     useEffect(() => subscribeGoogleOAuthState((state) => {
         setGoogleOAuthState(state);
         if (state.status === 'success') {
-            void getCurrentUser().then((user) => setCurrentUser(user));
+            void refreshAccount();
         }
-    }), []);
+    }), [refreshAccount]);
     useEffect(() => subscribeAppleOAuthState((state) => {
-        if (state.status === 'success') void getCurrentUser().then(setCurrentUser);
+        if (state.status === 'success') void refreshAccount();
         if (state.status === 'error') setMessage(state.message);
-    }), []);
+    }), [refreshAccount]);
 
     const handleSubmit = async () => {
         setBusy(true);
@@ -67,8 +87,7 @@ export function AccountSettings() {
         const action = mode === 'signIn' ? signInWithEmail : signUpWithEmail;
         const result = await action(email.trim(), password);
         if (result.ok) {
-            const user = await getCurrentUser();
-            setCurrentUser(user);
+            await refreshAccount();
             if (mode === 'signUp' && result.emailVerificationPending) {
                 setVerificationEmail(email.trim());
                 setMessage('登録を受け付けました。確認が必要な場合は受信箱の案内をご確認ください。');
@@ -159,21 +178,7 @@ export function AccountSettings() {
         setBusy(false);
     };
 
-    const handleDelete = async () => {
-        if (busy || deleteText !== '削除') return;
-        setBusy(true);
-        setMessage(null);
-        const result = await deleteCurrentAccount();
-        if (result.ok) {
-            setCurrentUser(null);
-            setDeleteConfirming(false);
-            setDeleteText('');
-            setMessage(result.manualAppleRevocationRequired
-                ? 'アカウントとクラウドデータを削除しました。Appleの「Apple IDを使用中のApp」からもLife Questの連携を削除してください。'
-                : 'アカウントとクラウドデータを削除しました');
-        } else setMessage(result.message);
-        setBusy(false);
-    };
+    const handleDelete = () => { if (!authBusy) void deletion.submit(deleteState.confirmation, deleteText); };
 
     return (
         <section
@@ -251,7 +256,7 @@ export function AccountSettings() {
                     {!deleteConfirming ? (
                         <button
                             type="button"
-                            onClick={() => setDeleteConfirming(true)}
+                            onClick={() => { if (!busy && deletion.open(currentUser)) setMessage(null); }}
                             disabled={busy}
                             className="self-start text-sm disabled:opacity-50"
                             style={{ color: 'var(--color-danger, #dc2626)' }}
@@ -260,10 +265,10 @@ export function AccountSettings() {
                         </button>
                     ) : (
                         <div className="flex flex-col gap-2 border-t pt-3" style={{ borderColor: 'var(--color-border-default)' }}>
-                            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>クラウド上のデータは完全に削除されます。確認のため「削除」と入力してください。</p>
+                            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>「{deleteState.confirmation?.email ?? 'Appleアカウント'}」のクラウド上のデータは完全に削除されます。確認のため「削除」と入力してください。</p>
                             <input
                                 value={deleteText}
-                                onChange={(event) => setDeleteText(event.target.value)}
+                                onChange={(event) => deletion.setText(deleteState.confirmation, event.target.value)}
                                 placeholder="削除"
                                 aria-label="退会確認文字"
                                 className="px-3 py-2 rounded-lg text-sm"
@@ -273,7 +278,7 @@ export function AccountSettings() {
                                 <button type="button" onClick={handleDelete} disabled={busy || deleteText !== '削除'} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ backgroundColor: 'var(--color-danger, #dc2626)', color: '#fff' }}>
                                     {busy ? '削除中' : '完全に削除する'}
                                 </button>
-                                <button type="button" onClick={() => { setDeleteConfirming(false); setDeleteText(''); }} disabled={busy} className="text-xs underline disabled:opacity-50" style={{ color: 'var(--color-text-muted)' }}>キャンセル</button>
+                                <button type="button" onClick={() => deletion.cancel(deleteState.confirmation)} disabled={busy} className="text-xs underline disabled:opacity-50" style={{ color: 'var(--color-text-muted)' }}>キャンセル</button>
                             </div>
                         </div>
                     )}
@@ -360,6 +365,7 @@ export function AccountSettings() {
             {message && (
                 <p role="status" className="text-xs mt-3" style={{ color: 'var(--color-text-secondary)' }}>{message}</p>
             )}
+            {deleteState.message && <p role="status" className="text-xs mt-3" style={{ color: 'var(--color-text-secondary)' }}>{deleteState.message}</p>}
             {googleOAuthState.status === 'error' && (
                 <p role="alert" className="text-xs mt-3" style={{ color: 'var(--color-text-secondary)' }}>{googleOAuthState.message}</p>
             )}
