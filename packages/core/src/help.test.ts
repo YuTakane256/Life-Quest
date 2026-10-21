@@ -31,6 +31,9 @@ describe('filterHelpSections', () => {
         filterHelpSections(sections, 'ストリーク');
         expect(sections).toEqual(original);
     });
+    it('空白・大文字小文字を正規化して項目を絞る', () => {
+        expect(filterHelpSections([{ id: 'xp', icon: '', title: '成長', items: ['XP獲得', '装備'] }], ' xp ')).toEqual([{ id: 'xp', icon: '', title: '成長', items: ['XP獲得'] }]);
+    });
 });
 
 describe('HELP_SECTIONS', () => {
@@ -43,5 +46,10 @@ describe('HELP_SECTIONS', () => {
         for (const section of HELP_SECTIONS) {
             expect(section.items.length).toBeGreaterThan(0);
         }
+    });
+    it('通知説明は選択した日本時間と端末の許可に対応する', () => {
+        const items = HELP_SECTIONS.find((section) => section.id === 'notifications')!.items;
+        expect(items.join('')).toContain('設定した時刻'); expect(items.join('')).toContain('日本時間、初期値20:00'); expect(items.join('')).toContain('ブラウザまたは端末');
+        expect(filterHelpSections(HELP_SECTIONS, '20:00').map((section) => section.id)).toEqual(['notifications']);
     });
 });

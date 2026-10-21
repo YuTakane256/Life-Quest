@@ -1,0 +1,70 @@
+appId: com.yutakane.lifequest.parity
+name: Help search, measured section jump and keyboard (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "設定(, tab,.*)?"
+- scrollUntilVisible:
+    element: "使い方を見る"
+    direction: DOWN
+    centerElement: true
+- tapOn: "使い方を見る"
+- assertVisible: "8件のヘルプセクション"
+- takeScreenshot: "help-${REFERENCE_THEME}-overview"
+- scrollUntilVisible:
+    element: "バトル・マップへ移動する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "バトル・マップへ移動する"
+- assertVisible:
+    id: "help-section-battle"
+- takeScreenshot: "help-${REFERENCE_THEME}-jump"
+- scrollUntilVisible:
+    element:
+      id: "help-search"
+    direction: UP
+    centerElement: false
+    timeout: 60000
+    speed: 65
+- tapOn:
+    id: "help-search"
+# Do not treat focus alone as a software keyboard test.
+- assertVisible:
+    id: "Search"
+- inputText: "20:00"
+- assertVisible: "1件のヘルプセクション"
+- takeScreenshot: "help-${REFERENCE_THEME}-keyboard"
+- tapOn: "通知へ移動する"
+- assertNotVisible:
+    id: "Search"
+- assertVisible:
+    id: "help-section-notifications"
+- takeScreenshot: "help-${REFERENCE_THEME}-search"
+- scrollUntilVisible:
+    element:
+      id: "help-search"
+    direction: UP
+    centerElement: false
+    timeout: 60000
+    speed: 65
+- tapOn:
+    id: "help-search"
+- eraseText
+- inputText: "No matching help"
+- pressKey: enter
+- assertVisible: "一致する項目がありません"
+- takeScreenshot: "help-${REFERENCE_THEME}-empty"
+- tapOn: "すべての使い方を表示"
+- assertVisible: "8件のヘルプセクション"
+- inputText: "20:00"
+- tapOn: "検索をクリア"
+- assertVisible: "8件のヘルプセクション"
+- pressKey: enter
+- tapOn: "戻る"
+- assertVisible: "使い方を見る"

@@ -77,6 +77,15 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('guards help keyboard/navigation checks with a local-only daily fixture', () => {
+        expect(getMobileParityMetroUrl('help')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('help')).toBe(true);
+        const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
+        expect(() => assertReferenceProfile({ extra }, 'help')).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { appVariant: 'release' }]) expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'help')).toThrow();
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow('help').path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp'); expect(yaml).toContain('127.0.0.1%3A8082');
+        expect(yaml).toContain('id: "Search"'); expect(yaml).toContain('help-section-battle'); expect(yaml).toContain('No matching help');
+    });
     it('guards notification settings with local-only memory fixtures and no permission request', () => {
         expect(getMobileParityMetroUrl('notifications')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('notifications')).toBe(true);
         const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
