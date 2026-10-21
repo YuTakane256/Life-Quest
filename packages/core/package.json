@@ -4,6 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./characterProfile": {
+      "types": "./src/characterProfile.ts",
+      "import": "./src/characterProfile.ts"
+    },
     "./parityFixture": {
       "types": "./src/parityFixture.ts",
       "import": "./src/parityFixture.ts"

@@ -1,0 +1,13 @@
+appId: com.yutakane.lifequest.parity
+name: Profile UI and visible software keyboard (daily memory only)
+---
+- runFlow:
+    file: character-profile-interactions.yaml
+- tapOn: "プロフィールを編集"
+- tapOn: "キャラクター名"
+# Focus alone is not evidence of a visible software keyboard.
+- assertVisible:
+    id: "Done"
+- takeScreenshot: "profile-${REFERENCE_THEME}-keyboard"
+- pressKey: enter
+- tapOn: "プロフィール編集を閉じる"
