@@ -3,6 +3,7 @@ import { Edit2, History, Milestone, Package, Sparkles } from 'lucide-react';
 import { useGameStore, calculateXpProgress, calculateNextLevelXp } from '../stores/useGameStore';
 import { getProgressBarA11y } from '../utils/progressBar';
 import { getUpcomingMilestones } from '@life-quest/core/rewards';
+import { captureLoadoutActions } from '@life-quest/core/equipment';
 import { buildCharacterProfileUpdate, captureCharacterProfile, PROFILE_CHANGED_MESSAGE, type CharacterProfile } from '@life-quest/core/characterProfile';
 import { ITEM_IMAGES, CHEST_IMAGES, CHEST_FALLBACK_IMAGE, RARITY_COLORS } from '../config/equipmentAssets';
 import type { Equipment, EquipmentSlot } from '../types';
@@ -35,15 +36,15 @@ export function CharacterPage() {
     const equipment = useGameStore((state) => state.equipment);
     const gachaCount = useGameStore((state) => state.gachaCount);
     const chestQueue = useGameStore((state) => state.chestQueue);
-    const unequipItem = useGameStore((state) => state.unequipItem);
     const { openingChestId, errorChestId, openChest, retry: retryOpenChest } = useCloudChestOpen();
-    const autoEquipBest = useGameStore((state) => state.autoEquipBest);
     const activeTitle = useTitleStore((state) => state.activeTitle);
 
     type Owner = { isCurrent: () => boolean; accepts: ReturnType<typeof captureCharacterProfile> };
     const ownerRef = useRef<Owner | null>(null);
     const [draft, setDraft] = useState<(CharacterProfile & { owner: Owner; error: string }) | null>(null);
     const interactions = useInteractionScope(() => { ownerRef.current = null; setDraft(null); });
+    const loadoutAction = captureLoadoutActions(equipment,
+        () => useGameStore.getState().equipment, interactions.capture());
     const isCurrentDraft = () => draft !== null && ownerRef.current === draft.owner && draft.owner.isCurrent();
     const closeEditor = () => { if (isCurrentDraft()) { ownerRef.current = null; setDraft(null); } };
     const openEditor = () => {
@@ -187,25 +188,25 @@ export function CharacterPage() {
             )}
 
             <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex flex-wrap gap-2 items-center justify-between mb-2">
                     <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>装備中</h2>
-                    <button onClick={autoEquipBest} disabled={equipment.length === 0} className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-40" style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-accent-gold)', border: '1px solid var(--color-border-default)' }} aria-label="最強装備を自動装着">
+                    <button onClick={loadoutAction(() => { useGameStore.getState().autoEquipBest(); })} disabled={equipment.length === 0} className="min-h-11 min-w-11 flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-40" style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-accent-gold)', border: '1px solid var(--color-border-default)' }} aria-label="最強装備を自動装着">
                         <Sparkles size={12} /> 最強装備
                     </button>
                 </div>
-                <div className="grid grid-cols-3 gap-2.5">
+                <div aria-label="装備中の一覧" className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(6.5rem, 100%), 1fr))' }}>
                     {(['weapon', 'armor', 'accessory'] as EquipmentSlot[]).map((slot) => {
                         const item = equippedItems.find((candidate) => candidate.slot === slot);
                         return (
-                            <div key={slot} className="rounded-xl p-3.5 text-center" style={{ backgroundColor: 'var(--color-bg-card)', border: `1px solid ${item ? RARITY_COLORS[item.rarity] : 'var(--color-border-default)'}` }}>
+                            <div key={slot} className="min-w-0 rounded-xl p-3.5 text-center" style={{ overflowWrap: 'anywhere', backgroundColor: 'var(--color-bg-card)', border: `1px solid ${item ? RARITY_COLORS[item.rarity] : 'var(--color-border-default)'}` }}>
                                 <div className="flex justify-center mb-1 h-10 items-center">
                                     {item && ITEM_IMAGES[item.templateId] ? <img src={ITEM_IMAGES[item.templateId]} alt={item.name} className="w-10 h-10 object-contain drop-shadow" /> : <div className="opacity-70">{SLOT_ICONS[slot]}</div>}
                                 </div>
                                 <div className="text-xs mb-1 leading-none" style={{ color: 'var(--color-text-muted)' }}>{SLOT_LABELS[slot]}</div>
                                 {item ? (
                                     <>
-                                        <div className="text-sm font-medium truncate" style={{ color: RARITY_COLORS[item.rarity] }}>{item.name}</div>
-                                        <button onClick={() => unequipItem(item.id)} className="text-xs mt-1 px-2 py-0.5 rounded" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>外す</button>
+                                        <div className="text-sm font-medium" style={{ color: RARITY_COLORS[item.rarity] }}>{item.name}</div>
+                                        <button onClick={loadoutAction(() => useGameStore.getState().unequipItem(item.id))} aria-label={`${SLOT_LABELS[slot]}の${item.name}を外す`} className="min-h-11 min-w-11 text-xs mt-1 px-2 py-0.5 rounded" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>外す</button>
                                     </>
                                 ) : <div className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>なし</div>}
                             </div>

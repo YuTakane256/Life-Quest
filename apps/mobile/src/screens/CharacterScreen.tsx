@@ -3,7 +3,7 @@ import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View }
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { TAB_SCREEN_EDGES } from '../theme/layout';
-import { type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
+import { captureLoadoutActions, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { createInventoryConfirmation, filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
 import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
 import { getItemImage } from '../assets/images';
@@ -34,8 +34,6 @@ export default function CharacterScreen() {
     const lastLevelUp = useMobileGameStore((state) => state.lastLevelUp);
     const clearLastLevelUp = useMobileGameStore((state) => state.clearLastLevelUp);
     const { openingChestId, errorChestId, openChest, retry: retryOpenChest } = useCloudChestOpen();
-    const equipItem = useMobileGameStore((state) => state.equipItem);
-    const unequipItem = useMobileGameStore((state) => state.unequipItem);
     const sellItem = useMobileGameStore((state) => state.sellItem);
     const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useCloudItemSynthesis();
 
@@ -50,6 +48,9 @@ export default function CharacterScreen() {
     const interactions = useInteractionScope(() => {
         pendingConfirmation.current = null; setSelectedIds([]); setLastReveal(null);
     });
+    const isCurrentLoadout = interactions.capture();
+    const loadoutAction = captureLoadoutActions(equipment, () => useMobileGameStore.getState().equipment,
+        () => isCurrentLoadout() && useMobileGameStore.getState().hasHydrated);
 
     // 最大2000件になり得るため FlatList で仮想化して描画する
     const inventory = useMemo(
@@ -240,7 +241,10 @@ export default function CharacterScreen() {
                         item={item}
                         selected={selectedIds.includes(item.id)}
                         onToggleSelect={toggleSelect}
-                        onEquipToggle={(target) => target.equipped ? unequipItem(target.id) : equipItem(target.id)}
+                        onEquipToggle={loadoutAction(() => {
+                            const current = useMobileGameStore.getState();
+                            if (item.equipped) current.unequipItem(item.id); else current.equipItem(item.id);
+                        })}
                         onSell={handleSell}
                         styles={styles}
                         palette={palette}

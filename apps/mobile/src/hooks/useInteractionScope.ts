@@ -16,6 +16,8 @@ export function useInteractionScope(reset: () => void) {
     }, []);
     useFocusEffect(useCallback(() => {
         owner.current.active = true;
+        // Retained tabs must render fresh controls after activation / StrictMode replay.
+        refresh((value) => value + 1);
         return () => { owner.current.active = false; invalidate(); resetRef.current(); };
     }, [invalidate]));
     useEffect(() => {
