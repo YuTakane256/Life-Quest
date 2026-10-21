@@ -10,6 +10,8 @@ export function useInteractionScope(reset: () => void) {
     useEffect(() => {
         const state = owner.current;
         state.active = true;
+        // Render-bound controls need the activated generation, including StrictMode replay.
+        refresh((value) => value + 1);
         const invalidate = () => {
             state.generation++;
             for (const timer of state.timers) clearTimeout(timer);

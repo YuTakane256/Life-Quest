@@ -21,6 +21,7 @@ import { useCloudItemSynthesis } from '../../hooks/useCloudItemSynthesis';
 import { getEquipmentRowA11y } from './equipmentRowA11y';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useInteractionScope } from '../../hooks/useInteractionScope';
+import { captureLoadoutActions } from '@life-quest/core/equipment';
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
 
@@ -47,7 +48,6 @@ export function InventoryPage() {
 
 export function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?: number; showViewAll?: boolean }) {
     const equipment = useGameStore((state) => state.equipment);
-    const equipItem = useGameStore((state) => state.equipItem);
     const sellItem = useGameStore((state) => state.sellItem);
     const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useCloudItemSynthesis();
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
@@ -63,6 +63,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
         pendingConfirmation.current = null;
         setSellConfirmation(null); setSelectedForSynth([]); setSellFeedback(null); setSynthResult(null); setInventoryMode('normal');
     });
+    const loadoutAction = captureLoadoutActions(equipment, () => useGameStore.getState().equipment, interactions.capture());
 
     const unequippedItems = useMemo(() => equipment.filter((item) => !item.equipped), [equipment]);
     const filteredItems = useMemo(
@@ -234,7 +235,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
                             mode={inventoryMode}
                             isSelected={selectedForSynth.includes(item.id)}
                             synthTargetRarity={synthTargetRarity}
-                            onEquip={() => equipItem(item.id)}
+                            onEquip={loadoutAction(() => useGameStore.getState().equipItem(item.id))}
                             onSell={() => requestSell(item)}
                             onToggleSynth={() => toggleSynthSelect(item.id)}
                         />
@@ -410,7 +411,7 @@ function EquipmentRow({ item, mode, isSelected, synthTargetRarity, onEquip, onSe
                 </div>
             </div>
             {mode === 'normal' && (
-                <button onClick={onEquip} className="px-3.5 py-2 rounded-lg text-sm font-medium transition-colors" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>装備</button>
+                <button onClick={onEquip} aria-label={`${item.name}を装備する`} className="min-h-11 min-w-11 shrink-0 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>装備</button>
             )}
             {mode === 'sell' && (
                 <div aria-hidden="true" className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-bold" style={{ backgroundColor: 'var(--color-accent-gold)', color: '#000' }}>

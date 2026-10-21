@@ -167,12 +167,17 @@ export function characterOverviewStyles(p: ThemePalette) {
         },
         section: { marginBottom: 16 },
         sectionHeader: {
+            flexWrap: 'wrap',
+            gap: 8,
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
             marginBottom: 8,
         },
         autoEquip: {
+            minWidth: 44,
+            minHeight: 44,
+            justifyContent: 'center',
             flexDirection: 'row',
             alignItems: 'center',
             gap: 4,
@@ -184,7 +189,7 @@ export function characterOverviewStyles(p: ThemePalette) {
             borderWidth: 1,
         },
         autoEquipText: { color: p.accent.gold, fontSize: 12, lineHeight: 16 },
-        slots: { flexDirection: 'row', gap: 10 },
+        slots: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
         slot: {
             flex: 1,
             minWidth: 0,
@@ -215,6 +220,10 @@ export function characterOverviewStyles(p: ThemePalette) {
             maxWidth: '100%',
         },
         unequip: {
+            minWidth: 44,
+            minHeight: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
             marginTop: 4,
             paddingHorizontal: 8,
             paddingVertical: 2,

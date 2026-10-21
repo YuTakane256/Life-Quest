@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { PROFILE_CHANGED_MESSAGE } from '@life-quest/core/characterProfile';
+import { createEquipmentFromTemplate } from '@life-quest/core/equipment';
+import { EQUIPMENT_POOL } from '@life-quest/core/rewards';
 import type { ProfileEditorProps } from './ProfileEditor';
 import { useGameStore } from '../../stores/useGameStore';
 import { useMobileGameStore } from '../../../apps/mobile/src/stores/useMobileGameStore';
@@ -39,7 +41,7 @@ vi.mock('expo-router', () => ({ useFocusEffect: (setup: () => void | (() => void
 vi.mock('react-native', () => {
     type Props = { children?: ReactNode; accessibilityLabel?: string; accessibilityRole?: string; onPress?: () => void; disabled?: boolean };
     const box = ({ children, accessibilityRole }: Props) => createElement('div', { role: accessibilityRole }, children);
-    return { View: box, ScrollView: box, KeyboardAvoidingView: box,
+    return { View: box, ScrollView: box, KeyboardAvoidingView: box, useWindowDimensions: () => ({ width: 402, height: 874, fontScale: 1 }),
         Modal: ({ children }: Props) => createElement('div', { role: 'dialog' }, children),
         Image: () => null, Text: ({ children }: Props) => createElement('span', null, children),
         Pressable: ({ children, accessibilityLabel, onPress, disabled }: Props) => createElement('button', { 'aria-label': accessibilityLabel, onClick: onPress, disabled }, children),
@@ -65,6 +67,62 @@ for (const mobile of [false, true]) describe(`profile edit mobile=${mobile}`, ()
     const mount = () => act(() => root!.render(createElement(StrictMode, null, createElement(MemoryRouter, null, mobile ? createElement(CharacterOverview, { openingChestId: null, errorChestId: null, onOpenChest: () => {}, onRetryChest: () => {} }) : createElement(CharacterPage)))));
     const open = () => act(() => host.querySelector<HTMLButtonElement>('[aria-label="プロフィールを編集"]')!.click());
     const editor = () => mocks.editor!;
+    const loadoutItems = () => [0, 1].map((index) => ({ ...createEquipmentFromTemplate(`loadout-${index}`,
+        EQUIPMENT_POOL.find((item) => item.id === 'wooden_sword')!), attackBonus: index + 1, equipped: index === 0 }));
+    const setLoadout = (equipment = loadoutItems()) => {
+        if (mobile) useMobileGameStore.setState({ equipment }); else useGameStore.setState({ equipment });
+    };
+    const control = (label: string) => host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+    describe('equipped controls', () => {
+        it('auto-equip and unequip each update only loadout and send once', () => {
+            setLoadout(); mount(); const before = { ...store().character };
+            const auto = control('最強装備を自動装着'); act(() => { auto.click(); auto.click(); });
+            expect(store().equipment.filter((item) => item.equipped).map((item) => item.id)).toEqual(['loadout-1']);
+            expect(mocks.enqueue).toHaveBeenCalledExactlyOnceWith('set_equipped_items', { p_item_ids: ['loadout-1'] });
+            mocks.enqueue.mockClear(); const remove = control('武器の木の剣を外す'); act(() => { remove.click(); remove.click(); });
+            expect(store().equipment.every((item) => !item.equipped)).toBe(true);
+            expect(mocks.enqueue).toHaveBeenCalledExactlyOnceWith('set_equipped_items', { p_item_ids: [] });
+            expect(store().character).toEqual(before);
+        });
+        it.each(['logout', 'switch', 'roundtrip', 'first-login'] as const)('rejects old auto-equip before rerender on %s', async (transition) => {
+            if (transition === 'first-login') await notifyLogout();
+            setLoadout(); mount(); const old = control('最強装備を自動装着');
+            await act(async () => {
+                if (transition === 'logout') await notifyLogout();
+                else if (transition === 'switch' || transition === 'first-login') await notifyLogin('b');
+                else { await notifyLogout(); await notifyLogin('a'); }
+                setLoadout(); old.click();
+            });
+            expect(store().equipment).toEqual(loadoutItems()); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it.each(['replace', 'remove', 'order'] as const)('rejects old unequip when inventory changes: %s', (change) => {
+            setLoadout(); mount(); const old = control('武器の木の剣を外す');
+            const next = loadoutItems();
+            if (change === 'replace') next[0].name = '同期からの装備';
+            else if (change === 'remove') next.shift(); else next.reverse();
+            act(() => { setLoadout(next); old.click(); });
+            expect(store().equipment).toEqual(next); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('accepts same-user / equal equipment pull / progression only', async () => {
+            setLoadout(); mount(); const old = control('最強装備を自動装着');
+            await act(async () => { await notifyLogin('a'); setLoadout(); replace({ totalXp: 500 }); old.click(); });
+            expect(store().equipment[1].equipped).toBe(true); expect(store().character.totalXp).toBe(500); expect(mocks.enqueue).toHaveBeenCalledOnce();
+        });
+        if (mobile) {
+            it('rejects retained controls on blur/refocus before rerender', () => {
+                setLoadout(); mount(); const old = control('最強装備を自動装着');
+                act(() => { mocks.blur.forEach((fn) => fn()); mocks.focus.forEach((fn) => fn()); old.click(); });
+                expect(mocks.enqueue).not.toHaveBeenCalled();
+                act(() => control('最強装備を自動装着').click()); expect(mocks.enqueue).toHaveBeenCalledOnce();
+            });
+            it('refuses a pre-render click before hydration, then fresh controls work', () => {
+                setLoadout(); mount(); const old = control('最強装備を自動装着');
+                act(() => { useMobileGameStore.setState({ hasHydrated: false }); old.click(); }); expect(mocks.enqueue).not.toHaveBeenCalled();
+                act(() => { useMobileGameStore.setState({ hasHydrated: true }); });
+                act(() => control('最強装備を自動装着').click()); expect(mocks.enqueue).toHaveBeenCalledOnce();
+            });
+        }
+    });
     it('normal save changes only profile, sends once and ignores the same old callback', () => {
         mount(); open(); act(() => { editor().onNameChange('  保存した名前  '); editor().onAvatarChange('male'); });
         const before = { ...store().character }; const save = editor().onSave; act(() => { save(); save(); });

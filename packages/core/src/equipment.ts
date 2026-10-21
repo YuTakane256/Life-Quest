@@ -26,6 +26,30 @@ export interface Equipment {
     equipped: boolean;
 }
 
+/** A rendered control acts once on the loadout it displayed, not a later account/pull.
+ * Order matters: auto-equip resolves equal scores using inventory order.
+ */
+export function captureLoadoutActions(
+    equipment: readonly Equipment[],
+    getEquipment: () => readonly Equipment[],
+    isCurrent: () => boolean,
+): (apply: () => void) => () => void {
+    const displayed = equipment.map((item) => ({ ...item }));
+    const unique = new Set(displayed.map((item) => item.id)).size === displayed.length;
+    return (apply) => {
+        let used = false;
+        return () => {
+            if (used) return;
+            used = true;
+            if (!isCurrent() || !unique) return;
+            const current = getEquipment();
+            if (current.length !== displayed.length || !displayed.every((item, index) =>
+                (Object.keys(item) as (keyof Equipment)[]).every((key) => item[key] === current[index][key]))) return;
+            apply();
+        };
+    };
+}
+
 export interface BaseCharacterStats {
     baseAttack: number;
     baseDefense: number;

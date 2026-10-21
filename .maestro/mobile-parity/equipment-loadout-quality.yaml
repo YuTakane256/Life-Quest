@@ -1,0 +1,48 @@
+appId: com.yutakane.lifequest.parity
+name: Equipment loadout controls (daily memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "キャラ(, tab,.*)?"
+- scrollUntilVisible:
+    element: "武器の鋼の刃を外す"
+    direction: DOWN
+    centerElement: true
+- tapOn: "武器の鋼の刃を外す"
+- assertNotVisible: "武器の鋼の刃を外す"
+- scrollUntilVisible:
+    element: "最強装備を自動装着"
+    direction: UP
+    centerElement: false
+- tapOn: "最強装備を自動装着"
+- scrollUntilVisible:
+    element: "武器の鋼の刃を外す"
+    direction: DOWN
+    centerElement: true
+- scrollUntilVisible:
+    element: "最強装備を自動装着"
+    direction: UP
+    centerElement: false
+- takeScreenshot: "loadout-${REFERENCE_THEME}"
+- scrollUntilVisible:
+    element: "鉄の剣を装備する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "鉄の剣を装備する"
+- assertVisible: "鉄の剣を外す"
+- scrollUntilVisible:
+    element: "最強装備を自動装着"
+    direction: UP
+    centerElement: false
+- tapOn: "最強装備を自動装着"
+- scrollUntilVisible:
+    element: "武器の鋼の刃を外す"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "武器の鋼の刃を外す"

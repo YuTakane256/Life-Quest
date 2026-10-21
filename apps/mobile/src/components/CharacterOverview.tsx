@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Image, Keyboard, Pressable, Text, View } from 'react-native';
+import { Image, Keyboard, Pressable, Text, useWindowDimensions, View } from 'react-native';
 import {
     Edit2,
     Gem,
@@ -9,7 +9,7 @@ import {
     Sparkles,
     Sword,
 } from 'lucide-react-native';
-import { EQUIPMENT_SLOTS } from '@life-quest/core/equipment';
+import { captureLoadoutActions, EQUIPMENT_SLOTS } from '@life-quest/core/equipment';
 import { buildCharacterProfileUpdate, captureCharacterProfile, PROFILE_CHANGED_MESSAGE, type CharacterProfile } from '@life-quest/core/characterProfile';
 import {
     calculateNextLevelXp,
@@ -48,16 +48,20 @@ export function CharacterOverview({
         gachaCount,
         chestQueue,
         getEffectiveStats,
-        autoEquipBest,
-        unequipItem,
+        hasHydrated,
     } = useMobileGameStore();
     const activeTitle = useMobileTitleStore((state) => state.activeTitle);
     const { palette: p } = usePalette();
     const s = characterOverviewStyles(p);
+    const { fontScale } = useWindowDimensions();
     type Owner = { isCurrent: () => boolean; accepts: ReturnType<typeof captureCharacterProfile> };
     const ownerRef = useRef<Owner | null>(null);
     const [draft, setDraft] = useState<(CharacterProfile & { owner: Owner; error: string }) | null>(null);
     const interactions = useInteractionScope(() => { ownerRef.current = null; setDraft(null); Keyboard.dismiss(); });
+    const isCurrentLoadout = interactions.capture();
+    const loadoutAction = captureLoadoutActions(equipment,
+        () => useMobileGameStore.getState().equipment,
+        () => isCurrentLoadout() && useMobileGameStore.getState().hasHydrated);
     const isCurrentDraft = () => draft !== null && ownerRef.current === draft.owner && draft.owner.isCurrent();
     const openEditor = () => {
         const current = useMobileGameStore.getState(); const accepts = captureCharacterProfile(character);
@@ -312,8 +316,8 @@ export function CharacterOverview({
                     <Pressable
                         accessibilityRole="button"
                         accessibilityLabel="最強装備を自動装着"
-                        disabled={!equipment.length}
-                        onPress={autoEquipBest}
+                        disabled={!equipment.length || !hasHydrated}
+                        onPress={loadoutAction(() => { useMobileGameStore.getState().autoEquipBest(); })}
                         style={({ pressed }) => [
                             s.autoEquip,
                             (pressed || !equipment.length) && { opacity: 0.4 },
@@ -340,6 +344,7 @@ export function CharacterOverview({
                                 key={slot}
                                 style={[
                                     s.slot,
+                                    { flexBasis: 104 * Math.max(1, fontScale) },
                                     {
                                         borderColor: item
                                             ? p.rarity[item.rarity]
@@ -375,14 +380,14 @@ export function CharacterOverview({
                                                     ],
                                                 },
                                             ]}
-                                            numberOfLines={1}
                                         >
                                             {item.name}
                                         </Text>
                                         <Pressable
                                             accessibilityRole="button"
                                             accessibilityLabel={`${label}の${item.name}を外す`}
-                                            onPress={() => unequipItem(item.id)}
+                                            disabled={!hasHydrated}
+                                            onPress={loadoutAction(() => useMobileGameStore.getState().unequipItem(item.id))}
                                             style={s.unequip}
                                         >
                                             <Text style={s.unequipText}>

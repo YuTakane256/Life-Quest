@@ -112,6 +112,26 @@ for (const platform of ['web', 'native'] as const) {
         if (platform === 'native') act(() => mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress());
     };
     describe(`${platform} inventory interaction ownership`, () => {
+        it('equips once through the existing store / outbox; no XP changes', () => {
+            mount(); const equip = button('木の剣を装備する'); const before = { ...store.getState().character };
+            act(() => { equip.click(); equip.click(); });
+            expect(store.getState().equipment[0].equipped).toBe(true);
+            expect(mocks.enqueue).toHaveBeenCalledExactlyOnceWith('set_equipped_items', { p_item_ids: ['item-0'] });
+            expect(store.getState().character).toEqual(before);
+        });
+        it.each(['switch', 'changed', 'missing', 'equal'] as const)('equip validates rendered items: %s', async (change) => {
+            mount(); const equip = button('木の剣を装備する');
+            await act(async () => {
+                if (change === 'switch') await notifyLogin('b');
+                const next = items(); if (change === 'changed') next[0].attackBonus++;
+                setEquipment(change === 'missing' ? [] : next); equip.click();
+            });
+            expect(mocks.enqueue).toHaveBeenCalledTimes(change === 'equal' ? 1 : 0);
+        });
+        if (platform === 'native') it('blur/refocus invalidates old equip controls', () => {
+            mount(); const equip = button('木の剣を装備する');
+            act(() => { mocks.blur?.(); mocks.focus?.(); equip.click(); }); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
         it('通常確認は売却とenqueueを1度だけ実行する', () => {
             mount(); const confirm = requestSale(); act(confirm); act(confirm);
             expect(store.getState().equipment).toHaveLength(2); expect(mocks.enqueue).toHaveBeenCalledTimes(1);
