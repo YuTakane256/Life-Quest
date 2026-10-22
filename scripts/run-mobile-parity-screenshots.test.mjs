@@ -77,12 +77,12 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
-    it('limits loadout verification to local-only daily memory data / 8082', () => {
+    it.each(['loadout', 'inventorySelection'])('limits %s verification to local-only daily memory data / 8082', (flow) => {
         const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
-        expect(getMobileParityMetroUrl('loadout')).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime('loadout')).toBe(true);
-        expect(() => assertReferenceProfile({ extra }, 'loadout')).not.toThrow();
-        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { parityCaptureProfile: 'rewards' }, { appVariant: 'release' }]) expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'loadout')).toThrow();
-        const yaml = readFileSync(new URL(`../${getMobileParityFlow('loadout').path}`, import.meta.url), 'utf8');
+        expect(getMobileParityMetroUrl(flow)).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime(flow)).toBe(true);
+        expect(() => assertReferenceProfile({ extra }, flow)).not.toThrow();
+        for (const change of [{ parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'battle' }, { parityCaptureProfile: 'rewards' }, { appVariant: 'release' }]) expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, flow)).toThrow();
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow(flow).path}`, import.meta.url), 'utf8');
         expect(yaml).toContain('127.0.0.1%3A8082'); expect(yaml).not.toContain('clearState:'); expect(yaml).not.toContain('- launchApp');
     });
     it.each(['profile', 'profileUi'])('guards %s with local-only daily memory data', (flow) => {

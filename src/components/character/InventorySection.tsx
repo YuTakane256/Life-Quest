@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft,
@@ -16,7 +16,7 @@ import { ITEM_IMAGES, RARITY_COLORS, RARITY_LABELS } from '../../config/equipmen
 import { useGameStore } from '../../stores/useGameStore';
 import type { Equipment, Rarity } from '../../types';
 import { SLOT_ICONS, SLOT_LABELS } from './equipmentPresentation';
-import { createInventoryConfirmation, filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
+import { createInventoryConfirmation, filterAndSortInventory, INVENTORY_SELECTION_CHANGED, reconcileSynthesisSelection, toggleSynthesisSelection, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
 import { useCloudItemSynthesis } from '../../hooks/useCloudItemSynthesis';
 import { getEquipmentRowA11y } from './equipmentRowA11y';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -34,7 +34,7 @@ export function InventoryPage() {
                 <button
                     onClick={() => navigate('/character')}
                     aria-label="キャラクター画面に戻る"
-                    className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors"
+                    className="min-w-11 min-h-11 rounded-xl flex items-center justify-center transition-colors"
                     style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)', color: 'var(--color-text-secondary)' }}
                 >
                     <ArrowLeft size={20} />
@@ -51,7 +51,8 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     const sellItem = useGameStore((state) => state.sellItem);
     const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useCloudItemSynthesis();
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
-    const [selectedForSynth, setSelectedForSynth] = useState<string[]>([]);
+    const [selectedForSynth, setSelectedForSynth] = useState<readonly Equipment[]>([]);
+    const [selectionNotice, setSelectionNotice] = useState('');
     const [sellFeedback, setSellFeedback] = useState<{ id: string; xp: number } | null>(null);
     const [sellConfirmation, setSellConfirmation] = useState<{ item: Equipment; confirm: () => void } | null>(null);
     const [synthResult, setSynthResult] = useState<Equipment | null>(null);
@@ -59,11 +60,29 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
     const pendingConfirmation = useRef<object | null>(null);
+    const viewRef = useRef({});
+    const selectionRef = useRef({});
+    const invalidateView = useCallback(() => {
+        viewRef.current = {}; selectionRef.current = {}; pendingConfirmation.current = null;
+        setSellConfirmation(null); setSelectedForSynth([]); setSelectionNotice('');
+    }, []);
     const interactions = useInteractionScope(() => {
-        pendingConfirmation.current = null;
-        setSellConfirmation(null); setSelectedForSynth([]); setSellFeedback(null); setSynthResult(null); setInventoryMode('normal');
+        invalidateView(); setSellFeedback(null); setSynthResult(null); setInventoryMode('normal');
+        setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity');
     });
-    const loadoutAction = captureLoadoutActions(equipment, () => useGameStore.getState().equipment, interactions.capture());
+    const view = viewRef.current; const renderedScope = interactions.capture();
+    const isCurrentView = useCallback(() => viewRef.current === view && renderedScope(), [view, renderedScope]);
+    const selectionVersion = selectionRef.current;
+    const isCurrentSelection = () => isCurrentView() && selectionRef.current === selectionVersion;
+    const loadoutAction = captureLoadoutActions(equipment, () => useGameStore.getState().equipment, isCurrentView);
+    const validSelected = useMemo(() => reconcileSynthesisSelection(selectedForSynth, equipment), [selectedForSynth, equipment]);
+    useEffect(() => {
+        if (validSelected === selectedForSynth || !isCurrentView()) return;
+        selectionRef.current = {}; setSelectedForSynth(validSelected); setSelectionNotice(INVENTORY_SELECTION_CHANGED);
+    }, [validSelected, selectedForSynth, isCurrentView]);
+    const changeView = (update: () => void) => { if (isCurrentView()) { invalidateView(); update(); } };
+    const resetFilters = () => changeView(() => { setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity'); });
+    const filtersActive = slotFilter !== 'all' || rarityFilter !== 'all' || sortMode !== 'rarity';
 
     const unequippedItems = useMemo(() => equipment.filter((item) => !item.equipped), [equipment]);
     const filteredItems = useMemo(
@@ -76,24 +95,19 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
         [filteredItems, hasOverflow, visibleLimit]
     );
     const hiddenCount = filteredItems.length - visibleItems.length;
-    const synthTargetRarity = useMemo(
-        () => selectedForSynth.length > 0
-            ? unequippedItems.find((item) => item.id === selectedForSynth[0])?.rarity ?? null
-            : null,
-        [selectedForSynth, unequippedItems]
-    );
+    const synthTargetRarity = validSelected[0]?.rarity ?? null;
 
     const confirmSell = (itemId: string) => {
         const xp = sellItem(itemId);
         if (xp <= 0) return;
         const feedback = { id: itemId, xp };
         setSellFeedback(feedback);
-        setSelectedForSynth((current) => current.filter((id) => id !== itemId));
+        setSelectedForSynth((current) => current.filter((item) => item.id !== itemId));
         interactions.schedule(() => setSellFeedback((current) => current === feedback ? null : current), 1500);
     };
 
     const requestSell = (item: Equipment) => {
-        const isCurrent = interactions.capture();
+        const isCurrent = isCurrentView;
         if (!isCurrent()) return;
         const token = {};
         pendingConfirmation.current = token;
@@ -109,61 +123,51 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
         setSellConfirmation(confirmation);
     };
 
-    const toggleSynthSelect = (itemId: string) => {
-        if (!interactions.capture()()) return;
-        setSelectedForSynth((current) => {
-            if (current.includes(itemId)) return current.filter((id) => id !== itemId);
-            if (current.length >= SYNTHESIS_CONFIG.REQUIRED_COUNT) return current;
-            const item = unequippedItems.find((candidate) => candidate.id === itemId);
-            if (!item) return current;
-            if (current.length > 0 && item.rarity !== synthTargetRarity) return current;
-            if (RARITY_ORDER.indexOf(item.rarity) >= RARITY_ORDER.length - 1) return current;
-            return [...current, itemId];
-        });
+    const toggleSynthSelect = (item: Equipment) => {
+        if (!isCurrentView()) return;
+        selectionRef.current = {};
+        setSelectionNotice('');
+        setSelectedForSynth((current) => toggleSynthesisSelection(current, item, useGameStore.getState().equipment, SYNTHESIS_CONFIG.REQUIRED_COUNT));
     };
 
-    const runSynthesis = (invoke: () => Promise<Equipment | null>) => {
-        const isCurrent = interactions.capture();
+    const runSynthesis = (invoke: () => Promise<Equipment | null>, selectionToClear?: readonly Equipment[]) => {
+        const isCurrent = isCurrentView;
         if (!isCurrent()) return;
         void invoke().then((result) => {
             if (!isCurrent() || !result) return;
             const notification = { ...result };
             setSynthResult(notification);
-            setSelectedForSynth([]);
+            setSelectedForSynth((current) => current === selectionToClear ? [] : current);
             interactions.schedule(() => setSynthResult((current) => current === notification ? null : current), 3000);
         });
     };
-    const handleSynthesize = () => {
-        const ids = [...selectedForSynth];
-        const items = ids.map((id) => equipment.find((item) => item.id === id)).filter((item): item is Equipment => Boolean(item));
-        if (items.length !== ids.length) return;
-        createInventoryConfirmation(items, () => useGameStore.getState().equipment, interactions.capture(),
-            () => runSynthesis(() => synthesize(ids)))();
-    };
-
-    const resetMode = useCallback(() => {
-        setInventoryMode('normal');
-        setSelectedForSynth([]);
-    }, []);
+    const handleSynthesize = loadoutAction(() => {
+        if (!isCurrentSelection() || validSelected.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return;
+        const ids = validSelected.map((item) => item.id);
+        createInventoryConfirmation(validSelected, () => useGameStore.getState().equipment, isCurrentSelection,
+            () => runSynthesis(() => synthesize(ids), selectedForSynth))();
+    });
 
     return (
         <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-wrap gap-2 items-center justify-between mb-2">
                 <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                     インベントリ ({filteredItems.length}/{unequippedItems.length})
                 </h2>
                 {unequippedItems.length > 0 && (
                     <div className="flex gap-1.5">
                         <button
-                            onClick={() => inventoryMode === 'sell' ? resetMode() : (setInventoryMode('sell'), setSelectedForSynth([]))}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                            onClick={() => changeView(() => setInventoryMode(inventoryMode === 'sell' ? 'normal' : 'sell'))}
+                            aria-pressed={inventoryMode === 'sell'}
+                            className="min-h-11 min-w-11 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
                             style={{ backgroundColor: inventoryMode === 'sell' ? 'var(--color-accent-gold)' : 'var(--color-bg-secondary)', color: inventoryMode === 'sell' ? '#000' : 'var(--color-accent-gold)' }}
                         >
                             <Coins size={14} /> 売却
                         </button>
                         <button
-                            onClick={() => inventoryMode === 'synthesize' ? resetMode() : (setInventoryMode('synthesize'), setSelectedForSynth([]))}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                            onClick={() => changeView(() => setInventoryMode(inventoryMode === 'synthesize' ? 'normal' : 'synthesize'))}
+                            aria-pressed={inventoryMode === 'synthesize'}
+                            className="min-h-11 min-w-11 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
                             style={{ backgroundColor: inventoryMode === 'synthesize' ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)', color: inventoryMode === 'synthesize' ? 'white' : 'var(--color-accent-primary)' }}
                         >
                             <Merge size={14} /> 合成
@@ -172,23 +176,27 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
                 )}
             </div>
 
-            {unequippedItems.length > 0 && (
+            {(unequippedItems.length > 0 || filtersActive) && (
                 <InventoryFilters
                     slotFilter={slotFilter}
                     rarityFilter={rarityFilter}
                     sortMode={sortMode}
-                    onSlotChange={setSlotFilter}
-                    onRarityChange={setRarityFilter}
-                    onSortChange={setSortMode}
+                    onSlotChange={(value) => { if (value !== slotFilter) changeView(() => setSlotFilter(value)); }}
+                    onRarityChange={(value) => { if (value !== rarityFilter) changeView(() => setRarityFilter(value)); }}
+                    onSortChange={(value) => { if (value !== sortMode) changeView(() => setSortMode(value)); }}
+                    onReset={filtersActive ? resetFilters : undefined}
                 />
             )}
 
             {inventoryMode === 'synthesize' && (
                 <div className="mb-3 px-3 py-2 rounded-xl text-xs flex items-center gap-2" style={{ backgroundColor: 'var(--color-accent-primary)22', color: 'var(--color-accent-secondary)', border: '1px solid var(--color-accent-primary)44' }}>
                     <Sparkles size={14} />
-                    <span>同レアリティ{SYNTHESIS_CONFIG.REQUIRED_COUNT}個 → 多い装備種別の上位装備に合成 ({selectedForSynth.length}/{SYNTHESIS_CONFIG.REQUIRED_COUNT})</span>
+                    <span>同レアリティ{SYNTHESIS_CONFIG.REQUIRED_COUNT}個 → 多い装備種別の上位装備に合成 ({validSelected.length}/{SYNTHESIS_CONFIG.REQUIRED_COUNT})</span>
                 </div>
             )}
+            {inventoryMode === 'synthesize' && <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>表示条件を変更すると素材の選択を解除します。</p>}
+            {validSelected.length > 0 && <button onClick={() => changeView(() => {})} className="min-h-11 px-3 mb-2 rounded-lg text-sm" style={{ color: 'var(--color-text-primary)', backgroundColor: 'var(--color-bg-secondary)' }}>素材の選択を解除</button>}
+            {selectionNotice && <p role="status" className="text-sm mb-2" style={{ color: 'var(--color-text-secondary)' }}>{selectionNotice}</p>}
             {inventoryMode === 'sell' && (
                 <div className="mb-3 px-3 py-2 rounded-xl text-xs flex items-center gap-2" style={{ backgroundColor: 'var(--color-accent-gold)22', color: 'var(--color-accent-gold)', border: '1px solid var(--color-accent-gold)44' }}>
                     <Coins size={14} />
@@ -223,7 +231,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
             />
 
             {unequippedItems.length === 0 ? (
-                <InventoryEmpty icon={<Star size={28} />} message="装備がありません" />
+                <InventoryEmpty icon={<Star size={28} />} message="未装備の装備がありません" />
             ) : filteredItems.length === 0 ? (
                 <InventoryEmpty icon={<Package size={28} />} message="条件に合う装備がありません" />
             ) : (
@@ -233,11 +241,12 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
                             key={item.id}
                             item={item}
                             mode={inventoryMode}
-                            isSelected={selectedForSynth.includes(item.id)}
+                            isSelected={validSelected.some((candidate) => candidate.id === item.id)}
                             synthTargetRarity={synthTargetRarity}
+                            selectionFull={validSelected.length >= SYNTHESIS_CONFIG.REQUIRED_COUNT}
                             onEquip={loadoutAction(() => useGameStore.getState().equipItem(item.id))}
                             onSell={() => requestSell(item)}
-                            onToggleSynth={() => toggleSynthSelect(item.id)}
+                            onToggleSynth={loadoutAction(() => toggleSynthSelect(item))}
                         />
                     ))}
                 </div>
@@ -256,7 +265,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
                 </Link>
             )}
 
-            {inventoryMode === 'synthesize' && selectedForSynth.length === SYNTHESIS_CONFIG.REQUIRED_COUNT && (
+            {inventoryMode === 'synthesize' && validSelected.length === SYNTHESIS_CONFIG.REQUIRED_COUNT && (
                 <button
                     onClick={handleSynthesize}
                     disabled={isSynthesizing}
@@ -277,13 +286,14 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
     );
 }
 
-function InventoryFilters({ slotFilter, rarityFilter, sortMode, onSlotChange, onRarityChange, onSortChange }: {
+function InventoryFilters({ slotFilter, rarityFilter, sortMode, onSlotChange, onRarityChange, onSortChange, onReset }: {
     slotFilter: InventorySlotFilter;
     rarityFilter: InventoryRarityFilter;
     sortMode: InventorySortMode;
     onSlotChange: (value: InventorySlotFilter) => void;
     onRarityChange: (value: InventoryRarityFilter) => void;
     onSortChange: (value: InventorySortMode) => void;
+    onReset?: () => void;
 }) {
     return (
         <div className="mb-3 rounded-xl p-3" style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}>
@@ -291,9 +301,9 @@ function InventoryFilters({ slotFilter, rarityFilter, sortMode, onSlotChange, on
                 <SlidersHorizontal size={14} />
                 <span>表示</span>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(6.5rem, 100%), 1fr))' }}>
                 <InventorySelect label="種類" value={slotFilter} onChange={(value) => onSlotChange(value as InventorySlotFilter)} options={[
-                    ['all', 'すべて'], ['weapon', '武器'], ['armor', '防具'], ['accessory', 'アクセサリ'],
+                    ['all', 'すべて'], ['weapon', '武器'], ['armor', '防具'], ['accessory', 'アクセサリー'],
                 ]} />
                 <InventorySelect label="レア" value={rarityFilter} onChange={(value) => onRarityChange(value as InventoryRarityFilter)} options={[
                     ['all', 'すべて'],
@@ -303,6 +313,7 @@ function InventoryFilters({ slotFilter, rarityFilter, sortMode, onSlotChange, on
                     ['rarity', 'レア順'], ['slot', '種類順'], ['name', '名前順'],
                 ]} />
             </div>
+            {onReset && <button onClick={onReset} className="min-h-11 mt-2 px-3 rounded-lg text-sm" style={{ color: 'var(--color-text-primary)', backgroundColor: 'var(--color-bg-secondary)' }}>表示条件をリセット</button>}
         </div>
     );
 }
@@ -317,9 +328,10 @@ function InventorySelect({ label, value, options, onChange }: {
         <label className="min-w-0">
             <span className="block text-[10px] mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</span>
             <select
+                aria-label={label}
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
-                className="w-full h-9 rounded-lg px-2 text-xs outline-none"
+                className="w-full min-h-11 rounded-lg px-2 text-xs outline-none"
                 style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
             >
                 {options.map(([optionValue, optionLabel]) => (
@@ -339,18 +351,19 @@ function InventoryEmpty({ icon, message }: { icon: React.ReactNode; message: str
     );
 }
 
-function EquipmentRow({ item, mode, isSelected, synthTargetRarity, onEquip, onSell, onToggleSynth }: {
+function EquipmentRow({ item, mode, isSelected, synthTargetRarity, selectionFull, onEquip, onSell, onToggleSynth }: {
     item: Equipment;
     mode: InventoryMode;
     isSelected: boolean;
     synthTargetRarity: Rarity | null;
+    selectionFull: boolean;
     onEquip: () => void;
     onSell: () => void;
     onToggleSynth: () => void;
 }) {
     const isLegendary = RARITY_ORDER.indexOf(item.rarity) >= RARITY_ORDER.length - 1;
     const isSynthDisabled = mode === 'synthesize' && (
-        isLegendary || (synthTargetRarity !== null && item.rarity !== synthTargetRarity && !isSelected)
+        isLegendary || (!isSelected && (selectionFull || (synthTargetRarity !== null && item.rarity !== synthTargetRarity)))
     );
 
     const handleClick = () => {
@@ -375,7 +388,7 @@ function EquipmentRow({ item, mode, isSelected, synthTargetRarity, onEquip, onSe
 
     return (
         <div
-            className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${mode !== 'normal' ? 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2' : ''}`}
+            className={`min-h-11 flex flex-wrap items-center gap-3 px-3 py-3 rounded-xl transition-all ${mode !== 'normal' ? 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2' : ''}`}
             style={{
                 backgroundColor: isSelected ? `${RARITY_COLORS[item.rarity]}15` : 'var(--color-bg-card)',
                 border: `1px solid ${isSelected ? RARITY_COLORS[item.rarity] : `${RARITY_COLORS[item.rarity]}33`}`,
@@ -401,7 +414,7 @@ function EquipmentRow({ item, mode, isSelected, synthTargetRarity, onEquip, onSe
                     <div className="opacity-70">{SLOT_ICONS[item.slot]}</div>
                 )}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 basis-[8rem] min-w-0" style={{ overflowWrap: 'anywhere' }}>
                 <div className="text-sm font-medium" style={{ color: RARITY_COLORS[item.rarity] }}>{item.name}</div>
                 <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                     {RARITY_LABELS[item.rarity]} · {SLOT_LABELS[item.slot]}

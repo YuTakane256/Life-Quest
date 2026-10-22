@@ -1,0 +1,72 @@
+appId: com.yutakane.lifequest.parity
+name: Inventory selection and filter recovery (daily memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "キャラ(, tab,.*)?"
+- scrollUntilVisible:
+    element: "種類を防具にする"
+    direction: DOWN
+    centerElement: true
+- tapOn: "種類を防具にする"
+- scrollUntilVisible:
+    element: "レアをコモンにする"
+    direction: DOWN
+    centerElement: true
+- tapOn: "レアをコモンにする"
+- scrollUntilVisible:
+    element: "条件に合う装備がありません。表示条件をリセットしてください。"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "インベントリ（0）"
+- scrollUntilVisible:
+    element: "表示条件をリセット"
+    direction: UP
+    centerElement: false
+- tapOn: "表示条件をリセット"
+- scrollUntilVisible:
+    element: "チェインメイルを合成素材に選択する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "チェインメイルを合成素材に選択する"
+- assertVisible: "チェインメイルを合成素材に選択解除する"
+- takeScreenshot: "inventory-${REFERENCE_THEME}"
+- scrollUntilVisible:
+    element: "素材の選択を解除"
+    direction: UP
+    # Accessibility bounds may remain behind the status bar at large text sizes.
+    centerElement: true
+- tapOn: "素材の選択を解除"
+- assertNotVisible: "素材の選択を解除"
+- scrollUntilVisible:
+    element: "チェインメイルを合成素材に選択する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "チェインメイルを合成素材に選択する"
+- scrollUntilVisible:
+    element: "種類を武器にする"
+    direction: UP
+    centerElement: false
+- tapOn: "種類を武器にする"
+- assertNotVisible: "素材の選択を解除"
+- scrollUntilVisible:
+    element: "表示条件をリセット"
+    direction: DOWN
+    centerElement: true
+- tapOn: "表示条件をリセット"
+- scrollUntilVisible:
+    element: "チェインメイルを売却する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "チェインメイルを売却する"
+- tapOn: "キャンセル"
+- tapOn: "チェインメイルを装備する"
+- assertVisible: "チェインメイルを外す"
+- tapOn: "チェインメイルを外す"
+- assertVisible: "チェインメイルを装備する"
