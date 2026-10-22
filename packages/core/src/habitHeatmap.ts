@@ -15,6 +15,17 @@ export interface HabitHeatmapData {
     completionRate: number | null;
 }
 
+/** Read-only adjacent dates; an expired/unselected date starts navigation from today. */
+export function getHabitHistoryNavigation(days: readonly HabitHeatmapDay[], selectedDate: string | null) {
+    const selectedIndex = days.findIndex((day) => day.date === selectedDate);
+    const index = selectedIndex < 0 ? days.length - 1 : selectedIndex;
+    return {
+        selectedDay: selectedIndex < 0 ? null : days[selectedIndex],
+        previousDate: days[index - 1]?.date ?? null,
+        nextDate: days[index + 1]?.date ?? null,
+    };
+}
+
 /** Read-only presentation model shared by the Web and native history views. */
 export function buildHabitHeatmapData(
     habit: Habit,

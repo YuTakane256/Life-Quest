@@ -7,9 +7,9 @@ import type { Habit, HabitDailyRecord, RestDay } from '@life-quest/core/habits';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useMobileHabitStore } from '../../apps/mobile/src/stores/useMobileHabitStore';
 import { HabitsPage } from '../pages/HabitsPage';
-import { formatHeatmapDate } from '../utils/dateUtils';
+import { formatHeatmapDate, shiftDate } from '../utils/dateUtils';
 
-const mocks = vi.hoisted(() => ({ enqueue: vi.fn(async (..._args: unknown[]) => true), alert: vi.fn(),
+const mocks = vi.hoisted(() => ({ enqueue: vi.fn(async (..._args: unknown[]) => true), alert: vi.fn(), announce: vi.fn(),
     restConfirm: () => {}, restCancel: () => {}, nativeAdd: () => {}, nativeCancel: () => {},
     presses: new Map<string, () => void>(), blur: () => {}, focus: () => {},
     blurEffects: new Set<() => void>(), focusEffects: new Set<() => void>(),
@@ -61,14 +61,14 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEf
 vi.mock('lucide-react-native', () => import('lucide-react'));
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children) }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string; accessibilityValue?: { now?: number } };
+    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string; accessibilityValue?: { now?: number }; testID?: string };
     const box = ({ children, accessibilityRole, accessibilityLabel, accessibilityValue }: Props) => createElement('div', {
         role: accessibilityRole, 'aria-label': accessibilityLabel, 'aria-valuenow': accessibilityValue?.now,
     }, children);
     return { AppState: { get currentState() { return mocks.appState; }, addEventListener: (_: string, listener: () => void) => {
         mocks.appListeners.add(listener); return { remove: () => mocks.appListeners.delete(listener) };
-    } }, Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: box,
-        Text: ({ children }: Props) => createElement('span', {}, children),
+    } }, AccessibilityInfo: { announceForAccessibility: mocks.announce }, Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: box,
+        Text: ({ children, accessibilityLabel, testID }: Props) => createElement('span', { 'aria-label': accessibilityLabel, 'data-testid': testID }, children),
         TextInput: ({ value, accessibilityLabel, placeholder, onChangeText }: { value?: string; accessibilityLabel?: string; placeholder?: string; onChangeText?: (value: string) => void }) =>
             createElement('input', { value, placeholder, 'aria-label': accessibilityLabel, onChange: (event) => onChangeText?.(event.target.value) }),
         Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => {
@@ -139,6 +139,40 @@ for (const platform of ['web', 'native'] as const) {
         if (kind === 'unmount') unmount();
     };
     describe(`${platform}: daily display / open history rollover`, () => {
+        if (platform === 'native') it('iOSは最新の選択詳細だけを読み上げ、同じ内容や閉じた後は重複通知しない', () => {
+            mount(); press('「読書」の達成履歴を表示'); expect(mocks.announce).not.toHaveBeenCalled();
+            press('履歴の今日'); expect(mocks.announce).toHaveBeenLastCalledWith(`${DATE} 未記録`);
+            expect(mocks.announce).toHaveBeenCalledOnce(); press('履歴の今日');
+            act(() => setRecords([])); expect(mocks.announce).toHaveBeenCalledOnce();
+            act(() => setRecords([{ ...record(), memo: '読み上げるメモ' }]));
+            expect(mocks.announce).toHaveBeenLastCalledWith(`${DATE} 達成\n読み上げるメモ`);
+            expect(mocks.announce).toHaveBeenCalledTimes(2);
+            press('閉じる'); act(() => setRecords([{ ...record(), memo: '閉じた後' }]));
+            expect(mocks.announce).toHaveBeenCalledTimes(2); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        const historyDetail = () => host.querySelector('[aria-label="習慣履歴の日別詳細"], [data-testid="habit-history-day-detail"]')?.textContent;
+        it('大きな日付操作で前後・今日・端まで確認し、記録を変更しない', () => {
+            setRecords([{ ...record(), date: '2026-10-18', memo: '前日の保存メモ' }]);
+            const before = records(); mount(); press('「読書」の達成履歴を表示');
+            expect(button('履歴の次の日').disabled).toBe(true);
+            press('履歴の前の日'); expect(historyDetail()).toContain('前日の保存メモ');
+            press('履歴の次の日'); expect(historyDetail()).toContain('未記録');
+            expect(button('履歴の次の日').disabled).toBe(true);
+            const firstDate = shiftDate(DATE, -179);
+            press(`${platform === 'web' ? formatHeatmapDate(firstDate) : firstDate}: 作成前`);
+            expect(button('履歴の前の日').disabled).toBe(true); expect(historyDetail()).toContain('作成前');
+            press('履歴の今日'); expect(historyDetail()).toContain('未記録');
+            expect(records()).toBe(before); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('日付変更・記録更新後も選択日と移動範囲を最新にする', async () => {
+            mount(); press('「読書」の達成履歴を表示'); press('履歴の今日');
+            vi.setSystemTime(new Date('2026-10-20T12:00:00+09:00'));
+            act(() => { if (platform === 'web') window.dispatchEvent(new Event('focus')); else for (const listener of mocks.appListeners) listener(); });
+            expect(historyDetail()).toContain('未達成'); expect(button('履歴の次の日').disabled).toBe(false);
+            act(() => setRecords([{ ...record(), memo: '更新メモ' }])); expect(historyDetail()).toContain('更新メモ');
+            press('履歴の今日'); expect(historyDetail()).toContain('未記録');
+            expect(button('履歴の次の日').disabled).toBe(true); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
         const complete = platform === 'web' ? '習慣「読書」を達成にする' : '読書を達成にする';
         const reopen = platform === 'web' ? '習慣「読書」を未達成にする' : '読書を未達成にする';
         const midnight = async () => { await act(async () => vi.advanceTimersByTimeAsync(1000)); };

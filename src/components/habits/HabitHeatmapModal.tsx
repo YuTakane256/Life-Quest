@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Flame, X } from 'lucide-react';
 import type { Habit, HabitDailyRecord, RestDay } from '../../types';
 import { HABIT_HISTORY_RETENTION_DAYS } from '../../stores/useHabitStore';
-import { buildHabitHeatmapData, type HabitHeatmapDay, type HabitHeatmapStatus } from '../../utils/habitHeatmap';
+import { buildHabitHeatmapData, getHabitHistoryNavigation, type HabitHeatmapDay, type HabitHeatmapStatus } from '../../utils/habitHeatmap';
 import { formatHeatmapDate } from '../../utils/dateUtils';
 import { useModalEscape } from '../../hooks/useModalEscape';
 
@@ -49,7 +49,7 @@ export function HabitHeatmapModal({
         () => buildHabitHeatmapData(habit, dailyRecords, restDays, today, HABIT_HISTORY_RETENTION_DAYS),
         [dailyRecords, habit, restDays, today],
     );
-    const selectedDay = heatmap.days.find((day) => day.date === selectedDate) ?? null;
+    const { selectedDay, previousDate, nextDate } = getHabitHistoryNavigation(heatmap.days, selectedDate);
     const firstWeekday = new Date(`${heatmap.days[0].date}T00:00:00Z`).getUTCDay();
     const paddedDays: Array<HabitHeatmapDay | null> = [
         ...Array<HabitHeatmapDay | null>(firstWeekday).fill(null),
@@ -70,18 +70,18 @@ export function HabitHeatmapModal({
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="habit-heatmap-title"
-                className="w-full max-w-2xl rounded-xl p-5 animate-scale-in"
+                className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-xl p-5 animate-scale-in"
                 style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
             >
                 <div className="flex items-start justify-between gap-4 mb-4">
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                             <CalendarDays size={18} style={{ color }} />
-                            <h2 id="habit-heatmap-title" className="text-lg font-bold truncate" style={{ color: 'var(--color-text-primary)' }}>{habit.name}</h2>
+                            <h2 id="habit-heatmap-title" className="text-lg font-bold break-words min-w-0" style={{ color: 'var(--color-text-primary)', overflowWrap: 'anywhere' }}>{habit.name}</h2>
                         </div>
                         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>過去{HABIT_HISTORY_RETENTION_DAYS}日の達成履歴</p>
                     </div>
-                    <button type="button" onClick={onClose} aria-label="履歴を閉じる" className="p-2 rounded-lg flex-shrink-0" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>
+                    <button type="button" onClick={onClose} aria-label="履歴を閉じる" className="min-w-11 min-h-11 p-2 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-secondary)' }}>
                         <X size={18} />
                     </button>
                 </div>
@@ -112,6 +112,7 @@ export function HabitHeatmapModal({
                                     key={day.date}
                                     type="button"
                                     aria-label={`${formatHeatmapDate(day.date)}: ${STATUS_LABELS[day.status]}`}
+                                    aria-pressed={day.date === selectedDate}
                                     title={`${day.date} ${STATUS_LABELS[day.status]}`}
                                     onClick={() => setSelectedDate(day.date)}
                                     className="w-4 h-4 rounded-[3px] border transition-transform hover:scale-125"
@@ -122,7 +123,19 @@ export function HabitHeatmapModal({
                     </div>
                 </div>
 
-                <div className="min-h-[44px] mt-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+                <div role="group" aria-label="習慣履歴の日付操作" className="flex flex-wrap gap-2 mt-3">
+                    {([
+                        ['履歴の前の日', '前の日', previousDate],
+                        ['履歴の次の日', '次の日', nextDate],
+                        ['履歴の今日', '今日', today],
+                    ] as const).map(([label, text, date]) => (
+                        <button key={label} type="button" aria-label={label} disabled={!date}
+                            onClick={() => { if (date) setSelectedDate(date); }}
+                            className="min-h-11 min-w-11 px-3 rounded-lg text-xs disabled:opacity-40"
+                            style={{ color: 'var(--color-text-primary)', backgroundColor: 'var(--color-bg-secondary)' }}>{text}</button>
+                    ))}
+                </div>
+                <div role="status" aria-label="習慣履歴の日別詳細" className="min-h-[44px] mt-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>
                     {selectedDay ? (
                         <><strong style={{ color: 'var(--color-text-primary)' }}>{formatHeatmapDate(selectedDay.date)}</strong><span className="ml-2">{STATUS_LABELS[selectedDay.status]}</span>{selectedDay.memo && <div className="mt-1" style={{ color: 'var(--color-text-muted)' }}>{selectedDay.memo}</div>}</>
                     ) : '日付を押すと記録の詳細を確認できます'

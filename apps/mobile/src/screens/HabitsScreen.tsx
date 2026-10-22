@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+    AccessibilityInfo,
     Alert,
     Keyboard,
     KeyboardAvoidingView,
@@ -29,6 +30,7 @@ import {
     captureHabitMemoEdit,
     captureHabitDeletion,
     buildHabitHeatmapData,
+    getHabitHistoryNavigation,
     getHabitCategoryByIdOrDefault,
     getHabitStreak,
     HABIT_CATEGORIES,
@@ -696,7 +698,7 @@ function HabitHistory({
             ),
         [habit, store.records, store.restDays, today],
     );
-    const selected = data.days.find((day) => day.date === selectedDate) ?? null;
+    const { selectedDay: selected, previousDate, nextDate } = getHabitHistoryNavigation(data.days, selectedDate);
     const labels = {
         completed: '達成',
         rest: 'お休み',
@@ -704,10 +706,17 @@ function HabitHistory({
         pending: '未記録',
         'before-created': '作成前',
     };
+    const selectedDetail = selected
+        ? `${selected.date} ${labels[selected.status]}${selected.memo ? `\n${selected.memo}` : ''}`
+        : null;
+    // Live regions are Android-only; announce changed details explicitly on iOS.
+    useEffect(() => {
+        if (Platform.OS === 'ios' && selectedDetail) AccessibilityInfo.announceForAccessibility(selectedDetail);
+    }, [selectedDetail]);
     const padding = new Date(`${data.days[0].date}T00:00:00Z`).getUTCDay();
     const days = [...Array<null>(padding).fill(null), ...data.days];
     return (
-        <Dialog title={habit.name} onClose={onClose}>
+        <Dialog title={habit.name} onClose={onClose} closeTargetSize={44}>
             <Text style={{ color: p.text.muted, fontSize: 12 }}>
                 過去180日の達成履歴
             </Text>
@@ -780,6 +789,7 @@ function HabitHistory({
                                             key={day.date}
                                             accessibilityRole="button"
                                             accessibilityLabel={`${day.date}: ${labels[day.status]}`}
+                                            accessibilityState={{ selected: day.date === selectedDate }}
                                             onPress={() => setSelectedDate(day.date)}
                                             style={{
                                                 width: 16,
@@ -814,7 +824,24 @@ function HabitHistory({
                     ),
                 )}
             </ScrollView>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {([
+                    ['履歴の前の日', '前の日', previousDate],
+                    ['履歴の次の日', '次の日', nextDate],
+                    ['履歴の今日', '今日', today],
+                ] as const).map(([label, text, date]) => (
+                    <Pressable key={label} accessibilityRole="button" accessibilityLabel={label}
+                        accessibilityState={{ disabled: !date }} disabled={!date}
+                        onPress={() => { if (date) setSelectedDate(date); }}
+                        style={({ pressed }) => ({ minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 10,
+                            borderRadius: 8, justifyContent: 'center', backgroundColor: p.bg.secondary, opacity: !date || pressed ? 0.4 : 1 })}>
+                        <Text style={{ color: p.text.primary, fontSize: 12 }}>{text}</Text>
+                    </Pressable>
+                ))}
+            </View>
             <Text
+                testID="habit-history-day-detail"
+                accessibilityLiveRegion="polite"
                 style={{
                     color: p.text.secondary,
                     backgroundColor: p.bg.secondary,
@@ -823,9 +850,7 @@ function HabitHistory({
                     minHeight: 44,
                 }}
             >
-                {selected
-                    ? `${selected.date} ${labels[selected.status]}${selected.memo ? `\n${selected.memo}` : ''}`
-                    : '日付を押すと記録の詳細を確認できます'}
+                {selectedDetail ?? '日付を押すと記録の詳細を確認できます'}
             </Text>
         </Dialog>
     );
