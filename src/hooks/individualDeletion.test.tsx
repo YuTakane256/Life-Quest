@@ -14,6 +14,7 @@ import { useMobileHabitStore } from '../../apps/mobile/src/stores/useMobileHabit
 
 const mocks = vi.hoisted(() => ({ alert: vi.fn(), enqueue: vi.fn(async (..._args: unknown[]) => true),
     confirm: () => {}, cancel: () => {}, blur: () => {}, focus: () => {}, presses: new Map<string, () => void>(),
+    blurEffects: new Set<() => void>(), focusEffects: new Set<() => void>(),
 }));
 vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isWebCloudOutboxActive: () => false }));
 vi.mock('../../apps/mobile/src/platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isCloudOutboxActive: () => false }));
@@ -35,8 +36,10 @@ vi.mock('../components/ui/ConfirmDialog', async (original) => {
 });
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEffect: (setup: () => (() => void) | undefined) => {
     useEffect(() => {
-        let cleanup = setup(); mocks.blur = () => { cleanup?.(); cleanup = undefined; }; mocks.focus = () => { cleanup = setup(); };
-        return () => cleanup?.();
+        let cleanup = setup(); const blur = () => { cleanup?.(); cleanup = undefined; }; const focus = () => { cleanup = setup(); };
+        mocks.blurEffects.add(blur); mocks.focusEffects.add(focus);
+        mocks.blur = () => { for (const callback of mocks.blurEffects) callback(); }; mocks.focus = () => { for (const callback of mocks.focusEffects) callback(); };
+        return () => { cleanup?.(); mocks.blurEffects.delete(blur); mocks.focusEffects.delete(focus); };
     }, [setup]);
 } }));
 vi.mock('lucide-react-native', () => import('lucide-react'));
@@ -44,7 +47,7 @@ vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: 
 vi.mock('react-native', () => {
     type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string };
     const box = ({ children }: Props) => createElement('div', {}, children);
-    return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: () => null,
+    return { AppState: { currentState: 'active', addEventListener: () => ({ remove: vi.fn() }) }, Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: () => null,
         Text: ({ children }: Props) => createElement('span', {}, children), TextInput: () => null,
         Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => {
             if (accessibilityLabel && onPress) mocks.presses.set(accessibilityLabel, onPress);

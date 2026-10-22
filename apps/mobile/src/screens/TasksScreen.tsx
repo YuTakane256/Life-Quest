@@ -57,6 +57,7 @@ import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { useTaskUndoToast } from '../hooks/useTaskUndoToast';
 import { useTaskKeyboardVisibility } from '../hooks/useTaskKeyboardVisibility';
 import { useInteractionScope } from '../hooks/useInteractionScope';
+import { useJstToday } from '../hooks/useJstToday';
 import { getTodayJst } from '../utils/date';
 import { getTaskActionsBottomPadding, TASK_ACTION_LAYOUT, TAB_SCREEN_EDGES } from '../theme/layout';
 import { usePalette } from '../theme/usePalette';
@@ -157,7 +158,7 @@ export default function TasksScreen() {
         list.current?.scrollToOffset({ offset: 0, animated: true });
     };
     const { toast, showUndo: undo } = useTaskUndoToast();
-    const today = getTodayJst();
+    const today = useJstToday();
     const selected = useMemo(
         () => selectTasks(store.tasks, query, due, priority, tags, sort, today),
         [store.tasks, query, due, priority, tags, sort, today],

@@ -8,7 +8,7 @@ import { useTaskStore } from '../stores/useTaskStore';
 import { useMobileTaskStore } from '../../apps/mobile/src/stores/useMobileTaskStore';
 import { TasksPage } from '../pages/TasksPage';
 
-const mocks = vi.hoisted(() => ({ alert: vi.fn(), enqueue: vi.fn(async () => true), confirm: () => {}, cancel: () => {}, blur: () => {}, focus: () => {} }));
+const mocks = vi.hoisted(() => ({ alert: vi.fn(), enqueue: vi.fn(async () => true), confirm: () => {}, cancel: () => {}, blur: () => {}, focus: () => {}, focusEffects: new Set<() => void>(), blurEffects: new Set<() => void>() }));
 vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isWebCloudOutboxActive: () => false }));
 vi.mock('../../apps/mobile/src/platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isCloudOutboxActive: () => false }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
@@ -29,8 +29,10 @@ vi.mock('../components/ui/ConfirmDialog', async (original) => {
 });
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEffect: (setup: () => (() => void) | undefined) => {
     useEffect(() => {
-        let cleanup = setup(); mocks.blur = () => { cleanup?.(); cleanup = undefined; }; mocks.focus = () => { cleanup = setup(); };
-        return () => cleanup?.();
+        let cleanup = setup(); const blur = () => { cleanup?.(); cleanup = undefined; }; const focus = () => { cleanup = setup(); };
+        mocks.blurEffects.add(blur); mocks.focusEffects.add(focus);
+        mocks.blur = () => { for (const callback of mocks.blurEffects) callback(); }; mocks.focus = () => { for (const callback of mocks.focusEffects) callback(); };
+        return () => { cleanup?.(); mocks.blurEffects.delete(blur); mocks.focusEffects.delete(focus); };
     }, [setup]);
 } }));
 vi.mock('lucide-react-native', () => import('lucide-react'));
@@ -38,7 +40,7 @@ vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: 
 vi.mock('react-native', () => {
     type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string };
     const box = ({ children }: Props) => createElement('div', {}, children);
-    return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box,
+    return { AppState: { currentState: 'active', addEventListener: () => ({ remove: vi.fn() }) }, Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box,
         Text: ({ children }: Props) => createElement('span', {}, children), TextInput: () => null,
         Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
         FlatList: ({ ListHeaderComponent }: { ListHeaderComponent?: ReactNode }) => createElement('div', {}, ListHeaderComponent),

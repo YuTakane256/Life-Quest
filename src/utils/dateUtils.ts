@@ -67,9 +67,9 @@ function generateRandomIdSegment(): string {
  * YYYY-MM-DD の日付を今日基準の相対表示文字列に変換する
  * 例: 今日 / 明日 / 明後日 / 3日後 / 昨日 / 2日前
  */
-export function formatRelativeDate(dateStr: string): string {
-    if (!isValidYmd(dateStr)) return '';
-    const todayMs = Date.parse(`${getTodayJST()}T00:00:00Z`);
+export function formatRelativeDate(dateStr: string, today = getTodayJST()): string {
+    if (!isValidYmd(dateStr) || !isValidYmd(today)) return '';
+    const todayMs = Date.parse(`${today}T00:00:00Z`);
     const dateMs = Date.parse(`${dateStr}T00:00:00Z`);
     const diffDays = Math.round((dateMs - todayMs) / (24 * 60 * 60 * 1000));
 

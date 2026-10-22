@@ -184,6 +184,11 @@ describe('isOverdue', () => {
 });
 
 describe('formatRelativeDate', () => {
+    it('一覧の基準日を明示でき、不正な基準日は空文字になる', () => {
+        expect(formatRelativeDate('2026-10-20', '2026-10-21')).toBe('昨日');
+        expect(formatRelativeDate('2026-10-21', '2026-10-21')).toBe('今日');
+        expect(formatRelativeDate('2026-10-21', 'invalid')).toBe('');
+    });
     beforeEach(() => {
         vi.useFakeTimers();
         // JST 基準で 2025-03-15 とみなされる時刻に固定

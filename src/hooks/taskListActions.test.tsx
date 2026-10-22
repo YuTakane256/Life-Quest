@@ -13,10 +13,11 @@ const mocks = vi.hoisted(() => ({ enqueue: vi.fn(async (..._args: unknown[]) => 
     undo: vi.fn((_message: string, _callback: () => void) => {}), csv: '', createUrl: vi.fn(() => 'blob:fixture'), revokeUrl: vi.fn(), click: vi.fn(),
     actions: new Map<string, (event?: unknown) => void>(), changes: new Map<string, (text: string) => void>(),
     filters: {} as Record<string, unknown>, blur: new Set<() => void>(), focus: new Set<() => void>(),
+    appState: 'active', appListeners: new Set<() => void>(),
     capture: (value: unknown) => {
         if (!value || typeof value !== 'object') return; const props = value as Record<string, unknown>;
         if (typeof props.onSearchQueryChange === 'function') mocks.filters = props;
-        const label = props['aria-label'] as string | undefined; if (!label) return;
+        const label = (props['aria-label'] ?? props.placeholder) as string | undefined; if (!label) return;
         if (typeof props.onClick === 'function') mocks.actions.set(label, props.onClick as () => void);
         if (typeof props.onChange === 'function') mocks.changes.set(label, (text) => (props.onChange as (event: unknown) => void)({ target: { value: text } }));
     },
@@ -45,11 +46,13 @@ vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: 
 vi.mock('react-native', () => {
     type Props = { children?: ReactNode; onPress?: () => void; onLongPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string; accessibilityState?: { selected?: boolean } };
     const box = ({ children }: Props) => createElement('div', {}, children);
-    return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: () => null,
+    return { AppState: { get currentState() { return mocks.appState; }, addEventListener: (_: string, listener: () => void) => {
+        mocks.appListeners.add(listener); return { remove: () => mocks.appListeners.delete(listener) };
+    } }, Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: () => null,
         Text: ({ children, accessibilityRole }: Props) => createElement('span', { role: accessibilityRole }, children),
-        TextInput: ({ value, accessibilityLabel, onChangeText }: { value?: string; accessibilityLabel?: string; onChangeText?: (text: string) => void }) => {
-            if (accessibilityLabel && onChangeText) mocks.changes.set(accessibilityLabel, onChangeText);
-            return createElement('input', { value, 'aria-label': accessibilityLabel, onChange: (event) => onChangeText?.(event.target.value) });
+        TextInput: ({ value, accessibilityLabel, placeholder, onChangeText }: { value?: string; accessibilityLabel?: string; placeholder?: string; onChangeText?: (text: string) => void }) => {
+            if ((accessibilityLabel || placeholder) && onChangeText) mocks.changes.set(accessibilityLabel || placeholder!, onChangeText);
+            return createElement('input', { value, placeholder, 'aria-label': accessibilityLabel, onChange: (event) => onChangeText?.(event.target.value) });
         },
         Pressable: ({ children, onPress, onLongPress, disabled, accessibilityLabel, accessibilityState }: Props) => {
             if (accessibilityLabel && onPress) mocks.actions.set(accessibilityLabel, onPress);
@@ -71,13 +74,15 @@ beforeEach(async () => {
     resetAuthLifecycleHooks(); await notifyLogin('a'); setGameRewardAuthorityState('authenticated'); vi.clearAllMocks(); mocks.actions.clear(); mocks.changes.clear(); mocks.filters = {};
     mocks.share.mockReset().mockResolvedValue(undefined); mocks.click.mockReset(); mocks.createUrl.mockReset().mockReturnValue('blob:fixture'); mocks.csv = '';
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-20T12:00:00+09:00')); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); localStorage.clear();
+    mocks.appState = 'active'; mocks.appListeners.clear();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
     const OriginalURL = URL; vi.stubGlobal('URL', class extends OriginalURL { static createObjectURL = mocks.createUrl; static revokeObjectURL = mocks.revokeUrl; });
     const OriginalBlob = Blob; vi.stubGlobal('Blob', class extends OriginalBlob { constructor(...args: ConstructorParameters<typeof Blob>) { super(...args); mocks.csv = String(args[0]?.[0]); } });
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(mocks.click);
     useTaskStore.setState({ tasks: [task()], pendingCompletions: [] }); useMobileTaskStore.setState({ tasks: [task()], pendingCompletions: [], hasHydrated: true });
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
-afterEach(() => { unmount(); host.remove(); resetAuthLifecycleHooks(); setGameRewardAuthorityState('resolving'); vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { unmount(); host.remove(); resetAuthLifecycleHooks(); setGameRewardAuthorityState('resolving'); vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); Reflect.deleteProperty(document, 'visibilityState'); });
 
 for (const platform of ['web', 'native'] as const) {
     const store = platform === 'web' ? useTaskStore : useMobileTaskStore;
@@ -96,6 +101,64 @@ for (const platform of ['web', 'native'] as const) {
         if (kind === 'switch') await notifyLogin('b'); if (kind === 'logout') await notifyLogout();
         if (kind === 'roundtrip') { await notifyLogout(); await notifyLogin('a'); } if (kind === 'unmount') unmount();
     };
+    describe(`${platform}: task dates without store changes`, () => {
+        const prepare = () => {
+            vi.setSystemTime(new Date('2026-10-20T23:59:59+09:00'));
+            const items = [{ ...task(), dueDate: '2026-10-20' }, { ...task(), id: 'two', name: '翌日期限', dueDate: '2026-10-21' },
+                { ...task(), id: 'none', name: '期限なし', dueDate: null }];
+            setTasks(items); mount(); return store.getState().tasks;
+        };
+        const filter = (text: string) => act(() => {
+            const button = [...host.querySelectorAll('button')].find((item) => platform === 'web' ? item.textContent === text : item.getAttribute('aria-label') === `期限フィルター ${text}`);
+            expect(button).toBeDefined(); button!.click();
+        });
+        const row = (name: string) => [...host.querySelectorAll('button')].some((item) => item.getAttribute('aria-label') === (platform === 'web' ? `タスク「${name}」を完了にする` : `${name}を完了にする`));
+        const midnight = async () => { await act(async () => vi.advanceTimersByTimeAsync(1000)); };
+        it('午前0時に相対日付が変わり、保存/同期/完了待ちを書き換えない', async () => {
+            const items = prepare(); expect(host.textContent).toContain('📅 今日'); expect(host.textContent).toContain('📅 明日');
+            await midnight(); expect(host.textContent).toContain('📅 昨日'); expect(host.textContent).not.toContain('📅 明日');
+            expect(store.getState().tasks).toBe(items); expect(store.getState().pendingCompletions).toEqual([]); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it.each(['今日まで', '期限切れ'])('%sの表示対象をデータ更新なしで再計算する', async (text) => {
+            const items = prepare(); filter(text);
+            expect(row('対象')).toBe(text === '今日まで'); expect(row('翌日期限')).toBe(false);
+            await midnight(); expect(row('対象')).toBe(true); expect(row('翌日期限')).toBe(text === '今日まで'); expect(row('期限なし')).toBe(false);
+            expect(store.getState().tasks).toBe(items); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('入力中の編集内容・検索条件を日付更新で消さない', async () => {
+            const items = prepare(); act(action(editLabel));
+            const change = mocks.changes.get(platform === 'web' ? 'タスク名を入力...' : 'タスク名'); expect(change).toBeDefined(); act(() => change!('入力中の下書き'));
+            if (platform === 'web') act(() => (mocks.filters.onSearchQueryChange as (value: string) => void)('対象'));
+            else act(() => mocks.changes.get('タスクを検索')!('対象'));
+            await midnight(); expect(host.querySelector<HTMLInputElement>('[placeholder="タスク名を入力..."]')?.value).toBe('入力中の下書き');
+            expect(row('対象')).toBe(true); expect(row('翌日期限')).toBe(false); expect(store.getState().tasks).toBe(items); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('日付更新をまたいでも同じ完了待機をUndoできる', async () => {
+            prepare(); act(action(completeLabel)); const pending = store.getState().pendingCompletions[0]; const cancel = undo();
+            await midnight(); expect(store.getState().pendingCompletions[0]).toBe(pending); act(cancel);
+            expect(store.getState().tasks[0].completed).toBe(false); expect(store.getState().pendingCompletions).toEqual([]); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('非表示中に日付が進んでも、前景復帰で条件を維持して再計算する', () => {
+            const items = prepare(); filter('今日まで');
+            const visibility = (active: boolean) => {
+                if (platform === 'native') { mocks.appState = active ? 'active' : 'background'; for (const listener of mocks.appListeners) listener(); }
+                else { Object.defineProperty(document, 'visibilityState', { configurable: true, value: active ? 'visible' : 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); }
+            };
+            act(() => visibility(false)); vi.setSystemTime(new Date('2026-10-22T08:00:00+09:00'));
+            expect(row('翌日期限')).toBe(false); act(() => visibility(true)); expect(row('翌日期限')).toBe(true); expect(row('期限なし')).toBe(false);
+            expect(host.textContent).toContain('📅 2日前'); expect(store.getState().tasks).toBe(items); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        if (platform === 'native') it('別タブから翌日に戻ると日付を更新し、日付リスナーは離脱/終了で解除する', () => {
+            prepare(); expect(mocks.appListeners.size).toBe(1); act(() => { for (const callback of mocks.blur) callback(); }); expect(mocks.appListeners.size).toBe(0);
+            vi.setSystemTime(new Date('2026-10-21T08:00:00+09:00')); act(() => { for (const callback of mocks.focus) callback(); });
+            expect(host.textContent).toContain('📅 昨日'); expect(host.textContent).not.toContain('📅 明日'); expect(mocks.appListeners.size).toBe(1);
+            unmount(); expect(mocks.appListeners.size).toBe(0); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        if (platform === 'web') it('ウィンドウのフォーカス復帰でも日付と期限切れ一覧を更新する', () => {
+            prepare(); filter('期限切れ'); vi.setSystemTime(new Date('2026-10-21T08:00:00+09:00'));
+            act(() => window.dispatchEvent(new Event('focus'))); expect(row('対象')).toBe(true); expect(row('翌日期限')).toBe(false); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+    });
     describe(`${platform}: task row actions and owned Undo`, () => {
         it('同一完了callbackの重複実行は反転せず、同じUndo待機だけ戻す', () => {
             mount(); const complete = action(completeLabel); act(() => { complete(); complete(); });
