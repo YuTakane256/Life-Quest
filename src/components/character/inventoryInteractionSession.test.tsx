@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { createEquipmentFromTemplate, type Equipment } from '@life-quest/core/equipment';
 import { EQUIPMENT_POOL } from '@life-quest/core/rewards';
+import { INVENTORY_SELECTION_CHANGED } from '@life-quest/core/inventory';
 import { useGameStore } from '../../stores/useGameStore';
 import { useMobileGameStore } from '../../../apps/mobile/src/stores/useMobileGameStore';
 import { InventorySection } from './InventorySection';
@@ -49,11 +50,11 @@ vi.mock('expo-router', () => ({ useFocusEffect: (setup: () => (() => void) | und
     }, [setup]);
 } }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string };
+    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string; accessibilityState?: { checked?: boolean } };
     const box = ({ children }: Props) => createElement('div', {}, children);
     return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, Text: ({ children }: Props) => createElement('span', {}, children),
         Image: () => null, StyleSheet: { create: <T,>(value: T) => value },
-        Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
+        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityRole, accessibilityState }: Props) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, role: accessibilityRole, 'aria-checked': accessibilityState?.checked }, children),
         FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent }: {
             data: Equipment[]; renderItem: (item: { item: Equipment }) => ReactNode; ListHeaderComponent: ReactNode; ListEmptyComponent: ReactNode;
         }) => createElement('div', {}, ListHeaderComponent, data.length ? data.map((item) => createElement('div', { key: item.id }, renderItem({ item }))) : ListEmptyComponent),
@@ -66,7 +67,7 @@ const result = () => createEquipmentFromTemplate('result', EQUIPMENT_POOL.find((
 const webAddXp = useGameStore.getState().addXp;
 const nativeAddXp = useMobileGameStore.getState().addXp;
 function button(name: string) {
-    return Array.from(host.querySelectorAll<HTMLButtonElement>('[role="button"],button')).find((element) => element.getAttribute('aria-label') === name || element.textContent?.trim() === name)!;
+    return Array.from(host.querySelectorAll<HTMLButtonElement>('[role="button"],[role="checkbox"],[role="radio"],button')).find((element) => element.getAttribute('aria-label') === name || element.textContent?.trim() === name)!;
 }
 function click(element: HTMLElement) { expect(element).toBeTruthy(); act(() => element.click()); }
 function unmount() { if (root) act(() => { root!.unmount(); root = null; }); }
@@ -111,6 +112,75 @@ for (const platform of ['web', 'native'] as const) {
         click(button(platform === 'web' ? '合成する' : '選択した3個の装備を合成する'));
         if (platform === 'native') act(() => mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress());
     };
+    const changeFilter = (value: 'armor' | 'weapon' | 'all') => {
+        if (platform === 'web') {
+            const select = Array.from(host.querySelectorAll('label')).find((label) => label.querySelector('span')?.textContent === '種類')!.querySelector('select')!;
+            select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
+        } else button(`種類を${value === 'armor' ? '防具' : value === 'weapon' ? '武器' : 'すべて'}にする`).click();
+    };
+    const selectedCount = () => host.querySelectorAll(`[aria-label="${platform === 'web' ? '木の剣を合成対象に選択中' : '木の剣を合成素材に選択解除する'}"]`).length;
+    describe(`${platform} inventory selection and filters`, () => {
+        it('rejects a repeated selection callback before rerender', () => {
+            mount(); if (platform === 'web') click(button('合成'));
+            const choice = button(platform === 'web' ? '木の剣を合成対象に選択' : '木の剣を合成素材に選択する');
+            act(() => { choice.click(); choice.click(); }); expect(selectedCount()).toBe(1);
+        });
+        it('limits selection to three of five materials', () => {
+            const five = [...items(), ...items().slice(0, 2).map((item, index) => ({ ...item, id: `extra-${index}` }))];
+            setEquipment(five); mount(); selectSynthesis(); expect(selectedCount()).toBe(3);
+            confirmSynthesis(); expect(mocks.synthesize).toHaveBeenCalledExactlyOnceWith(['item-0', 'item-1', 'item-2']);
+        });
+        it.each(['changed', 'equipped', 'missing'] as const)('prunes a %s selected item and does not silently reselect a restored ID', (change) => {
+            mount(); selectSynthesis();
+            const next = items(); if (change === 'changed') next[0].attackBonus++; else if (change === 'equipped') next[0].equipped = true;
+            act(() => setEquipment(change === 'missing' ? next.slice(1) : next));
+            expect(selectedCount()).toBe(2); expect(host.textContent).toContain(INVENTORY_SELECTION_CHANGED);
+            act(() => setEquipment(items())); expect(selectedCount()).toBe(2); expect(mocks.synthesize).not.toHaveBeenCalled();
+        });
+        it('preserves selection on equal pull / same user / unrelated loot', async () => {
+            mount(); selectSynthesis(); await act(async () => { await notifyLogin('a'); setEquipment([...items(), { ...items()[0], id: 'loot' }]); });
+            expect(selectedCount()).toBe(3); confirmSynthesis(); expect(mocks.synthesize).toHaveBeenCalledOnce();
+        });
+        it('changing a filter invalidates old selection and synthesis events before rerender', () => {
+            mount(); selectSynthesis(); const old = button(platform === 'web' ? '合成する' : '選択した3個の装備を合成する');
+            act(() => { changeFilter('armor'); old.click(); });
+            expect(selectedCount()).toBe(0); expect(host.textContent).toContain('条件に合う装備がありません');
+            expect(mocks.synthesize).not.toHaveBeenCalled(); expect(mocks.alert).not.toHaveBeenCalled();
+            click(button('表示条件をリセット')); expect(host.textContent).not.toContain('条件に合う装備がありません'); expect(selectedCount()).toBe(0);
+        });
+        it('explicit clear invalidates an old synthesis control', () => {
+            mount(); selectSynthesis(); const old = button(platform === 'web' ? '合成する' : '選択した3個の装備を合成する');
+            act(() => { button('素材の選択を解除').click(); old.click(); }); expect(selectedCount()).toBe(0); expect(mocks.synthesize).not.toHaveBeenCalled();
+        });
+        it('deselecting one material invalidates an old synthesis control before rerender', () => {
+            mount(); selectSynthesis(); const old = button(platform === 'web' ? '合成する' : '選択した3個の装備を合成する');
+            const selected = button(platform === 'web' ? '木の剣を合成対象に選択中' : '木の剣を合成素材に選択解除する');
+            act(() => { selected.click(); old.click(); }); expect(selectedCount()).toBe(2); expect(mocks.synthesize).not.toHaveBeenCalled(); expect(mocks.alert).not.toHaveBeenCalled();
+        });
+        it('late synthesis feedback does not clear a new material selection', async () => {
+            const pending = deferred<Equipment | null>(); mocks.synthesize.mockReturnValue(pending.promise);
+            setEquipment([...items(), { ...items()[0], id: 'extra', name: '次に使う装備' }]); mount(); selectSynthesis(); confirmSynthesis();
+            if (platform === 'web') click(button('木の剣を合成対象に選択中'));
+            click(button(platform === 'web' ? '次に使う装備を合成対象に選択' : '次に使う装備を合成素材に選択する'));
+            await act(async () => { pending.resolve(result()); await pending.promise; });
+            expect(button(platform === 'web' ? '次に使う装備を合成対象に選択中' : '次に使う装備を合成素材に選択解除する')).toBeTruthy();
+        });
+        it('auth switch resets filters and selection; same-user notification does not', async () => {
+            mount(); act(() => changeFilter('weapon')); await act(async () => notifyLogin('a')); expect(button('表示条件をリセット')).toBeTruthy();
+            await act(async () => notifyLogin('b')); expect(button('表示条件をリセット')).toBeUndefined();
+        });
+        if (platform === 'native') {
+            it('filter reset rejects pending native synthesis confirmation', () => {
+                mount(); selectSynthesis(); click(button('選択した3個の装備を合成する'));
+                const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress;
+                act(() => { changeFilter('armor'); confirm(); }); expect(mocks.synthesize).not.toHaveBeenCalled();
+            });
+            it('blur/refocus restores default filters with no selected materials', () => {
+                mount(); act(() => changeFilter('weapon')); selectSynthesis();
+                act(() => { mocks.blur?.(); mocks.focus?.(); }); expect(button('表示条件をリセット')).toBeUndefined(); expect(selectedCount()).toBe(0);
+            });
+        }
+    });
     describe(`${platform} inventory interaction ownership`, () => {
         it('equips once through the existing store / outbox; no XP changes', () => {
             mount(); const equip = button('木の剣を装備する'); const before = { ...store.getState().character };

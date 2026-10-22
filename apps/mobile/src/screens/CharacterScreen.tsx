@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { TAB_SCREEN_EDGES } from '../theme/layout';
 import { captureLoadoutActions, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
-import { createInventoryConfirmation, filterAndSortInventory, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
+import { createInventoryConfirmation, filterAndSortInventory, INVENTORY_SELECTION_CHANGED, reconcileSynthesisSelection, toggleSynthesisSelection, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
 import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
 import { getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
@@ -25,7 +25,7 @@ const RARITY_LABELS: Record<Rarity, string> = {
 const SLOT_LABELS: Record<EquipmentSlot, string> = {
     weapon: '武器',
     armor: '防具',
-    accessory: '装飾',
+    accessory: 'アクセサリー',
 };
 
 export default function CharacterScreen() {
@@ -39,18 +39,35 @@ export default function CharacterScreen() {
 
     const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);
-    const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
+    const [selection, setSelection] = useState<readonly Equipment[]>([]);
+    const [selectionNotice, setSelectionNotice] = useState('');
     const [lastReveal, setLastReveal] = useState<Equipment | null>(null);
     const [slotFilter, setSlotFilter] = useState<InventorySlotFilter>('all');
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
     const pendingConfirmation = useRef<object | null>(null);
+    const viewRef = useRef({});
+    const selectionRef = useRef({});
+    const invalidateView = useCallback(() => {
+        viewRef.current = {}; selectionRef.current = {}; pendingConfirmation.current = null; setSelection([]); setSelectionNotice('');
+    }, []);
     const interactions = useInteractionScope(() => {
-        pendingConfirmation.current = null; setSelectedIds([]); setLastReveal(null);
+        invalidateView(); setLastReveal(null); setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity');
     });
-    const isCurrentLoadout = interactions.capture();
+    const view = viewRef.current; const renderedScope = interactions.capture();
+    const isCurrentView = useCallback(() => viewRef.current === view && renderedScope() && useMobileGameStore.getState().hasHydrated, [view, renderedScope]);
+    const selectionVersion = selectionRef.current;
+    const isCurrentSelection = () => isCurrentView() && selectionRef.current === selectionVersion;
     const loadoutAction = captureLoadoutActions(equipment, () => useMobileGameStore.getState().equipment,
-        () => isCurrentLoadout() && useMobileGameStore.getState().hasHydrated);
+        isCurrentView);
+    const selectedItems = useMemo(() => reconcileSynthesisSelection(selection, equipment), [selection, equipment]);
+    useEffect(() => {
+        if (selectedItems === selection || !isCurrentView()) return;
+        selectionRef.current = {}; setSelection(selectedItems); setSelectionNotice(INVENTORY_SELECTION_CHANGED);
+    }, [selectedItems, selection, isCurrentView]);
+    const changeView = (update: () => void) => { if (isCurrentView()) { invalidateView(); update(); } };
+    const resetFilters = () => changeView(() => { setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity'); });
+    const filtersActive = slotFilter !== 'all' || rarityFilter !== 'all' || sortMode !== 'rarity';
 
     // 最大2000件になり得るため FlatList で仮想化して描画する
     const inventory = useMemo(
@@ -58,30 +75,28 @@ export default function CharacterScreen() {
         [equipment, slotFilter, rarityFilter, sortMode],
     );
 
-    const selectedItems = inventory.filter((item) => selectedIds.includes(item.id));
     const canSynthesize = selectedItems.length === SYNTHESIS_CONFIG.REQUIRED_COUNT
         && selectedItems.every((item) => !item.equipped && item.rarity === selectedItems[0].rarity)
         && selectedItems[0].rarity !== 'legendary';
 
     const toggleSelect = (item: Equipment) => {
-        if (!interactions.capture()()) return;
-        if (item.equipped) return;
-        setSelectedIds((current) => current.includes(item.id)
-            ? current.filter((id) => id !== item.id)
-            : [...current, item.id]);
+        if (!isCurrentView()) return;
+        selectionRef.current = {};
+        setSelectionNotice('');
+        setSelection((current) => toggleSynthesisSelection(current, item, useMobileGameStore.getState().equipment, SYNTHESIS_CONFIG.REQUIRED_COUNT));
     };
 
     // The store publishes a presentation event only after a confirmed open, including retries.
     const handleOpenChest = (chestId: string) => { void openChest(chestId); };
 
     const handleSell = (item: Equipment) => {
-        const isCurrent = interactions.capture();
+        const isCurrent = isCurrentView;
         if (!isCurrent()) return;
         const token = {};
         pendingConfirmation.current = token;
         const confirm = createInventoryConfirmation([item], () => useMobileGameStore.getState().equipment,
             () => isCurrent() && pendingConfirmation.current === token, () => {
-                setSelectedIds((current) => current.filter((id) => id !== item.id));
+                setSelection((current) => current.filter((candidate) => candidate.id !== item.id));
                 sellItem(item.id);
             });
         Alert.alert(
@@ -99,14 +114,14 @@ export default function CharacterScreen() {
     };
 
     const runSynthesis = (invoke: () => Promise<Equipment | null>) => {
-        const isCurrent = interactions.capture();
+        const isCurrent = isCurrentView;
         if (!isCurrent()) return;
         void invoke().then((result) => { if (isCurrent() && result) setLastReveal({ ...result }); });
     };
 
     const handleSynthesize = () => {
         if (!canSynthesize) return;
-        const isCurrent = interactions.capture();
+        const isCurrent = isCurrentSelection;
         if (!isCurrent()) return;
         const token = {};
         pendingConfirmation.current = token;
@@ -114,7 +129,7 @@ export default function CharacterScreen() {
         const ingredientIds = selectedItems.map((item) => item.id);
         const confirm = createInventoryConfirmation(selectedItems, () => useMobileGameStore.getState().equipment,
             () => isCurrent() && pendingConfirmation.current === token, () => {
-                setSelectedIds([]);
+                setSelection([]);
                 runSynthesis(() => synthesize(ingredientIds));
             });
         Alert.alert(
@@ -148,7 +163,7 @@ export default function CharacterScreen() {
                         レベルアップ！ Lv.{lastLevelUp.fromLevel} → Lv.{lastLevelUp.toLevel}
                         {'\n'}攻撃+{lastLevelUp.attackGain} / 防御+{lastLevelUp.defenseGain} / HP+{lastLevelUp.hpGain}
                     </Text>
-                    <Pressable accessibilityRole="button" accessibilityLabel="レベルアップ通知を閉じる" onPress={clearLastLevelUp} hitSlop={10}>
+                    <Pressable accessibilityRole="button" accessibilityLabel="レベルアップ通知を閉じる" onPress={clearLastLevelUp} style={styles.closeButton}>
                         <Text style={styles.bannerClose}>×</Text>
                     </Pressable>
                 </View>
@@ -156,7 +171,7 @@ export default function CharacterScreen() {
             {lastReveal && (
                 <View style={styles.banner} accessibilityRole="alert">
                     <Text style={styles.bannerText}>{`合成で「${lastReveal.name}」が誕生！`}</Text>
-                    <Pressable accessibilityRole="button" accessibilityLabel="入手通知を閉じる" onPress={() => setLastReveal((current) => current === lastReveal ? null : current)} hitSlop={10}>
+                    <Pressable accessibilityRole="button" accessibilityLabel="入手通知を閉じる" onPress={() => setLastReveal((current) => current === lastReveal ? null : current)} style={styles.closeButton}>
                         <Text style={styles.bannerClose}>×</Text>
                     </Pressable>
                 </View>
@@ -174,25 +189,26 @@ export default function CharacterScreen() {
                 <FilterSelect
                     label="種類"
                     value={slotFilter}
-                    options={[['all', 'すべて'], ['weapon', '武器'], ['armor', '防具'], ['accessory', '装飾']]}
-                    onChange={(value) => setSlotFilter(value as InventorySlotFilter)}
+                    options={[['all', 'すべて'], ['weapon', '武器'], ['armor', '防具'], ['accessory', 'アクセサリー']]}
+                    onChange={(value) => { if (value !== slotFilter) changeView(() => setSlotFilter(value as InventorySlotFilter)); }}
                     styles={styles}
                 />
                 <FilterSelect
                     label="レア"
                     value={rarityFilter}
                     options={[['all', 'すべて'], ...Object.entries(RARITY_LABELS) as [string, string][]]}
-                    onChange={(value) => setRarityFilter(value as InventoryRarityFilter)}
+                    onChange={(value) => { if (value !== rarityFilter) changeView(() => setRarityFilter(value as InventoryRarityFilter)); }}
                     styles={styles}
                 />
                 <FilterSelect
                     label="並び"
                     value={sortMode}
                     options={[['rarity', 'レア順'], ['slot', '種類順'], ['name', '名前順']]}
-                    onChange={(value) => setSortMode(value as InventorySortMode)}
+                    onChange={(value) => { if (value !== sortMode) changeView(() => setSortMode(value as InventorySortMode)); }}
                     styles={styles}
                 />
             </View>
+            {filtersActive && <Pressable accessibilityRole="button" accessibilityLabel="表示条件をリセット" onPress={resetFilters} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>表示条件をリセット</Text></Pressable>}
 
             {/* インベントリ見出し（行自体はFlatListが仮想化して描画する） */}
             <View style={styles.sectionHeader}>
@@ -210,7 +226,9 @@ export default function CharacterScreen() {
                     </Text>
                 </Pressable>
             </View>
-            <Text style={styles.hint}>同じレアリティの未装備品{SYNTHESIS_CONFIG.REQUIRED_COUNT}個を選ぶと上位レアリティへ合成できます。</Text>
+            <Text style={styles.hint}>全{equipment.length}件中{inventory.length}件を表示。同じレアリティの未装備品{SYNTHESIS_CONFIG.REQUIRED_COUNT}個を選ぶと上位レアリティへ合成できます。表示条件を変更すると素材の選択を解除します。</Text>
+            {selectedItems.length > 0 && <Pressable accessibilityRole="button" accessibilityLabel="素材の選択を解除" onPress={() => changeView(() => {})} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>素材の選択を解除</Text></Pressable>}
+            {selectionNotice ? <Text accessibilityRole="alert" style={styles.hint}>{selectionNotice}</Text> : null}
             {synthHasError && (
                 <View style={styles.sectionHeader}>
                     <Text style={styles.dangerButtonText}>合成の同期に失敗しました。</Text>
@@ -234,13 +252,14 @@ export default function CharacterScreen() {
                 keyExtractor={(item) => item.id}
                 ListHeaderComponent={listHeader}
                 ListEmptyComponent={
-                    <Text style={styles.emptyText}>装備はまだありません。タスクを達成して宝箱を集めましょう。</Text>
+                    <Text style={styles.emptyText}>{equipment.length ? '条件に合う装備がありません。表示条件をリセットしてください。' : '装備はまだありません。タスクを達成して宝箱を集めましょう。'}</Text>
                 }
                 renderItem={({ item }) => (
                     <InventoryRow
                         item={item}
-                        selected={selectedIds.includes(item.id)}
-                        onToggleSelect={toggleSelect}
+                        selected={selectedItems.some((candidate) => candidate.id === item.id)}
+                        selectionDisabled={item.equipped || item.rarity === 'legendary' || (!selectedItems.some((candidate) => candidate.id === item.id) && (selectedItems.length >= SYNTHESIS_CONFIG.REQUIRED_COUNT || (selectedItems.length > 0 && selectedItems[0].rarity !== item.rarity)))}
+                        onToggleSelect={loadoutAction(() => toggleSelect(item))}
                         onEquipToggle={loadoutAction(() => {
                             const current = useMobileGameStore.getState();
                             if (item.equipped) current.unequipItem(item.id); else current.equipItem(item.id);
@@ -273,6 +292,7 @@ function ItemIcon({ templateId, rarity, styles, palette }: { templateId: string;
 function InventoryRow({
     item,
     selected,
+    selectionDisabled,
     onToggleSelect,
     onEquipToggle,
     onSell,
@@ -281,6 +301,7 @@ function InventoryRow({
 }: {
     item: Equipment;
     selected: boolean;
+    selectionDisabled: boolean;
     onToggleSelect: (item: Equipment) => void;
     onEquipToggle: (item: Equipment) => void;
     onSell: (item: Equipment) => void;
@@ -289,29 +310,29 @@ function InventoryRow({
 }) {
     return (
         <View style={[styles.itemRow, selected && styles.itemRowSelected]}>
+            <View style={styles.itemMain}>
+                <ItemIcon templateId={item.templateId} rarity={item.rarity} styles={styles} palette={palette} />
+                <View style={styles.flex}>
+                    <Text style={[styles.itemName, { color: palette.rarity[item.rarity] }]}>{item.name}{item.equipped ? '（装備中）' : ''}</Text>
+                    <Text style={styles.itemMeta}>
+                        {RARITY_LABELS[item.rarity]} / {SLOT_LABELS[item.slot]}
+                        {item.attackBonus > 0 ? ` 攻+${item.attackBonus}` : ''}
+                        {item.defenseBonus > 0 ? ` 防+${item.defenseBonus}` : ''}
+                        {item.hpBonus > 0 ? ` HP+${item.hpBonus}` : ''}
+                    </Text>
+                </View>
+            </View>
+            <View style={styles.itemActions}>
             <Pressable
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: selected, disabled: item.equipped }}
+                accessibilityState={{ checked: selected, disabled: selectionDisabled }}
                 accessibilityLabel={`${item.name}を合成素材に${selected ? '選択解除' : '選択'}する`}
-                disabled={item.equipped}
+                disabled={selectionDisabled}
                 onPress={() => onToggleSelect(item)}
-                style={[styles.selectBox, selected && styles.selectBoxActive, item.equipped && styles.muted]}
-                hitSlop={6}
+                style={[styles.selectBox, selected && styles.selectBoxActive, selectionDisabled && styles.muted]}
             >
-                {selected && <Text style={styles.selectMark}>✓</Text>}
+                <Text style={[styles.secondaryButtonText, selected && styles.selectMark]}>{selected ? '✓ 選択を解除' : '素材に選択'}</Text>
             </Pressable>
-            <ItemIcon templateId={item.templateId} rarity={item.rarity} styles={styles} palette={palette} />
-            <View style={styles.flex}>
-                <Text style={[styles.itemName, { color: palette.rarity[item.rarity] }]} numberOfLines={1}>
-                    {item.name}{item.equipped ? '（装備中）' : ''}
-                </Text>
-                <Text style={styles.itemMeta}>
-                    {RARITY_LABELS[item.rarity]} / {SLOT_LABELS[item.slot]}
-                    {item.attackBonus > 0 ? ` 攻+${item.attackBonus}` : ''}
-                    {item.defenseBonus > 0 ? ` 防+${item.defenseBonus}` : ''}
-                    {item.hpBonus > 0 ? ` HP+${item.hpBonus}` : ''}
-                </Text>
-            </View>
             <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={item.equipped ? `${item.name}を外す` : `${item.name}を装備する`}
@@ -330,6 +351,7 @@ function InventoryRow({
             >
                 <Text style={styles.dangerButtonText}>売却</Text>
             </Pressable>
+            </View>
         </View>
     );
 }
@@ -343,14 +365,14 @@ function FilterSelect({ label, value, options, onChange, styles }: {
 }) {
     return (
         <View style={styles.filterGroup}>
-            <Text style={styles.filterLabel}>{label}</Text>
+            <Text style={styles.filterLabel}>{label}：{options.find(([key]) => key === value)?.[1]}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.filterOptions}>
                     {options.map(([optionValue, optionLabel]) => (
                         <Pressable
                             key={optionValue}
                             accessibilityRole="radio"
-                            accessibilityState={{ selected: value === optionValue }}
+                            accessibilityState={{ checked: value === optionValue }}
                             accessibilityLabel={`${label}を${optionLabel}にする`}
                             onPress={() => onChange(optionValue)}
                             style={[styles.filterChip, value === optionValue && styles.filterChipActive]}
@@ -371,7 +393,7 @@ type Styles = ReturnType<typeof createStyles>;
 
 function createStyles(palette: ThemePalette) {
     return StyleSheet.create({
-    flex: { flex: 1 },
+    flex: { flex: 1, minWidth: 0 },
     safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     loadingText: { color: palette.text.muted, fontSize: 14, fontWeight: '600' },
@@ -381,31 +403,34 @@ function createStyles(palette: ThemePalette) {
     banner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.bg.tertiary, borderColor: palette.accent.emerald, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
     bannerText: { flex: 1, color: palette.text.primary, fontSize: 13, fontWeight: '600', lineHeight: 19 },
     bannerClose: { color: palette.text.secondary, fontSize: 21, lineHeight: 23 },
+    closeButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
     itemIcon: { width: 34, height: 34, borderRadius: 6, borderWidth: 2, backgroundColor: palette.bg.cardHover },
     imageFallback: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: palette.border.default, backgroundColor: palette.bg.cardHover },
     imageFallbackText: { color: palette.text.muted, fontSize: 15, fontWeight: '800' },
-    sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    filterRow: { flexDirection: 'row', gap: 10 },
-    filterGroup: { flex: 1, gap: 4 },
-    filterLabel: { color: palette.text.muted, fontSize: 10, fontWeight: '700' },
+    sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' },
+    filterRow: { gap: 10 },
+    filterGroup: { gap: 4 },
+    filterLabel: { color: palette.text.muted, fontSize: 12, fontWeight: '700' },
     filterOptions: { flexDirection: 'row', gap: 4 },
-    filterChip: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1 },
+    filterChip: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1 },
     filterChipActive: { backgroundColor: palette.accent.primary, borderColor: palette.accent.primary },
     filterChipText: { color: palette.text.muted, fontSize: 11, fontWeight: '700' },
     filterChipTextActive: { color: 'white' },
     sectionTitle: { color: palette.text.primary, fontSize: 16, fontWeight: '800' },
     hint: { color: palette.text.muted, fontSize: 11, lineHeight: 16 },
     emptyText: { color: palette.text.muted, fontSize: 13, paddingVertical: 8 },
-    itemRow: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9 },
+    itemRow: { gap: 12, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12 },
+    itemMain: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    itemActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     itemRowSelected: { borderColor: palette.accent.emerald },
-    selectBox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: palette.text.muted, alignItems: 'center', justifyContent: 'center' },
+    selectBox: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: palette.border.default, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card },
     selectBoxActive: { backgroundColor: palette.accent.emerald, borderColor: palette.accent.emerald },
     selectMark: { color: palette.bg.primary, fontSize: 13, fontWeight: '900' },
     itemName: { fontSize: 14, fontWeight: '700' },
     itemMeta: { color: palette.text.muted, fontSize: 11, marginTop: 2 },
-    secondaryButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.border.default },
+    secondaryButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.border.default },
     secondaryButtonText: { color: palette.text.primary, fontSize: 12, fontWeight: '700' },
-    dangerButton: { height: 32, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.tertiary, borderWidth: 1, borderColor: palette.text.danger },
+    dangerButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.tertiary, borderWidth: 1, borderColor: palette.text.danger },
     dangerButtonText: { color: palette.text.danger, fontSize: 12, fontWeight: '700' },
     muted: { opacity: 0.45 },
     });
