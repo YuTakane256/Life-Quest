@@ -3,12 +3,12 @@ import { getTodayJst, msUntilNextJstDay } from '@life-quest/core/dates';
 
 /** 日付をまたいだ表示と、スリープ/別タブからの復帰を更新する。保存処理は行わない。 */
 export function useJstToday() {
-    const [today, setToday] = useState(getTodayJst);
+    const [, refreshView] = useState(0);
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout>;
         const refresh = () => {
             clearTimeout(timer);
-            setToday(getTodayJst());
+            refreshView((revision) => revision + 1);
             if (document.visibilityState === 'visible') timer = setTimeout(refresh, msUntilNextJstDay());
         };
         refresh();
@@ -16,5 +16,6 @@ export function useJstToday() {
         document.addEventListener('visibilitychange', refresh);
         return () => { clearTimeout(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
     }, []);
-    return today;
+    // A delayed timer / clock jump must not keep other UI-triggered renders on yesterday.
+    return getTodayJst();
 }

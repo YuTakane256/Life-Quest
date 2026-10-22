@@ -27,6 +27,16 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); Reflect.deleteProperty(document, 'visibilityState'); });
 describe.each([false, true])('JST表示時計 mobile=%s', (mobile) => {
+    it('タイマーや復帰通知が遅れても通常の再描画では実際の日付を返す', () => {
+        render(mobile); vi.setSystemTime(new Date('2026-08-12T00:00:00Z')); render(mobile);
+        expect(host.textContent).toBe('2026-08-12'); expect(vi.getTimerCount()).toBe(1);
+    });
+    it('時計が往復しても復帰時に表示日が古いまま残らない', () => {
+        render(mobile); vi.setSystemTime(new Date('2026-08-09T00:00:00Z')); render(mobile);
+        expect(host.textContent).toBe('2026-08-09'); vi.setSystemTime(new Date('2026-08-10T00:00:00Z'));
+        act(() => { if (mobile) for (const listener of native.listeners) listener(); else window.dispatchEvent(new Event('focus')); });
+        expect(host.textContent).toBe('2026-08-10'); expect(vi.getTimerCount()).toBe(1);
+    });
     it('StrictModeで時計を二重登録せず、データ更新なしでも午前0時に更新する', async () => {
         render(mobile); expect(host.textContent).toBe('2026-08-10'); expect(vi.getTimerCount()).toBe(1);
         await act(async () => vi.advanceTimersByTimeAsync(1000)); expect(host.textContent).toBe('2026-08-11'); expect(vi.getTimerCount()).toBe(1);

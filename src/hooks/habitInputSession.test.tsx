@@ -7,10 +7,13 @@ import type { Habit, HabitDailyRecord, RestDay } from '@life-quest/core/habits';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useMobileHabitStore } from '../../apps/mobile/src/stores/useMobileHabitStore';
 import { HabitsPage } from '../pages/HabitsPage';
+import { formatHeatmapDate } from '../utils/dateUtils';
 
 const mocks = vi.hoisted(() => ({ enqueue: vi.fn(async (..._args: unknown[]) => true), alert: vi.fn(),
     restConfirm: () => {}, restCancel: () => {}, nativeAdd: () => {}, nativeCancel: () => {},
     presses: new Map<string, () => void>(), blur: () => {}, focus: () => {},
+    blurEffects: new Set<() => void>(), focusEffects: new Set<() => void>(),
+    appState: 'active', appListeners: new Set<() => void>(),
     capture: (value: unknown) => {
         if (!value || typeof value !== 'object') return;
         const props = value as Record<string, unknown>;
@@ -49,16 +52,22 @@ vi.mock('../../apps/mobile/src/components/DailyScreenUI', async (original) => {
 });
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEffect: (setup: () => (() => void) | undefined) => {
     useEffect(() => {
-        let cleanup = setup(); mocks.blur = () => { cleanup?.(); cleanup = undefined; }; mocks.focus = () => { cleanup = setup(); };
-        return () => cleanup?.();
+        let cleanup = setup(); const blur = () => { cleanup?.(); cleanup = undefined; }; const focus = () => { cleanup = setup(); };
+        mocks.blurEffects.add(blur); mocks.focusEffects.add(focus);
+        mocks.blur = () => { for (const callback of mocks.blurEffects) callback(); }; mocks.focus = () => { for (const callback of mocks.focusEffects) callback(); };
+        return () => { cleanup?.(); mocks.blurEffects.delete(blur); mocks.focusEffects.delete(focus); };
     }, [setup]);
 } }));
 vi.mock('lucide-react-native', () => import('lucide-react'));
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children) }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string };
-    const box = ({ children }: Props) => createElement('div', {}, children);
-    return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: box,
+    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string; accessibilityValue?: { now?: number } };
+    const box = ({ children, accessibilityRole, accessibilityLabel, accessibilityValue }: Props) => createElement('div', {
+        role: accessibilityRole, 'aria-label': accessibilityLabel, 'aria-valuenow': accessibilityValue?.now,
+    }, children);
+    return { AppState: { get currentState() { return mocks.appState; }, addEventListener: (_: string, listener: () => void) => {
+        mocks.appListeners.add(listener); return { remove: () => mocks.appListeners.delete(listener) };
+    } }, Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: box,
         Text: ({ children }: Props) => createElement('span', {}, children),
         TextInput: ({ value, accessibilityLabel, placeholder, onChangeText }: { value?: string; accessibilityLabel?: string; placeholder?: string; onChangeText?: (value: string) => void }) =>
             createElement('input', { value, placeholder, 'aria-label': accessibilityLabel, onChange: (event) => onChangeText?.(event.target.value) }),
@@ -95,11 +104,13 @@ function unmount() { if (root) act(() => { root!.unmount(); root = null; }); }
 beforeEach(async () => {
     resetAuthLifecycleHooks(); await notifyLogin('a'); vi.useFakeTimers(); vi.setSystemTime(new Date(`${DATE}T12:00:00+09:00`));
     vi.clearAllMocks(); mocks.presses.clear(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); localStorage.clear();
+    mocks.appState = 'active'; mocks.appListeners.clear();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
     useHabitStore.setState({ habits: habits(), dailyRecords: [], restDays: [], allCompleteRewardDates: [] });
     useMobileHabitStore.setState({ habits: habits(), records: [], restDays: [], rewardEligibleDates: [], hasHydrated: true });
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
-afterEach(() => { unmount(); host.remove(); resetAuthLifecycleHooks(); vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { unmount(); host.remove(); resetAuthLifecycleHooks(); vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); Reflect.deleteProperty(document, 'visibilityState'); });
 
 for (const platform of ['web', 'native'] as const) {
     const store = platform === 'web' ? useHabitStore : useMobileHabitStore;
@@ -127,6 +138,84 @@ for (const platform of ['web', 'native'] as const) {
         if (kind === 'roundtrip') { await notifyLogout(); await notifyLogin('a'); }
         if (kind === 'unmount') unmount();
     };
+    describe(`${platform}: daily display / open history rollover`, () => {
+        const complete = platform === 'web' ? '習慣「読書」を達成にする' : '読書を達成にする';
+        const reopen = platform === 'web' ? '習慣「読書」を未達成にする' : '読書を未達成にする';
+        const midnight = async () => { await act(async () => vi.advanceTimersByTimeAsync(1000)); };
+        const prepare = (completed = false) => {
+            vi.setSystemTime(new Date(`${DATE}T23:59:59+09:00`));
+            if (completed) setRecords([record(), { ...record(), habitId: 'two' }]);
+            mount(); return records();
+        };
+        const dayLabel = (status: string) => `${platform === 'web' ? formatHeatmapDate(DATE) : DATE}: ${status}`;
+        const detail = () => platform === 'web' ? host.querySelector('strong')?.parentElement?.textContent :
+            [...host.querySelectorAll('span')].find((node) => node.childElementCount === 0 && node.textContent?.startsWith(`${DATE} `))?.textContent;
+        it('午前0時に達成/お休み/全達成表示と進捗を更新し、記録は変更しない', async () => {
+            setState({ restDays: [{ date: DATE, isRest: true }] }); const before = prepare(true); const restBefore = store.getState().restDays;
+            expect(button(reopen)).toBeTruthy(); expect(host.textContent).toContain('全習慣達成'); expect(host.textContent).toContain('お休み中');
+            expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('2');
+            await midnight(); expect(button(complete)).toBeTruthy(); expect(host.textContent).not.toContain('全習慣達成'); expect(host.textContent).not.toContain('お休み中');
+            expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('0');
+            expect(records()).toBe(before); expect(store.getState().restDays).toBe(restBefore); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('自動更新後の新しいボタンは一度の操作で翌日だけを達成する', async () => {
+            prepare(true); const old = mocks.presses.get(reopen)!; await midnight(); act(old);
+            expect(records()).toHaveLength(2); expect(mocks.enqueue).not.toHaveBeenCalled();
+            press(complete); expect(records().find((entry) => entry.habitId === 'one' && entry.date === '2026-10-20')?.completed).toBe(true);
+            expect(records().find((entry) => entry.habitId === 'one' && entry.date === DATE)?.completed).toBe(true); expect(mocks.enqueue).toHaveBeenCalledOnce();
+        });
+        it('追加下書きとカテゴリ条件を午前0時の再描画で消さない', async () => {
+            setState({ habits: [habit(), { ...habit(), id: 'two', name: '運動', categoryId: 'health' }] }); prepare();
+            press('カテゴリ: 勉強'); press('新しい習慣を追加'); input('新しい習慣を入力...', '途中の下書き');
+            await midnight(); expect(host.querySelector<HTMLInputElement>('[placeholder="新しい習慣を入力..."]')?.value).toBe('途中の下書き');
+            expect(host.querySelector('[aria-label="「運動」の達成履歴を表示"]')).toBeNull(); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('開いたメモは保持するが、旧日にも翌日にも誤保存しない', async () => {
+            prepare(); await openMemo(); input('今日の一言...', '旧日の下書き'); const save = savedMemo(); const before = records();
+            await midnight(); act(save); saveMemo();
+            expect(host.querySelector<HTMLInputElement>('[placeholder="今日の一言..."]')?.value).toBe('旧日の下書き');
+            expect(host.textContent).toContain('日付が変わりました'); expect(records()).toBe(before); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('午前0時前に開いたお休み確認は翌日に適用しない', async () => {
+            prepare(); const request = rest(); await midnight(); act(request.confirm);
+            expect(store.getState().restDays).toEqual([]); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('開いた履歴は今日の追加と選択日の未記録→未達成を更新する', async () => {
+            prepare(); press('「読書」の達成履歴を表示'); press(dayLabel('未記録'));
+            expect(detail()).toContain('未記録'); await midnight(); expect(detail()).toContain('未達成'); expect(detail()).not.toContain('未記録');
+            expect(host.querySelector(`[aria-label="${platform === 'web' ? formatHeatmapDate('2026-10-20') : '2026-10-20'}: 未記録"]`)).toBeTruthy();
+            expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('選択した履歴は同日の記録更新も反映し、期間外の古い詳細は表示しない', () => {
+            prepare(); press('「読書」の達成履歴を表示'); press(dayLabel('未記録'));
+            act(() => setRecords([{ ...record(), memo: '更新されたメモ' }])); expect(detail()).toContain('更新されたメモ'); expect(detail()).not.toContain('未記録');
+            vi.setSystemTime(new Date('2027-10-19T12:00:00+09:00'));
+            act(() => { if (platform === 'web') window.dispatchEvent(new Event('focus')); else for (const listener of mocks.appListeners) listener(); });
+            expect(host.textContent).toContain('日付を押すと記録の詳細を確認できます'); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('ストリークと30日達成率を同じ表示日で更新する', async () => {
+            setState({ habits: [habit()] }); setRecords([{ ...record(), date: '2026-10-18' }, record()]); prepare();
+            expect(button('「読書」の達成履歴を表示').textContent).toContain('2日連続'); expect(host.textContent).toContain('100%');
+            await midnight(); expect(host.textContent).toContain('67%');
+            vi.setSystemTime(new Date('2026-10-21T08:00:00+09:00'));
+            act(() => { if (platform === 'web') window.dispatchEvent(new Event('focus')); else for (const listener of mocks.appListeners) listener(); });
+            expect(host.textContent).not.toContain('2日連続'); expect(host.textContent).toContain('50%'); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('背景で日付が進んだ場合も前景復帰で最新日を表示する', () => {
+            const before = prepare(true);
+            const visibility = (active: boolean) => {
+                if (platform === 'web') { Object.defineProperty(document, 'visibilityState', { configurable: true, value: active ? 'visible' : 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); }
+                else { mocks.appState = active ? 'active' : 'background'; for (const listener of mocks.appListeners) listener(); }
+            };
+            act(() => visibility(false)); vi.setSystemTime(new Date('2026-10-21T08:00:00+09:00')); expect(button(reopen)).toBeTruthy();
+            act(() => visibility(true)); expect(button(complete)).toBeTruthy(); expect(records()).toBe(before); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        if (platform === 'native') it('タブ復帰で日付を更新し、離脱/終了で時計のリスナーを解除する', () => {
+            prepare(true); expect(mocks.appListeners.size).toBe(1); act(mocks.blur); expect(mocks.appListeners.size).toBe(0);
+            vi.setSystemTime(new Date('2026-10-20T08:00:00+09:00')); act(mocks.focus); expect(button(complete)).toBeTruthy(); expect(mocks.appListeners.size).toBe(1);
+            unmount(); expect(mocks.appListeners.size).toBe(0); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+    });
     describe(`${platform}: habit input ownership`, () => {
         it('追加は一度だけ保存・送信する', () => {
             mount(); press('新しい習慣を追加'); input('新しい習慣を入力...', '新しい習慣'); const add = savedAdd(); act(() => { add(); add(); });
