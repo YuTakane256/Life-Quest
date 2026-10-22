@@ -320,6 +320,11 @@ describe('Native alert/focus boundary', () => {
         expect(host.textContent).toContain('保存データを読み込み中'); click(button('キャラクター画面に戻る'));
         expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/character'); expect(button('木の剣を売却する')).toBeUndefined();
     });
+    it('所持品が0件でも戻る操作と空の案内を残す', () => {
+        useMobileGameStore.setState({ equipment: [] }); mount();
+        expect(host.textContent).toContain('装備はまだありません'); expect(button('選択した3個の装備を合成する').hasAttribute('disabled')).toBe(true);
+        click(button('キャラクター画面に戻る')); expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/character');
+    });
     it('戻る操作直後はblur前でも旧合成確認・連打・結果通知を拒否する', async () => {
         mount(); const confirm = pendingSynthesis(); const back = mocks.actions.get('キャラクター画面に戻る')!;
         act(() => { back(); back(); confirm(); });
@@ -385,5 +390,11 @@ describe('Native character / inventory entry', () => {
             if (kind === 'hydrating') useMobileGameStore.setState({ hasHydrated: false });
             open();
         }); expect(mocks.push).not.toHaveBeenCalled();
+    });
+    it.each(['character', 'inventory'])('%sでも既存レベルアップ通知を表示・閉じる', (screen) => {
+        useMobileGameStore.setState({ lastLevelUp: { fromLevel: 1, toLevel: 2, attackGain: 1, defenseGain: 1, hpGain: 5 } });
+        act(() => root!.render(createElement(StrictMode, {}, screen === 'character' ? createElement(CharacterScreen) : createElement(InventoryScreen))));
+        expect(host.textContent).toContain('レベルアップ！ Lv.1 → Lv.2'); click(button('レベルアップ通知を閉じる'));
+        expect(useMobileGameStore.getState().lastLevelUp).toBeNull(); expect(host.textContent).not.toContain('レベルアップ！');
     });
 });

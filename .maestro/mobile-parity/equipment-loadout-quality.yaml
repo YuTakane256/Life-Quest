@@ -43,6 +43,11 @@ name: Equipment loadout controls (daily memory only)
 - assertVisible: "鉄の剣を外す"
 - tapOn: "キャラクター画面に戻る"
 - scrollUntilVisible:
+    element: "武器の鉄の剣を外す"
+    direction: UP
+    centerElement: true
+- assertVisible: "武器の鉄の剣を外す"
+- scrollUntilVisible:
     element: "最強装備を自動装着"
     direction: UP
     centerElement: false
