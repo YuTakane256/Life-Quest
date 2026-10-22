@@ -410,7 +410,7 @@ export function HabitsPage() {
                                                 aria-label={`「${habit.name}」の達成履歴を表示`}
                                             >
                                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <p className={`text-sm font-medium ${isCompleted ? 'line-through' : ''}`} style={{ color: 'var(--color-text-primary)' }}>{habit.name}</p>
+                                                    <p className={`min-w-0 text-sm font-medium ${isCompleted ? 'line-through' : ''}`} style={{ color: 'var(--color-text-primary)', overflowWrap: 'anywhere' }}>{habit.name}</p>
                                                     {streak > 0 && (
                                                         <span
                                                             className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
@@ -429,7 +429,7 @@ export function HabitsPage() {
                                                         </span>
                                                     )}
                                                 </div>
-                                                {record?.memo && <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}><MessageSquare size={10} />{record.memo}</p>}
+                                                {record?.memo && <p className="text-[11px] mt-0.5 flex items-start gap-1" style={{ color: 'var(--color-text-muted)' }}><MessageSquare size={10} className="shrink-0" /><span className="min-w-0" style={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{record.memo}</span></p>}
                                             </button>
                                             <div className="flex items-center gap-1">
                                                 <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true" />
