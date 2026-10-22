@@ -66,12 +66,14 @@ name: Capture anonymous Mobile parity reference screens
     timeout: 5000
 - takeScreenshot: "04-character"
 
-# Inventory is embedded below the character profile on Mobile.
+# Inventory is a separate stack screen above the tab destinations.
 - scrollUntilVisible:
-    element: "インベントリ（0）"
+    element: "インベントリを開く"
     direction: DOWN
     timeout: 10000
+- tapOn: "インベントリを開く"
 - takeScreenshot: "05-inventory"
+- tapOn: "キャラクター画面に戻る"
 
 # Settings is captured while logged out, so no account address or cloud data appears.
 - tapOn: "設定(, tab,.*)?"

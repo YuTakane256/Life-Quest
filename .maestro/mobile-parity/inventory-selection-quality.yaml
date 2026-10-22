@@ -9,7 +9,18 @@ name: Inventory selection and filter recovery (daily memory only)
 - extendedWaitUntil:
     visible: "新しいタスクを追加"
     timeout: 60000
-- tapOn: "キャラ(, tab,.*)?"
+- openLink: "lifequest-parity://inventory"
+- assertVisible: "キャラクター画面に戻る"
+- tapOn: "キャラクター画面に戻る"
+- assertVisible: "プロフィールを編集"
+- scrollUntilVisible:
+    element: "インベントリを開く"
+    direction: DOWN
+    centerElement: true
+- takeScreenshot: "inventory-entry-${REFERENCE_THEME}"
+- tapOn: "インベントリを開く"
+- assertVisible: "インベントリ"
+- takeScreenshot: "inventory-route-${REFERENCE_THEME}-overview"
 - scrollUntilVisible:
     element: "種類を防具にする"
     direction: DOWN
@@ -28,7 +39,7 @@ name: Inventory selection and filter recovery (daily memory only)
 - scrollUntilVisible:
     element: "表示条件をリセット"
     direction: UP
-    centerElement: false
+    centerElement: true
 - tapOn: "表示条件をリセット"
 - scrollUntilVisible:
     element: "チェインメイルを合成素材に選択する"
@@ -52,8 +63,9 @@ name: Inventory selection and filter recovery (daily memory only)
 - scrollUntilVisible:
     element: "種類を武器にする"
     direction: UP
-    centerElement: false
+    centerElement: true
 - tapOn: "種類を武器にする"
+- assertVisible: "種類：武器"
 - assertNotVisible: "素材の選択を解除"
 - scrollUntilVisible:
     element: "表示条件をリセット"
@@ -70,3 +82,8 @@ name: Inventory selection and filter recovery (daily memory only)
 - assertVisible: "チェインメイルを外す"
 - tapOn: "チェインメイルを外す"
 - assertVisible: "チェインメイルを装備する"
+- tapOn: "キャラクター画面に戻る"
+- assertVisible: "インベントリを開く"
+- tapOn: "インベントリを開く"
+- assertNotVisible: "素材の選択を解除"
+- assertVisible: "種類：すべて"

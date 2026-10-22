@@ -26,6 +26,8 @@ import { useCloudChestOpen as webChest } from './useCloudChestOpen';
 import { useCloudItemSynthesis as webSynthesis } from './useCloudItemSynthesis';
 import { useCloudChestOpen as mobileChest } from '../../apps/mobile/src/hooks/useCloudChestOpen';
 import { useCloudItemSynthesis as mobileSynthesis } from '../../apps/mobile/src/hooks/useCloudItemSynthesis';
+import { InventoryOperationsProvider } from '../../apps/mobile/src/components/InventoryOperationsProvider';
+import { useInventorySynthesis } from '../../apps/mobile/src/hooks/useInventorySynthesis';
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -49,6 +51,39 @@ beforeEach(async () => {
     container = document.createElement('div'); document.body.append(container); root = createRoot(container); mounted = true;
 });
 afterEach(async () => { if (mounted) await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals(); });
+
+describe('Mobile inventory screen lifetime', () => {
+    let operations: ReturnType<typeof useInventorySynthesis>;
+    function Consumer() { operations = useInventorySynthesis(); return null; }
+    const renderScreen = async (visible: boolean) => act(async () => root.render(createElement(InventoryOperationsProvider, { children: visible ? createElement(Consumer) : null })));
+    it('画面を閉じて戻っても、失敗した素材と同じ操作IDで再送する', async () => {
+        mocks.synth.mockRejectedValueOnce(new TypeError('response lost'));
+        await renderScreen(true); await act(async () => { await operations.synthesize(['one', 'two', 'three']); });
+        expect(operations.hasError).toBe(true); await renderScreen(false); await renderScreen(true);
+        expect(operations.hasError).toBe(true); await act(async () => { await operations.retry(); });
+        expect(mocks.synth.mock.calls[0][1]).toBe(mocks.synth.mock.calls[1][1]);
+        expect(mocks.synth.mock.calls.map(([ids]) => ids)).toEqual([['one', 'two', 'three'], ['one', 'two', 'three']]);
+        expect(mocks.applySynth).toHaveBeenCalledOnce(); expect(operations.hasError).toBe(false);
+    });
+    it('画面離脱中の送信は二重起動せず、同じ本人の確定結果だけを一度反映する', async () => {
+        const pending = deferred<unknown>(); mocks.synth.mockReturnValueOnce(pending.promise);
+        await renderScreen(true); let sending!: Promise<unknown>;
+        await act(async () => { sending = operations.synthesize(['one', 'two', 'three']); });
+        await renderScreen(false); await renderScreen(true); expect(operations.isSynthesizing).toBe(true);
+        await act(async () => { await operations.synthesize(['one', 'two', 'three']); pending.resolve({ resultId: 'done', templateId: 'wooden_sword' }); await sending; });
+        expect(mocks.synth).toHaveBeenCalledOnce(); expect(mocks.applySynth).toHaveBeenCalledExactlyOnceWith(['one', 'two', 'three'], 'done', 'wooden_sword');
+    });
+    it('画面離脱中の認証切替では旧結果・再送状態を持ち越さない', async () => {
+        const pending = deferred<unknown>(); mocks.synth.mockReturnValueOnce(pending.promise);
+        await renderScreen(true); let sending!: Promise<unknown>;
+        await act(async () => { sending = operations.synthesize(['one', 'two', 'three']); });
+        await renderScreen(false); await act(async () => { await notifyLogin('b'); });
+        await act(async () => { pending.resolve({ resultId: 'old', templateId: 'wooden_sword' }); await sending; });
+        await renderScreen(true); await act(async () => { await operations.retry(); });
+        expect(mocks.applySynth).not.toHaveBeenCalled(); expect(mocks.synth).toHaveBeenCalledOnce();
+        expect(operations.isSynthesizing).toBe(false); expect(operations.hasError).toBe(false);
+    });
+});
 
 describe.each([
     { name: 'Web', useChest: webChest, useSynthesis: webSynthesis },

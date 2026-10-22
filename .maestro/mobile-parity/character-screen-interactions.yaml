@@ -47,12 +47,15 @@ name: Character profile and equipment (memory only)
 - assertNotVisible: "武器の鋼の刃を外す"
 - tapOn: "最強装備を自動装着"
 - assertVisible: "武器の鋼の刃を外す"
-# Keep the existing inventory usable until its independent-screen work is prioritized.
+# Inventory has its own screen; returning must restore the character destination.
 - scrollUntilVisible:
-    element: "インベントリ（7）"
+    element: "インベントリを開く"
     direction: DOWN
     centerElement: true
+- tapOn: "インベントリを開く"
 - tapOn: "種類を武器にする"
 - assertVisible: "インベントリ（3）"
 - tapOn: "種類をすべてにする"
 - assertVisible: "インベントリ（7）"
+- tapOn: "キャラクター画面に戻る"
+- assertVisible: "インベントリを開く"

@@ -54,6 +54,10 @@ name: Reward close target and chest reveal (isolated memory only)
     text: "インベントリに追加"
     enabled: true
 - scrollUntilVisible:
+    element: "インベントリを開く"
+    direction: DOWN
+- tapOn: "インベントリを開く"
+- scrollUntilVisible:
     element: "インベントリ（8）"
     direction: DOWN
 - assertVisible: "インベントリ（8）"
