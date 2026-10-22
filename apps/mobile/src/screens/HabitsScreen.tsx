@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+    AccessibilityInfo,
     Alert,
     Keyboard,
     KeyboardAvoidingView,
@@ -705,6 +706,13 @@ function HabitHistory({
         pending: '未記録',
         'before-created': '作成前',
     };
+    const selectedDetail = selected
+        ? `${selected.date} ${labels[selected.status]}${selected.memo ? `\n${selected.memo}` : ''}`
+        : null;
+    // Live regions are Android-only; announce changed details explicitly on iOS.
+    useEffect(() => {
+        if (Platform.OS === 'ios' && selectedDetail) AccessibilityInfo.announceForAccessibility(selectedDetail);
+    }, [selectedDetail]);
     const padding = new Date(`${data.days[0].date}T00:00:00Z`).getUTCDay();
     const days = [...Array<null>(padding).fill(null), ...data.days];
     return (
@@ -842,9 +850,7 @@ function HabitHistory({
                     minHeight: 44,
                 }}
             >
-                {selected
-                    ? `${selected.date} ${labels[selected.status]}${selected.memo ? `\n${selected.memo}` : ''}`
-                    : '日付を押すと記録の詳細を確認できます'}
+                {selectedDetail ?? '日付を押すと記録の詳細を確認できます'}
             </Text>
         </Dialog>
     );

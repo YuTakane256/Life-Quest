@@ -9,7 +9,7 @@ import { useMobileHabitStore } from '../../apps/mobile/src/stores/useMobileHabit
 import { HabitsPage } from '../pages/HabitsPage';
 import { formatHeatmapDate, shiftDate } from '../utils/dateUtils';
 
-const mocks = vi.hoisted(() => ({ enqueue: vi.fn(async (..._args: unknown[]) => true), alert: vi.fn(),
+const mocks = vi.hoisted(() => ({ enqueue: vi.fn(async (..._args: unknown[]) => true), alert: vi.fn(), announce: vi.fn(),
     restConfirm: () => {}, restCancel: () => {}, nativeAdd: () => {}, nativeCancel: () => {},
     presses: new Map<string, () => void>(), blur: () => {}, focus: () => {},
     blurEffects: new Set<() => void>(), focusEffects: new Set<() => void>(),
@@ -67,7 +67,7 @@ vi.mock('react-native', () => {
     }, children);
     return { AppState: { get currentState() { return mocks.appState; }, addEventListener: (_: string, listener: () => void) => {
         mocks.appListeners.add(listener); return { remove: () => mocks.appListeners.delete(listener) };
-    } }, Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: box,
+    } }, AccessibilityInfo: { announceForAccessibility: mocks.announce }, Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: box,
         Text: ({ children, accessibilityLabel, testID }: Props) => createElement('span', { 'aria-label': accessibilityLabel, 'data-testid': testID }, children),
         TextInput: ({ value, accessibilityLabel, placeholder, onChangeText }: { value?: string; accessibilityLabel?: string; placeholder?: string; onChangeText?: (value: string) => void }) =>
             createElement('input', { value, placeholder, 'aria-label': accessibilityLabel, onChange: (event) => onChangeText?.(event.target.value) }),
@@ -139,6 +139,17 @@ for (const platform of ['web', 'native'] as const) {
         if (kind === 'unmount') unmount();
     };
     describe(`${platform}: daily display / open history rollover`, () => {
+        if (platform === 'native') it('iOSは最新の選択詳細だけを読み上げ、同じ内容や閉じた後は重複通知しない', () => {
+            mount(); press('「読書」の達成履歴を表示'); expect(mocks.announce).not.toHaveBeenCalled();
+            press('履歴の今日'); expect(mocks.announce).toHaveBeenLastCalledWith(`${DATE} 未記録`);
+            expect(mocks.announce).toHaveBeenCalledOnce(); press('履歴の今日');
+            act(() => setRecords([])); expect(mocks.announce).toHaveBeenCalledOnce();
+            act(() => setRecords([{ ...record(), memo: '読み上げるメモ' }]));
+            expect(mocks.announce).toHaveBeenLastCalledWith(`${DATE} 達成\n読み上げるメモ`);
+            expect(mocks.announce).toHaveBeenCalledTimes(2);
+            press('閉じる'); act(() => setRecords([{ ...record(), memo: '閉じた後' }]));
+            expect(mocks.announce).toHaveBeenCalledTimes(2); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
         const historyDetail = () => host.querySelector('[aria-label="習慣履歴の日別詳細"], [data-testid="habit-history-day-detail"]')?.textContent;
         it('大きな日付操作で前後・今日・端まで確認し、記録を変更しない', () => {
             setRecords([{ ...record(), date: '2026-10-18', memo: '前日の保存メモ' }]);
