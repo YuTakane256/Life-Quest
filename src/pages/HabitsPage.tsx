@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { captureHabitCompletion, captureHabitDeletion, captureHabitMemoEdit } from '@life-quest/core/habits';
+import { captureHabitCompletion, captureHabitDeletion, captureHabitMemoEdit, getHabitStreak, getHabitCompletionRate } from '@life-quest/core/habits';
 import { Plus, Trash2, HeartPulse, MessageSquare, Sparkles, Filter, ArrowUpDown, ChevronRight } from 'lucide-react';
 import { useHabitStore } from '../stores/useHabitStore';
 import { useHabitSortStore, type HabitSortMode } from '../stores/useHabitSortStore';
@@ -11,6 +11,7 @@ import { useModalEscape } from '../hooks/useModalEscape';
 import { HabitHeatmapModal } from '../components/habits/HabitHeatmapModal';
 import { getProgressBarA11y } from '../utils/progressBar';
 import { useInteractionScope } from '../hooks/useInteractionScope';
+import { useJstToday } from '../hooks/useJstToday';
 
 type InputOwner = { isCurrent: () => boolean };
 type MemoOwner = InputOwner & { habitId: string; date: string; accepts: ReturnType<typeof captureHabitMemoEdit> };
@@ -24,7 +25,7 @@ const HABIT_SORT_OPTIONS: { value: HabitSortMode; label: string }[] = [
 ];
 
 export function HabitsPage() {
-    const { habits, dailyRecords, restDays, addHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete, getHabitStreak, getHabitCompletionRate } = useHabitStore();
+    const { habits, dailyRecords, restDays, addHabit, toggleHabitCompletion, setHabitMemo, setRestDay, isRestDay, areAllHabitsComplete } = useHabitStore();
     const { sortMode, setSortMode } = useHabitSortStore();
     const [formOwner, setFormOwner] = useState<InputOwner | null>(null);
     const formRef = useRef<InputOwner | null>(null);
@@ -93,7 +94,7 @@ export function HabitsPage() {
         } });
     };
 
-    const today = getTodayJST();
+    const today = useJstToday();
     const isRest = isRestDay(today);
     const allComplete = areAllHabitsComplete(today);
     const getRecordForHabit = (habitId: string) => dailyRecords.find((r) => r.habitId === habitId && r.date === today);
@@ -105,8 +106,8 @@ export function HabitsPage() {
         const statsMap = new Map<string, { streak: number; rate: number | null }>();
         habits.forEach((h) => {
             statsMap.set(h.id, {
-                streak: getHabitStreak(h.id),
-                rate: getHabitCompletionRate(h.id),
+                streak: getHabitStreak({ habit: h, records: dailyRecords, restDays, today }),
+                rate: getHabitCompletionRate({ habit: h, records: dailyRecords, restDays, today }),
             });
         });
 
@@ -142,9 +143,7 @@ export function HabitsPage() {
             }
         }
         return { groups, statsMap };
-        // dailyRecords も並び順（ストリーク/達成率）に影響するため依存に含める
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [habits, filterCategoryId, sortMode, dailyRecords, restDays, today, getHabitStreak, getHabitCompletionRate]);
+    }, [habits, filterCategoryId, sortMode, dailyRecords, restDays, today]);
 
     // 使用中のカテゴリID一覧（フィルタータブ用）
     const usedCategoryIds = useMemo(() => {
@@ -491,6 +490,7 @@ export function HabitsPage() {
                 return (
                     <HabitHeatmapModal
                         habit={habit}
+                        today={today}
                         dailyRecords={dailyRecords}
                         restDays={restDays}
                         color={category?.color || 'var(--color-accent-emerald)'}

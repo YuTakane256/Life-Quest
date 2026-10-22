@@ -1,0 +1,23 @@
+appId: com.yutakane.lifequest.parity
+name: Habit history selection and daily interactions (memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "習慣(, tab,.*)?"
+- tapOn: "「読書を20分続ける」の達成履歴を表示"
+- assertVisible: "過去180日の達成履歴"
+- tapOn: "2026-08-10: 達成"
+- assertVisible: ".*2026-08-10 達成.*"
+- assertVisible: ".*朝の読書タイム.*"
+- takeScreenshot: "habit-history-${REFERENCE_THEME}"
+- tapOn: "閉じる"
+- assertVisible: "読書を20分続けるを未達成にする"
+# Reuse the existing completion / memo / category recovery assertions unchanged.
+- runFlow:
+    file: habit-list-actions.yaml

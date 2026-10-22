@@ -35,7 +35,6 @@ import {
     HABIT_LIMITS,
     isRestDayOn,
     type Habit,
-    type HabitHeatmapDay,
 } from '@life-quest/core/habits';
 import {
     Chip,
@@ -51,6 +50,7 @@ import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { getTodayJst } from '../utils/date';
 import { usePalette } from '../theme/usePalette';
 import { useInteractionScope } from '../hooks/useInteractionScope';
+import { useJstToday } from '../hooks/useJstToday';
 import { TAB_SCREEN_EDGES } from '../theme/layout';
 import { useRouter } from 'expo-router';
 import {
@@ -138,7 +138,7 @@ export default function HabitsScreen() {
             } },
         ], { onDismiss: cancel });
     };
-    const today = getTodayJst();
+    const today = useJstToday();
     const rest = isRestDayOn(store.restDays, today);
     const completed = new Set(
         store.records
@@ -662,6 +662,7 @@ export default function HabitsScreen() {
                 {history && (
                     <HabitHistory
                         habit={history}
+                        today={today}
                         onClose={() => setHistoryId(null)}
                     />
                 )}
@@ -672,15 +673,17 @@ export default function HabitsScreen() {
 
 function HabitHistory({
     habit,
+    today,
     onClose,
 }: {
     habit: Habit;
+    today: string;
     onClose: () => void;
 }) {
     const store = useMobileHabitStore();
     const { palette: p } = usePalette();
     const category = getHabitCategoryByIdOrDefault(habit.categoryId);
-    const [selected, setSelected] = useState<HabitHeatmapDay | null>(null);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const historyScroll = useRef<ScrollView>(null);
     const data = useMemo(
         () =>
@@ -688,11 +691,12 @@ function HabitHistory({
                 habit,
                 store.records,
                 store.restDays,
-                getTodayJst(),
+                today,
                 180,
             ),
-        [habit, store.records, store.restDays],
+        [habit, store.records, store.restDays, today],
     );
+    const selected = data.days.find((day) => day.date === selectedDate) ?? null;
     const labels = {
         completed: '達成',
         rest: 'お休み',
@@ -713,7 +717,7 @@ function HabitHistory({
                     ['達成率', `${data.completionRate ?? 0}%`],
                     [
                         '現在',
-                        `${getHabitStreak({ habit, records: store.records, restDays: store.restDays, today: getTodayJst() })}日`,
+                        `${getHabitStreak({ habit, records: store.records, restDays: store.restDays, today })}日`,
                     ],
                 ].map(([label, value]) => (
                     <View
@@ -776,7 +780,7 @@ function HabitHistory({
                                             key={day.date}
                                             accessibilityRole="button"
                                             accessibilityLabel={`${day.date}: ${labels[day.status]}`}
-                                            onPress={() => setSelected(day)}
+                                            onPress={() => setSelectedDate(day.date)}
                                             style={{
                                                 width: 16,
                                                 height: 16,

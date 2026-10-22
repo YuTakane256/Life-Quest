@@ -27,6 +27,14 @@ for (const theme of ['light', 'dark'] as const) test.describe(theme, () => {
         const record = await page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-habits')!).state.dailyRecords.find((entry: { habitId: string; date: string }) => entry.habitId === 'parity-walk' && entry.date === '2026-08-10'));
         expect(record).toMatchObject({ completed: false, memo: 'Saved daily memo' });
     });
+    test('existing history selection still displays the saved day and memo', async ({ page }, testInfo) => {
+        await page.getByRole('button', { name: '「読書を20分続ける」の達成履歴を表示', exact: true }).click();
+        const dialog = page.getByRole('dialog'); await dialog.locator('[title="2026-08-10 達成"]').click();
+        await expect(dialog.locator('strong').locator('..')).toContainText('朝の読書タイム');
+        await page.screenshot({ path: testInfo.outputPath(`habit-history-${theme}.png`) });
+        await page.getByRole('button', { name: '履歴を閉じる', exact: true }).click();
+        await expect(page.getByRole('button', { name: '習慣「読書を20分続ける」を未達成にする', exact: true })).toBeVisible();
+    });
     test('a stale day is refreshed before allowing a new daily completion', async ({ page }, testInfo) => {
         await page.clock.setSystemTime(new Date('2026-08-11T00:01:00+09:00'));
         const complete = page.getByRole('button', { name: '習慣「朝に散歩する」を達成にする', exact: true });

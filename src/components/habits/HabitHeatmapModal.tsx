@@ -3,7 +3,7 @@ import { CalendarDays, Flame, X } from 'lucide-react';
 import type { Habit, HabitDailyRecord, RestDay } from '../../types';
 import { HABIT_HISTORY_RETENTION_DAYS } from '../../stores/useHabitStore';
 import { buildHabitHeatmapData, type HabitHeatmapDay, type HabitHeatmapStatus } from '../../utils/habitHeatmap';
-import { getTodayJST, formatHeatmapDate } from '../../utils/dateUtils';
+import { formatHeatmapDate } from '../../utils/dateUtils';
 import { useModalEscape } from '../../hooks/useModalEscape';
 
 const STATUS_LABELS: Record<HabitHeatmapStatus, string> = {
@@ -30,6 +30,7 @@ export function HabitHeatmapModal({
     restDays,
     color,
     streak,
+    today,
     onClose,
 }: {
     habit: Habit;
@@ -37,17 +38,19 @@ export function HabitHeatmapModal({
     restDays: RestDay[];
     color: string;
     streak: number;
+    today: string;
     onClose: () => void;
 }) {
-    const [selectedDay, setSelectedDay] = useState<HabitHeatmapDay | null>(null);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const heatmapScrollRef = useRef<HTMLDivElement>(null);
     useModalEscape(true, onClose);
 
     const heatmap = useMemo(
-        () => buildHabitHeatmapData(habit, dailyRecords, restDays, getTodayJST(), HABIT_HISTORY_RETENTION_DAYS),
-        [dailyRecords, habit, restDays],
+        () => buildHabitHeatmapData(habit, dailyRecords, restDays, today, HABIT_HISTORY_RETENTION_DAYS),
+        [dailyRecords, habit, restDays, today],
     );
-    const firstWeekday = new Date(`${heatmap.days[0].date}T00:00:00+09:00`).getDay();
+    const selectedDay = heatmap.days.find((day) => day.date === selectedDate) ?? null;
+    const firstWeekday = new Date(`${heatmap.days[0].date}T00:00:00Z`).getUTCDay();
     const paddedDays: Array<HabitHeatmapDay | null> = [
         ...Array<HabitHeatmapDay | null>(firstWeekday).fill(null),
         ...heatmap.days,
@@ -110,7 +113,7 @@ export function HabitHeatmapModal({
                                     type="button"
                                     aria-label={`${formatHeatmapDate(day.date)}: ${STATUS_LABELS[day.status]}`}
                                     title={`${day.date} ${STATUS_LABELS[day.status]}`}
-                                    onClick={() => setSelectedDay(day)}
+                                    onClick={() => setSelectedDate(day.date)}
                                     className="w-4 h-4 rounded-[3px] border transition-transform hover:scale-125"
                                     style={getStatusStyle(day.status, color)}
                                 />
