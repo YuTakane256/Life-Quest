@@ -53,7 +53,7 @@ vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: 
 vi.mock('react-native', () => {
     type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string };
     const box = ({ children }: Props) => createElement('div', {}, children);
-    return { Alert: { alert: vi.fn() }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: () => null,
+    return { AppState: { currentState: 'active', addEventListener: () => ({ remove: vi.fn() }) }, Alert: { alert: vi.fn() }, View: box, ScrollView: box, KeyboardAvoidingView: box, Modal: () => null,
         Text: ({ children, accessibilityRole }: Props) => createElement('span', { role: accessibilityRole }, children),
         TextInput: ({ value, accessibilityLabel, onChangeText }: { value?: string; accessibilityLabel?: string; onChangeText?: (text: string) => void }) => {
             if (accessibilityLabel && onChangeText) mocks.changes.set(accessibilityLabel, onChangeText);

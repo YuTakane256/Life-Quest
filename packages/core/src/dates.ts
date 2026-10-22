@@ -113,9 +113,10 @@ export function shiftDate(dateStr: string, days: number, options: ShiftDateOptio
     return formatYmd(date);
 }
 
-/** 期限（YYYY-MM-DD）が現在のJSTの今日より前かどうかを判定する。 */
-export function isOverdue(dueDate: string | null): boolean {
+/** 期限（YYYY-MM-DD）が基準日（省略時は現在のJSTの今日）より前かを判定する。 */
+export function isOverdue(dueDate: string | null, today = getTodayJst()): boolean {
     if (!dueDate) return false;
     if (!isValidYmd(dueDate)) return false;
-    return dueDate < getTodayJst();
+    if (!isValidYmd(today)) return false;
+    return dueDate < today;
 }

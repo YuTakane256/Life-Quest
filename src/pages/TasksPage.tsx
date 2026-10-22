@@ -8,6 +8,7 @@ import { useTaskSortStore } from '../stores/useTaskSortStore';
 import { useSnackbar } from '../components/ui/snackbarContext';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { isOverdue, generateId, formatRelativeDate, getTodayJST } from '../utils/dateUtils';
+import { useJstToday } from '../hooks/useJstToday';
 import { tasksToCsv } from '../utils/taskCsv';
 import { PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_SORT_ORDER, RECURRENCE_LABELS } from '../config/taskLabels';
 import type { Priority, Recurrence, Task, Subtask } from '../types';
@@ -18,6 +19,7 @@ import { useInteractionScope } from '../hooks/useInteractionScope';
 
 export function TasksPage() {
     const navigate = useNavigate();
+    const today = useJstToday();
     const { tasks, addTask, updateTask, duplicateTask, deleteCompletedTasks, toggleComplete, pendingCompletions } = useTaskStore();
     const { sortMode, setSortMode } = useTaskSortStore();
     const { showUndo } = useSnackbar();
@@ -58,7 +60,6 @@ export function TasksPage() {
     // フィルタリング（タグ絞り込み + 名前検索 + 期限フィルタ + 優先度フィルタ）
     const filteredTasks = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
-        const today = getTodayJST();
         return tasks.filter((t) => {
             const matchesTags =
                 selectedTags.length === 0 ||
@@ -66,14 +67,14 @@ export function TasksPage() {
             const matchesSearch = query === '' || t.name.toLowerCase().includes(query);
             let matchesDue = true;
             if (dueFilter === 'overdue') {
-                matchesDue = !t.completed && isOverdue(t.dueDate);
+                matchesDue = !t.completed && isOverdue(t.dueDate, today);
             } else if (dueFilter === 'dueSoon') {
                 matchesDue = !t.completed && t.dueDate !== null && t.dueDate <= today;
             }
             const matchesPriority = priorityFilter === 'all' || t.priority === priorityFilter;
             return matchesTags && matchesSearch && matchesDue && matchesPriority;
         });
-    }, [tasks, selectedTags, searchQuery, dueFilter, priorityFilter]);
+    }, [tasks, selectedTags, searchQuery, dueFilter, priorityFilter, today]);
 
     const sortedTasks = useMemo(() => {
         const compareByMode = (a: Task, b: Task): number => {
@@ -484,7 +485,7 @@ export function TasksPage() {
                         const subtasks = task.subtasks || [];
                         const completedSubtaskCount = subtasks.filter((subtask) => subtask.completed).length;
                         const isExpanded = isTaskExpanded(task);
-                        const overdue = !task.completed && isOverdue(task.dueDate);
+                        const overdue = !task.completed && isOverdue(task.dueDate, today);
                         const pending = isPending(task.id);
                         return (
                         <div key={task.id} className={`rounded-xl transition-all duration-200 ${pending ? 'animate-pulse-glow' : ''}`}
@@ -508,7 +509,7 @@ export function TasksPage() {
                                 <div className="flex-1 min-w-0">
                                     <p className={`text-sm font-medium ${task.completed ? 'line-through' : ''}`} style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-primary)' }}>{task.name}</p>
                                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                        {task.dueDate && <span className="text-[11px]" title={task.dueDate} style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-muted)' }}>📅 {formatRelativeDate(task.dueDate)}</span>}
+                                        {task.dueDate && <span className="text-[11px]" title={task.dueDate} style={{ color: overdue ? 'var(--color-text-danger)' : 'var(--color-text-muted)' }}>📅 {formatRelativeDate(task.dueDate, today)}</span>}
                                         <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: `${PRIORITY_COLORS[task.priority]}22`, color: PRIORITY_COLORS[task.priority] }}>{PRIORITY_LABELS[task.priority]}</span>
                                         {task.recurrence && task.recurrence !== 'none' && (
                                             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium inline-flex items-center gap-0.5"

@@ -170,6 +170,11 @@ describe('shiftDate', () => {
 });
 
 describe('isOverdue', () => {
+    it('表示の基準日を明示すると時計ではなくその日で判定する', () => {
+        expect(isOverdue('2026-10-20', '2026-10-21')).toBe(true);
+        expect(isOverdue('2026-10-20', '2026-10-20')).toBe(false);
+        expect(isOverdue('2026-10-20', 'invalid')).toBe(false);
+    });
     afterEach(() => {
         vi.useRealTimers();
     });
