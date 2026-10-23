@@ -23,7 +23,33 @@ Issue #813。キャラクター画面のインベントリ入口の後に、Web�
 - `history`データは匿名専用parityビルド、クラウド未設定、比較テーマ指定のメモリ環境のみで使用する。
   通常版・preview・実アカウントの保存データへ投入しない。通常確認用8081は変更しない。
 
-実行結果・画像・独立レビュー・CI結果はPRに記録する。
+## 実行結果
+
+- 全体3,120件成功/98件skip、core755件成功。Web関連E2E24件と402×874比較4件成功。
+- Web/Mobile型検査、build、秘密情報検査成功。lint error0/既存warning6。
+- iOS実開封フロー成功（163356）。固定historyのライト（164202）、文字拡大accessibility-large（164323）で全行表示・タブ往復成功。
+- 固定historyのダーク（164529）も全フロー成功。終了後は専用parityアプリとMetro8082を停止し、通常8081や保存データは変更していない。
+- 固定historyの初回（163829）は、スクロール先に指定した最終行がカードの端にあるため検出が停止。
+  画像/アクセシビリティ階層で3行の表示を確認し、カード全体へスクロールしてから各行をassertする形へ修正した。
+  行の検証は省略せず、文字設定も検証後に元のlargeへ戻した。
+- 390px画像回帰は7成功/既知のタスク矢印19px差分1件。実画像SHA-256は前回と同じ
+  `bf452f819c3595e4bf8e9962402038350ad8b950df969e2082100f813aae9cf3`。基準画像/許容値の変更なし。
+
+独立レビューと最終コミットのCI3件はPRで照合する。
+
+## 同条件の比較画像
+
+Web/iOSとも固定historyデータ、402×874。同じ3件の履歴を比較する。
+スクロール位置より上にあるWebの在庫プレビューとNativeの入口は今回の一致対象外。
+
+| テーマ | Web | iOS |
+| --- | --- | --- |
+| light | ![](screenshots/mobile-chest-history/web-light.png) | ![](screenshots/mobile-chest-history/ios-light.png) |
+| dark | ![](screenshots/mobile-chest-history/web-dark.png) | ![](screenshots/mobile-chest-history/ios-dark.png) |
+
+文字拡大（iOS accessibility-large）でも全3件を表示できる。
+
+![](screenshots/mobile-chest-history/ios-large.png)
 
 ## 今回の範囲外
 
