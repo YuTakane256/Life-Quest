@@ -21,15 +21,30 @@ name: Inventory selection and filter recovery (daily memory only)
 - tapOn: "インベントリを開く"
 - assertVisible: "インベントリ"
 - takeScreenshot: "inventory-route-${REFERENCE_THEME}-overview"
+- tapOn: "レア：すべて"
 - scrollUntilVisible:
-    element: "種類を防具にする"
+    element: "レアをレジェンダリーにする"
     direction: DOWN
     centerElement: true
+- takeScreenshot: "inventory-picker-${REFERENCE_THEME}"
+- tapOn: "レアをレジェンダリーにする"
+- assertVisible: "レア：レジェンダリー"
+- scrollUntilVisible:
+    element: "表示条件をリセット"
+    direction: UP
+    centerElement: true
+- tapOn: "表示条件をリセット"
+- scrollUntilVisible:
+    element: "種類：すべて"
+    direction: DOWN
+    centerElement: true
+- tapOn: "種類：すべて"
 - tapOn: "種類を防具にする"
 - scrollUntilVisible:
-    element: "レアをコモンにする"
+    element: "レア：すべて"
     direction: DOWN
     centerElement: true
+- tapOn: "レア：すべて"
 - tapOn: "レアをコモンにする"
 - scrollUntilVisible:
     element: "条件に合う装備がありません。表示条件をリセットしてください。"
@@ -58,6 +73,28 @@ name: Inventory selection and filter recovery (daily memory only)
 - assertVisible: "チェインメイルを合成素材に選択解除する"
 - takeScreenshot: "inventory-${REFERENCE_THEME}"
 - scrollUntilVisible:
+    element: "種類：すべて"
+    direction: UP
+    centerElement: true
+- tapOn: "種類：すべて"
+- tapOn: "種類の選択を閉じる"
+- scrollUntilVisible:
+    element: "チェインメイルを合成素材に選択解除する"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "チェインメイルを合成素材に選択解除する"
+- scrollUntilVisible:
+    element: "種類：すべて"
+    direction: UP
+    centerElement: true
+- tapOn: "種類：すべて"
+- tapOn: "種類をすべてにする"
+- scrollUntilVisible:
+    element: "チェインメイルを合成素材に選択解除する"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "チェインメイルを合成素材に選択解除する"
+- scrollUntilVisible:
     element: "素材の選択を解除"
     direction: UP
     # Accessibility bounds may remain behind the status bar at large text sizes.
@@ -70,9 +107,10 @@ name: Inventory selection and filter recovery (daily memory only)
     centerElement: true
 - tapOn: "チェインメイルを合成素材に選択する"
 - scrollUntilVisible:
-    element: "種類を武器にする"
+    element: "種類：すべて"
     direction: UP
     centerElement: true
+- tapOn: "種類：すべて"
 - tapOn: "種類を武器にする"
 - assertVisible: "種類：武器"
 - assertNotVisible: "素材の選択を解除"

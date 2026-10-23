@@ -53,8 +53,10 @@ name: Character profile and equipment (memory only)
     direction: DOWN
     centerElement: true
 - tapOn: "インベントリを開く"
+- tapOn: "種類：すべて"
 - tapOn: "種類を武器にする"
 - assertVisible: "インベントリ（2/4）"
+- tapOn: "種類：武器"
 - tapOn: "種類をすべてにする"
 - assertVisible: "インベントリ（4/4）"
 - tapOn: "キャラクター画面に戻る"
