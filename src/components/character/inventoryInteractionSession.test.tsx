@@ -31,6 +31,7 @@ vi.mock('../../../apps/mobile/src/hooks/useInventorySynthesis', () => ({ useInve
 }) }));
 vi.mock('../../../apps/mobile/src/hooks/useCloudChestOpen', () => ({ useCloudChestOpen: () => ({ openChest: vi.fn(), retry: vi.fn() }) }));
 vi.mock('../../../apps/mobile/src/components/CharacterOverview', () => ({ CharacterOverview: () => createElement('div', {}, 'プロフィールと成長') }));
+vi.mock('lucide-react-native', () => ({ Check: () => null }));
 vi.mock('../../../apps/mobile/src/theme/usePalette', async () => {
     const { DARK_THEME } = await import('@life-quest/core/designTokens');
     return { usePalette: () => ({ palette: DARK_THEME }) };
@@ -52,17 +53,17 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push, dismissTo:
     }, [setup]);
 } }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string; accessibilityState?: { checked?: boolean } };
+    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityValue?: { text?: string }; accessibilityRole?: string; accessibilityState?: { checked?: boolean } };
     const box = ({ children }: Props) => createElement('div', {}, children);
     return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, Text: ({ children }: Props) => createElement('span', {}, children),
         Image: () => null, StyleSheet: { create: <T,>(value: T) => value },
-        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityRole, accessibilityState }: Props) => {
+        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityValue, accessibilityRole, accessibilityState }: Props) => {
             if (accessibilityLabel && onPress) mocks.actions.set(accessibilityLabel, onPress);
-            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, role: accessibilityRole, 'aria-checked': accessibilityState?.checked }, children);
+            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-accessibility-value': accessibilityValue?.text, role: accessibilityRole, 'aria-checked': accessibilityState?.checked }, children);
         },
-        FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent }: {
-            data: Equipment[]; renderItem: (item: { item: Equipment }) => ReactNode; ListHeaderComponent: ReactNode; ListEmptyComponent: ReactNode;
-        }) => createElement('div', {}, ListHeaderComponent, data.length ? data.map((item) => createElement('div', { key: item.id }, renderItem({ item }))) : ListEmptyComponent),
+        FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent, ListFooterComponent }: {
+            data: Equipment[]; renderItem: (item: { item: Equipment }) => ReactNode; ListHeaderComponent: ReactNode; ListEmptyComponent: ReactNode; ListFooterComponent: ReactNode;
+        }) => createElement('div', {}, ListHeaderComponent, data.length ? data.map((item) => createElement('div', { key: item.id }, renderItem({ item }))) : ListEmptyComponent, ListFooterComponent),
     };
 });
 
@@ -104,11 +105,12 @@ for (const platform of ['web', 'native'] as const) {
             click(button('木の剣を売却して+5XP獲得'));
             return mocks.saleConfirm;
         }
+        if (!button('木の剣を売却する')) click(button('売却'));
         click(button('木の剣を売却する'));
         return mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '売却する').onPress as () => void;
     };
     const selectSynthesis = () => {
-        if (platform === 'web') click(button('合成'));
+        click(button('合成'));
         const label = platform === 'web' ? '木の剣を合成対象に選択' : '木の剣を合成素材に選択する';
         const choices = Array.from(host.querySelectorAll<HTMLElement>(`[aria-label="${label}"]`));
         for (const choice of choices) click(choice);
@@ -125,8 +127,33 @@ for (const platform of ['web', 'native'] as const) {
     };
     const selectedCount = () => host.querySelectorAll(`[aria-label="${platform === 'web' ? '木の剣を合成対象に選択中' : '木の剣を合成素材に選択解除する'}"]`).length;
     describe(`${platform} inventory selection and filters`, () => {
+        it('shows only unequipped items and only the current mode actions', () => {
+            setEquipment([...items(), { ...result(), id: 'equipped', name: '装備中の剣', equipped: true }]);
+            mount(); expect(host.textContent).not.toContain('装備中の剣'); expect(button('木の剣を装備する')).toBeTruthy();
+            expect(host.querySelectorAll('[role="checkbox"]')).toHaveLength(0);
+            click(button('売却')); expect(button('木の剣を装備する')).toBeUndefined(); expect(host.textContent).toContain('+5');
+            click(button('合成')); expect(host.querySelectorAll('[role="checkbox"]')).toHaveLength(3);
+            click(button('合成')); expect(button('木の剣を装備する')).toBeTruthy();
+            expect(host.querySelectorAll('[role="checkbox"]')).toHaveLength(0);
+        });
+        it('mode changes invalidate stale equip and selection actions before rerender', () => {
+            mount(); const equip = button('木の剣を装備する');
+            act(() => { button('合成').click(); equip.click(); }); expect(mocks.enqueue).not.toHaveBeenCalled();
+            const choice = button(platform === 'web' ? '木の剣を合成対象に選択' : '木の剣を合成素材に選択する');
+            act(() => { button('売却').click(); choice.click(); });
+            click(button('合成')); expect(selectedCount()).toBe(0); expect(mocks.synthesize).not.toHaveBeenCalled();
+        });
+        it('mode changes reject pending sale confirmations', () => {
+            mount(); const confirm = requestSale(); click(button('合成')); act(confirm);
+            expect(store.getState().equipment).toHaveLength(3); expect(mocks.enqueue).not.toHaveBeenCalled();
+        });
+        it('equipping removes the item from inventory but preserves it in the store', () => {
+            setEquipment([{ ...items()[0], name: '確認用の剣' }]); mount(); click(button('確認用の剣を装備する'));
+            expect(button('確認用の剣を装備する')).toBeUndefined(); expect(host.textContent).toContain('未装備の装備がありません');
+            expect(store.getState().equipment).toMatchObject([{ id: 'item-0', equipped: true }]);
+        });
         it('rejects a repeated selection callback before rerender', () => {
-            mount(); if (platform === 'web') click(button('合成'));
+            mount(); click(button('合成'));
             const choice = button(platform === 'web' ? '木の剣を合成対象に選択' : '木の剣を合成素材に選択する');
             act(() => { choice.click(); choice.click(); }); expect(selectedCount()).toBe(1);
         });
@@ -175,6 +202,21 @@ for (const platform of ['web', 'native'] as const) {
             await act(async () => notifyLogin('b')); expect(button('表示条件をリセット')).toBeUndefined();
         });
         if (platform === 'native') {
+            it.each(['売却', '合成'])('%s行の読み上げ説明で同名の異なる性能を区別できる', (mode) => {
+                setEquipment([items()[0], { ...items()[1], rarity: 'uncommon', slot: 'armor', attackBonus: 7, defenseBonus: 9, hpBonus: 12 }]);
+                mount(); click(button(mode));
+                const rows = Array.from(host.querySelectorAll('[data-accessibility-value]'));
+                expect(rows).toHaveLength(2);
+                const descriptions = rows.map((row) => row.getAttribute('data-accessibility-value'));
+                expect(descriptions).toContain(mode === '売却' ? 'コモン、武器、攻撃力+2、確認後に5XPを獲得します' : 'コモン、武器、攻撃力+2');
+                expect(descriptions).toContain(mode === '売却' ? 'アンコモン、防具、攻撃力+7、防御力+9、HP+12、確認後に20XPを獲得します' : 'アンコモン、防具、攻撃力+7、防御力+9、HP+12');
+            });
+            it('mode changes invalidate pending synthesis and clear selected materials', () => {
+                mount(); selectSynthesis(); click(button('選択した3個の装備を合成する'));
+                const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress;
+                act(() => { button('売却').click(); confirm(); }); expect(mocks.synthesize).not.toHaveBeenCalled();
+                click(button('合成')); expect(selectedCount()).toBe(0);
+            });
             it('filter reset rejects pending native synthesis confirmation', () => {
                 mount(); selectSynthesis(); click(button('選択した3個の装備を合成する'));
                 const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress;
@@ -261,11 +303,12 @@ for (const platform of ['web', 'native'] as const) {
         });
         it('再描画前の古い選択イベントを次のアカウントへ持ち越さない', async () => {
             mount();
-            if (platform === 'web') click(button('合成'));
+            click(button('合成'));
             const label = platform === 'web' ? '木の剣を合成対象に選択' : '木の剣を合成素材に選択する';
             const oldChoices = Array.from(host.querySelectorAll<HTMLElement>(`[aria-label="${label}"]`));
             await act(async () => { await notifyLogin('b'); for (const choice of oldChoices) choice.click(); });
-            if (platform === 'web') { click(button('合成')); expect(button('合成する')).toBeUndefined(); }
+            click(button('合成'));
+            if (platform === 'web') expect(button('合成する')).toBeUndefined();
             else expect(button('選択した3個の装備を合成する').disabled).toBe(true);
         });
         it('通知は認証切替で破棄し、次のアカウントでは通常操作できる', async () => {
@@ -307,6 +350,7 @@ describe('Web feedback timer ownership', () => {
 describe('Native alert/focus boundary', () => {
     function mount() { act(() => root!.render(createElement(StrictMode, {}, createElement(InventoryScreen)))); }
     function pendingSynthesis() {
+        click(button('合成'));
         for (const button of Array.from(host.querySelectorAll<HTMLElement>('[aria-label="木の剣を合成素材に選択する"]'))) click(button);
         click(button('選択した3個の装備を合成する'));
         return mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress as () => void;
@@ -322,7 +366,7 @@ describe('Native alert/focus boundary', () => {
     });
     it('所持品が0件でも戻る操作と空の案内を残す', () => {
         useMobileGameStore.setState({ equipment: [] }); mount();
-        expect(host.textContent).toContain('装備はまだありません'); expect(button('選択した3個の装備を合成する').hasAttribute('disabled')).toBe(true);
+        expect(host.textContent).toContain('未装備の装備がありません'); expect(button('売却')).toBeUndefined(); expect(button('合成')).toBeUndefined();
         click(button('キャラクター画面に戻る')); expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/character');
     });
     it('戻る操作直後はblur前でも旧合成確認・連打・結果通知を拒否する', async () => {
@@ -331,7 +375,7 @@ describe('Native alert/focus boundary', () => {
         expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/character'); expect(mocks.synthesize).not.toHaveBeenCalled();
     });
     it('戻る操作直後はblur前でも旧売却確認を拒否する', () => {
-        mount(); click(button('木の剣を売却する'));
+        mount(); click(button('売却')); click(button('木の剣を売却する'));
         const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '売却する').onPress;
         click(button('キャラクター画面に戻る')); act(confirm);
         expect(useMobileGameStore.getState().equipment).toHaveLength(3); expect(mocks.enqueue).not.toHaveBeenCalled();
@@ -365,7 +409,7 @@ describe('Native alert/focus boundary', () => {
         expect(mocks.synthesize).not.toHaveBeenCalled();
     });
     it('別タブへ移動して戻った後も、旧売却Alertは無効のまま', () => {
-        mount(); click(button('木の剣を売却する'));
+        mount(); click(button('売却')); click(button('木の剣を売却する'));
         const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '売却する').onPress;
         act(() => { mocks.blur(); mocks.focus(); confirm(); });
         expect(mocks.enqueue).not.toHaveBeenCalled();

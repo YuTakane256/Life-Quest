@@ -228,7 +228,7 @@ describe('Mobile parity flow selection', () => {
         const yaml = readFileSync(new URL(`../${getMobileParityFlow('rewards').path}`, import.meta.url), 'utf8');
         expect(yaml).toContain('clearState: false'); expect(yaml).not.toContain('clearState: true');
         expect(yaml).toContain('127.0.0.1%3A8082'); expect(yaml).toContain('ログインボーナスを閉じる');
-        expect(yaml).toContain('インベントリ（8）');
+        expect(yaml).toContain('インベントリ（5/5）');
     });
     it('runs undo/add layout checks only in guarded memory-only reference mode', () => {
         expect(requiresReferenceRuntime('undo')).toBe(true);

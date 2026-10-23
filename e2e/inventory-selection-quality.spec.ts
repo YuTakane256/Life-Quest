@@ -7,6 +7,9 @@ for (const theme of ['light', 'dark'] as const) test.describe(theme, () => {
     });
     test('selection clears on view changes; empty filter recovery and sale cancel keep equipment', async ({ page }, testInfo) => {
         const before = await page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-game')!).state);
+        await expect(page.getByText('インベントリ (4/4)', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'チェインメイルを装備する', exact: true })).toBeVisible();
+        await waitForWebParityRender(page); await page.screenshot({ path: testInfo.outputPath(`inventory-normal-${theme}.png`) });
         await page.getByRole('button', { name: '合成', exact: true }).click();
         for (const item of ['チェインメイル', '銀の指輪', '鉄の剣']) await page.getByRole('checkbox', { name: `${item}を合成対象に選択`, exact: true }).click();
         await expect(page.getByRole('button', { name: '合成する', exact: true })).toBeVisible();
@@ -18,7 +21,9 @@ for (const theme of ['light', 'dark'] as const) test.describe(theme, () => {
         await page.getByRole('checkbox', { name: 'チェインメイルを合成対象に選択', exact: true }).click();
         await waitForWebParityRender(page); await page.screenshot({ path: testInfo.outputPath(`inventory-${theme}.png`) });
         await page.getByRole('button', { name: '素材の選択を解除', exact: true }).click(); await expect(page.getByRole('checkbox', { checked: true })).toHaveCount(0);
-        await page.getByRole('button', { name: '売却', exact: true }).click(); await page.getByRole('button', { name: 'チェインメイルを売却して+20XP獲得', exact: true }).click();
+        await page.getByRole('button', { name: '売却', exact: true }).click();
+        await waitForWebParityRender(page); await page.screenshot({ path: testInfo.outputPath(`inventory-sale-${theme}.png`) });
+        await page.getByRole('button', { name: 'チェインメイルを売却して+20XP獲得', exact: true }).click();
         await page.getByRole('dialog').getByRole('button', { name: 'キャンセル', exact: true }).click();
         const after = await page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-game')!).state);
         expect(after.equipment).toEqual(before.equipment); expect(after.character).toEqual(before.character);

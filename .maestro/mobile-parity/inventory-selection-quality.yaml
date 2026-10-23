@@ -35,12 +35,21 @@ name: Inventory selection and filter recovery (daily memory only)
     element: "条件に合う装備がありません。表示条件をリセットしてください。"
     direction: DOWN
     centerElement: true
-- assertVisible: "インベントリ（0）"
+- scrollUntilVisible:
+    element: "インベントリ（0/4）"
+    direction: UP
+    centerElement: true
+- assertVisible: "インベントリ（0/4）"
 - scrollUntilVisible:
     element: "表示条件をリセット"
     direction: UP
     centerElement: true
 - tapOn: "表示条件をリセット"
+- scrollUntilVisible:
+    element: "合成"
+    direction: UP
+    centerElement: true
+- tapOn: "合成"
 - scrollUntilVisible:
     element: "チェインメイルを合成素材に選択する"
     direction: DOWN
@@ -73,17 +82,89 @@ name: Inventory selection and filter recovery (daily memory only)
     centerElement: true
 - tapOn: "表示条件をリセット"
 - scrollUntilVisible:
+    element: "売却"
+    direction: UP
+    centerElement: true
+- tapOn: "売却"
+- takeScreenshot: "inventory-sale-${REFERENCE_THEME}"
+- scrollUntilVisible:
     element: "チェインメイルを売却する"
     direction: DOWN
     centerElement: true
 - tapOn: "チェインメイルを売却する"
 - tapOn: "キャンセル"
+- scrollUntilVisible:
+    element: "売却"
+    direction: UP
+    centerElement: true
+- tapOn: "売却"
+- scrollUntilVisible:
+    element: "チェインメイルを装備する"
+    direction: DOWN
+    centerElement: true
 - tapOn: "チェインメイルを装備する"
-- assertVisible: "チェインメイルを外す"
-- tapOn: "チェインメイルを外す"
-- assertVisible: "チェインメイルを装備する"
+- assertNotVisible: "チェインメイルを装備する"
 - tapOn: "キャラクター画面に戻る"
-- assertVisible: "インベントリを開く"
+- scrollUntilVisible:
+    element: "防具のチェインメイルを外す"
+    direction: UP
+    centerElement: true
+- tapOn: "防具のチェインメイルを外す"
+- assertNotVisible: "防具のチェインメイルを外す"
+- scrollUntilVisible:
+    element: "インベントリを開く"
+    direction: DOWN
+    centerElement: true
 - tapOn: "インベントリを開く"
 - assertNotVisible: "素材の選択を解除"
 - assertVisible: "種類：すべて"
+- scrollUntilVisible:
+    element: "チェインメイルを装備する"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "チェインメイルを装備する"
+- scrollUntilVisible:
+    element: "合成"
+    direction: UP
+    centerElement: true
+- tapOn: "合成"
+- scrollUntilVisible:
+    element: "チェインメイルを合成素材に選択する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "チェインメイルを合成素材に選択する"
+- scrollUntilVisible:
+    element: "銀の指輪を合成素材に選択する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "銀の指輪を合成素材に選択する"
+- scrollUntilVisible:
+    element: "鉄の剣を合成素材に選択する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "鉄の剣を合成素材に選択する"
+- scrollUntilVisible:
+    element: "選択した3個の装備を合成する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "選択した3個の装備を合成する"
+- tapOn: "キャンセル"
+- tapOn: "選択した3個の装備を合成する"
+- tapOn: "合成する"
+- scrollUntilVisible:
+    element: "インベントリ（3/3）"
+    direction: UP
+    centerElement: true
+- assertVisible: "合成で「.*」が誕生！"
+- tapOn: "売却"
+- scrollUntilVisible:
+    element: "木の剣を売却する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "木の剣を売却する"
+- tapOn: "売却する"
+- scrollUntilVisible:
+    element: "インベントリ（2/2）"
+    direction: UP
+    centerElement: true
+- assertNotVisible: "木の剣を売却する"

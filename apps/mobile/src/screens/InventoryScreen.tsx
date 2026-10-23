@@ -3,6 +3,7 @@ import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View }
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { PAGE_HEADING } from '../theme/layout';
+import { Check } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { captureLoadoutActions, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { createInventoryConfirmation, filterAndSortInventory, INVENTORY_SELECTION_CHANGED, reconcileSynthesisSelection, toggleSynthesisSelection, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
@@ -28,6 +29,8 @@ const SLOT_LABELS: Record<EquipmentSlot, string> = {
     accessory: 'アクセサリー',
 };
 
+type InventoryMode = 'normal' | 'sell' | 'synthesize';
+
 export default function InventoryScreen() {
     const router = useRouter();
     const equipment = useMobileGameStore((state) => state.equipment);
@@ -40,6 +43,7 @@ export default function InventoryScreen() {
     const [selection, setSelection] = useState<readonly Equipment[]>([]);
     const [selectionNotice, setSelectionNotice] = useState('');
     const [lastReveal, setLastReveal] = useState<Equipment | null>(null);
+    const [mode, setMode] = useState<InventoryMode>('normal');
     const [slotFilter, setSlotFilter] = useState<InventorySlotFilter>('all');
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
@@ -52,7 +56,7 @@ export default function InventoryScreen() {
     }, []);
     const interactions = useInteractionScope(() => {
         leaving.current = false;
-        invalidateView(); setLastReveal(null); setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity');
+        invalidateView(); setLastReveal(null); setMode('normal'); setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity');
     });
     const view = viewRef.current; const renderedScope = interactions.capture();
     const isCurrentView = useCallback(() => !leaving.current && viewRef.current === view && renderedScope() && useMobileGameStore.getState().hasHydrated, [view, renderedScope]);
@@ -68,11 +72,12 @@ export default function InventoryScreen() {
     const changeView = (update: () => void) => { if (isCurrentView()) { invalidateView(); update(); } };
     const resetFilters = () => changeView(() => { setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity'); });
     const filtersActive = slotFilter !== 'all' || rarityFilter !== 'all' || sortMode !== 'rarity';
+    const unequipped = useMemo(() => equipment.filter((item) => !item.equipped), [equipment]);
 
     // 最大2000件になり得るため FlatList で仮想化して描画する
     const inventory = useMemo(
-        () => filterAndSortInventory(equipment, { slotFilter, rarityFilter, sortMode, slotLabels: SLOT_LABELS }),
-        [equipment, slotFilter, rarityFilter, sortMode],
+        () => filterAndSortInventory(unequipped, { slotFilter, rarityFilter, sortMode, slotLabels: SLOT_LABELS }),
+        [unequipped, slotFilter, rarityFilter, sortMode],
     );
 
     const canSynthesize = selectedItems.length === SYNTHESIS_CONFIG.REQUIRED_COUNT
@@ -80,7 +85,7 @@ export default function InventoryScreen() {
         && selectedItems[0].rarity !== 'legendary';
 
     const toggleSelect = (item: Equipment) => {
-        if (!isCurrentView()) return;
+        if (mode !== 'synthesize' || !isCurrentView()) return;
         selectionRef.current = {};
         setSelectionNotice('');
         setSelection((current) => toggleSynthesisSelection(current, item, useMobileGameStore.getState().equipment, SYNTHESIS_CONFIG.REQUIRED_COUNT));
@@ -88,7 +93,7 @@ export default function InventoryScreen() {
 
     const handleSell = (item: Equipment) => {
         const isCurrent = isCurrentView;
-        if (!isCurrent()) return;
+        if (mode !== 'sell' || !isCurrent()) return;
         const token = {};
         pendingConfirmation.current = token;
         const confirm = createInventoryConfirmation([item], () => useMobileGameStore.getState().equipment,
@@ -117,7 +122,7 @@ export default function InventoryScreen() {
     };
 
     const handleSynthesize = () => {
-        if (!canSynthesize) return;
+        if (mode !== 'synthesize' || !canSynthesize) return;
         const isCurrent = isCurrentSelection;
         if (!isCurrent()) return;
         const token = {};
@@ -176,6 +181,20 @@ export default function InventoryScreen() {
                 </View>
             )}
 
+            <View style={styles.sectionHeader}>
+                <Text accessibilityRole="header" style={styles.sectionTitle}>インベントリ（{inventory.length}/{unequipped.length}）</Text>
+                {unequipped.length > 0 && <View style={styles.modeActions}>
+                    {(['sell', 'synthesize'] as const).map((value) => (
+                        <Pressable key={value} accessibilityRole="button" accessibilityLabel={value === 'sell' ? '売却' : '合成'}
+                            accessibilityState={{ selected: mode === value }}
+                            onPress={() => changeView(() => setMode(mode === value ? 'normal' : value))}
+                            style={[styles.secondaryButton, mode === value && styles.modeActive]}>
+                            <Text style={[styles.secondaryButtonText, mode === value && styles.activeText]}>{value === 'sell' ? '売却' : '合成'}</Text>
+                        </Pressable>
+                    ))}
+                </View>}
+            </View>
+
             {/* インベントリフィルタ・ソート（Web InventorySectionと同一の選択肢） */}
             <View style={styles.filterRow}>
                 <FilterSelect
@@ -202,23 +221,8 @@ export default function InventoryScreen() {
             </View>
             {filtersActive && <Pressable accessibilityRole="button" accessibilityLabel="表示条件をリセット" onPress={resetFilters} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>表示条件をリセット</Text></Pressable>}
 
-            {/* インベントリ見出し（行自体はFlatListが仮想化して描画する） */}
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>インベントリ（{inventory.length}）</Text>
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ disabled: !canSynthesize || isSynthesizing }}
-                    accessibilityLabel={`選択した${SYNTHESIS_CONFIG.REQUIRED_COUNT}個の装備を合成する`}
-                    disabled={!canSynthesize || isSynthesizing}
-                    onPress={handleSynthesize}
-                    style={({ pressed }) => [styles.secondaryButton, (!canSynthesize || isSynthesizing || pressed) && styles.muted]}
-                >
-                    <Text style={styles.secondaryButtonText}>
-                        {isSynthesizing ? '合成中…' : `合成（${selectedItems.length}/${SYNTHESIS_CONFIG.REQUIRED_COUNT}）`}
-                    </Text>
-                </Pressable>
-            </View>
-            <Text style={styles.hint}>全{equipment.length}件中{inventory.length}件を表示。同じレアリティの未装備品{SYNTHESIS_CONFIG.REQUIRED_COUNT}個を選ぶと上位レアリティへ合成できます。表示条件を変更すると素材の選択を解除します。</Text>
+            {mode === 'synthesize' && <Text style={styles.hint}>同レアリティ{SYNTHESIS_CONFIG.REQUIRED_COUNT}個 → 多い装備種別の上位装備に合成（{selectedItems.length}/{SYNTHESIS_CONFIG.REQUIRED_COUNT}）。表示条件を変更すると素材の選択を解除します。</Text>}
+            {mode === 'sell' && <Text style={styles.hint}>タップでアイテムを売却しXPに変換</Text>}
             {selectedItems.length > 0 && <Pressable accessibilityRole="button" accessibilityLabel="素材の選択を解除" onPress={() => changeView(() => {})} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>素材の選択を解除</Text></Pressable>}
             {selectionNotice ? <Text accessibilityRole="alert" style={styles.hint}>{selectionNotice}</Text> : null}
             {synthHasError && (
@@ -245,18 +249,23 @@ export default function InventoryScreen() {
                 keyExtractor={(item) => item.id}
                 ListHeaderComponent={listHeader}
                 ListEmptyComponent={
-                    <Text style={styles.emptyText}>{equipment.length ? '条件に合う装備がありません。表示条件をリセットしてください。' : '装備はまだありません。タスクを達成して宝箱を集めましょう。'}</Text>
+                    <Text style={styles.emptyText}>{unequipped.length ? '条件に合う装備がありません。表示条件をリセットしてください。' : '未装備の装備がありません。タスクを達成して宝箱を集めましょう。'}</Text>
                 }
+                ListFooterComponent={mode === 'synthesize' ? <Pressable accessibilityRole="button"
+                    accessibilityState={{ disabled: !canSynthesize || isSynthesizing }}
+                    accessibilityLabel={`選択した${SYNTHESIS_CONFIG.REQUIRED_COUNT}個の装備を合成する`}
+                    disabled={!canSynthesize || isSynthesizing} onPress={handleSynthesize}
+                    style={[styles.primaryButton, styles.synthesizeButton, (!canSynthesize || isSynthesizing) && styles.muted]}>
+                    <Text style={styles.activeText}>{isSynthesizing ? '合成中…' : `合成する（${selectedItems.length}/${SYNTHESIS_CONFIG.REQUIRED_COUNT}）`}</Text>
+                </Pressable> : null}
                 renderItem={({ item }) => (
                     <InventoryRow
                         item={item}
+                        mode={mode}
                         selected={selectedItems.some((candidate) => candidate.id === item.id)}
                         selectionDisabled={item.equipped || item.rarity === 'legendary' || (!selectedItems.some((candidate) => candidate.id === item.id) && (selectedItems.length >= SYNTHESIS_CONFIG.REQUIRED_COUNT || (selectedItems.length > 0 && selectedItems[0].rarity !== item.rarity)))}
                         onToggleSelect={loadoutAction(() => toggleSelect(item))}
-                        onEquipToggle={loadoutAction(() => {
-                            const current = useMobileGameStore.getState();
-                            if (item.equipped) current.unequipItem(item.id); else current.equipItem(item.id);
-                        })}
+                        onEquip={loadoutAction(() => useMobileGameStore.getState().equipItem(item.id))}
                         onSell={handleSell}
                         styles={styles}
                         palette={palette}
@@ -272,81 +281,69 @@ export default function InventoryScreen() {
 /** 装備アイコン（レアリティ色の枠）。未知のtemplate_idはプレースホルダー。 */
 function ItemIcon({ templateId, rarity, styles, palette }: { templateId: string; rarity: Rarity; styles: Styles; palette: ThemePalette }) {
     const source = getItemImage(templateId);
-    if (!source) {
-        return (
-            <View style={[styles.itemIcon, styles.imageFallback, { borderColor: palette.rarity[rarity] }]}>
-                <Text style={styles.imageFallbackText}>?</Text>
-            </View>
-        );
-    }
-    return <Image source={source} style={[styles.itemIcon, { borderColor: palette.rarity[rarity] }]} />;
+    return <View style={[styles.iconFrame, { backgroundColor: `${palette.rarity[rarity]}22` }]}>
+        {source ? <Image source={source} resizeMode="contain" style={styles.itemIcon} /> : <Text style={styles.imageFallbackText}>?</Text>}
+    </View>;
 }
 
 function InventoryRow({
     item,
+    mode,
     selected,
     selectionDisabled,
     onToggleSelect,
-    onEquipToggle,
+    onEquip,
     onSell,
     styles,
     palette,
 }: {
     item: Equipment;
+    mode: InventoryMode;
     selected: boolean;
     selectionDisabled: boolean;
     onToggleSelect: (item: Equipment) => void;
-    onEquipToggle: (item: Equipment) => void;
+    onEquip: (item: Equipment) => void;
     onSell: (item: Equipment) => void;
     styles: Styles;
     palette: ThemePalette;
 }) {
-    return (
-        <View style={[styles.itemRow, selected && styles.itemRowSelected]}>
-            <View style={styles.itemMain}>
+    const itemDescription = [RARITY_LABELS[item.rarity], SLOT_LABELS[item.slot],
+        ...(item.attackBonus > 0 ? [`攻撃力+${item.attackBonus}`] : []),
+        ...(item.defenseBonus > 0 ? [`防御力+${item.defenseBonus}`] : []),
+        ...(item.hpBonus > 0 ? [`HP+${item.hpBonus}`] : []),
+        ...(mode === 'sell' ? [`確認後に${SELL_XP_BY_RARITY[item.rarity]}XPを獲得します`] : []),
+    ].join('、');
+    const content = <>
+                {mode === 'synthesize' && <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+                    style={[styles.checkbox, { borderColor: selected ? palette.rarity[item.rarity] : palette.text.muted, backgroundColor: selected ? palette.rarity[item.rarity] : 'transparent' }]}>
+                    {selected && <Check size={12} color="#000" />}
+                </View>}
                 <ItemIcon templateId={item.templateId} rarity={item.rarity} styles={styles} palette={palette} />
                 <View style={styles.flex}>
-                    <Text style={[styles.itemName, { color: palette.rarity[item.rarity] }]}>{item.name}{item.equipped ? '（装備中）' : ''}</Text>
+                    <Text style={[styles.itemName, { color: palette.rarity[item.rarity] }]}>{item.name}</Text>
                     <Text style={styles.itemMeta}>
-                        {RARITY_LABELS[item.rarity]} / {SLOT_LABELS[item.slot]}
-                        {item.attackBonus > 0 ? ` 攻+${item.attackBonus}` : ''}
-                        {item.defenseBonus > 0 ? ` 防+${item.defenseBonus}` : ''}
-                        {item.hpBonus > 0 ? ` HP+${item.hpBonus}` : ''}
+                        {RARITY_LABELS[item.rarity]} · {SLOT_LABELS[item.slot]}
+                        {item.attackBonus > 0 ? ` · 攻+${item.attackBonus}` : ''}
+                        {item.defenseBonus > 0 ? ` · 防+${item.defenseBonus}` : ''}
+                        {item.hpBonus > 0 ? ` · HP+${item.hpBonus}` : ''}
                     </Text>
                 </View>
-            </View>
-            <View style={styles.itemActions}>
-            <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: selected, disabled: selectionDisabled }}
-                accessibilityLabel={`${item.name}を合成素材に${selected ? '選択解除' : '選択'}する`}
-                disabled={selectionDisabled}
-                onPress={() => onToggleSelect(item)}
-                style={[styles.selectBox, selected && styles.selectBoxActive, selectionDisabled && styles.muted]}
-            >
-                <Text style={[styles.secondaryButtonText, selected && styles.selectMark]}>{selected ? '✓ 選択を解除' : '素材に選択'}</Text>
-            </Pressable>
-            <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={item.equipped ? `${item.name}を外す` : `${item.name}を装備する`}
-                onPress={() => onEquipToggle(item)}
-                style={({ pressed }) => [styles.secondaryButton, pressed && styles.muted]}
-            >
-                <Text style={styles.secondaryButtonText}>{item.equipped ? '外す' : '装備'}</Text>
-            </Pressable>
-            <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ disabled: item.equipped }}
-                accessibilityLabel={`${item.name}を売却する`}
-                disabled={item.equipped}
-                onPress={() => onSell(item)}
-                style={({ pressed }) => [styles.dangerButton, (item.equipped || pressed) && styles.muted]}
-            >
-                <Text style={styles.dangerButtonText}>売却</Text>
-            </Pressable>
-            </View>
-        </View>
-    );
+                {mode === 'normal' && <Pressable accessibilityRole="button" accessibilityLabel={`${item.name}を装備する`}
+                    onPress={() => onEquip(item)} style={styles.primaryButton}><Text style={styles.activeText}>装備</Text></Pressable>}
+                {mode === 'sell' && <Text style={styles.saleXp}>+{SELL_XP_BY_RARITY[item.rarity]} XP</Text>}
+            </>;
+    const rowStyle = [styles.itemRow, {
+        borderColor: selected ? palette.rarity[item.rarity] : `${palette.rarity[item.rarity]}33`,
+        backgroundColor: selected ? `${palette.rarity[item.rarity]}15` : palette.bg.card,
+    }];
+    if (mode === 'normal') return <View style={rowStyle}>{content}</View>;
+    return <Pressable accessibilityRole={mode === 'synthesize' ? 'checkbox' : 'button'}
+        accessibilityLabel={mode === 'synthesize' ? `${item.name}を合成素材に${selected ? '選択解除' : '選択'}する` : `${item.name}を売却する`}
+        accessibilityValue={{ text: itemDescription }}
+        accessibilityState={mode === 'synthesize' ? { checked: selected, disabled: selectionDisabled } : undefined}
+        disabled={mode === 'synthesize' && selectionDisabled}
+        onPress={() => mode === 'synthesize' ? onToggleSelect(item) : onSell(item)}
+        style={[...rowStyle, mode === 'synthesize' && selectionDisabled && styles.muted]}>{content}</Pressable>;
 }
 
 function FilterSelect({ label, value, options, onChange, styles }: {
@@ -386,7 +383,7 @@ type Styles = ReturnType<typeof createStyles>;
 
 function createStyles(palette: ThemePalette) {
     return StyleSheet.create({
-    flex: { flex: 1, minWidth: 0 },
+    flex: { flex: 1, minWidth: 100 },
     safeArea: { flex: 1, backgroundColor: palette.bg.primary },
     pageHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, paddingHorizontal: LAYOUT_TOKENS.page.detailHorizontal, paddingTop: 12, paddingBottom: 8, width: '100%', maxWidth: LAYOUT_TOKENS.page.maxWidth, alignSelf: 'center' },
     pageTitle: { ...PAGE_HEADING, color: palette.text.primary, flexShrink: 1 },
@@ -399,8 +396,8 @@ function createStyles(palette: ThemePalette) {
     bannerText: { flex: 1, color: palette.text.primary, fontSize: 13, fontWeight: '600', lineHeight: 19 },
     bannerClose: { color: palette.text.secondary, fontSize: 21, lineHeight: 23 },
     closeButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-    itemIcon: { width: 34, height: 34, borderRadius: 6, borderWidth: 2, backgroundColor: palette.bg.cardHover },
-    imageFallback: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: palette.border.default, backgroundColor: palette.bg.cardHover },
+    itemIcon: { width: 40, height: 40 },
+    iconFrame: { width: 48, height: 48, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     imageFallbackText: { color: palette.text.muted, fontSize: 15, fontWeight: '800' },
     sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' },
     filterRow: { gap: 10 },
@@ -414,15 +411,16 @@ function createStyles(palette: ThemePalette) {
     sectionTitle: { color: palette.text.primary, fontSize: 16, fontWeight: '800' },
     hint: { color: palette.text.muted, fontSize: 11, lineHeight: 16 },
     emptyText: { color: palette.text.muted, fontSize: 13, paddingVertical: 8 },
-    itemRow: { gap: 12, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12 },
-    itemMain: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-    itemActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    itemRowSelected: { borderColor: palette.accent.emerald },
-    selectBox: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: palette.border.default, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.card },
-    selectBoxActive: { backgroundColor: palette.accent.emerald, borderColor: palette.accent.emerald },
-    selectMark: { color: palette.bg.primary, fontSize: 13, fontWeight: '900' },
+    itemRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', minHeight: 44, gap: 12, backgroundColor: palette.bg.card, borderWidth: 1, borderRadius: 12, padding: 12 },
+    modeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    modeActive: { backgroundColor: palette.accent.primary },
+    primaryButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.primary },
+    activeText: { color: 'white', fontSize: 12, fontWeight: '700' },
+    synthesizeButton: { marginTop: 8 },
+    saleXp: { color: '#000', backgroundColor: palette.accent.gold, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontSize: 12, fontWeight: '700' },
+    checkbox: { width: 20, height: 20, borderWidth: 2, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
     itemName: { fontSize: 14, fontWeight: '700' },
-    itemMeta: { color: palette.text.muted, fontSize: 11, marginTop: 2 },
+    itemMeta: { color: palette.text.muted, fontSize: 12, marginTop: 2 },
     secondaryButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.border.default },
     secondaryButtonText: { color: palette.text.primary, fontSize: 12, fontWeight: '700' },
     dangerButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.tertiary, borderWidth: 1, borderColor: palette.text.danger },

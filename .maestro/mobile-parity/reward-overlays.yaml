@@ -58,6 +58,6 @@ name: Reward close target and chest reveal (isolated memory only)
     direction: DOWN
 - tapOn: "インベントリを開く"
 - scrollUntilVisible:
-    element: "インベントリ（8）"
+    element: "インベントリ（5/5）"
     direction: DOWN
-- assertVisible: "インベントリ（8）"
+- assertVisible: "インベントリ（5/5）"
