@@ -85,7 +85,7 @@ describe('Mobile parity flow selection', () => {
         const yaml = readFileSync(new URL(`../${getMobileParityFlow(flow).path}`, import.meta.url), 'utf8');
         expect(yaml).not.toContain('clearState:'); expect(yaml).toContain('127.0.0.1%3A8082'); expect(yaml).toContain('青色の宝箱、キャラクター獲得');
     });
-    it.each(['loadout', 'inventorySelection', 'habitHistory'])('limits %s verification to local-only daily memory data / 8082', (flow) => {
+    it.each(['loadout', 'inventorySelection', 'inventoryPreview', 'habitHistory'])('limits %s verification to local-only daily memory data / 8082', (flow) => {
         const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
         expect(getMobileParityMetroUrl(flow)).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime(flow)).toBe(true);
         expect(() => assertReferenceProfile({ extra }, flow)).not.toThrow();

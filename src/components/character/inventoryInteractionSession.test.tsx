@@ -53,20 +53,20 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push, dismissTo:
     }, [setup]);
 } }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityValue?: { text?: string }; accessibilityRole?: string; accessibilityState?: { checked?: boolean; expanded?: boolean }; testID?: string };
+    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityHint?: string; accessibilityValue?: { text?: string }; accessibilityRole?: string; accessibilityState?: { checked?: boolean; expanded?: boolean }; testID?: string };
     const box = ({ children }: Props) => createElement('div', {}, children);
     return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Platform: { OS: 'ios' }, Keyboard: { dismiss: vi.fn() },
         useWindowDimensions: () => ({ width: 402, height: 874, fontScale: 1 }),
         Modal: ({ children, onRequestClose }: Props & { onRequestClose: () => void }) => { mocks.requestClose = onRequestClose; return createElement('div', { role: 'dialog' }, children); },
         Text: ({ children }: Props) => createElement('span', {}, children),
         Image: () => null, StyleSheet: { create: <T,>(value: T) => value },
-        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityValue, accessibilityRole, accessibilityState, testID }: Props) => {
+        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityHint, accessibilityValue, accessibilityRole, accessibilityState, testID }: Props) => {
             if (accessibilityLabel && onPress) mocks.actions.set(accessibilityLabel, onPress);
-            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-accessibility-value': accessibilityValue?.text, role: accessibilityRole, 'aria-checked': accessibilityState?.checked, 'aria-expanded': accessibilityState?.expanded, 'data-testid': testID }, children);
+            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-accessibility-hint': accessibilityHint, 'data-accessibility-value': accessibilityValue?.text, role: accessibilityRole, 'aria-checked': accessibilityState?.checked, 'aria-expanded': accessibilityState?.expanded, 'data-testid': testID }, children);
         },
         FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent, ListFooterComponent }: {
             data: Equipment[]; renderItem: (item: { item: Equipment }) => ReactNode; ListHeaderComponent: ReactNode; ListEmptyComponent: ReactNode; ListFooterComponent: ReactNode;
-        }) => createElement('div', {}, ListHeaderComponent, data.length ? data.map((item) => createElement('div', { key: item.id }, renderItem({ item }))) : ListEmptyComponent, ListFooterComponent),
+        }) => createElement('div', { 'data-flat-list': true }, ListHeaderComponent, data.length ? data.map((item) => createElement('div', { key: item.id }, renderItem({ item }))) : ListEmptyComponent, ListFooterComponent),
     };
 });
 
@@ -95,13 +95,13 @@ afterEach(() => {
     useGameStore.setState({ addXp: webAddXp }); useMobileGameStore.setState({ addXp: nativeAddXp });
 });
 
-for (const platform of ['web', 'native'] as const) {
+for (const platform of ['web', 'native', 'preview'] as const) {
     const store = platform === 'web' ? useGameStore : useMobileGameStore;
     const setEquipment = (equipment: Equipment[]) => {
         if (platform === 'web') useGameStore.setState({ equipment }); else useMobileGameStore.setState({ equipment });
     };
     const mount = () => act(() => root!.render(createElement(StrictMode, {}, createElement(MemoryRouter, {},
-        platform === 'web' ? createElement(InventorySection) : createElement(InventoryScreen)))));
+        platform === 'web' ? createElement(InventorySection) : platform === 'preview' ? createElement(CharacterScreen) : createElement(InventoryScreen)))));
     const requestSale = () => {
         if (platform === 'web') {
             if (!button('木の剣を売却して+5XP獲得')) click(button('売却'));
@@ -120,7 +120,7 @@ for (const platform of ['web', 'native'] as const) {
     };
     const confirmSynthesis = () => {
         click(button(platform === 'web' ? '合成する' : '選択した3個の装備を合成する'));
-        if (platform === 'native') act(() => mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress());
+        if (platform !== 'web') act(() => mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress());
     };
     const changeFilter = (value: 'armor' | 'weapon' | 'all') => {
         if (platform === 'web') {
@@ -128,7 +128,7 @@ for (const platform of ['web', 'native'] as const) {
             select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
         } else button(`種類を${value === 'armor' ? '防具' : value === 'weapon' ? '武器' : 'すべて'}にする`).click();
     };
-    const openFilter = () => { if (platform === 'native') click(host.querySelector('[data-testid="inventory-filter-slot"]')!); };
+    const openFilter = () => { if (platform !== 'web') click(host.querySelector('[data-testid="inventory-filter-slot"]')!); };
     const selectedCount = () => host.querySelectorAll(`[aria-label="${platform === 'web' ? '木の剣を合成対象に選択中' : '木の剣を合成素材に選択解除する'}"]`).length;
     describe(`${platform} inventory selection and filters`, () => {
         it('shows only unequipped items and only the current mode actions', () => {
@@ -206,7 +206,7 @@ for (const platform of ['web', 'native'] as const) {
             mount(); openFilter(); act(() => changeFilter('weapon')); await act(async () => notifyLogin('a')); expect(button('表示条件をリセット')).toBeTruthy();
             await act(async () => notifyLogin('b')); expect(button('表示条件をリセット')).toBeUndefined();
         });
-        if (platform === 'native') {
+        if (platform !== 'web') {
             it.each(['売却', '合成'])('%s行の読み上げ説明で同名の異なる性能を区別できる', (mode) => {
                 setEquipment([items()[0], { ...items()[1], rarity: 'uncommon', slot: 'armor', attackBonus: 7, defenseBonus: 9, hpBonus: 12 }]);
                 mount(); click(button(mode));
@@ -250,7 +250,7 @@ for (const platform of ['web', 'native'] as const) {
             });
             expect(mocks.enqueue).toHaveBeenCalledTimes(change === 'equal' ? 1 : 0);
         });
-        if (platform === 'native') it('blur/refocus invalidates old equip controls', () => {
+        if (platform !== 'web') it('blur/refocus invalidates old equip controls', () => {
             mount(); const equip = button('木の剣を装備する');
             act(() => { mocks.blur?.(); mocks.focus?.(); equip.click(); }); expect(mocks.enqueue).not.toHaveBeenCalled();
         });
@@ -352,8 +352,8 @@ describe('Web feedback timer ownership', () => {
     });
 });
 
-describe('Native inventory filter dialogs', () => {
-    const mount = () => act(() => root!.render(createElement(StrictMode, {}, createElement(InventoryScreen))));
+for (const preview of [false, true]) describe(`Native inventory filter dialogs preview=${preview}`, () => {
+    const mount = () => act(() => root!.render(createElement(StrictMode, {}, preview ? createElement(CharacterScreen) : createElement(InventoryScreen))));
     const open = (kind: 'slot' | 'rarity' | 'sort') => click(host.querySelector(`[data-testid="inventory-filter-${kind}"]`)!);
     const selected = () => host.querySelectorAll('[role="checkbox"][aria-checked="true"]').length;
     const selectMaterials = () => {
@@ -408,7 +408,7 @@ describe('Native inventory filter dialogs', () => {
             if (change === 'logout') await notifyLogout();
             else if (change === 'switch') await notifyLogin('b');
             else if (change === 'blur') { mocks.blur(); mocks.focus(); }
-            else if (change === 'back') mocks.actions.get('キャラクター画面に戻る')!();
+            else if (change === 'back') mocks.actions.get(preview ? 'インベントリを開く' : 'キャラクター画面に戻る')!();
             else useMobileGameStore.setState({ hasHydrated: false });
             stale();
         });
@@ -499,6 +499,55 @@ describe('Native alert/focus boundary', () => {
 
 describe('Native character / inventory entry', () => {
     const mount = () => act(() => root!.render(createElement(StrictMode, {}, createElement(CharacterScreen))));
+    it.each([0, 1, 5, 6, 2000])('limits the preview to five unequipped rows for %i items, without a nested FlatList', (count) => {
+        const equipment = Array.from({ length: count }, (_, index) => ({ ...items()[0], id: `preview-${index}`, name: `持ち物${index}` }));
+        useMobileGameStore.setState({ equipment: [...equipment, { ...result(), equipped: true, name: '装備中の剣' }] });
+        mount(); expect(host.querySelectorAll('[aria-label$="を装備する"]')).toHaveLength(Math.min(count, 5));
+        expect(host.querySelector('[data-flat-list]')).toBeNull(); expect(host.textContent).not.toContain('装備中の剣');
+        expect(host.textContent).toContain(`インベントリ（${count}/${count}）`);
+        if (count > 5) expect(host.textContent).toContain(`残り${count - 5}件`);
+        expect(button('インベントリを開く').getAttribute('data-accessibility-hint')).toBe(count > 5 ? `表示条件に合う残り${count - 5}件を含む一覧へ移動します` : `持ち物${count + 1}件の一覧へ移動します`);
+        expect(useMobileGameStore.getState().equipment).toHaveLength(count + 1); expect(mocks.enqueue).not.toHaveBeenCalled();
+    });
+    it('filters all inventory before applying the five-row preview limit', () => {
+        const equipment = Array.from({ length: 7 }, (_, index) => ({ ...items()[0], id: `preview-${index}`, name: `武器${index}`, rarity: 'rare' as const }));
+        useMobileGameStore.setState({ equipment: [...equipment, { ...items()[0], id: 'armor', name: '末尾の防具', slot: 'armor' }] });
+        mount(); expect(button('末尾の防具を装備する')).toBeUndefined();
+        click(host.querySelector('[data-testid="inventory-filter-slot"]')!); click(button('種類を防具にする'));
+        expect(host.textContent).toContain('インベントリ（1/8）'); expect(button('末尾の防具を装備する')).toBeTruthy();
+        expect(host.textContent).not.toContain('残り'); click(button('表示条件をリセット'));
+        expect(host.querySelectorAll('[aria-label$="を装備する"]')).toHaveLength(5);
+    });
+    it.each(['equip', 'sale', 'synthesis'] as const)('navigation rejects a stale %s action before blur or rerender', (operation) => {
+        mount(); let stale: () => void;
+        if (operation === 'equip') stale = mocks.actions.get('木の剣を装備する')!;
+        else if (operation === 'sale') {
+            click(button('売却')); click(button('木の剣を売却する'));
+            stale = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '売却する').onPress;
+        } else {
+            click(button('合成'));
+            for (const choice of Array.from(host.querySelectorAll<HTMLElement>('[aria-label="木の剣を合成素材に選択する"]'))) click(choice);
+            click(button('選択した3個の装備を合成する'));
+            stale = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress;
+        }
+        act(() => { mocks.actions.get('インベントリを開く')!(); stale(); });
+        expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/inventory');
+        expect(mocks.enqueue).not.toHaveBeenCalled(); expect(mocks.synthesize).not.toHaveBeenCalled();
+        expect(useMobileGameStore.getState().equipment).toEqual(items());
+    });
+    it('navigation does not display a late synthesis result or carry preview filters/selections into the full screen', async () => {
+        const pending = deferred<Equipment | null>(); mocks.synthesize.mockReturnValue(pending.promise);
+        mount(); click(button('合成'));
+        for (const choice of Array.from(host.querySelectorAll<HTMLElement>('[aria-label="木の剣を合成素材に選択する"]'))) click(choice);
+        click(button('選択した3個の装備を合成する'));
+        act(() => mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress());
+        click(button('インベントリを開く'));
+        act(() => root!.render(createElement(StrictMode, {}, createElement(InventoryScreen))));
+        await act(async () => pending.resolve(result()));
+        expect(mocks.synthesize).toHaveBeenCalledOnce(); expect(host.textContent).not.toContain('が誕生！');
+        expect(host.querySelectorAll('[role="checkbox"]')).toHaveLength(0); expect(button('種類：すべて')).toBeTruthy();
+        expect(host.querySelector('[data-flat-list]')).toBeTruthy();
+    });
     it('shows acquisition history after the inventory entry, hides it while hydrating and clears removed records', () => {
         useMobileGameStore.setState({ chestQueue: [{ id: 'earned', chestType: 'blue', label: '青色の宝箱', equipment: null, opened: true, isStarterCharacter: true }] });
         mount(); expect(host.textContent).toContain('獲得履歴 (1)');
@@ -508,9 +557,9 @@ describe('Native character / inventory entry', () => {
         act(() => { useMobileGameStore.setState({ hasHydrated: true, chestQueue: [] }); });
         expect(host.textContent).not.toContain('獲得履歴'); expect(host.textContent).toContain('インベントリを見る');
     });
-    it('キャラには成長・件数付き導線を残し、全装備行を描画しない', () => {
+    it('キャラには成長・操作可能なプレビュー・件数付き導線を表示する', () => {
         mount(); expect(host.textContent).toContain('プロフィールと成長'); expect(host.textContent).toContain('インベントリを見る（3）');
-        expect(button('木の剣を売却する')).toBeUndefined();
+        expect(button('木の剣を売却する')).toBeUndefined(); expect(button('木の剣を装備する')).toBeTruthy();
         const open = mocks.actions.get('インベントリを開く')!; act(() => { open(); open(); });
         expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/inventory');
         act(() => { mocks.blur(); mocks.focus(); }); click(button('インベントリを開く'));

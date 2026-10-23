@@ -1,0 +1,128 @@
+appId: com.yutakane.lifequest.parity
+name: Character inventory preview and route ownership (daily memory only)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "キャラ(, tab,.*)?"
+- scrollUntilVisible:
+    element: "インベントリを開く"
+    direction: DOWN
+    centerElement: false
+- scroll
+- assertVisible: "木の剣を装備する"
+- takeScreenshot: "preview-${REFERENCE_THEME}-normal"
+- scrollUntilVisible:
+    element: "武器の鋼の刃を外す"
+    direction: UP
+    centerElement: true
+- tapOn: "武器の鋼の刃を外す"
+- scrollUntilVisible:
+    element: "防具のプレートアーマーを外す"
+    direction: DOWN
+    centerElement: true
+- tapOn: "防具のプレートアーマーを外す"
+- scrollUntilVisible:
+    element: "アクセサリーの金のアミュレットを外す"
+    direction: DOWN
+    centerElement: true
+- tapOn: "アクセサリーの金のアミュレットを外す"
+- scrollUntilVisible:
+    element: "インベントリを開く"
+    direction: DOWN
+    centerElement: false
+- scroll
+- assertVisible: "インベントリを開く"
+- assertNotVisible: "木の剣を装備する"
+- takeScreenshot: "preview-${REFERENCE_THEME}-overflow"
+- scrollUntilVisible:
+    element: "種類：すべて"
+    direction: UP
+    centerElement: true
+- tapOn: "種類：すべて"
+- tapOn: "種類を武器にする"
+- scrollUntilVisible:
+    element: "鉄の剣を装備する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "鉄の剣を装備する"
+- scrollUntilVisible:
+    element: "武器の鉄の剣を外す"
+    direction: UP
+    centerElement: true
+- assertVisible: "武器の鉄の剣を外す"
+- scrollUntilVisible:
+    element: "最強装備を自動装着"
+    direction: UP
+    centerElement: true
+# XCTest may report a large-text control behind the tab bar as visible.
+# Move it into the scroll viewport before tapping; never tap through the tab bar.
+- swipe:
+    start: "50%, 65%"
+    end: "50%, 45%"
+    duration: 500
+- tapOn: "最強装備を自動装着"
+- scrollUntilVisible:
+    element: "武器の鋼の刃を外す"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "武器の鋼の刃を外す"
+- scrollUntilVisible:
+    element: "表示条件をリセット"
+    direction: DOWN
+    centerElement: true
+- tapOn: "表示条件をリセット"
+- scrollUntilVisible:
+    element: "売却"
+    direction: UP
+    centerElement: true
+- tapOn: "売却"
+- scrollUntilVisible:
+    element: "チェインメイルを売却する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "チェインメイルを売却する"
+- tapOn: "キャンセル"
+- scrollUntilVisible:
+    element: "合成"
+    direction: UP
+    centerElement: true
+- tapOn: "合成"
+- scrollUntilVisible:
+    element: "チェインメイルを合成素材に選択する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "チェインメイルを合成素材に選択する"
+- scrollUntilVisible:
+    element: "銀の指輪を合成素材に選択する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "銀の指輪を合成素材に選択する"
+- scrollUntilVisible:
+    element: "鉄の剣を合成素材に選択する"
+    direction: DOWN
+    centerElement: true
+- tapOn: "鉄の剣を合成素材に選択する"
+- assertVisible: "鉄の剣を合成素材に選択解除する"
+- takeScreenshot: "preview-${REFERENCE_THEME}-selection"
+- scrollUntilVisible:
+    element: "インベントリを開く"
+    direction: DOWN
+    centerElement: false
+- scroll
+- tapOn: "インベントリを開く"
+- assertVisible: "キャラクター画面に戻る"
+- assertNotVisible: "チェインメイルを合成素材に選択解除する"
+- assertVisible: "チェインメイルを装備する"
+- tapOn: "キャラクター画面に戻る"
+- scrollUntilVisible:
+    element: "チェインメイルを装備する"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "チェインメイルを装備する"
+- assertNotVisible: "チェインメイルを合成素材に選択解除する"

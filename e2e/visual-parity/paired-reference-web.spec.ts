@@ -12,6 +12,14 @@ const screens = [
 ] as const;
 
 for (const theme of ['light', 'dark'] as const) {
+    test(`${theme} character inventory preview at 402x874`, async ({ page }, testInfo) => {
+        await installWebParityState(page, theme); await page.goto('/character'); await waitForWebParityRender(page);
+        await page.getByRole('button', { name: '木の剣を装備する', exact: true }).scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath(`web-${theme}-preview-normal.png`), animations: 'disabled', scale: 'css' });
+        for (const name of ['武器の鋼の刃を外す', '防具のプレートアーマーを外す', 'アクセサリーの金のアミュレットを外す']) await page.getByRole('button', { name, exact: true }).click();
+        await page.getByRole('link', { name: /もっと見る/ }).scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath(`web-${theme}-preview-overflow.png`), animations: 'disabled', scale: 'css' });
+    });
     for (const [name, route, ready] of screens) {
         test(`${theme} ${name} reference at 402x874`, async ({ page }, testInfo) => {
             await installWebParityState(page, theme);
