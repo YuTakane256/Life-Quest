@@ -78,9 +78,21 @@ name: Inventory selection and filter recovery (daily memory only)
     centerElement: true
 - tapOn: "種類：すべて"
 - tapOn: "種類の選択を閉じる"
+- scrollUntilVisible:
+    element: "チェインメイルを合成素材に選択解除する"
+    direction: DOWN
+    centerElement: true
 - assertVisible: "チェインメイルを合成素材に選択解除する"
+- scrollUntilVisible:
+    element: "種類：すべて"
+    direction: UP
+    centerElement: true
 - tapOn: "種類：すべて"
 - tapOn: "種類をすべてにする"
+- scrollUntilVisible:
+    element: "チェインメイルを合成素材に選択解除する"
+    direction: DOWN
+    centerElement: true
 - assertVisible: "チェインメイルを合成素材に選択解除する"
 - scrollUntilVisible:
     element: "素材の選択を解除"

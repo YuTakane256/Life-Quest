@@ -34,6 +34,36 @@ Issue: [#811](https://github.com/YuTakane256/Life-Quest/issues/811)。#809の続
 最終結果・比較画像・6.1 Sol中の独立レビューはPRへ記録する。自動マージしない。
 固定メモリfixtureのUI検証を実データ永続化・実アカウント同期・Android実機・VoiceOverの実聴・⑤の配布準備の完了とはしない。
 
+### 実行結果
+
+- 全体3,099件成功/98件skip、core753件成功。画面コンポーネントの操作/認証/ダイアログ境界114件を含む。
+- Web関連E2E26件成功。Web/Mobile/core型検査、build、秘密情報検査成功。lintはerror0/既存warning6。
+- iOSライト（154558）で、最上位レアリティ・0件復帰・取消/同値選択での素材保持・装備往復・合成/売却確定まで全フロー成功。
+- 文字拡大の初回（155140）は取消後の素材行が画面外になりassertが停止した。
+  失敗時も選択数1/3が残っていることを階層と画像で確認し、同じ選択行へ明示スクロールしてからassertするようフローを修正。
+  選択保持の検証を削除したり、タップを強制する変更ではない。
+- 文字拡大の再実行（155434）は素材保持から合成/売却確定まで全フロー成功。終了後、文字設定は元のlargeへ復元。
+- 390px画像回帰7件成功/既知のタスク矢印19px差分1件。実画像のSHA-256は前回と同じ
+  `bf452f819c3595e4bf8e9962402038350ad8b950df969e2082100f813aae9cf3`。基準/許容値変更なし。
+- 6.1 Sol中の初回レビューではP2以上の指摘なし。最終コミットの画像・記録とCI結果もPRで照合する。
+
+### 比較画像
+
+共通dailyデータ・同じ初期状態・402×874。Webの選択ポップアップとNativeダイアログはOS固有の操作として分ける。
+
+| テーマ | Web | iOS |
+| --- | --- | --- |
+| light | ![](screenshots/mobile-inventory-filters/web-light.png) | ![](screenshots/mobile-inventory-filters/ios-light.png) |
+| dark | ![](screenshots/mobile-inventory-filters/web-dark.png) | ![](screenshots/mobile-inventory-filters/ios-dark.png) |
+
+| Nativeのレア選択 light | Nativeのレア選択 dark |
+| --- | --- |
+| ![](screenshots/mobile-inventory-filters/ios-light-picker.png) | ![](screenshots/mobile-inventory-filters/ios-dark-picker.png) |
+
+| iOS文字拡大（accessibility-large） | 文字拡大での選択肢 |
+| --- | --- |
+| ![](screenshots/mobile-inventory-filters/ios-large.png) | ![](screenshots/mobile-inventory-filters/ios-large-picker.png) |
+
 ## 残る差分
 
 フィルタの情報順序・カード構成・選択肢は揃えるが、選択ポップアップはNativeダイアログとWeb selectで異なる。
