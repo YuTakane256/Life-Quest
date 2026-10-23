@@ -31,6 +31,7 @@ vi.mock('../../../apps/mobile/src/hooks/useInventorySynthesis', () => ({ useInve
 }) }));
 vi.mock('../../../apps/mobile/src/hooks/useCloudChestOpen', () => ({ useCloudChestOpen: () => ({ openChest: vi.fn(), retry: vi.fn() }) }));
 vi.mock('../../../apps/mobile/src/components/CharacterOverview', () => ({ CharacterOverview: () => createElement('div', {}, 'プロフィールと成長') }));
+vi.mock('lucide-react-native', () => ({ Check: () => null }));
 vi.mock('../../../apps/mobile/src/theme/usePalette', async () => {
     const { DARK_THEME } = await import('@life-quest/core/designTokens');
     return { usePalette: () => ({ palette: DARK_THEME }) };
@@ -52,13 +53,13 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push, dismissTo:
     }, [setup]);
 } }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string; accessibilityState?: { checked?: boolean } };
+    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityValue?: { text?: string }; accessibilityRole?: string; accessibilityState?: { checked?: boolean } };
     const box = ({ children }: Props) => createElement('div', {}, children);
     return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, Text: ({ children }: Props) => createElement('span', {}, children),
         Image: () => null, StyleSheet: { create: <T,>(value: T) => value },
-        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityRole, accessibilityState }: Props) => {
+        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityValue, accessibilityRole, accessibilityState }: Props) => {
             if (accessibilityLabel && onPress) mocks.actions.set(accessibilityLabel, onPress);
-            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, role: accessibilityRole, 'aria-checked': accessibilityState?.checked }, children);
+            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-accessibility-value': accessibilityValue?.text, role: accessibilityRole, 'aria-checked': accessibilityState?.checked }, children);
         },
         FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent, ListFooterComponent }: {
             data: Equipment[]; renderItem: (item: { item: Equipment }) => ReactNode; ListHeaderComponent: ReactNode; ListEmptyComponent: ReactNode; ListFooterComponent: ReactNode;
@@ -201,6 +202,15 @@ for (const platform of ['web', 'native'] as const) {
             await act(async () => notifyLogin('b')); expect(button('表示条件をリセット')).toBeUndefined();
         });
         if (platform === 'native') {
+            it.each(['売却', '合成'])('%s行の読み上げ説明で同名の異なる性能を区別できる', (mode) => {
+                setEquipment([items()[0], { ...items()[1], rarity: 'uncommon', slot: 'armor', attackBonus: 7, defenseBonus: 9, hpBonus: 12 }]);
+                mount(); click(button(mode));
+                const rows = Array.from(host.querySelectorAll('[data-accessibility-value]'));
+                expect(rows).toHaveLength(2);
+                const descriptions = rows.map((row) => row.getAttribute('data-accessibility-value'));
+                expect(descriptions).toContain(mode === '売却' ? 'コモン、武器、攻撃力+2、確認後に5XPを獲得します' : 'コモン、武器、攻撃力+2');
+                expect(descriptions).toContain(mode === '売却' ? 'アンコモン、防具、攻撃力+7、防御力+9、HP+12、確認後に20XPを獲得します' : 'アンコモン、防具、攻撃力+7、防御力+9、HP+12');
+            });
             it('mode changes invalidate pending synthesis and clear selected materials', () => {
                 mount(); selectSynthesis(); click(button('選択した3個の装備を合成する'));
                 const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress;

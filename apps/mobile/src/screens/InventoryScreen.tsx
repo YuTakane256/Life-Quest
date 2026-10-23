@@ -3,6 +3,7 @@ import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View }
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { PAGE_HEADING } from '../theme/layout';
+import { Check } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { captureLoadoutActions, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { createInventoryConfirmation, filterAndSortInventory, INVENTORY_SELECTION_CHANGED, reconcileSynthesisSelection, toggleSynthesisSelection, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
@@ -280,14 +281,9 @@ export default function InventoryScreen() {
 /** 装備アイコン（レアリティ色の枠）。未知のtemplate_idはプレースホルダー。 */
 function ItemIcon({ templateId, rarity, styles, palette }: { templateId: string; rarity: Rarity; styles: Styles; palette: ThemePalette }) {
     const source = getItemImage(templateId);
-    if (!source) {
-        return (
-            <View style={[styles.itemIcon, styles.imageFallback, { borderColor: palette.rarity[rarity] }]}>
-                <Text style={styles.imageFallbackText}>?</Text>
-            </View>
-        );
-    }
-    return <Image source={source} style={[styles.itemIcon, { borderColor: palette.rarity[rarity] }]} />;
+    return <View style={[styles.iconFrame, { backgroundColor: `${palette.rarity[rarity]}22` }]}>
+        {source ? <Image source={source} resizeMode="contain" style={styles.itemIcon} /> : <Text style={styles.imageFallbackText}>?</Text>}
+    </View>;
 }
 
 function InventoryRow({
@@ -311,8 +307,17 @@ function InventoryRow({
     styles: Styles;
     palette: ThemePalette;
 }) {
+    const itemDescription = [RARITY_LABELS[item.rarity], SLOT_LABELS[item.slot],
+        ...(item.attackBonus > 0 ? [`攻撃力+${item.attackBonus}`] : []),
+        ...(item.defenseBonus > 0 ? [`防御力+${item.defenseBonus}`] : []),
+        ...(item.hpBonus > 0 ? [`HP+${item.hpBonus}`] : []),
+        ...(mode === 'sell' ? [`確認後に${SELL_XP_BY_RARITY[item.rarity]}XPを獲得します`] : []),
+    ].join('、');
     const content = <>
-                {mode === 'synthesize' && <Text style={[styles.checkbox, selected && styles.checkboxActive]}>{selected ? '✓' : ''}</Text>}
+                {mode === 'synthesize' && <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+                    style={[styles.checkbox, { borderColor: selected ? palette.rarity[item.rarity] : palette.text.muted, backgroundColor: selected ? palette.rarity[item.rarity] : 'transparent' }]}>
+                    {selected && <Check size={12} color="#000" />}
+                </View>}
                 <ItemIcon templateId={item.templateId} rarity={item.rarity} styles={styles} palette={palette} />
                 <View style={styles.flex}>
                     <Text style={[styles.itemName, { color: palette.rarity[item.rarity] }]}>{item.name}</Text>
@@ -327,10 +332,14 @@ function InventoryRow({
                     onPress={() => onEquip(item)} style={styles.primaryButton}><Text style={styles.activeText}>装備</Text></Pressable>}
                 {mode === 'sell' && <Text style={styles.saleXp}>+{SELL_XP_BY_RARITY[item.rarity]} XP</Text>}
             </>;
-    const rowStyle = [styles.itemRow, { borderColor: palette.rarity[item.rarity] }, selected && styles.itemRowSelected];
+    const rowStyle = [styles.itemRow, {
+        borderColor: selected ? palette.rarity[item.rarity] : `${palette.rarity[item.rarity]}33`,
+        backgroundColor: selected ? `${palette.rarity[item.rarity]}15` : palette.bg.card,
+    }];
     if (mode === 'normal') return <View style={rowStyle}>{content}</View>;
     return <Pressable accessibilityRole={mode === 'synthesize' ? 'checkbox' : 'button'}
         accessibilityLabel={mode === 'synthesize' ? `${item.name}を合成素材に${selected ? '選択解除' : '選択'}する` : `${item.name}を売却する`}
+        accessibilityValue={{ text: itemDescription }}
         accessibilityState={mode === 'synthesize' ? { checked: selected, disabled: selectionDisabled } : undefined}
         disabled={mode === 'synthesize' && selectionDisabled}
         onPress={() => mode === 'synthesize' ? onToggleSelect(item) : onSell(item)}
@@ -387,8 +396,8 @@ function createStyles(palette: ThemePalette) {
     bannerText: { flex: 1, color: palette.text.primary, fontSize: 13, fontWeight: '600', lineHeight: 19 },
     bannerClose: { color: palette.text.secondary, fontSize: 21, lineHeight: 23 },
     closeButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-    itemIcon: { width: 44, height: 44, borderRadius: 8, borderWidth: 1, backgroundColor: palette.bg.cardHover },
-    imageFallback: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: palette.border.default, backgroundColor: palette.bg.cardHover },
+    itemIcon: { width: 40, height: 40 },
+    iconFrame: { width: 48, height: 48, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     imageFallbackText: { color: palette.text.muted, fontSize: 15, fontWeight: '800' },
     sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' },
     filterRow: { gap: 10 },
@@ -408,10 +417,8 @@ function createStyles(palette: ThemePalette) {
     primaryButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.primary },
     activeText: { color: 'white', fontSize: 12, fontWeight: '700' },
     synthesizeButton: { marginTop: 8 },
-    saleXp: { color: palette.accent.gold, fontSize: 13, fontWeight: '700' },
-    checkbox: { width: 22, height: 22, borderWidth: 1, borderColor: palette.border.default, borderRadius: 4, textAlign: 'center', color: palette.text.primary },
-    checkboxActive: { backgroundColor: palette.accent.emerald, borderColor: palette.accent.emerald },
-    itemRowSelected: { borderColor: palette.accent.emerald },
+    saleXp: { color: '#000', backgroundColor: palette.accent.gold, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontSize: 12, fontWeight: '700' },
+    checkbox: { width: 20, height: 20, borderWidth: 2, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
     itemName: { fontSize: 14, fontWeight: '700' },
     itemMeta: { color: palette.text.muted, fontSize: 12, marginTop: 2 },
     secondaryButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.border.default },
