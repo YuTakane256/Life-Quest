@@ -38,6 +38,38 @@ DB、API、store、保存形式、報酬計算、抽選、通常版の初期テ�
 最終実行結果・画像・CI3件・6.1 Sol中の独立レビューはPRに記録する。自動マージしない。
 画像やメモリfixtureの成功を、実データ永続化/双方向同期/Android実機/⑤の署名済み配布の合格とはしない。
 
+### 実行結果
+
+- 全体3,083件成功/98件skip、core753件成功。コンポーネントの操作/画面境界98件を含む。
+- Web/Mobile/core型検査、build、秘密情報検査成功。lintはerror0/既存warning6。
+- Web関連E2E26件成功。比較画像を追加した最終版のインベントリE2E12件も成功。
+- 最終コードでWeb全体E2E240件成功。テストが再生成した既存の匿名報酬画像4件は元へ戻し、今回の差分に混ぜない。
+- 390px画像回帰7件成功/既知のタスク矢印19px差分1件。実画像のSHA-256は
+  `bf452f819c3595e4bf8e9962402038350ad8b950df969e2082100f813aae9cf3`で前回と同じ。基準/許容値変更なし。
+- 6.1 Sol中レビューのP2（行をまとめた際の読み上げ情報不足）を修正し、同名異性能の2ケースを追加。
+  再レビューではP2以上の指摘なし。VoiceOver実機での読み上げは未確認で、props契約とNative実装を確認した。
+- iOSライト通常（144956）とaccessibility-large（145327）で、直接起動から素材選択/解除・0件復帰・売却取消・
+  装備→キャラで解除→再入場・合成取消/確定・売却確定まで全フロー成功。文字設定はlargeへ戻した。
+
+### 比較画像
+
+共通dailyデータ・同じ状態・402×874。選択はチェインメイル1件、売却は確認前。
+Nativeの安全領域、Webの下部ナビゲーション、フィルタUI・余白・文字の細部は残る。
+未装備品はどちらも4件。画像はWebの読込完了後に取得している。
+
+| 状態 | Web | iOS |
+| --- | --- | --- |
+| light 通常 | ![](screenshots/mobile-inventory-presentation/web-light-normal.png) | ![](screenshots/mobile-inventory-presentation/ios-light-normal.png) |
+| dark 通常 | ![](screenshots/mobile-inventory-presentation/web-dark-normal.png) | ![](screenshots/mobile-inventory-presentation/ios-dark-normal.png) |
+| light 素材選択 | ![](screenshots/mobile-inventory-presentation/web-light-synthesis.png) | ![](screenshots/mobile-inventory-presentation/ios-light-synthesis.png) |
+| dark 素材選択 | ![](screenshots/mobile-inventory-presentation/web-dark-synthesis.png) | ![](screenshots/mobile-inventory-presentation/ios-dark-synthesis.png) |
+| light 売却 | ![](screenshots/mobile-inventory-presentation/web-light-sale.png) | ![](screenshots/mobile-inventory-presentation/ios-light-sale.png) |
+| dark 売却 | ![](screenshots/mobile-inventory-presentation/web-dark-sale.png) | ![](screenshots/mobile-inventory-presentation/ios-dark-sale.png) |
+
+iOS文字拡大（accessibility-large。Webの200%文字確認とは別条件）:
+
+![](screenshots/mobile-inventory-presentation/ios-large-text.png)
+
 ## 今回残す差分
 
 フィルタは同じ選択肢を維持するが、Webの3セレクトに対しNativeは横スクロールのラジオ群。
