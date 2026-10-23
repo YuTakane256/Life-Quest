@@ -17,7 +17,7 @@ const characterScreenModule = '../../../apps/mobile/src/screens/CharacterScreen'
 const { default: CharacterScreen } = await import(characterScreenModule);
 
 const mocks = vi.hoisted(() => ({ alert: vi.fn(), synthesize: vi.fn(), retry: vi.fn(), enqueue: vi.fn(async () => true),
-    hasError: false, blur: () => {}, focus: () => {}, saleConfirm: () => {}, push: vi.fn(), dismissTo: vi.fn(), actions: new Map<string, () => void>() }));
+    hasError: false, blur: () => {}, focus: () => {}, requestClose: () => {}, saleConfirm: () => {}, push: vi.fn(), dismissTo: vi.fn(), actions: new Map<string, () => void>() }));
 vi.mock('../../platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isWebCloudOutboxActive: () => false }));
 vi.mock('../../../apps/mobile/src/platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isCloudOutboxActive: () => false }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
@@ -31,7 +31,7 @@ vi.mock('../../../apps/mobile/src/hooks/useInventorySynthesis', () => ({ useInve
 }) }));
 vi.mock('../../../apps/mobile/src/hooks/useCloudChestOpen', () => ({ useCloudChestOpen: () => ({ openChest: vi.fn(), retry: vi.fn() }) }));
 vi.mock('../../../apps/mobile/src/components/CharacterOverview', () => ({ CharacterOverview: () => createElement('div', {}, 'プロフィールと成長') }));
-vi.mock('lucide-react-native', () => ({ Check: () => null }));
+vi.mock('lucide-react-native', () => ({ Check: () => null, ChevronDown: () => null, SlidersHorizontal: () => null, X: () => null }));
 vi.mock('../../../apps/mobile/src/theme/usePalette', async () => {
     const { DARK_THEME } = await import('@life-quest/core/designTokens');
     return { usePalette: () => ({ palette: DARK_THEME }) };
@@ -53,13 +53,16 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push, dismissTo:
     }, [setup]);
 } }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityValue?: { text?: string }; accessibilityRole?: string; accessibilityState?: { checked?: boolean } };
+    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityValue?: { text?: string }; accessibilityRole?: string; accessibilityState?: { checked?: boolean; expanded?: boolean }; testID?: string };
     const box = ({ children }: Props) => createElement('div', {}, children);
-    return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, Text: ({ children }: Props) => createElement('span', {}, children),
+    return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Platform: { OS: 'ios' }, Keyboard: { dismiss: vi.fn() },
+        useWindowDimensions: () => ({ width: 402, height: 874, fontScale: 1 }),
+        Modal: ({ children, onRequestClose }: Props & { onRequestClose: () => void }) => { mocks.requestClose = onRequestClose; return createElement('div', { role: 'dialog' }, children); },
+        Text: ({ children }: Props) => createElement('span', {}, children),
         Image: () => null, StyleSheet: { create: <T,>(value: T) => value },
-        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityValue, accessibilityRole, accessibilityState }: Props) => {
+        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityValue, accessibilityRole, accessibilityState, testID }: Props) => {
             if (accessibilityLabel && onPress) mocks.actions.set(accessibilityLabel, onPress);
-            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-accessibility-value': accessibilityValue?.text, role: accessibilityRole, 'aria-checked': accessibilityState?.checked }, children);
+            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-accessibility-value': accessibilityValue?.text, role: accessibilityRole, 'aria-checked': accessibilityState?.checked, 'aria-expanded': accessibilityState?.expanded, 'data-testid': testID }, children);
         },
         FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent, ListFooterComponent }: {
             data: Equipment[]; renderItem: (item: { item: Equipment }) => ReactNode; ListHeaderComponent: ReactNode; ListEmptyComponent: ReactNode; ListFooterComponent: ReactNode;
@@ -125,6 +128,7 @@ for (const platform of ['web', 'native'] as const) {
             select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
         } else button(`種類を${value === 'armor' ? '防具' : value === 'weapon' ? '武器' : 'すべて'}にする`).click();
     };
+    const openFilter = () => { if (platform === 'native') click(host.querySelector('[data-testid="inventory-filter-slot"]')!); };
     const selectedCount = () => host.querySelectorAll(`[aria-label="${platform === 'web' ? '木の剣を合成対象に選択中' : '木の剣を合成素材に選択解除する'}"]`).length;
     describe(`${platform} inventory selection and filters`, () => {
         it('shows only unequipped items and only the current mode actions', () => {
@@ -175,6 +179,7 @@ for (const platform of ['web', 'native'] as const) {
         });
         it('changing a filter invalidates old selection and synthesis events before rerender', () => {
             mount(); selectSynthesis(); const old = button(platform === 'web' ? '合成する' : '選択した3個の装備を合成する');
+            openFilter();
             act(() => { changeFilter('armor'); old.click(); });
             expect(selectedCount()).toBe(0); expect(host.textContent).toContain('条件に合う装備がありません');
             expect(mocks.synthesize).not.toHaveBeenCalled(); expect(mocks.alert).not.toHaveBeenCalled();
@@ -198,7 +203,7 @@ for (const platform of ['web', 'native'] as const) {
             expect(button(platform === 'web' ? '次に使う装備を合成対象に選択中' : '次に使う装備を合成素材に選択解除する')).toBeTruthy();
         });
         it('auth switch resets filters and selection; same-user notification does not', async () => {
-            mount(); act(() => changeFilter('weapon')); await act(async () => notifyLogin('a')); expect(button('表示条件をリセット')).toBeTruthy();
+            mount(); openFilter(); act(() => changeFilter('weapon')); await act(async () => notifyLogin('a')); expect(button('表示条件をリセット')).toBeTruthy();
             await act(async () => notifyLogin('b')); expect(button('表示条件をリセット')).toBeUndefined();
         });
         if (platform === 'native') {
@@ -220,10 +225,10 @@ for (const platform of ['web', 'native'] as const) {
             it('filter reset rejects pending native synthesis confirmation', () => {
                 mount(); selectSynthesis(); click(button('選択した3個の装備を合成する'));
                 const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress;
-                act(() => { changeFilter('armor'); confirm(); }); expect(mocks.synthesize).not.toHaveBeenCalled();
+                openFilter(); act(() => { changeFilter('armor'); confirm(); }); expect(mocks.synthesize).not.toHaveBeenCalled();
             });
             it('blur/refocus restores default filters with no selected materials', () => {
-                mount(); act(() => changeFilter('weapon')); selectSynthesis();
+                mount(); openFilter(); act(() => changeFilter('weapon')); selectSynthesis();
                 act(() => { mocks.blur?.(); mocks.focus?.(); }); expect(button('表示条件をリセット')).toBeUndefined(); expect(selectedCount()).toBe(0);
             });
         }
@@ -344,6 +349,82 @@ describe('Web feedback timer ownership', () => {
         act(() => vi.advanceTimersByTime(1000)); await act(async () => button('再送').click());
         act(() => vi.advanceTimersByTime(2000)); expect(host.textContent).toContain('を入手！');
         act(() => vi.advanceTimersByTime(1000)); expect(host.textContent).not.toContain('を入手！');
+    });
+});
+
+describe('Native inventory filter dialogs', () => {
+    const mount = () => act(() => root!.render(createElement(StrictMode, {}, createElement(InventoryScreen))));
+    const open = (kind: 'slot' | 'rarity' | 'sort') => click(host.querySelector(`[data-testid="inventory-filter-${kind}"]`)!);
+    const selected = () => host.querySelectorAll('[role="checkbox"][aria-checked="true"]').length;
+    const selectMaterials = () => {
+        click(button('合成'));
+        for (const choice of Array.from(host.querySelectorAll<HTMLElement>('[aria-label="木の剣を合成素材に選択する"]'))) click(choice);
+    };
+    it.each([
+        ['slot', '種類', 4, 'すべて'], ['rarity', 'レア', 6, 'すべて'], ['sort', '並び', 3, 'レア順'],
+    ] as const)('%s opens every option, announces the current choice and closes without writes', (kind, label, count, initial) => {
+        mount(); expect(host.querySelectorAll('[role="radio"]')).toHaveLength(0); open(kind);
+        expect(host.querySelectorAll('[role="radio"]')).toHaveLength(count);
+        expect(button(`${label}を${initial}にする`).getAttribute('aria-checked')).toBe('true');
+        expect(host.querySelector(`[data-testid="inventory-filter-${kind}"]`)?.getAttribute('aria-expanded')).toBe('true');
+        click(button(`${label}の選択を閉じる`)); expect(host.querySelector('[role="dialog"]')).toBeNull();
+        expect(mocks.enqueue).not.toHaveBeenCalled(); expect(mocks.synthesize).not.toHaveBeenCalled();
+    });
+    it.each(['close', 'system-back', 'same-value'] as const)('%s keeps selected materials and filter values', (action) => {
+        mount(); selectMaterials(); expect(selected()).toBe(3); open('slot');
+        const stale = mocks.actions.get('種類を防具にする')!;
+        if (action === 'close') click(button('種類の選択を閉じる'));
+        else if (action === 'system-back') act(() => mocks.requestClose());
+        else click(button('種類をすべてにする'));
+        act(stale); expect(selected()).toBe(3); expect(button('種類：すべて')).toBeTruthy();
+        expect(button('表示条件をリセット')).toBeUndefined(); expect(host.querySelector('[role="dialog"]')).toBeNull();
+    });
+    it('old choices and old close events cannot change or close a newer picker', () => {
+        mount(); open('slot'); const staleChoice = mocks.actions.get('種類を防具にする')!; const staleClose = mocks.requestClose;
+        click(button('種類の選択を閉じる')); open('rarity');
+        act(() => { staleChoice(); staleClose(); });
+        expect(button('レアの選択を閉じる')).toBeTruthy(); expect(button('種類：すべて')).toBeTruthy();
+        click(button('レアをレジェンダリーにする')); expect(button('レア：レジェンダリー')).toBeTruthy();
+        expect(host.textContent).toContain('条件に合う装備がありません');
+        open('rarity'); expect(button('レアをレジェンダリーにする').getAttribute('aria-checked')).toBe('true');
+        click(button('レアの選択を閉じる')); click(button('表示条件をリセット')); expect(button('レア：すべて')).toBeTruthy();
+    });
+    it('accepts one choice only before rerender', () => {
+        mount(); open('slot'); const weapon = mocks.actions.get('種類を武器にする')!; const armor = mocks.actions.get('種類を防具にする')!;
+        act(() => { weapon(); armor(); }); expect(button('種類：武器')).toBeTruthy(); expect(host.querySelector('[role="dialog"]')).toBeNull();
+    });
+    it('changes sort through the dialog and preserves equipment/progression', () => {
+        const equipment = items().map((item, index) => ({ ...item, name: ['Alpha', 'Gamma', 'Beta'][index], rarity: ['common', 'uncommon', 'rare'][index] as Equipment['rarity'] }));
+        useMobileGameStore.setState({ equipment }); const before = useMobileGameStore.getState().character;
+        mount(); open('sort'); click(button('並びを名前順にする'));
+        const names = Array.from(host.querySelectorAll('[aria-label$="を装備する"]')).map((node) => node.getAttribute('aria-label'));
+        expect(names).toEqual(['Alphaを装備する', 'Betaを装備する', 'Gammaを装備する']);
+        expect(button('並び：名前順')).toBeTruthy(); expect(useMobileGameStore.getState().equipment).toEqual(equipment);
+        expect(useMobileGameStore.getState().character).toEqual(before); expect(mocks.enqueue).not.toHaveBeenCalled();
+    });
+    it.each(['logout', 'switch', 'blur', 'back', 'hydrating'] as const)('%s dismisses the picker and rejects old choices', async (change) => {
+        mount(); open('slot'); const stale = mocks.actions.get('種類を防具にする')!;
+        await act(async () => {
+            if (change === 'logout') await notifyLogout();
+            else if (change === 'switch') await notifyLogin('b');
+            else if (change === 'blur') { mocks.blur(); mocks.focus(); }
+            else if (change === 'back') mocks.actions.get('キャラクター画面に戻る')!();
+            else useMobileGameStore.setState({ hasHydrated: false });
+            stale();
+        });
+        if (change === 'hydrating') act(() => { useMobileGameStore.setState({ hasHydrated: true }); });
+        expect(host.querySelector('[role="dialog"]')).toBeNull(); expect(button('種類：すべて')).toBeTruthy();
+        expect(button('表示条件をリセット')).toBeUndefined(); expect(mocks.enqueue).not.toHaveBeenCalled();
+    });
+    it('equal pull and the same user keep an open picker usable', async () => {
+        mount(); open('slot'); await act(async () => { await notifyLogin('a'); useMobileGameStore.setState({ equipment: items() }); });
+        expect(button('種類の選択を閉じる')).toBeTruthy(); click(button('種類を武器にする')); expect(button('種類：武器')).toBeTruthy();
+    });
+    it('mode changes dismiss an open picker and invalidate an old opener', () => {
+        mount(); const oldOpen = mocks.actions.get('種類：すべて')!; open('slot'); const oldChoice = mocks.actions.get('種類を防具にする')!;
+        act(() => { button('合成').click(); oldChoice(); oldOpen(); });
+        expect(host.querySelector('[role="dialog"]')).toBeNull(); expect(button('種類：すべて')).toBeTruthy();
+        open('slot'); expect(button('種類の選択を閉じる')).toBeTruthy();
     });
 });
 

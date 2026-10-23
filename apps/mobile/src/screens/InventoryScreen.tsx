@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Image, Keyboard, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { PAGE_HEADING } from '../theme/layout';
-import { Check } from 'lucide-react-native';
+import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { captureLoadoutActions, type Equipment, type EquipmentSlot, type Rarity } from '@life-quest/core/equipment';
 import { createInventoryConfirmation, filterAndSortInventory, INVENTORY_SELECTION_CHANGED, reconcileSynthesisSelection, toggleSynthesisSelection, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '@life-quest/core/inventory';
@@ -11,6 +11,7 @@ import { SELL_XP_BY_RARITY, SYNTHESIS_CONFIG } from '@life-quest/core/rewards';
 import { getItemImage } from '../assets/images';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { CharacterLevelUpNotice } from '../components/CharacterLevelUpNotice';
+import { Dialog } from '../components/DailyScreenUI';
 import { usePalette } from '../theme/usePalette';
 import { useInventorySynthesis } from '../hooks/useInventorySynthesis';
 import { useInteractionScope } from '../hooks/useInteractionScope';
@@ -30,6 +31,13 @@ const SLOT_LABELS: Record<EquipmentSlot, string> = {
 };
 
 type InventoryMode = 'normal' | 'sell' | 'synthesize';
+const FILTERS = {
+    slot: { label: '種類', options: [['all', 'すべて'], ['weapon', '武器'], ['armor', '防具'], ['accessory', 'アクセサリー']] },
+    rarity: { label: 'レア', options: [['all', 'すべて'], ...Object.entries(RARITY_LABELS)] },
+    sort: { label: '並び', options: [['rarity', 'レア順'], ['slot', '種類順'], ['name', '名前順']] },
+} satisfies Record<string, { label: string; options: string[][] }>;
+type FilterKind = keyof typeof FILTERS;
+type FilterPicker = { kind: FilterKind; token: object; isCurrent: () => boolean };
 
 export default function InventoryScreen() {
     const router = useRouter();
@@ -39,6 +47,7 @@ export default function InventoryScreen() {
     const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useInventorySynthesis();
 
     const { palette } = usePalette();
+    const { fontScale } = useWindowDimensions();
     const styles = useMemo(() => createStyles(palette), [palette]);
     const [selection, setSelection] = useState<readonly Equipment[]>([]);
     const [selectionNotice, setSelectionNotice] = useState('');
@@ -47,19 +56,24 @@ export default function InventoryScreen() {
     const [slotFilter, setSlotFilter] = useState<InventorySlotFilter>('all');
     const [rarityFilter, setRarityFilter] = useState<InventoryRarityFilter>('all');
     const [sortMode, setSortMode] = useState<InventorySortMode>('rarity');
+    const [picker, setPicker] = useState<FilterPicker | null>(null);
+    const pickerRef = useRef<object | null>(null);
+    const closePicker = useCallback(() => { pickerRef.current = null; setPicker(null); }, []);
     const pendingConfirmation = useRef<object | null>(null);
     const leaving = useRef(false);
     const viewRef = useRef({});
     const selectionRef = useRef({});
     const invalidateView = useCallback(() => {
+        closePicker();
         viewRef.current = {}; selectionRef.current = {}; pendingConfirmation.current = null; setSelection([]); setSelectionNotice('');
-    }, []);
+    }, [closePicker]);
     const interactions = useInteractionScope(() => {
         leaving.current = false;
         invalidateView(); setLastReveal(null); setMode('normal'); setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity');
     });
     const view = viewRef.current; const renderedScope = interactions.capture();
     const isCurrentView = useCallback(() => !leaving.current && viewRef.current === view && renderedScope() && useMobileGameStore.getState().hasHydrated, [view, renderedScope]);
+    useEffect(() => { if (!hasHydrated) closePicker(); }, [hasHydrated, closePicker]);
     const selectionVersion = selectionRef.current;
     const isCurrentSelection = () => isCurrentView() && selectionRef.current === selectionVersion;
     const loadoutAction = captureLoadoutActions(equipment, () => useMobileGameStore.getState().equipment,
@@ -72,6 +86,28 @@ export default function InventoryScreen() {
     const changeView = (update: () => void) => { if (isCurrentView()) { invalidateView(); update(); } };
     const resetFilters = () => changeView(() => { setSlotFilter('all'); setRarityFilter('all'); setSortMode('rarity'); });
     const filtersActive = slotFilter !== 'all' || rarityFilter !== 'all' || sortMode !== 'rarity';
+    const filterValues = { slot: slotFilter, rarity: rarityFilter, sort: sortMode };
+    const openPicker = (kind: FilterKind) => {
+        if (!isCurrentView() || pickerRef.current) return;
+        Keyboard.dismiss();
+        const token = {};
+        pickerRef.current = token;
+        setPicker({ kind, token, isCurrent: isCurrentView });
+    };
+    const dismissPicker = () => {
+        if (picker && pickerRef.current === picker.token) closePicker();
+    };
+    const chooseFilter = (value: string) => {
+        if (!picker || pickerRef.current !== picker.token || !picker.isCurrent() || !isCurrentView()) return;
+        // Consume this dialog before React rerenders: old choices/close callbacks cannot own a later dialog.
+        closePicker();
+        if (value === filterValues[picker.kind]) return;
+        changeView(() => {
+            if (picker.kind === 'slot') setSlotFilter(value as InventorySlotFilter);
+            else if (picker.kind === 'rarity') setRarityFilter(value as InventoryRarityFilter);
+            else setSortMode(value as InventorySortMode);
+        });
+    };
     const unequipped = useMemo(() => equipment.filter((item) => !item.equipped), [equipment]);
 
     // 最大2000件になり得るため FlatList で仮想化して描画する
@@ -195,31 +231,19 @@ export default function InventoryScreen() {
                 </View>}
             </View>
 
-            {/* インベントリフィルタ・ソート（Web InventorySectionと同一の選択肢） */}
-            <View style={styles.filterRow}>
-                <FilterSelect
-                    label="種類"
-                    value={slotFilter}
-                    options={[['all', 'すべて'], ['weapon', '武器'], ['armor', '防具'], ['accessory', 'アクセサリー']]}
-                    onChange={(value) => { if (value !== slotFilter) changeView(() => setSlotFilter(value as InventorySlotFilter)); }}
-                    styles={styles}
-                />
-                <FilterSelect
-                    label="レア"
-                    value={rarityFilter}
-                    options={[['all', 'すべて'], ...Object.entries(RARITY_LABELS) as [string, string][]]}
-                    onChange={(value) => { if (value !== rarityFilter) changeView(() => setRarityFilter(value as InventoryRarityFilter)); }}
-                    styles={styles}
-                />
-                <FilterSelect
-                    label="並び"
-                    value={sortMode}
-                    options={[['rarity', 'レア順'], ['slot', '種類順'], ['name', '名前順']]}
-                    onChange={(value) => { if (value !== sortMode) changeView(() => setSortMode(value as InventorySortMode)); }}
-                    styles={styles}
-                />
+            <View style={styles.filterCard}>
+                <View style={styles.filterHeading}>
+                    <SlidersHorizontal size={14} color={palette.text.secondary} accessible={false} />
+                    <Text style={styles.filterHeadingText}>表示</Text>
+                </View>
+                <View style={styles.filterRow}>
+                    {(['slot', 'rarity', 'sort'] as const).map((kind) => (
+                        <FilterSelect key={kind} kind={kind} value={filterValues[kind]} fontScale={fontScale}
+                            expanded={picker?.kind === kind} onOpen={() => openPicker(kind)} styles={styles} palette={palette} />
+                    ))}
+                </View>
+                {filtersActive && <Pressable accessibilityRole="button" accessibilityLabel="表示条件をリセット" onPress={resetFilters} style={styles.filterReset}><Text style={styles.secondaryButtonText}>表示条件をリセット</Text></Pressable>}
             </View>
-            {filtersActive && <Pressable accessibilityRole="button" accessibilityLabel="表示条件をリセット" onPress={resetFilters} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>表示条件をリセット</Text></Pressable>}
 
             {mode === 'synthesize' && <Text style={styles.hint}>同レアリティ{SYNTHESIS_CONFIG.REQUIRED_COUNT}個 → 多い装備種別の上位装備に合成（{selectedItems.length}/{SYNTHESIS_CONFIG.REQUIRED_COUNT}）。表示条件を変更すると素材の選択を解除します。</Text>}
             {mode === 'sell' && <Text style={styles.hint}>タップでアイテムを売却しXPに変換</Text>}
@@ -274,6 +298,21 @@ export default function InventoryScreen() {
                 contentContainerStyle={styles.listContent}
                 keyboardShouldPersistTaps="handled"
             />
+            {picker && pickerRef.current === picker.token && picker.isCurrent() && (
+                <Dialog title={`${FILTERS[picker.kind].label}を選択`} onClose={dismissPicker}
+                    closeLabel={`${FILTERS[picker.kind].label}の選択を閉じる`} closeTargetSize={44}>
+                    {FILTERS[picker.kind].options.map(([value, label]) => (
+                        <Pressable key={value} accessibilityRole="radio"
+                            accessibilityLabel={`${FILTERS[picker.kind].label}を${label}にする`}
+                            accessibilityState={{ checked: filterValues[picker.kind] === value }}
+                            onPress={() => chooseFilter(value)}
+                            style={[styles.filterOption, filterValues[picker.kind] === value && styles.filterOptionSelected]}>
+                            <Text style={styles.filterOptionText}>{label}</Text>
+                            {filterValues[picker.kind] === value && <Check size={16} color={palette.accent.primary} accessible={false} />}
+                        </Pressable>
+                    ))}
+                </Dialog>
+            )}
         </SafeAreaView>
     );
 }
@@ -346,34 +385,26 @@ function InventoryRow({
         style={[...rowStyle, mode === 'synthesize' && selectionDisabled && styles.muted]}>{content}</Pressable>;
 }
 
-function FilterSelect({ label, value, options, onChange, styles }: {
-    label: string;
+function FilterSelect({ kind, value, fontScale, expanded, onOpen, styles, palette }: {
+    kind: FilterKind;
     value: string;
-    options: [string, string][];
-    onChange: (value: string) => void;
+    fontScale: number;
+    expanded: boolean;
+    onOpen: () => void;
     styles: Styles;
+    palette: ThemePalette;
 }) {
+    const { label, options } = FILTERS[kind];
+    const selectedLabel = options.find(([key]) => key === value)?.[1];
     return (
-        <View style={styles.filterGroup}>
-            <Text style={styles.filterLabel}>{label}：{options.find(([key]) => key === value)?.[1]}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.filterOptions}>
-                    {options.map(([optionValue, optionLabel]) => (
-                        <Pressable
-                            key={optionValue}
-                            accessibilityRole="radio"
-                            accessibilityState={{ checked: value === optionValue }}
-                            accessibilityLabel={`${label}を${optionLabel}にする`}
-                            onPress={() => onChange(optionValue)}
-                            style={[styles.filterChip, value === optionValue && styles.filterChipActive]}
-                        >
-                            <Text style={[styles.filterChipText, value === optionValue && styles.filterChipTextActive]}>
-                                {optionLabel}
-                            </Text>
-                        </Pressable>
-                    ))}
-                </View>
-            </ScrollView>
+        <View style={[styles.filterGroup, { flexBasis: 104 * fontScale }]}>
+            <Text accessible={false} style={styles.filterLabel}>{label}</Text>
+            <Pressable testID={`inventory-filter-${kind}`} accessibilityRole="button"
+                accessibilityLabel={`${label}：${selectedLabel}`} accessibilityState={{ expanded }}
+                onPress={onOpen} style={styles.filterButton}>
+                <Text style={styles.filterValue}>{selectedLabel}</Text>
+                <ChevronDown size={12} color={palette.text.primary} accessible={false} />
+            </Pressable>
         </View>
     );
 }
@@ -400,14 +431,18 @@ function createStyles(palette: ThemePalette) {
     iconFrame: { width: 48, height: 48, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     imageFallbackText: { color: palette.text.muted, fontSize: 15, fontWeight: '800' },
     sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' },
-    filterRow: { gap: 10 },
-    filterGroup: { gap: 4 },
-    filterLabel: { color: palette.text.muted, fontSize: 12, fontWeight: '700' },
-    filterOptions: { flexDirection: 'row', gap: 4 },
-    filterChip: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: palette.bg.secondary, borderColor: palette.border.default, borderWidth: 1 },
-    filterChipActive: { backgroundColor: palette.accent.primary, borderColor: palette.accent.primary },
-    filterChipText: { color: palette.text.muted, fontSize: 11, fontWeight: '700' },
-    filterChipTextActive: { color: 'white' },
+    filterCard: { gap: 8, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: palette.border.default, backgroundColor: palette.bg.card },
+    filterHeading: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    filterHeadingText: { color: palette.text.secondary, fontSize: 12, fontWeight: '600' },
+    filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    filterGroup: { flexGrow: 1, flexShrink: 1, minWidth: 0, maxWidth: '100%', gap: 4 },
+    filterLabel: { color: palette.text.muted, fontSize: 10 },
+    filterButton: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 44, minHeight: 44, paddingHorizontal: 8, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: palette.border.default, backgroundColor: palette.bg.secondary },
+    filterValue: { flex: 1, minWidth: 0, color: palette.text.primary, fontSize: 12 },
+    filterOption: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44, padding: 12, borderRadius: 8, backgroundColor: palette.bg.secondary },
+    filterOptionSelected: { backgroundColor: palette.bg.cardHover },
+    filterOptionText: { flex: 1, minWidth: 0, color: palette.text.primary, fontSize: 14 },
+    filterReset: { minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary },
     sectionTitle: { color: palette.text.primary, fontSize: 16, fontWeight: '800' },
     hint: { color: palette.text.muted, fontSize: 11, lineHeight: 16 },
     emptyText: { color: palette.text.muted, fontSize: 13, paddingVertical: 8 },
