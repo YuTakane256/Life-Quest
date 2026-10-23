@@ -15,6 +15,7 @@ import { startStatsLogSeed } from '../src/stores/statsLogSeed';
 import { usePalette } from '../src/theme/usePalette';
 import { LoginBonusOverlay } from '../src/components/LoginBonusOverlay';
 import { ChestOpeningOverlay } from '../src/components/ChestOpeningOverlay';
+import { InventoryOperationsProvider } from '../src/components/InventoryOperationsProvider';
 
 export default function RootLayout() {
     const { palette, resolvedTheme } = usePalette();
@@ -50,10 +51,13 @@ export default function RootLayout() {
     return (
         <>
             <StatusBar style={resolvedTheme === 'light' ? 'dark' : 'light'} />
+            <InventoryOperationsProvider>
             <Stack screenOptions={{ contentStyle: { backgroundColor: palette.bg.primary } }}>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="help" options={{ headerShown: false }} />
+                <Stack.Screen name="inventory" options={{ headerShown: false }} />
             </Stack>
+            </InventoryOperationsProvider>
             <LoginBonusOverlay />
             <ChestOpeningOverlay />
         </>

@@ -48,13 +48,15 @@ name: Capture shared fictional Web/Mobile reference (no persistent writes)
     timeout: 5000
 - takeScreenshot: "reference-${REFERENCE_THEME}-character"
 - scrollUntilVisible:
-    element: "インベントリ（7）"
+    element: "インベントリを開く"
     direction: DOWN
     centerElement: true
     timeout: 15000
+- tapOn: "インベントリを開く"
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: "reference-${REFERENCE_THEME}-inventory"
+- tapOn: "キャラクター画面に戻る"
 # Fixture unlocks Map. Verify its tab actually navigates, without starting combat.
 - tapOn: "マップ(, tab,.*)?"
 - extendedWaitUntil:

@@ -31,11 +31,22 @@ name: Equipment loadout controls (daily memory only)
     centerElement: false
 - takeScreenshot: "loadout-${REFERENCE_THEME}"
 - scrollUntilVisible:
+    element: "インベントリを開く"
+    direction: DOWN
+    centerElement: true
+- tapOn: "インベントリを開く"
+- scrollUntilVisible:
     element: "鉄の剣を装備する"
     direction: DOWN
     centerElement: true
 - tapOn: "鉄の剣を装備する"
 - assertVisible: "鉄の剣を外す"
+- tapOn: "キャラクター画面に戻る"
+- scrollUntilVisible:
+    element: "武器の鉄の剣を外す"
+    direction: UP
+    centerElement: true
+- assertVisible: "武器の鉄の剣を外す"
 - scrollUntilVisible:
     element: "最強装備を自動装着"
     direction: UP

@@ -11,11 +11,13 @@ import { useMobileGameStore } from '../../../apps/mobile/src/stores/useMobileGam
 import { InventorySection } from './InventorySection';
 
 // Runtime load keeps Native's static-image declarations out of the Web TS program.
-const nativeScreenModule = '../../../apps/mobile/src/screens/CharacterScreen';
-const { default: CharacterScreen } = await import(nativeScreenModule);
+const nativeScreenModule = '../../../apps/mobile/src/screens/InventoryScreen';
+const { default: InventoryScreen } = await import(nativeScreenModule);
+const characterScreenModule = '../../../apps/mobile/src/screens/CharacterScreen';
+const { default: CharacterScreen } = await import(characterScreenModule);
 
 const mocks = vi.hoisted(() => ({ alert: vi.fn(), synthesize: vi.fn(), retry: vi.fn(), enqueue: vi.fn(async () => true),
-    hasError: false, blur: () => {}, focus: () => {}, saleConfirm: () => {} }));
+    hasError: false, blur: () => {}, focus: () => {}, saleConfirm: () => {}, push: vi.fn(), dismissTo: vi.fn(), actions: new Map<string, () => void>() }));
 vi.mock('../../platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isWebCloudOutboxActive: () => false }));
 vi.mock('../../../apps/mobile/src/platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isCloudOutboxActive: () => false }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
@@ -24,11 +26,11 @@ vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
 vi.mock('../../hooks/useCloudItemSynthesis', () => ({ useCloudItemSynthesis: () => ({
     synthesize: mocks.synthesize, retry: mocks.retry, isSynthesizing: false, hasError: mocks.hasError,
 }) }));
-vi.mock('../../../apps/mobile/src/hooks/useCloudItemSynthesis', () => ({ useCloudItemSynthesis: () => ({
+vi.mock('../../../apps/mobile/src/hooks/useInventorySynthesis', () => ({ useInventorySynthesis: () => ({
     synthesize: mocks.synthesize, retry: mocks.retry, isSynthesizing: false, hasError: mocks.hasError,
 }) }));
 vi.mock('../../../apps/mobile/src/hooks/useCloudChestOpen', () => ({ useCloudChestOpen: () => ({ openChest: vi.fn(), retry: vi.fn() }) }));
-vi.mock('../../../apps/mobile/src/components/CharacterOverview', () => ({ CharacterOverview: () => null }));
+vi.mock('../../../apps/mobile/src/components/CharacterOverview', () => ({ CharacterOverview: () => createElement('div', {}, 'プロフィールと成長') }));
 vi.mock('../../../apps/mobile/src/theme/usePalette', async () => {
     const { DARK_THEME } = await import('@life-quest/core/designTokens');
     return { usePalette: () => ({ palette: DARK_THEME }) };
@@ -40,8 +42,8 @@ vi.mock('../ui/ConfirmDialog', async (original) => {
         return createElement(ConfirmDialog, props);
     } };
 });
-vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children) }));
-vi.mock('expo-router', () => ({ useFocusEffect: (setup: () => (() => void) | undefined) => {
+vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children, edges }: { children?: ReactNode; edges?: readonly string[] }) => createElement('div', { 'data-edges': edges?.join(',') ?? 'all' }, children) }));
+vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push, dismissTo: mocks.dismissTo }), useFocusEffect: (setup: () => (() => void) | undefined) => {
     useEffect(() => {
         let cleanup = setup();
         mocks.blur = () => { cleanup?.(); cleanup = undefined; };
@@ -54,7 +56,10 @@ vi.mock('react-native', () => {
     const box = ({ children }: Props) => createElement('div', {}, children);
     return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, Text: ({ children }: Props) => createElement('span', {}, children),
         Image: () => null, StyleSheet: { create: <T,>(value: T) => value },
-        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityRole, accessibilityState }: Props) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, role: accessibilityRole, 'aria-checked': accessibilityState?.checked }, children),
+        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityRole, accessibilityState }: Props) => {
+            if (accessibilityLabel && onPress) mocks.actions.set(accessibilityLabel, onPress);
+            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, role: accessibilityRole, 'aria-checked': accessibilityState?.checked }, children);
+        },
         FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent }: {
             data: Equipment[]; renderItem: (item: { item: Equipment }) => ReactNode; ListHeaderComponent: ReactNode; ListEmptyComponent: ReactNode;
         }) => createElement('div', {}, ListHeaderComponent, data.length ? data.map((item) => createElement('div', { key: item.id }, renderItem({ item }))) : ListEmptyComponent),
@@ -75,7 +80,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 
 beforeEach(async () => {
     resetAuthLifecycleHooks(); await notifyLogin('a'); vi.useFakeTimers(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-    vi.clearAllMocks(); localStorage.clear(); mocks.hasError = false;
+    vi.clearAllMocks(); mocks.actions.clear(); localStorage.clear(); mocks.hasError = false;
     mocks.synthesize.mockResolvedValue(null); mocks.retry.mockResolvedValue(null);
     useGameStore.setState({ equipment: items(), addXp: vi.fn() });
     useMobileGameStore.setState({ equipment: items(), hasHydrated: true, lastLevelUp: null, addXp: vi.fn() });
@@ -92,7 +97,7 @@ for (const platform of ['web', 'native'] as const) {
         if (platform === 'web') useGameStore.setState({ equipment }); else useMobileGameStore.setState({ equipment });
     };
     const mount = () => act(() => root!.render(createElement(StrictMode, {}, createElement(MemoryRouter, {},
-        platform === 'web' ? createElement(InventorySection) : createElement(CharacterScreen)))));
+        platform === 'web' ? createElement(InventorySection) : createElement(InventoryScreen)))));
     const requestSale = () => {
         if (platform === 'web') {
             if (!button('木の剣を売却して+5XP獲得')) click(button('売却'));
@@ -300,12 +305,43 @@ describe('Web feedback timer ownership', () => {
 });
 
 describe('Native alert/focus boundary', () => {
-    function mount() { act(() => root!.render(createElement(StrictMode, {}, createElement(CharacterScreen)))); }
+    function mount() { act(() => root!.render(createElement(StrictMode, {}, createElement(InventoryScreen)))); }
     function pendingSynthesis() {
         for (const button of Array.from(host.querySelectorAll<HTMLElement>('[aria-label="木の剣を合成素材に選択する"]'))) click(button);
         click(button('選択した3個の装備を合成する'));
         return mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '合成する').onPress as () => void;
     }
+    it('独立画面にはプロフィールを重ねず、下部safe areaと固定の戻る操作を持つ', () => {
+        mount(); expect(host.textContent).not.toContain('プロフィールと成長');
+        expect(host.querySelector('[data-edges="all"]')).toBeTruthy(); expect(button('キャラクター画面に戻る')).toBeTruthy();
+    });
+    it('直接開いた読込中でもキャラ画面へ戻れる', () => {
+        useMobileGameStore.setState({ hasHydrated: false }); mount();
+        expect(host.textContent).toContain('保存データを読み込み中'); click(button('キャラクター画面に戻る'));
+        expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/character'); expect(button('木の剣を売却する')).toBeUndefined();
+    });
+    it('所持品が0件でも戻る操作と空の案内を残す', () => {
+        useMobileGameStore.setState({ equipment: [] }); mount();
+        expect(host.textContent).toContain('装備はまだありません'); expect(button('選択した3個の装備を合成する').hasAttribute('disabled')).toBe(true);
+        click(button('キャラクター画面に戻る')); expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/character');
+    });
+    it('戻る操作直後はblur前でも旧合成確認・連打・結果通知を拒否する', async () => {
+        mount(); const confirm = pendingSynthesis(); const back = mocks.actions.get('キャラクター画面に戻る')!;
+        act(() => { back(); back(); confirm(); });
+        expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/character'); expect(mocks.synthesize).not.toHaveBeenCalled();
+    });
+    it('戻る操作直後はblur前でも旧売却確認を拒否する', () => {
+        mount(); click(button('木の剣を売却する'));
+        const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '売却する').onPress;
+        click(button('キャラクター画面に戻る')); act(confirm);
+        expect(useMobileGameStore.getState().equipment).toHaveLength(3); expect(mocks.enqueue).not.toHaveBeenCalled();
+    });
+    it('戻る前に送信済みの合成結果は閉じた画面に通知せず、二重送信もしない', async () => {
+        const pending = deferred<Equipment | null>(); mocks.synthesize.mockReturnValue(pending.promise);
+        mount(); const confirm = pendingSynthesis(); act(confirm); click(button('キャラクター画面に戻る'));
+        await act(async () => pending.resolve(result()));
+        expect(mocks.synthesize).toHaveBeenCalledOnce(); expect(host.textContent).not.toContain('合成で「');
+    });
     it.each(['blur', 'switch', 'equipped', 'replaced'] as const)('確認を開いた後の%sでは合成を送信しない', async (change) => {
         mount(); const confirm = pendingSynthesis();
         await act(async () => {
@@ -333,5 +369,32 @@ describe('Native alert/focus boundary', () => {
         const confirm = mocks.alert.mock.calls.at(-1)![2].find((action: { text: string }) => action.text === '売却する').onPress;
         act(() => { mocks.blur(); mocks.focus(); confirm(); });
         expect(mocks.enqueue).not.toHaveBeenCalled();
+    });
+});
+
+describe('Native character / inventory entry', () => {
+    const mount = () => act(() => root!.render(createElement(StrictMode, {}, createElement(CharacterScreen))));
+    it('キャラには成長・件数付き導線を残し、全装備行を描画しない', () => {
+        mount(); expect(host.textContent).toContain('プロフィールと成長'); expect(host.textContent).toContain('インベントリを見る（3）');
+        expect(button('木の剣を売却する')).toBeUndefined();
+        const open = mocks.actions.get('インベントリを開く')!; act(() => { open(); open(); });
+        expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/inventory');
+        act(() => { mocks.blur(); mocks.focus(); }); click(button('インベントリを開く'));
+        expect(mocks.push).toHaveBeenCalledTimes(2);
+    });
+    it.each(['switch', 'blur', 'hydrating'])('%s後の古い入口は画面移動しない', async (kind) => {
+        mount(); const open = mocks.actions.get('インベントリを開く')!;
+        await act(async () => {
+            if (kind === 'switch') await notifyLogin('b');
+            if (kind === 'blur') { mocks.blur(); mocks.focus(); }
+            if (kind === 'hydrating') useMobileGameStore.setState({ hasHydrated: false });
+            open();
+        }); expect(mocks.push).not.toHaveBeenCalled();
+    });
+    it.each(['character', 'inventory'])('%sでも既存レベルアップ通知を表示・閉じる', (screen) => {
+        useMobileGameStore.setState({ lastLevelUp: { fromLevel: 1, toLevel: 2, attackGain: 1, defenseGain: 1, hpGain: 5 } });
+        act(() => root!.render(createElement(StrictMode, {}, screen === 'character' ? createElement(CharacterScreen) : createElement(InventoryScreen))));
+        expect(host.textContent).toContain('レベルアップ！ Lv.1 → Lv.2'); click(button('レベルアップ通知を閉じる'));
+        expect(useMobileGameStore.getState().lastLevelUp).toBeNull(); expect(host.textContent).not.toContain('レベルアップ！');
     });
 });
