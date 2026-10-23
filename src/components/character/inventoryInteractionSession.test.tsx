@@ -31,7 +31,7 @@ vi.mock('../../../apps/mobile/src/hooks/useInventorySynthesis', () => ({ useInve
 }) }));
 vi.mock('../../../apps/mobile/src/hooks/useCloudChestOpen', () => ({ useCloudChestOpen: () => ({ openChest: vi.fn(), retry: vi.fn() }) }));
 vi.mock('../../../apps/mobile/src/components/CharacterOverview', () => ({ CharacterOverview: () => createElement('div', {}, 'プロフィールと成長') }));
-vi.mock('lucide-react-native', () => ({ Check: () => null, ChevronDown: () => null, SlidersHorizontal: () => null, X: () => null }));
+vi.mock('lucide-react-native', () => ({ Check: () => null, ChevronDown: () => null, History: () => null, SlidersHorizontal: () => null, X: () => null }));
 vi.mock('../../../apps/mobile/src/theme/usePalette', async () => {
     const { DARK_THEME } = await import('@life-quest/core/designTokens');
     return { usePalette: () => ({ palette: DARK_THEME }) };
@@ -87,7 +87,7 @@ beforeEach(async () => {
     vi.clearAllMocks(); mocks.actions.clear(); localStorage.clear(); mocks.hasError = false;
     mocks.synthesize.mockResolvedValue(null); mocks.retry.mockResolvedValue(null);
     useGameStore.setState({ equipment: items(), addXp: vi.fn() });
-    useMobileGameStore.setState({ equipment: items(), hasHydrated: true, lastLevelUp: null, addXp: vi.fn() });
+    useMobileGameStore.setState({ equipment: items(), chestQueue: [], hasHydrated: true, lastLevelUp: null, addXp: vi.fn() });
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(() => {
@@ -499,6 +499,15 @@ describe('Native alert/focus boundary', () => {
 
 describe('Native character / inventory entry', () => {
     const mount = () => act(() => root!.render(createElement(StrictMode, {}, createElement(CharacterScreen))));
+    it('shows acquisition history after the inventory entry, hides it while hydrating and clears removed records', () => {
+        useMobileGameStore.setState({ chestQueue: [{ id: 'earned', chestType: 'blue', label: '青色の宝箱', equipment: null, opened: true, isStarterCharacter: true }] });
+        mount(); expect(host.textContent).toContain('獲得履歴 (1)');
+        expect(host.textContent!.indexOf('獲得履歴')).toBeGreaterThan(host.textContent!.indexOf('インベントリを見る'));
+        act(() => { useMobileGameStore.setState({ hasHydrated: false }); });
+        expect(host.textContent).toContain('保存データを読み込み中'); expect(host.textContent).not.toContain('キャラクター獲得');
+        act(() => { useMobileGameStore.setState({ hasHydrated: true, chestQueue: [] }); });
+        expect(host.textContent).not.toContain('獲得履歴'); expect(host.textContent).toContain('インベントリを見る');
+    });
     it('キャラには成長・件数付き導線を残し、全装備行を描画しない', () => {
         mount(); expect(host.textContent).toContain('プロフィールと成長'); expect(host.textContent).toContain('インベントリを見る（3）');
         expect(button('木の剣を売却する')).toBeUndefined();

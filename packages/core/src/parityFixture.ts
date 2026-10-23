@@ -170,9 +170,15 @@ const parityStatsState = {
     version: 1,
 };
 
-export type ParityProfile = 'daily' | 'battle' | 'rewards';
+export type ParityProfile = 'daily' | 'battle' | 'rewards' | 'history';
 
 function getParityGame(profile: ParityProfile) {
+    if (profile === 'history') return { ...parityGameState, state: { ...parityGameState.state, chestQueue: [
+        { id: 'history-starter', chestType: 'blue', label: '青色の宝箱', opened: true, equipment: null, isStarterCharacter: true, origin: 'local' },
+        { id: 'history-missing', chestType: 'silver', label: '銀の宝箱', opened: true, equipment: null, origin: 'local' },
+        { id: 'history-awarded', chestType: 'wood', label: '木の宝箱', opened: true, equipment: createParityEquipment('history-removed-item', 'wooden_sword', false), origin: 'local' },
+        { id: 'history-unopened', chestType: 'gold', label: '未開封の金の宝箱', opened: false, equipment: null, origin: 'local' },
+    ] } };
     if (profile === 'rewards') return { ...parityGameState, state: { ...parityGameState.state, chestQueue: [
         { id: 'parity-starter', chestType: 'blue', label: '青色の宝箱', opened: false, equipment: null, isStarterCharacter: true, origin: 'local' },
         { id: 'parity-wood', chestType: 'wood', label: '木の宝箱', opened: false, equipment: null, origin: 'local' },

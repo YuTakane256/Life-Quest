@@ -6,6 +6,7 @@ import { LAYOUT_TOKENS } from '@life-quest/core/designTokens';
 import { TAB_SCREEN_EDGES } from '../theme/layout';
 import { CharacterOverview } from '../components/CharacterOverview';
 import { CharacterLevelUpNotice } from '../components/CharacterLevelUpNotice';
+import { ChestAcquisitionHistory } from '../components/ChestAcquisitionHistory';
 import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
 import { useInteractionScope } from '../hooks/useInteractionScope';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
@@ -39,6 +40,7 @@ export default function CharacterScreen() {
                 <Text style={{ color: palette.text.primary, fontSize: 15, fontWeight: '700' }}>インベントリを見る（{equipmentCount}） ›</Text>
                 <Text style={{ color: palette.text.muted, fontSize: 12, marginTop: 4 }}>持ち物の装備・売却・合成</Text>
             </Pressable>
+            <ChestAcquisitionHistory />
         </ScrollView>
     </SafeAreaView>;
 }

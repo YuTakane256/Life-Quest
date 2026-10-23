@@ -5,6 +5,15 @@ import { convertLegacyGameSnapshot, convertLegacyHabitSnapshot, convertLegacyTas
 const state = (storage: Record<string, string>, key: string) => JSON.parse(storage[key]);
 
 describe('shared anonymous reference fixture', () => {
+    it.each(['light', 'dark'] as const)('history snapshots are equal, read-only and independent of current inventory (%s)', (theme) => {
+        const web = createWebParityStorage(theme, 'history'); const mobile = createMobileParityStorage(theme, 'history');
+        const game = convertLegacyGameSnapshot({ game: state(web, 'quest-board-game'), tasks: state(web, 'quest-board-tasks'), habits: state(web, 'quest-board-habits') });
+        expect(state(mobile, 'quest-board-game').state).toEqual(game);
+        expect(game.chestQueue.filter((chest) => chest.opened)).toHaveLength(3);
+        expect(game.chestQueue.filter((chest) => !chest.opened)).toHaveLength(1);
+        expect(game.equipment.some((item) => item.id === 'history-removed-item')).toBe(false);
+        expect(state(createWebParityStorage(theme), 'quest-board-game').state.chestQueue).toEqual([]);
+    });
     it.each(['light', 'dark'] as const)('rewards profile has the same chests and daily login state on both platforms (%s)', (theme) => {
         const web = createWebParityStorage(theme, 'rewards'); const mobile = createMobileParityStorage(theme, 'rewards');
         const game = convertLegacyGameSnapshot({ game: state(web, 'quest-board-game'), tasks: state(web, 'quest-board-tasks'), habits: state(web, 'quest-board-habits') });

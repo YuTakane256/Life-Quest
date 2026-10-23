@@ -7,6 +7,17 @@ let restore: (() => void) | undefined;
 afterEach(() => { restore?.(); restore = undefined; });
 
 describe('reference capture safety', () => {
+    it('isolates history fixtures from normal/preview/account storage', async () => {
+        expect(getCaptureProfile(context, 'history')).toBe('history');
+        for (const change of [{ development: false }, { theme: undefined }, { variant: 'preview' }, { applicationId: 'com.yutakane.lifequest' }, { supabaseUrl: 'https://example.test' }, { supabaseKey: 'configured' }]) {
+            expect(() => getCaptureProfile({ ...context, ...change }, 'history')).toThrow();
+        }
+        const real = vi.fn(async () => { throw new Error('Real storage must not be touched'); });
+        const storage = Object.fromEntries(['getItem', 'setItem', 'removeItem', 'getMany', 'setMany', 'removeMany', 'getAllKeys', 'clear'].map((key) => [key, real])) as unknown as CaptureStorage;
+        restore = installCaptureRuntime(storage, 'light', 'history');
+        expect(JSON.parse((await storage.getItem('quest-board-game'))!).state.chestQueue.filter((chest: { opened: boolean }) => chest.opened)).toHaveLength(3);
+        await storage.clear(); expect(real).not.toHaveBeenCalled();
+    });
     it('isolates reward chests and a pending daily login only under the full capture guard', async () => {
         expect(getCaptureProfile(context, 'rewards')).toBe('rewards');
         for (const change of [{ development: false }, { theme: undefined }, { variant: 'preview' }, { supabaseKey: 'configured' }]) {
