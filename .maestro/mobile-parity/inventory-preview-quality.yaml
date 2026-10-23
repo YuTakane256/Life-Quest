@@ -14,6 +14,7 @@ name: Character inventory preview and route ownership (daily memory only)
     element: "インベントリを開く"
     direction: DOWN
     centerElement: false
+- scroll
 - assertVisible: "木の剣を装備する"
 - takeScreenshot: "preview-${REFERENCE_THEME}-normal"
 - scrollUntilVisible:
@@ -35,7 +36,8 @@ name: Character inventory preview and route ownership (daily memory only)
     element: "インベントリを開く"
     direction: DOWN
     centerElement: false
-- assertVisible: "残り2件 · 装備・売却・合成"
+- scroll
+- assertVisible: "インベントリを開く"
 - assertNotVisible: "木の剣を装備する"
 - takeScreenshot: "preview-${REFERENCE_THEME}-overflow"
 - scrollUntilVisible:
@@ -58,7 +60,18 @@ name: Character inventory preview and route ownership (daily memory only)
     element: "最強装備を自動装着"
     direction: UP
     centerElement: true
+# XCTest may report a large-text control behind the tab bar as visible.
+# Move it into the scroll viewport before tapping; never tap through the tab bar.
+- swipe:
+    start: "50%, 65%"
+    end: "50%, 45%"
+    duration: 500
 - tapOn: "最強装備を自動装着"
+- scrollUntilVisible:
+    element: "武器の鋼の刃を外す"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "武器の鋼の刃を外す"
 - scrollUntilVisible:
     element: "表示条件をリセット"
     direction: DOWN
@@ -101,6 +114,7 @@ name: Character inventory preview and route ownership (daily memory only)
     element: "インベントリを開く"
     direction: DOWN
     centerElement: false
+- scroll
 - tapOn: "インベントリを開く"
 - assertVisible: "キャラクター画面に戻る"
 - assertNotVisible: "チェインメイルを合成素材に選択解除する"

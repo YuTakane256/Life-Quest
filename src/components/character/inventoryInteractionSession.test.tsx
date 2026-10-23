@@ -53,16 +53,16 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push, dismissTo:
     }, [setup]);
 } }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityValue?: { text?: string }; accessibilityRole?: string; accessibilityState?: { checked?: boolean; expanded?: boolean }; testID?: string };
+    type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityHint?: string; accessibilityValue?: { text?: string }; accessibilityRole?: string; accessibilityState?: { checked?: boolean; expanded?: boolean }; testID?: string };
     const box = ({ children }: Props) => createElement('div', {}, children);
     return { Alert: { alert: mocks.alert }, View: box, ScrollView: box, KeyboardAvoidingView: box, Platform: { OS: 'ios' }, Keyboard: { dismiss: vi.fn() },
         useWindowDimensions: () => ({ width: 402, height: 874, fontScale: 1 }),
         Modal: ({ children, onRequestClose }: Props & { onRequestClose: () => void }) => { mocks.requestClose = onRequestClose; return createElement('div', { role: 'dialog' }, children); },
         Text: ({ children }: Props) => createElement('span', {}, children),
         Image: () => null, StyleSheet: { create: <T,>(value: T) => value },
-        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityValue, accessibilityRole, accessibilityState, testID }: Props) => {
+        Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityHint, accessibilityValue, accessibilityRole, accessibilityState, testID }: Props) => {
             if (accessibilityLabel && onPress) mocks.actions.set(accessibilityLabel, onPress);
-            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-accessibility-value': accessibilityValue?.text, role: accessibilityRole, 'aria-checked': accessibilityState?.checked, 'aria-expanded': accessibilityState?.expanded, 'data-testid': testID }, children);
+            return createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-accessibility-hint': accessibilityHint, 'data-accessibility-value': accessibilityValue?.text, role: accessibilityRole, 'aria-checked': accessibilityState?.checked, 'aria-expanded': accessibilityState?.expanded, 'data-testid': testID }, children);
         },
         FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent, ListFooterComponent }: {
             data: Equipment[]; renderItem: (item: { item: Equipment }) => ReactNode; ListHeaderComponent: ReactNode; ListEmptyComponent: ReactNode; ListFooterComponent: ReactNode;
@@ -506,6 +506,7 @@ describe('Native character / inventory entry', () => {
         expect(host.querySelector('[data-flat-list]')).toBeNull(); expect(host.textContent).not.toContain('装備中の剣');
         expect(host.textContent).toContain(`インベントリ（${count}/${count}）`);
         if (count > 5) expect(host.textContent).toContain(`残り${count - 5}件`);
+        expect(button('インベントリを開く').getAttribute('data-accessibility-hint')).toBe(count > 5 ? `表示条件に合う残り${count - 5}件を含む一覧へ移動します` : `持ち物${count + 1}件の一覧へ移動します`);
         expect(useMobileGameStore.getState().equipment).toHaveLength(count + 1); expect(mocks.enqueue).not.toHaveBeenCalled();
     });
     it('filters all inventory before applying the five-row preview limit', () => {

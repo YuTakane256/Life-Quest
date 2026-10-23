@@ -298,6 +298,7 @@ export function InventorySection({ embedded = false }: { embedded?: boolean }) {
                 {listHeader}
                 {visibleItems.length ? visibleItems.map(row) : empty}
                 <Pressable accessibilityRole="button" accessibilityLabel="インベントリを開く"
+                    accessibilityHint={hiddenCount > 0 ? `表示条件に合う残り${hiddenCount}件を含む一覧へ移動します` : `持ち物${equipment.length}件の一覧へ移動します`}
                     onPress={openInventory} style={({ pressed }) => [styles.viewAll, pressed && styles.muted]}>
                     <Text style={styles.viewAllText}>インベントリを見る（{equipment.length}） ›</Text>
                     <Text style={styles.itemMeta}>{hiddenCount > 0 ? `残り${hiddenCount}件 · 装備・売却・合成` : '持ち物の装備・売却・合成'}</Text>
