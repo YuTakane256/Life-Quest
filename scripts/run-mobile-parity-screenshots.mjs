@@ -35,6 +35,7 @@ export const mobileParityFlows = Object.freeze({
     profileUi: '.maestro/mobile-parity/character-profile-interactions.yaml',
     loadout: '.maestro/mobile-parity/equipment-loadout-quality.yaml',
     inventorySelection: '.maestro/mobile-parity/inventory-selection-quality.yaml',
+    inventoryPreview: '.maestro/mobile-parity/inventory-preview-quality.yaml',
     habitHistory: '.maestro/mobile-parity/habit-history-quality.yaml',
 });
 
@@ -54,12 +55,12 @@ export function getMaestroTestCommand(flow) {
 }
 
 export function requiresReferenceRuntime(name) {
-    if (name === 'chestHistory') return true;
+    if (name === 'chestHistory' || name === 'inventoryPreview') return true;
     return name === 'habitHistory' || name === 'inventorySelection' || name === 'loadout' || name === 'profileUi' || name === 'profile' || name === 'achievements' || name === 'stats' || name === 'help' || name === 'reference' || name === 'daily' || name === 'undo' || name === 'character' || name === 'map' || name === 'battle' || name === 'rewards' || name === 'taskForm' || name === 'taskDraft' || name === 'habitInput' || name === 'individualDeletion' || name === 'inlineSubtask' || name === 'taskList' || name === 'habitList' || name === 'notifications';
 }
 
 /** Keep the normal inspection server on 8081; these captures use an isolated second Metro. */
-export function getMobileParityMetroUrl(name) { return name === 'chestHistory' || name === 'habitHistory' || name === 'inventorySelection' || name === 'loadout' || name === 'profileUi' || name === 'profile' || name === 'achievements' || name === 'stats' || name === 'help' || name === 'rewards' || name === 'taskForm' || name === 'taskDraft' || name === 'habitInput' || name === 'individualDeletion' || name === 'inlineSubtask' || name === 'taskList' || name === 'habitList' || name === 'notifications' ? 'http://127.0.0.1:8082' : 'http://127.0.0.1:8081'; }
+export function getMobileParityMetroUrl(name) { return name === 'inventoryPreview' || name === 'chestHistory' || name === 'habitHistory' || name === 'inventorySelection' || name === 'loadout' || name === 'profileUi' || name === 'profile' || name === 'achievements' || name === 'stats' || name === 'help' || name === 'rewards' || name === 'taskForm' || name === 'taskDraft' || name === 'habitInput' || name === 'individualDeletion' || name === 'inlineSubtask' || name === 'taskList' || name === 'habitList' || name === 'notifications' ? 'http://127.0.0.1:8082' : 'http://127.0.0.1:8081'; }
 
 /** Never mistake seeded in-memory screenshots for persistence evidence. */
 export function assertPersistentParityRuntime(manifest) {
@@ -170,6 +171,10 @@ export function assertReferenceProfile(manifest, flowName) {
     getReferenceTheme(manifest);
     const extra = manifest?.extra?.expoClient?.extra ?? manifest?.extra;
     const profile = extra?.parityCaptureProfile ?? 'daily';
+    if (flowName === 'inventoryPreview') {
+        if (extra?.parityLocalOnly !== true || profile !== 'daily') throw new Error('Inventory preview requires the local-only daily memory fixture.');
+        return;
+    }
     if (flowName === 'chestHistory') {
         if (extra?.parityLocalOnly !== true || profile !== 'history') throw new Error('Chest history requires the local-only history memory fixture.');
         return;
