@@ -1,0 +1,32 @@
+appId: com.yutakane.lifequest.parity
+name: Read-only acquisition history (isolated history memory fixture)
+---
+- stopApp
+- openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
+- tapOn:
+    text: "開く|Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "新しいタスクを追加"
+    timeout: 60000
+- tapOn: "キャラ(, tab,.*)?"
+- scrollUntilVisible:
+    element:
+      id: "chest-acquisition-history"
+    direction: DOWN
+    centerElement: true
+- assertVisible: '獲得履歴 \(3\)'
+- assertVisible: "木の宝箱、木の剣"
+- assertVisible: "銀の宝箱、—"
+- assertVisible: "青色の宝箱、キャラクター獲得"
+- takeScreenshot: "history-${REFERENCE_THEME}"
+- tapOn: "タスク(, tab,.*)?"
+- tapOn: "キャラ(, tab,.*)?"
+- scrollUntilVisible:
+    element:
+      id: "chest-acquisition-history"
+    direction: DOWN
+    centerElement: true
+- assertVisible: '獲得履歴 \(3\)'
+- assertVisible: "木の宝箱、木の剣"
+- assertVisible: "青色の宝箱、キャラクター獲得"

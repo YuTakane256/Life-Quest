@@ -33,10 +33,10 @@ export interface CaptureStorage {
 }
 
 export function getCaptureProfile(context: CaptureContext, profile: unknown): ParityProfile {
-    if (!getCaptureTheme(context) || (profile !== undefined && profile !== '' && profile !== 'daily' && profile !== 'battle' && profile !== 'rewards')) {
-        throw new Error('Capture profile requires a guarded reference runtime and must be daily/battle/rewards.');
+    if (!getCaptureTheme(context) || (profile !== undefined && profile !== '' && profile !== 'daily' && profile !== 'battle' && profile !== 'rewards' && profile !== 'history')) {
+        throw new Error('Capture profile requires a guarded reference runtime and must be daily/battle/rewards/history.');
     }
-    return profile === 'battle' ? 'battle' : profile === 'rewards' ? 'rewards' : 'daily';
+    return profile === 'battle' ? 'battle' : profile === 'rewards' ? 'rewards' : profile === 'history' ? 'history' : 'daily';
 }
 
 /**

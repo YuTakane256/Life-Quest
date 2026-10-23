@@ -77,6 +77,14 @@ describe('getMaestroEnvironment', () => {
 });
 
 describe('Mobile parity flow selection', () => {
+    it('guards read-only chest history against normal data and other fixtures', () => {
+        const flow = 'chestHistory'; const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'dark', parityCaptureProfile: 'history' };
+        expect(requiresReferenceRuntime(flow)).toBe(true); expect(getMobileParityMetroUrl(flow)).toBe('http://127.0.0.1:8082');
+        expect(() => assertReferenceProfile({ extra }, flow)).not.toThrow();
+        for (const change of [{ appVariant: 'release' }, { parityLocalOnly: false }, { parityLocalOnly: undefined }, { parityCaptureProfile: 'daily' }, { parityCaptureProfile: 'rewards' }, { parityCaptureTheme: undefined }]) expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, flow)).toThrow();
+        const yaml = readFileSync(new URL(`../${getMobileParityFlow(flow).path}`, import.meta.url), 'utf8');
+        expect(yaml).not.toContain('clearState:'); expect(yaml).toContain('127.0.0.1%3A8082'); expect(yaml).toContain('青色の宝箱、キャラクター獲得');
+    });
     it.each(['loadout', 'inventorySelection', 'habitHistory'])('limits %s verification to local-only daily memory data / 8082', (flow) => {
         const extra = { appVariant: 'parity', parityLocalOnly: true, parityCaptureTheme: 'light' };
         expect(getMobileParityMetroUrl(flow)).toBe('http://127.0.0.1:8082'); expect(requiresReferenceRuntime(flow)).toBe(true);
@@ -226,7 +234,8 @@ describe('Mobile parity flow selection', () => {
             expect(() => assertReferenceProfile({ extra: { ...extra, ...change } }, 'rewards')).toThrow();
         }
         const yaml = readFileSync(new URL(`../${getMobileParityFlow('rewards').path}`, import.meta.url), 'utf8');
-        expect(yaml).toContain('clearState: false'); expect(yaml).not.toContain('clearState: true');
+        expect(yaml).toContain('- stopApp'); expect(yaml).not.toContain('clearState:');
+        expect(yaml).toContain('rewards-${REFERENCE_THEME}-history'); expect(yaml).toContain('青色の宝箱、キャラクター獲得');
         expect(yaml).toContain('127.0.0.1%3A8082'); expect(yaml).toContain('ログインボーナスを閉じる');
         expect(yaml).toContain('インベントリ（5/5）');
     });

@@ -2,8 +2,7 @@ appId: com.yutakane.lifequest.parity
 name: Reward close target and chest reveal (isolated memory only)
 ---
 # Requires the guarded rewards profile on 8082. Normal inspection on 8081 stays running.
-- launchApp:
-    clearState: false
+- stopApp
 - openLink: "lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1"
 - tapOn:
     text: "開く|Open"
@@ -54,8 +53,15 @@ name: Reward close target and chest reveal (isolated memory only)
     text: "インベントリに追加"
     enabled: true
 - scrollUntilVisible:
-    element: "インベントリを開く"
+    element: '獲得履歴 \(2\)'
     direction: DOWN
+    centerElement: true
+- assertVisible: "青色の宝箱、キャラクター獲得"
+- takeScreenshot: "rewards-${REFERENCE_THEME}-history"
+- scrollUntilVisible:
+    element: "インベントリを開く"
+    direction: UP
+    centerElement: true
 - tapOn: "インベントリを開く"
 - scrollUntilVisible:
     element: "インベントリ（5/5）"
