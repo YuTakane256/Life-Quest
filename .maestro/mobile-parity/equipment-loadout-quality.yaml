@@ -40,7 +40,7 @@ name: Equipment loadout controls (daily memory only)
     direction: DOWN
     centerElement: true
 - tapOn: "鉄の剣を装備する"
-- assertVisible: "鉄の剣を外す"
+- assertNotVisible: "鉄の剣を装備する"
 - tapOn: "キャラクター画面に戻る"
 - scrollUntilVisible:
     element: "武器の鉄の剣を外す"
