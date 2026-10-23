@@ -117,3 +117,29 @@ export function getUnlockedTitles(progress: readonly AchievementProgress[]): str
         .filter((achievement) => achievement.unlocked)
         .map((achievement) => achievement.rewardTitle);
 }
+
+export interface TitleSelectionSnapshot {
+    activeTitle: string | null;
+    unlockedTitles: readonly string[];
+}
+
+/** A rendered choice owns one write, and cannot overwrite a newer profile or use stale achievements. */
+export function captureTitleSelection(
+    rendered: TitleSelectionSnapshot,
+    getCurrent: () => TitleSelectionSnapshot,
+    isCurrent: () => boolean,
+    apply: (title: string | null) => void,
+): (title: string | null) => boolean {
+    const offered = new Set(rendered.unlockedTitles);
+    const activeTitle = rendered.activeTitle;
+    let used = false;
+    return (title) => {
+        if (used || !isCurrent() || offered.size === 0 || (title !== null && !offered.has(title))) return false;
+        const current = getCurrent();
+        if (current.activeTitle !== activeTitle || current.unlockedTitles.length === 0
+            || (title !== null && !current.unlockedTitles.includes(title)) || current.activeTitle === title) return false;
+        used = true;
+        apply(title);
+        return true;
+    };
+}

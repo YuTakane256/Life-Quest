@@ -3,19 +3,19 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HabitDayActivity } from '@life-quest/core/stats';
 const mocks = vi.hoisted(() => ({
-    today: '2026-08-10', logs: { taskXpLog: {} as Record<string, number>, habitLog: {} as Record<string, HabitDayActivity> },
-    game: { character: { totalXp: 60 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [] },
+    today: '2026-08-10', logs: { taskXpLog: {} as Record<string, number>, habitLog: {} as Record<string, HabitDayActivity>, hasHydrated: true },
+    game: { character: { totalXp: 60 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [], hasHydrated: true },
     title: { activeTitle: null as string | null, setActiveTitle: vi.fn<(title: string | null) => void>() },
     press: new Map<string, () => void>(), styles: new Map<string, unknown>(), textProps: new Map<string, unknown>(), focused: true,
 }));
-vi.mock('../stores/useStatsStore', () => ({ useStatsStore: () => mocks.logs }));
-vi.mock('../stores/useGameStore', () => ({ useGameStore: (selector: (state: unknown) => unknown) => selector(mocks.game) }));
-vi.mock('../stores/useTitleStore', () => ({ useTitleStore: (selector: (state: unknown) => unknown) => selector(mocks.title) }));
+vi.mock('../stores/useStatsStore', () => ({ useStatsStore: Object.assign(() => mocks.logs, { getState: () => mocks.logs }) }));
+vi.mock('../stores/useGameStore', () => ({ useGameStore: Object.assign((selector: (state: unknown) => unknown) => selector(mocks.game), { getState: () => mocks.game }) }));
+vi.mock('../stores/useTitleStore', () => ({ useTitleStore: Object.assign((selector: (state: unknown) => unknown) => selector(mocks.title), { getState: () => mocks.title }) }));
 vi.mock('../hooks/useJstToday', () => ({ useJstToday: () => mocks.today }));
 vi.mock('../../apps/mobile/src/hooks/useJstToday', () => ({ useJstToday: () => mocks.today }));
-vi.mock('../../apps/mobile/src/stores/useMobileStatsStore', () => ({ useMobileStatsStore: (selector: (state: unknown) => unknown) => selector(mocks.logs) }));
-vi.mock('../../apps/mobile/src/stores/useMobileGameStore', () => ({ useMobileGameStore: (selector: (state: unknown) => unknown) => selector(mocks.game) }));
-vi.mock('../../apps/mobile/src/stores/useMobileTitleStore', () => ({ useMobileTitleStore: (selector: (state: unknown) => unknown) => selector(mocks.title) }));
+vi.mock('../../apps/mobile/src/stores/useMobileStatsStore', () => ({ useMobileStatsStore: Object.assign((selector: (state: unknown) => unknown) => selector(mocks.logs), { getState: () => mocks.logs }) }));
+vi.mock('../../apps/mobile/src/stores/useMobileGameStore', () => ({ useMobileGameStore: Object.assign((selector: (state: unknown) => unknown) => selector(mocks.game), { getState: () => mocks.game }) }));
+vi.mock('../../apps/mobile/src/stores/useMobileTitleStore', () => ({ useMobileTitleStore: Object.assign((selector: (state: unknown) => unknown) => selector(mocks.title), { getState: () => mocks.title }) }));
 vi.mock('../../apps/mobile/src/theme/usePalette', async () => { const { LIGHT_THEME } = await import('@life-quest/core/designTokens'); return { usePalette: () => ({ palette: LIGHT_THEME }) }; });
 vi.mock('expo-router', () => ({ useFocusEffect: (setup: () => void | (() => void)) => {
     const focused = mocks.focused; useEffect(() => focused ? setup() : undefined, [focused, setup]);
@@ -44,8 +44,8 @@ const weekly = () => host.querySelector('[aria-label="直近7日間のXP"], [dat
 const best = () => host.querySelector('[aria-label="自己ベスト記録"], [data-testid="stats-best-card"]')!;
 beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); mocks.today = '2026-08-10'; mocks.focused = true; mocks.press.clear(); mocks.styles.clear();
-    mocks.logs = { taskXpLog: { '2026-08-09': 20, '2026-08-10': 30, '2026-01-01': 999 }, habitLog: { '2026-08-10': { count: 2, allComplete: true } } };
-    mocks.game = { character: { totalXp: 60 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [] };
+    mocks.logs = { taskXpLog: { '2026-08-09': 20, '2026-08-10': 30, '2026-01-01': 999 }, habitLog: { '2026-08-10': { count: 2, allComplete: true } }, hasHydrated: true };
+    mocks.game = { character: { totalXp: 60 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [], hasHydrated: true };
     mocks.title.activeTitle = null; mocks.title.setActiveTitle.mockReset(); mocks.title.setActiveTitle.mockImplementation((title) => { mocks.title.activeTitle = title; }); mocks.textProps.clear();
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
@@ -83,10 +83,10 @@ describe.each([false, true])('実績と称号 mobile=%s', (mobile) => {
     });
     it('全達成・ログ更新・空の状態を最新値へ戻し、閲覧だけで保存や称号解除を行わない', () => {
         mocks.game = { ...mocks.game, character: { totalXp: 1_000_000_000_000 }, battle: { maxClearedStage: 20 }, battleProgress: { maxClearedStage: 20 }, equipment: Array(10).fill(null) as never[] };
-        mocks.logs = { taskXpLog: Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`2026-08-0${i + 1}`, 10])), habitLog: Object.fromEntries(Array.from({ length: 3 }, (_, i) => [`2026-08-0${i + 1}`, { count: 1, allComplete: true }])) };
+        mocks.logs = { ...mocks.logs, taskXpLog: Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`2026-08-0${i + 1}`, 10])), habitLog: Object.fromEntries(Array.from({ length: 3 }, (_, i) => [`2026-08-0${i + 1}`, { count: 1, allComplete: true }])) };
         mocks.title.activeTitle = '古城の勝者'; render(mobile);
         expect(card().textContent).toContain('6/6 達成'); expect(card().textContent).toContain('1,000,000,000,000/30'); expect(card().textContent).toContain('表示中: 古城の勝者');
-        mocks.logs = { taskXpLog: {}, habitLog: {} }; mocks.game = { ...mocks.game, character: { totalXp: 0 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [] }; render(mobile);
+        mocks.logs = { ...mocks.logs, taskXpLog: {}, habitLog: {} }; mocks.game = { ...mocks.game, character: { totalXp: 0 }, battle: { maxClearedStage: 0 }, battleProgress: { maxClearedStage: 0 }, equipment: [] }; render(mobile);
         expect(card().textContent).toContain('0/6 達成'); expect(card().textContent).toContain('実績を達成すると称号を選べます。');
         expect(card().textContent).toContain('表示中: 称号なし'); expect(card().querySelectorAll('button')).toHaveLength(0);
         expect(mocks.title.setActiveTitle).not.toHaveBeenCalled();
@@ -113,7 +113,7 @@ describe.each([false, true])('日別振り返り mobile=%s', (mobile) => {
     });
     it('ログ消去時に旧値を表示せず、統計閲覧はデータを書き換えない', () => {
         const before = JSON.stringify(mocks.logs); render(mobile); press('前の日'); habits(); press('今日');
-        expect(JSON.stringify(mocks.logs)).toBe(before); mocks.logs = { taskXpLog: {}, habitLog: {} }; render(mobile);
+        expect(JSON.stringify(mocks.logs)).toBe(before); mocks.logs = { ...mocks.logs, taskXpLog: {}, habitLog: {} }; render(mobile);
         expect(detail()).toBe('2026-08-10: 0個達成');
     });
     it('全日付を選択でき、期間の先頭では前の日へ進まない', () => {
@@ -138,7 +138,7 @@ describe.each([false, true])('日別振り返り mobile=%s', (mobile) => {
         mocks.logs = { ...mocks.logs, taskXpLog: { '2026-08-10': 80 } }; render(mobile);
         expect(weekly().textContent).toContain('⚡ 合計 80 XP'); expect(best().textContent).toContain('80 XP'); expect(best().textContent).not.toContain('999 XP');
         mocks.today = '2026-08-11'; render(mobile); expect(contents().textContent).toContain('2026-08-11（火）0 XP');
-        mocks.logs = { taskXpLog: {}, habitLog: {} }; render(mobile);
+        mocks.logs = { ...mocks.logs, taskXpLog: {}, habitLog: {} }; render(mobile);
         expect(weekly().textContent).toContain('⚡ 合計 0 XP'); expect(best().textContent).not.toContain('80 XP'); expect(best().textContent).toContain('—');
         press('7日間の内訳'); expect(contents()).toBeNull();
     });
