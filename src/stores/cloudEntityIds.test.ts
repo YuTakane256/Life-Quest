@@ -5,22 +5,25 @@ import { useTaskStore } from './useTaskStore';
 import { useHabitStore } from './useHabitStore';
 import { createMobileId } from '../../apps/mobile/src/utils/createMobileId';
 import { createEntityId } from '@life-quest/core/entityId';
+import { notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const enqueue = vi.mocked(enqueueCloudOperation);
 beforeEach(() => {
+    resetAuthLifecycleHooks();
     localStorage.clear();
     useTaskStore.setState({ tasks: [], pendingCompletions: [] });
     useHabitStore.setState({ habits: [], dailyRecords: [], restDays: [], allCompleteRewardDates: [] });
     enqueue.mockClear();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); resetAuthLifecycleHooks(); });
 
 describe('real store IDs sent to the UUID database boundary', () => {
-    it('creates Web tasks/subtasks/habits with UUID IDs and sends the initial children', () => {
+    it('creates Web tasks/subtasks/habits with UUID IDs and sends the initial children after the parent', async () => {
         const child = { id: createEntityId(), name: 'step', completed: false, completedAt: null, createdAt: new Date().toISOString() };
         useTaskStore.getState().addTask('task', '2026-10-26', 'high', 'none', ['sync'], [child]);
         const task = useTaskStore.getState().tasks[0];
+        await Promise.resolve();
         useHabitStore.getState().addHabit('habit');
         expect(task.id).toMatch(uuid);
         expect(useHabitStore.getState().habits[0].id).toMatch(uuid);
@@ -31,6 +34,17 @@ describe('real store IDs sent to the UUID database boundary', () => {
         const copied = useTaskStore.getState().tasks.find((item) => item.id === duplicate)!;
         expect(copied.id).toMatch(uuid);
         expect(copied.subtasks.every((item) => uuid.test(item.id))).toBe(true);
+    });
+    it.each(['logout', 'delete', 'not-queued'])('does not send deferred children after %s', async (action) => {
+        let release!: (value: boolean) => void;
+        enqueue.mockImplementationOnce(() => new Promise<boolean>((resolve) => { release = resolve; }));
+        const child = { id: createEntityId(), name: 'step', completed: false, completedAt: null, createdAt: new Date().toISOString() };
+        useTaskStore.getState().addTask('task', null, 'medium', 'none', [], [child]);
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        if (action === 'logout') await notifyLogout();
+        if (action === 'delete') useTaskStore.setState({ tasks: [] });
+        release(action !== 'not-queued'); await Promise.resolve(); await Promise.resolve();
+        expect(enqueue.mock.calls.some(([operation]) => operation === 'upsert_subtask')).toBe(false);
     });
     it('supports the Native helper without a global crypto implementation', () => {
         vi.stubGlobal('crypto', undefined);
