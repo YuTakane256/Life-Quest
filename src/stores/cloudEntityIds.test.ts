@@ -5,12 +5,13 @@ import { useTaskStore } from './useTaskStore';
 import { useHabitStore } from './useHabitStore';
 import { createMobileId } from '../../apps/mobile/src/utils/createMobileId';
 import { createEntityId } from '@life-quest/core/entityId';
-import { notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const enqueue = vi.mocked(enqueueCloudOperation);
-beforeEach(() => {
+beforeEach(async () => {
     resetAuthLifecycleHooks();
+    await notifyLogin('test-user-a');
     localStorage.clear();
     useTaskStore.setState({ tasks: [], pendingCompletions: [] });
     useHabitStore.setState({ habits: [], dailyRecords: [], restDays: [], allCompleteRewardDates: [] });
