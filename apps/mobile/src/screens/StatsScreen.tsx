@@ -17,7 +17,7 @@ import {
     getStatsBestRecords,
     formatStatsStreakRange,
 } from '@life-quest/core/stats';
-import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '@life-quest/core/achievements';
+import { captureTitleSelection, getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '@life-quest/core/achievements';
 import { getProgressBarA11y } from '@life-quest/core/progressA11y';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
@@ -26,6 +26,7 @@ import { buildAchievementSnapshot } from '../utils/achievementSnapshot';
 import { shiftDate } from '../utils/date';
 import { useJstToday } from '../hooks/useJstToday';
 import { usePalette } from '../theme/usePalette';
+import { useInteractionScope } from '../hooks/useInteractionScope';
 
 type HeatmapMode = 'tasks' | 'habits';
 
@@ -84,6 +85,27 @@ export default function StatsScreen() {
     const unlockedTitles = useMemo(() => getUnlockedTitles(achievementProgress), [achievementProgress]);
     const unlockedCount = achievementProgress.filter((achievement) => achievement.unlocked).length;
     const selectedTitle = activeTitle && unlockedTitles.includes(activeTitle) ? activeTitle : null;
+    const gameHydrated = useMobileGameStore((state) => state.hasHydrated);
+    const statsHydrated = useMobileStatsStore((state) => state.hasHydrated);
+    const titleReady = gameHydrated && statsHydrated;
+    const titleInteractions = useInteractionScope(() => {});
+    const titleScope = titleInteractions.capture();
+    const chooseTitle = captureTitleSelection({ activeTitle, unlockedTitles }, () => {
+        const game = useMobileGameStore.getState();
+        const logs = useMobileStatsStore.getState();
+        return {
+            activeTitle: useMobileTitleStore.getState().activeTitle,
+            unlockedTitles: getUnlockedTitles(getAchievementProgress(buildAchievementSnapshot({
+                taskXpLog: logs.taskXpLog,
+                habitLog: logs.habitLog,
+                totalXp: game.character.totalXp,
+                maxStage: game.battleProgress.maxClearedStage,
+                equipmentCount: game.equipment.length,
+            }))),
+        };
+    }, () => titleReady && titleScope()
+        && useMobileGameStore.getState().hasHydrated
+        && useMobileStatsStore.getState().hasHydrated, setActiveTitle);
     const achievementsCard = (
                     <View testID="stats-achievements-card" style={styles.card}>
                         <View style={styles.cardHeader}>
@@ -103,9 +125,10 @@ export default function StatsScreen() {
                                 <View style={styles.titleChipRow}>
                                     <Pressable
                                         accessibilityRole="button"
-                                        accessibilityState={{ selected: selectedTitle === null }}
+                                        accessibilityState={{ selected: selectedTitle === null, disabled: !titleReady }}
                                         accessibilityLabel="称号なしを選択する"
-                                        onPress={() => setActiveTitle(null)}
+                                        disabled={!titleReady}
+                                        onPress={() => chooseTitle(null)}
                                         style={[styles.titleChip, selectedTitle === null && styles.titleChipActive]}
                                     >
                                         <Text style={[styles.titleChipText, selectedTitle === null && styles.titleChipTextActive]}>
@@ -116,9 +139,10 @@ export default function StatsScreen() {
                                         <Pressable
                                             key={title}
                                             accessibilityRole="button"
-                                            accessibilityState={{ selected: selectedTitle === title }}
+                                            accessibilityState={{ selected: selectedTitle === title, disabled: !titleReady }}
                                             accessibilityLabel={`「${title}」を選択する`}
-                                            onPress={() => setActiveTitle(title)}
+                                            disabled={!titleReady}
+                                            onPress={() => chooseTitle(title)}
                                             style={[styles.titleChip, selectedTitle === title && styles.titleChipActive]}
                                         >
                                             <Text style={[styles.titleChipText, selectedTitle === title && styles.titleChipTextActive]}>

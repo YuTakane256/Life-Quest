@@ -12,6 +12,14 @@ const screens = [
 ] as const;
 
 for (const theme of ['light', 'dark'] as const) {
+    test(`${theme} title selection reference at 402x874`, async ({ page }, testInfo) => {
+        await installWebParityState(page, theme); await page.goto('/stats'); await waitForWebParityRender(page);
+        const card = page.getByRole('region', { name: '実績と称号', exact: true });
+        await card.getByRole('button', { name: '「習慣の芽」を選択する', exact: true }).click();
+        await expect(card.getByRole('status')).toHaveText('表示中: 習慣の芽');
+        await card.getByRole('group', { name: '表示する称号', exact: true }).evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+        await page.screenshot({ path: testInfo.outputPath(`web-${theme}-title-selected.png`), animations: 'disabled', scale: 'css' });
+    });
     test(`${theme} character inventory preview at 402x874`, async ({ page }, testInfo) => {
         await installWebParityState(page, theme); await page.goto('/character'); await waitForWebParityRender(page);
         await page.getByRole('button', { name: '木の剣を装備する', exact: true }).scrollIntoViewIfNeeded();

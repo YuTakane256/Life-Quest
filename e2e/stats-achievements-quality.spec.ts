@@ -21,11 +21,23 @@ for (const theme of ['light', 'dark'] as const) test.describe(theme, () => {
         await card.evaluate((node) => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
         await page.screenshot({ path: testInfo.outputPath(`achievements-${theme}-overview.png`) });
         const originalLogs = await page.evaluate(() => localStorage.getItem('quest-board-stats'));
+        await page.evaluate(() => {
+            const target = window as unknown as { titleWrites: number }; target.titleWrites = 0;
+            const original = Storage.prototype.setItem;
+            Storage.prototype.setItem = function (key, value) {
+                if (this === localStorage && key === 'quest-board-title') target.titleWrites++;
+                return original.call(this, key, value);
+            };
+        });
+        const writes = () => page.evaluate(() => (window as unknown as { titleWrites: number }).titleWrites);
         const title = card.getByRole('button', { name: '「駆け出し冒険者」を選択する', exact: true });
         await card.getByRole('button', { name: '称号なしを選択する', exact: true }).click();
         await expect(card.getByRole('status')).toHaveText('表示中: 称号なし');
+        expect(await writes()).toBe(1);
+        await card.getByRole('button', { name: '称号なしを選択する', exact: true }).click(); expect(await writes()).toBe(1);
         await title.focus(); await page.keyboard.press('Space'); await expect(title).toHaveAttribute('aria-pressed', 'true');
         await expect(card.getByRole('status')).toHaveText('表示中: 駆け出し冒険者');
+        expect(await writes()).toBe(2); await title.click(); expect(await writes()).toBe(2);
         expect(await page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-title')!).state.activeTitle)).toBe('駆け出し冒険者');
         await page.getByRole('navigation').getByRole('button', { name: 'キャラ', exact: true }).click();
         await expect(page.getByText('駆け出し冒険者', { exact: true })).toBeVisible();
@@ -33,10 +45,13 @@ for (const theme of ['light', 'dark'] as const) test.describe(theme, () => {
         await expect(card.getByRole('status')).toHaveText('表示中: 駆け出し冒険者');
         await card.getByRole('button', { name: '「習慣の芽」を選択する', exact: true }).click();
         await expect(card.getByRole('status')).toHaveText('表示中: 習慣の芽');
+        expect(await writes()).toBe(3);
         await card.getByRole('group', { name: '表示する称号', exact: true }).evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
         await page.screenshot({ path: testInfo.outputPath(`achievements-${theme}-selected.png`) });
         await card.getByRole('button', { name: '称号なしを選択する', exact: true }).click();
         await expect(card.getByRole('status')).toHaveText('表示中: 称号なし');
+        expect(await writes()).toBe(4);
+        await card.getByRole('button', { name: '称号なしを選択する', exact: true }).click(); expect(await writes()).toBe(4);
         expect(await page.evaluate(() => JSON.parse(localStorage.getItem('quest-board-title')!).state.activeTitle)).toBeNull();
         expect(await page.evaluate(() => localStorage.getItem('quest-board-stats'))).toBe(originalLogs);
     });

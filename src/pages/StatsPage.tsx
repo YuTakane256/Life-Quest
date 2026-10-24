@@ -17,9 +17,10 @@ import { useGameStore } from '../stores/useGameStore';
 import { useTitleStore } from '../stores/useTitleStore';
 import { shiftDate } from '../utils/dateUtils';
 import { useJstToday } from '../hooks/useJstToday';
-import { getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
+import { captureTitleSelection, getAchievementProgress, getUnlockedTitles, type AchievementProgress } from '../utils/achievements';
 import { getProgressBarA11y } from '../utils/progressBar';
 import { getHeatmapCellLabel } from '../utils/statsHeatmapA11y';
+import { useInteractionScope } from '../hooks/useInteractionScope';
 
 // ─── ヒートマップ色定義 ─────────────────────────────────────────
 const TASK_COLORS = [
@@ -83,6 +84,21 @@ export function StatsPage() {
 
     const unlockedTitles = useMemo(() => getUnlockedTitles(achievementProgress), [achievementProgress]);
     const selectedTitle = activeTitle && unlockedTitles.includes(activeTitle) ? activeTitle : null;
+    const titleInteractions = useInteractionScope(() => {});
+    const chooseTitle = captureTitleSelection({ activeTitle, unlockedTitles }, () => {
+        const game = useGameStore.getState();
+        const logs = useStatsStore.getState();
+        return {
+            activeTitle: useTitleStore.getState().activeTitle,
+            unlockedTitles: getUnlockedTitles(getAchievementProgress({
+                totalXp: game.character.totalXp,
+                maxStage: game.battle.maxClearedStage,
+                equipmentCount: game.equipment.length,
+                activeDays: Object.values(logs.taskXpLog).filter((xp) => xp > 0).length,
+                perfectDays: Object.values(logs.habitLog).filter((day) => day.allComplete).length,
+            })),
+        };
+    }, titleInteractions.capture(), setActiveTitle);
 
     // 集計値
     const stats = useMemo(() => summarizeStats(dates, taskXpLog, habitLog, mode), [mode, dates, taskXpLog, habitLog]);
@@ -183,7 +199,7 @@ export function StatsPage() {
                         {unlockedTitles.length > 0 && <div className="flex flex-wrap gap-2">
                             <button
                                 type="button"
-                                onClick={() => setActiveTitle(null)}
+                                onClick={() => chooseTitle(null)}
                                 aria-pressed={selectedTitle === null}
                                 aria-label="称号なしを選択する"
                                 className="min-h-11 min-w-11 max-w-full px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
@@ -199,7 +215,7 @@ export function StatsPage() {
                                 <button
                                     key={title}
                                     type="button"
-                                    onClick={() => setActiveTitle(title)}
+                                    onClick={() => chooseTitle(title)}
                                     aria-pressed={selectedTitle === title}
                                     aria-label={`「${title}」を選択する`}
                                     className="min-h-11 min-w-11 max-w-full px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
