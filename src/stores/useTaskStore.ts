@@ -4,7 +4,8 @@ import { createWebPersistStorage } from '../platform/storage';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { PRIORITIES, RECURRENCES } from '../config/taskLabels';
-import { generateId, getTodayJST, isoToJstYmd, toIsoDatePart } from '../utils/dateUtils';
+import { getTodayJST, isoToJstYmd, toIsoDatePart } from '../utils/dateUtils';
+import { createEntityId as generateId } from '@life-quest/core/entityId';
 import {
     buildNextRecurringTask as buildNextRecurringTaskCore,
     duplicateTask as duplicateTaskCore,
@@ -311,7 +312,8 @@ export const useTaskStore = create<TaskStoreState>()(
                     };
                     set((state) => ({ tasks: [...state.tasks, newTask] }));
                     // ログイン中はクラウドへも書き込む（オフラインならoutboxが再送する）
-                    void enqueueCloudOperation('upsert_task', {
+                    const isCurrent = captureAuthSessionGuard();
+                    const queued = enqueueCloudOperation('upsert_task', {
                         p_id: newTask.id,
                         p_name: newTask.name,
                         p_due_date: newTask.dueDate,
@@ -319,6 +321,19 @@ export const useTaskStore = create<TaskStoreState>()(
                         p_recurrence: newTask.recurrence,
                         p_tags: newTask.tags,
                     }, { trackEntityId: newTask.id });
+                    if (newTask.subtasks.length === 0) return;
+                    // 親の永続化・依存IDの登録を待つ。待機中のログアウト/削除後には送らない。
+                    void Promise.resolve(queued).then((accepted) => {
+                        if (!accepted || !isCurrent()) return;
+                        const current = get().tasks.find((task) => task.id === newTask.id);
+                        if (!current) return;
+                        for (const subtask of newTask.subtasks) {
+                            if (!current.subtasks.some((candidate) => candidate.id === subtask.id)) continue;
+                            void enqueueCloudOperation('upsert_subtask', {
+                                p_id: subtask.id, p_task_id: newTask.id, p_name: subtask.name,
+                            }, { dependsOnEntityIds: [newTask.id], trackEntityId: subtask.id });
+                        }
+                    });
                 },
 
                 updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'recurrence' | 'tags' | 'subtasks'>>) => {

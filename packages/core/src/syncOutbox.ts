@@ -12,6 +12,7 @@
  *   本モジュールはストレージアダプタとキーを受け取るだけで、user_idを知らない
  */
 import type { RepositoryStorage } from './syncRepository.ts';
+import { createEntityId } from './entityId.ts';
 
 export type OutboxOpStatus = 'pending' | 'inflight' | 'failed' | 'conflict';
 
@@ -132,7 +133,7 @@ function sanitizeOps(raw: unknown): OutboxOp[] {
 
 export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
     const now = deps.now ?? (() => new Date().toISOString());
-    const generateId = deps.generateId ?? (() => crypto.randomUUID());
+    const generateId = deps.generateId ?? createEntityId;
 
     let ops: OutboxOp[] = [];
     let stopped = false;

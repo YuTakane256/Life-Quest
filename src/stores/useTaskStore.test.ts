@@ -200,7 +200,7 @@ describe('useTaskStore', () => {
                 completed: false,
                 completedAt: null,
             });
-            expect(tasks[0].id).toMatch(/^\d+-/);
+            expect(tasks[0].id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
             // createdAt は ISO 8601 文字列
             expect(() => new Date(tasks[0].createdAt).toISOString()).not.toThrow();
         });
@@ -336,7 +336,7 @@ describe('useTaskStore', () => {
                 completed: false,
                 completedAt: null,
             });
-            expect(subtasks[0].id).toMatch(/^\d+-/);
+            expect(subtasks[0].id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
         });
 
         it('空文字は無視される', () => {

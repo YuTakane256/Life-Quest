@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createGameCloudClient } from './gameCloud.ts';
 import { EdgeFunctionError, type EdgeFunctionInvoker } from './edgeFunctions.ts';
 
@@ -143,6 +143,18 @@ describe('createGameCloudClient', () => {
     });
 
     describe('claimLoginBonus', () => {
+        it('creates the request key without a global crypto implementation', async () => {
+            vi.stubGlobal('crypto', undefined);
+            let body: Record<string, unknown> | undefined;
+            try {
+                const client = createGameCloudClient({ getInvoker: () => makeInvoker((_name, payload) => {
+                    body = payload;
+                    return { granted: true, streak: 1, xp: 20, chest_label: null };
+                }) });
+                await client.claimLoginBonus(undefined, 'user-a');
+                expect(body?.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+            } finally { vi.unstubAllGlobals(); }
+        });
         it('クラウド未接続ならnullを返す', async () => {
             const client = createGameCloudClient({ getInvoker: () => null });
             expect(await client.claimLoginBonus()).toBeNull();
