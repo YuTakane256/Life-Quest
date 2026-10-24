@@ -6,27 +6,30 @@ Issue [#819](https://github.com/YuTakane256/Life-Quest/issues/819) / 親 [#699](
 
 ## 現在の状態（2026-10-24）
 
-**実操作確認は環境確認待ち。成功ではない。**
+**接続設定・ログイン画面の準備まで確認。認証付き同期は未実行。**
 
-- 作業用環境にはWeb/Mobileの接続設定がない。事前診断は`blocked`、終了コード1となった。
-- Supabase CLIは未ログイン。管理画面もサインイン画面へ遷移したため、プロジェクト一覧は取得できなかった。
-  検証用プロジェクトが存在しないと断定したものではない。
-- プロジェクト/アカウント作成、ログイン、デプロイ、実データの投入/消去は行っていない。
-- 今回のPRの単体テスト・CI成功は診断実装/既存機能の回帰結果であり、下記T01〜T08の合格ではない。
+- ユーザーが新規作成した専用 `life-quest-staging` をCLIで確認し、mainのDB変更17件・Edge Functions14件を反映済み。
+  [CORSとRLSの確認記録](staging-edge-cors.md)を参照。DB初期化・有料プラン変更はしていない。
+- 専用ファイルへ公開接続情報だけを設定し、事前診断は`configuration-consistent`。
+  新しい起動コマンドはそのファイルだけを使い、通常の.envや継承した公開変数を混ぜない。
+- Webは新規Chromium context、iOSは新規の専用Simulatorで起動。ログイン画面とfixture無効化を確認した。
+  [起動確認とCSP修正の記録](staging-sync-launch.md)を参照。
+- 検証用アカウントA/Bは作成承認待ちで未作成。有効なJWTでのログイン、G1の同一ユーザー確認、T01〜T08は未実行。
+  起動や無効JWTへの拒否を、実同期の合格とは扱わない。
 
 ## G0：実操作を始めてよい条件
 
 次の条件を管理者と確認する。不明なまま既存のプロジェクトを流用しない。
 
-- [ ] 本番と別の検証専用Supabaseプロジェクトを識別し、project refを管理画面で確認した。
+- [x] 本番と別の検証専用Supabaseプロジェクトを識別し、project refを管理画面で確認した。
   名前にstagingが含まれるだけでは判断しない。用途・所有者・課金への影響も確認する。
-- [ ] 対象mainのmigration、RLS、RPC、Edge Functionsがその環境へ適用されている。
-  このPRは適用しない。新規作成や`db push`/Functions deployは別途確認して行う。
+- [x] 対象mainのmigration、RLS、RPC、Edge Functionsがその環境へ適用されている。
+  この準備コマンドはデプロイしない。反映は別作業で確認済み。
 - [ ] 使い捨て可能な検証専用アカウントA/Bを用意し、通常利用アカウントは使わない。
   パスワード・トークン・管理者キーをチャット/Issue/PRに貼らない。
-- [ ] Webは専用ブラウザプロファイル、iOSは専用Simulatorとparityアプリを使う。
+- [x] Webは新規の専用ブラウザcontext、iOSは専用Simulatorとparityアプリを使う。
   既存ブラウザのログイン状態や既存parityの保存領域を流用しない。新規環境の作成は別途行う。
-- [ ] 固定メモリfixtureなし。通常利用/preview/releaseのデータは初期化しない。
+- [x] 固定メモリfixtureなし。通常利用/preview/releaseのデータは初期化しない。
   実アカウントでは`mobile:parity:smoke`/`progression`等の初期化フローを実行しない。
 - [ ] 手動確認の対象、担当、使用アカウントの匿名ラベルA/B、対象SHA、端末/OSを記録した。
 
@@ -72,25 +75,27 @@ Nodeの`--env-file`より既存のシェル環境変数が優先される点に�
 
 ## G1：起動と実接続先の確認
 
-G0を完了し、事前診断が通ってから、担当者が専用環境を起動する。
-以下は準備用の手順であり、このPRでは起動/接続を実行していない。
+認証付きの実操作はG0を完了し、事前診断が通ってから行う。
+今回はログインを伴わない起動・設定表示・無効JWTの拒否までを準備確認として実施した。
 Web4175/Mobile8083を専用に使い、通常の5173/8081と比較用4174/8082を止めない。
 
-Web（repoルート、別ターミナル）:
+専用ファイルを用意した後のWeb（repoルート、別ターミナル）:
 
 ```bash
-node --env-file=.staging-sync.local scripts/check-staging-sync.mjs &&
-node --env-file=.staging-sync.local node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4175 --strictPort
+npm run sync:staging:web
 ```
 
 Mobile（repoルート、さらに別ターミナル）:
 
 ```bash
-node --env-file=.staging-sync.local scripts/check-staging-sync.mjs &&
-(cd apps/mobile && node --env-file=../../.staging-sync.local ../../node_modules/expo/bin/cli start --dev-client --localhost --port 8083)
+npm run sync:staging:mobile
 ```
 
-Mobileのポートが使用中なら別ポートへ自動変更せず、起動を中止して調整する。
+両コマンドは`.staging-sync.local`を明示的に読み、同じ事前診断を実行する。
+親シェルのVITE_*/EXPO_*/LIFE_QUEST_*/SUPABASE_*は子へ渡さず、専用ファイルの許可項目だけを設定する。
+Webは`envDir: false`、Mobileは`EXPO_NO_DOTENV=1`で通常の.envを読まない。
+設定不足・未知の変数・ポート使用中なら子サーバーを起動しない。既存サーバーを停止せず、別ポートにも変えない。
+MobileはCIモードで非対話起動するため、変更後はこの専用サーバーを停止して起動し直す。
 専用Simulatorに入れた既存parity開発ビルドから8083を選び、アプリを完全再読み込みする。
 ログイン前に、比較fixtureが表示されず、専用の保存領域であることを確認する。
 ブラウザのNetwork等で**起動済みアプリ**のリクエスト先が指定プロジェクトであることを確認し、
@@ -144,15 +149,14 @@ HAR/Networkログをそのまま添付しない。Authorization、cookie、API�
 
 ## 現在の確認結果と次の入口
 
-G0: **blocked**（検証用環境の有無・用途・アクセスが未確認）。G1/T01〜T08: **未実行**。
-次は管理者が[Supabase管理画面](https://supabase.com/dashboard)でログインし、
-Life Questのプロジェクト一覧から「検証用があるか」を確認する。存在や用途が不明なら
-作成/ログイン先を推測せず、ここで相談する。秘密値をチャットへ送る必要はない。
+G0: **blocked**（検証専用A/Bアカウントの作成承認待ち）。G1: 起動・公開設定まで確認、
+認証した同一ユーザーの確認は未実行。T01〜T08: **未実行**。
+次は検証専用アカウント2件の作成可否を管理者と確認する。パスワード・トークンをチャットへ送る必要はない。
 
-環境が確認できたらG0→事前診断→G1→T01〜T08の順で進め、不具合だけを別PRで修正する。
-このPRではアプリUI/DB/API/報酬計算/既存保存形式を変更せず、比較画像も更新しない。
+G0の残る条件を満たしたら事前診断→G1→T01〜T08の順で進め、不具合だけを別PRで修正する。
+UI/DB/API/報酬計算/既存保存形式は変更せず、比較画像も更新しない。Webの接続先CSPは起動確認で見つかった不備として修正する。
 
-## この準備実装の検証
+## #819の非接続診断を追加した時点の検証（起動確認前）
 
 - 診断の単体37件と既存のローカル同期runner19件、計56件成功。
   不足/他ref/ローカルURL/秘密キー/fixture/通常版・preview/不正引数/出力の値非表示/CLI終了コードを確認。

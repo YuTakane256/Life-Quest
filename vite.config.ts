@@ -3,10 +3,12 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { isSameOriginImageRequest, PWA_APP_SHELL_GLOB_PATTERNS, PWA_IMAGE_CACHE_BUDGET } from './src/config/pwaCache'
+import { supabaseCspPlugin } from './scripts/vite-supabase-csp.ts'
 
 // https://vite.dev/config/
 export default defineConfig({
     plugins: [
+        supabaseCspPlugin(),
         react(),
         tailwindcss(),
         VitePWA({
