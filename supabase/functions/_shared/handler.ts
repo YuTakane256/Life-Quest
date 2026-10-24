@@ -1,14 +1,22 @@
 /**
  * Edge Function共通のリクエスト処理骨格。
- * - POSTのみ受け付け、JWT検証（ADR-007）とJSONパースを行ってハンドラへ渡す
+ * - OPTIONSの事前確認に応答し、POSTはJWT検証（ADR-007）とJSONパース後に処理する
  * - DB関数のエラーメッセージをHTTPステータスへ写像する
  */
 import { createServiceClient, UnauthorizedError, verifyUser } from './auth.ts';
 
+// Cookie認証は使わず、POSTのBearer JWT検証を維持する。
+// Webの配信元・ローカル開発・Nativeで同じAPIを利用できるようにする。
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 export function json(status: number, body: unknown): Response {
     return new Response(JSON.stringify(body), {
         status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
     });
 }
 
@@ -52,6 +60,8 @@ export function serveGameFunction(
     handler: (ctx: HandlerContext) => Promise<Response>,
 ): void {
     Deno.serve(async (req: Request) => {
+        // ブラウザの事前確認にはJWTがない。業務処理やDBアクセスは行わない。
+        if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
         if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
 
         let userId: string;
