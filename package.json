@@ -45,6 +45,7 @@
     "test:integration": "vitest run supabase/integration",
     "test:sync": "node scripts/run-sync-quality.mjs",
     "test:sync:unit": "node scripts/run-sync-quality.mjs --unit",
+    "sync:staging:check": "node scripts/check-staging-sync.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
