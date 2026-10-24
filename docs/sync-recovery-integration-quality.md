@@ -61,6 +61,9 @@ CIは既存のbuild-and-test / supabase / playwrightの3ジョブを維持する
 
 ## 残る確認
 
+実Web/Mobileのstaging確認は[専用の事前診断・受け入れ確認表](staging-sync-acceptance.md)へ進む。
+このページのローカルDB統合コマンドをstagingへ流用しない。
+
 成功してもstaging二アカウントでの実Web/Mobile操作・実SDKの認証復帰、
 OSによる停止/起動、実機オフライン切替、Android UI、通知/Apple等の認証確認は未完了。
 ローカルでDocker未起動の場合は未実行と明記し、CIの実DB検証結果と分けて記録する。

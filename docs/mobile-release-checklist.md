@@ -25,6 +25,9 @@ It validates all profiles, public Expo manifests, the release/parity/preview ide
 
 ## Local anonymous smoke regression
 
+計画④の実Web↔Mobile同期には[stagingの事前診断・受け入れ確認表](staging-sync-acceptance.md)を使う。
+接続先/検証アカウントが確認できるまで実操作を開始しない。以下の初期化を伴う匿名smokeは別用途。
+
 Before a release candidate, run the local behavior regression after starting
 the isolated development build with `npm run mobile:ios`:
 
