@@ -43,8 +43,8 @@ Apple/Googleボタンが表示されても、プロバイダー設定や動作�
 
 ## 自動検証
 
-- 起動境界16件、CSP16件、既存の診断37件とshell制限2件、計71件成功。
-- 全体3,311件成功/98件skip（`npm test -- --run --maxWorkers=2`）。最初の並列実行では
+- 起動境界16件、CSP21件、既存の診断37件とshell制限2件、計76件成功。
+- 全体3,316件成功/98件skip（`npm test -- --run --maxWorkers=2`）。最初の並列実行では
   Simulator初期起動などと重なった状態で既存UIテスト11件がタイムアウトしたため、追加環境を停止して
   worker数を2に制限し再実行した。テスト内容・タイムアウト値・既存CI設定は変更していない。
 - Web/Mobile型検査、通常build、指定staging設定を渡したproduction build、秘密値チェックが成功。

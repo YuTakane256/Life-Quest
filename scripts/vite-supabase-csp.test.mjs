@@ -21,7 +21,9 @@ describe('Supabase接続先だけを許可するCSP', () => {
     it.each(['not-a-url', 'http://remote.example.test', 'javascript:alert(1)',
         'https://user:private-sentinel@example.test', 'https://example.test/path',
         'https://example.test/?private-sentinel', 'https://example.test/#private-sentinel',
-        'https://example.test;script-src *', ' https://example.test', 'https://example.test\n'])('危険・不正な接続設定を値非表示で拒否する', (value) => {
+        'https://example.test;script-src *', ' https://example.test', 'https://example.test\n',
+        'https://*.example.test', 'https://example.test*', 'https://example.test;script-src',
+        'https://example.test%3bscript-src', "https://example.test'"])('危険・不正な接続設定を値非表示で拒否する', (value) => {
         expect(() => supabaseConnectSources(value)).toThrow();
         try { supabaseConnectSources(value); } catch (error) { expect(error.message).not.toContain('private-sentinel'); }
     });
