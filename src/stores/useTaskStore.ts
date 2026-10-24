@@ -4,7 +4,8 @@ import { createWebPersistStorage } from '../platform/storage';
 import type { Task, Subtask, PendingCompletion, Priority, Recurrence, TaskStoreState } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { PRIORITIES, RECURRENCES } from '../config/taskLabels';
-import { generateId, getTodayJST, isoToJstYmd, toIsoDatePart } from '../utils/dateUtils';
+import { getTodayJST, isoToJstYmd, toIsoDatePart } from '../utils/dateUtils';
+import { createEntityId as generateId } from '@life-quest/core/entityId';
 import {
     buildNextRecurringTask as buildNextRecurringTaskCore,
     duplicateTask as duplicateTaskCore,
@@ -319,6 +320,11 @@ export const useTaskStore = create<TaskStoreState>()(
                         p_recurrence: newTask.recurrence,
                         p_tags: newTask.tags,
                     }, { trackEntityId: newTask.id });
+                    for (const subtask of newTask.subtasks) {
+                        void enqueueCloudOperation('upsert_subtask', {
+                            p_id: subtask.id, p_task_id: newTask.id, p_name: subtask.name,
+                        }, { dependsOnEntityIds: [newTask.id], trackEntityId: subtask.id });
+                    }
                 },
 
                 updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'recurrence' | 'tags' | 'subtasks'>>) => {

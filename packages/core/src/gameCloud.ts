@@ -23,6 +23,7 @@
  */
 import { EdgeFunctionError, type EdgeFunctionInvoker, type EdgeFunctionCallOptions } from './edgeFunctions.ts';
 import { captureAuthSessionScope } from './authLifecycle.ts';
+import { createEntityId } from './entityId.ts';
 import type { BattleAction, BattleActors } from './battle.ts';
 
 interface StartBattleAttemptResponse {
@@ -137,7 +138,7 @@ export interface GameCloudClientDeps {
 
 export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClient {
     const { getInvoker } = deps;
-    const generateId = deps.generateId ?? (() => crypto.randomUUID());
+    const generateId = deps.generateId ?? createEntityId;
 
     async function invokeOwned<T>(name: string, body: Record<string, unknown>, options?: EdgeFunctionCallOptions): Promise<T | null> {
         const scope = captureAuthSessionScope();

@@ -4,7 +4,8 @@ import { createWebPersistStorage } from '../platform/storage';
 import type { Habit, HabitDailyRecord, HabitStoreState, RestDay } from '../types';
 import { XP_CONFIG, UI_CONFIG } from '../config/gameConfig';
 import { DEFAULT_CATEGORY_ID, HABIT_CATEGORIES } from '../config/habitCategories';
-import { generateId, getTodayJST, isValidYmd, shiftDate } from '../utils/dateUtils';
+import { getTodayJST, isValidYmd, shiftDate } from '../utils/dateUtils';
+import { createEntityId as generateId } from '@life-quest/core/entityId';
 import {
     areAllHabitsComplete as areAllHabitsCompleteCore,
     getHabitCompletionRate as getHabitCompletionRateCore,

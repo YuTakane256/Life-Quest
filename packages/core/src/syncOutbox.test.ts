@@ -34,6 +34,18 @@ function makeOutbox(overrides: {
 }
 
 describe('createSyncOutbox', () => {
+    it('generates a UUID operation key and sends without global crypto (Native fallback)', async () => {
+        vi.stubGlobal('crypto', undefined);
+        const { outbox, sent } = makeOutbox();
+        try {
+            await outbox.load();
+            const op = await outbox.enqueue({ operation: 'upsert_task', payload: {} });
+            await outbox.drainAndWait();
+            expect(op?.opId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+            expect(sent).toHaveLength(1);
+            expect(sent[0].opId).toBe(op?.opId);
+        } finally { await outbox.stop(); vi.unstubAllGlobals(); }
+    });
     it('drainの保存失敗後もstopは残る並行enqueueの保存を待つ', async () => {
         const storage = createMemoryStorage();
         let fail!: () => void;

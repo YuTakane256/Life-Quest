@@ -4,6 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./entityId": {
+      "types": "./src/entityId.ts",
+      "import": "./src/entityId.ts"
+    },
     "./characterProfile": {
       "types": "./src/characterProfile.ts",
       "import": "./src/characterProfile.ts"
