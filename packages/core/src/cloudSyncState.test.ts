@@ -74,6 +74,32 @@ describe('shared sync feedback', () => {
         expect(cloudSyncMessage(state({ push: { ...readyPush, conflict: 1, pending: 1 } }))).toContain('競合');
         expect(cloudSyncMessage(state({ push: { ...readyPush, failed: 1 }, availability: 'offline' }))).toContain('自動再送しません');
     });
+    it.each(['failed', 'conflict'] as const)('%sが残っていても、新しい変更のオフライン待機を隠さない', (kind) => {
+        const current = state({ availability: 'offline', push: { ...readyPush, [kind]: 1, pending: 4, inflight: 1 }, attention: 'required' });
+        expect(cloudSyncMessage(current)).toContain('自動再送しません。オフラインです。接続後に同期する変更: 5件');
+        expect(cloudSyncMessage(current)).toContain(kind === 'failed' ? '同期できませんでした' : '競合');
+        expect(cloudSyncMessage(current)).not.toContain('同期済み');
+        expect(canRequestCloudSync(current)).toBe(false);
+    });
+    it.each(['failed', 'conflict'] as const)('%sと現在の送信/待機を両方示し、完了後も古い注意を維持する', (kind) => {
+        const current = state({ push: { ...readyPush, [kind]: 1, pending: 2 }, attention: 'required' });
+        expect(cloudSyncMessage(current)).toContain('同期を待っている変更: 2件');
+        expect(canRequestCloudSync(current)).toBe(true);
+        current.push.inflight = 1;
+        expect(cloudSyncMessage(current)).toContain('同期中です。送信待ちの変更: 3件');
+        current.push.pending = 0; current.push.inflight = 0;
+        expect(cloudSyncMessage(current)).toBe(kind === 'failed'
+            ? '一部の変更を同期できませんでした。今すぐ同期では自動再送しません'
+            : '一部の変更に競合があります。今すぐ同期では自動再送しません');
+    });
+    it('未送信0件のofflineも示し、認証待ちの優先度とpull失敗の案内を保つ', () => {
+        expect(cloudSyncMessage(state({ availability: 'offline', push: { ...readyPush, failed: 1 } })))
+            .toContain('自動再送しません。オフラインです。接続後にクラウドの変更を確認します');
+        expect(cloudSyncMessage(state({ availability: 'auth-required', push: { ...readyPush, failed: 1, pending: 2 } })))
+            .toBe('再ログインすると保留中の同期を再開できます');
+        expect(cloudSyncMessage(state({ push: { ...readyPush, pending: 2 }, pull: { phase: 'failed', lastSuccessAt: null } })))
+            .toContain('再試行してください');
+    });
     it('失敗後は再試行でき、成功したidleのみ同期済みと表示する', () => {
         const current = state({ pull: { phase: 'failed', lastSuccessAt: '2026-10-17T00:00:00Z' } });
         expect(cloudSyncMessage(current)).toContain('再試行'); expect(canRequestCloudSync(current)).toBe(true);
