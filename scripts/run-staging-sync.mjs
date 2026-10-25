@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parseEnv } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inspectStagingSyncEnvironment } from './check-staging-sync.mjs';
@@ -17,7 +20,7 @@ const allowedKeys = new Set([
 
 /** Only the dedicated file supplies client settings; inherited public/DB settings never reach the child. */
 export function stagingLaunchPlan(target, settings, inherited = {}) {
-    if (!['web', 'mobile'].includes(target)) throw new Error('起動対象はwebまたはmobileだけです。');
+    if (!['web', 'web-preview', 'mobile'].includes(target)) throw new Error('起動対象が不正です。');
     if (Object.keys(settings).some((key) => !allowedKeys.has(key))) {
         throw new Error('専用設定に許可していない変数があります。公開接続設定だけを指定してください（値は非表示）。');
     }
@@ -27,11 +30,12 @@ export function stagingLaunchPlan(target, settings, inherited = {}) {
     const env = Object.fromEntries(Object.entries(inherited)
         .filter(([key]) => !/^(VITE_|EXPO_|LIFE_QUEST_|SUPABASE_)/.test(key)));
     Object.assign(env, settings);
-    if (target === 'web') return {
-        cwd: root, env, port: 4175,
+    if (target === 'web' || target === 'web-preview') return {
+        cwd: root, env, port: target === 'web' ? 4175 : 4176,
         args: [fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url)),
+            ...(target === 'web-preview' ? ['preview'] : []),
             '--config', fileURLToPath(new URL('../vite.staging.config.ts', import.meta.url)),
-            '--host', '127.0.0.1', '--port', '4175', '--strictPort'],
+            '--host', '127.0.0.1', '--port', target === 'web' ? '4175' : '4176', '--strictPort'],
     };
     // Expo must fail rather than interactively choosing another port.
     env.CI = '1';
@@ -51,17 +55,13 @@ export function assertStagingPortAvailable(port) {
     });
 }
 
-function startServer(plan) {
+function startServer(plan, { signal } = {}) {
     return new Promise((resolve, reject) => {
+        if (signal?.aborted) { resolve(130); return; }
         const child = spawn(process.execPath, plan.args, { cwd: plan.cwd, env: plan.env, stdio: 'inherit' });
-        const interrupt = () => child.kill('SIGINT');
-        const terminate = () => child.kill('SIGTERM');
-        process.once('SIGINT', interrupt);
-        process.once('SIGTERM', terminate);
-        const cleanup = () => {
-            process.removeListener('SIGINT', interrupt);
-            process.removeListener('SIGTERM', terminate);
-        };
+        const interrupt = () => child.kill(signal.reason === 'SIGTERM' ? 'SIGTERM' : 'SIGINT');
+        signal?.addEventListener('abort', interrupt, { once: true });
+        const cleanup = () => signal?.removeEventListener('abort', interrupt);
         child.once('error', () => { cleanup(); reject(new Error('開発サーバーを起動できませんでした。')); });
         child.once('close', (code, signal) => { cleanup(); resolve(code ?? (signal === 'SIGINT' ? 130 : 1)); });
     });
@@ -72,9 +72,10 @@ export async function runStagingSync(args, inherited, {
     checkPort = assertStagingPortAvailable,
     execute = startServer,
     write = console.log,
+    signal,
 } = {}) {
-    if (args.length !== 1 || !['web', 'mobile'].includes(args[0])) {
-        write('使い方: npm run sync:staging:web または npm run sync:staging:mobile');
+    if (args.length !== 1 || !['web', 'web-preview', 'mobile'].includes(args[0])) {
+        write('使い方: npm run sync:staging:web / sync:staging:web:preview / sync:staging:mobile');
         return 1;
     }
     let plan;
@@ -83,13 +84,44 @@ export async function runStagingSync(args, inherited, {
         write('起動を中止しました。.staging-sync.localの公開接続設定を見本と事前診断で確認してください。値は表示していません。');
         return 1;
     }
+    const controller = new AbortController();
+    const interrupt = () => controller.abort('SIGINT');
+    const terminate = () => controller.abort('SIGTERM');
+    const relayAbort = () => controller.abort(signal.reason);
+    process.once('SIGINT', interrupt);
+    process.once('SIGTERM', terminate);
+    signal?.addEventListener('abort', relayAbort, { once: true });
+    if (signal?.aborted) relayAbort();
+    const cancelledCode = () => controller.signal.reason === 'SIGTERM' ? 143 : 130;
+    let ownedDirectory;
     try {
+        if (controller.signal.aborted) return cancelledCode();
         await checkPort(plan.port);
+        if (controller.signal.aborted) return cancelledCode();
+        if (args[0] === 'web-preview') {
+            // Never build into, serve, empty, or remove the normal dist directory.
+            ownedDirectory = await mkdtemp(join(tmpdir(), 'life-quest-staging-preview-'));
+            if (controller.signal.aborted) return cancelledCode();
+            write('[staging sync] 専用の一時ディレクトリへWeb PWAをビルドします。');
+            const buildCode = await execute({ ...plan, args: [plan.args[0], 'build',
+                '--config', fileURLToPath(new URL('../vite.staging.config.ts', import.meta.url)),
+                '--outDir', ownedDirectory,
+            ] }, { signal: controller.signal });
+            if (controller.signal.aborted) return cancelledCode();
+            if (buildCode !== 0) return buildCode;
+            plan = { ...plan, args: [...plan.args, '--outDir', ownedDirectory] };
+        }
         write(`[staging sync] ${args[0]} / localhost:${plan.port} — 接続・保存領域・同期の成功は起動後に確認してください。`);
-        return await execute(plan);
+        const code = await execute(plan, { signal: controller.signal });
+        return controller.signal.aborted ? cancelledCode() : code;
     } catch {
         write('起動を中止しました。専用ポート・依存関係を確認してください。既存プロセスの停止やポート変更は行っていません。');
         return 1;
+    } finally {
+        process.removeListener('SIGINT', interrupt);
+        process.removeListener('SIGTERM', terminate);
+        signal?.removeEventListener('abort', relayAbort);
+        if (ownedDirectory) await rm(ownedDirectory, { recursive: true, force: true });
     }
 }
 

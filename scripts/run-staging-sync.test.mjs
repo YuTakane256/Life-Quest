@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
+import { access, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { runStagingSync, stagingLaunchPlan } from './run-staging-sync.mjs';
 
 const ref = 'abcdefghijklmnopqrst';
@@ -12,7 +14,7 @@ const settings = () => ({
 });
 
 describe('専用staging起動', () => {
-    it.each(['web', 'mobile'])('%sは継承した公開設定・fixture・管理者キーを渡さず、専用ファイルを使う', (target) => {
+    it.each(['web', 'web-preview', 'mobile'])('%sは継承した公開設定・fixture・管理者キーを渡さず、専用ファイルを使う', (target) => {
         const plan = stagingLaunchPlan(target, settings(), {
             PATH: '/usr/bin', HOME: '/home/test',
             VITE_SUPABASE_URL: 'https://wrong.example.com', VITE_SECRET: 'sensitive-sentinel',
@@ -23,8 +25,8 @@ describe('専用staging起動', () => {
         expect(plan.env).toMatchObject(settings());
         expect(plan.env.PATH).toBe('/usr/bin');
         expect(JSON.stringify(plan.env)).not.toContain('sensitive-sentinel');
-        expect(plan.port).toBe(target === 'web' ? 4175 : 8083);
-        if (target === 'web') expect(plan.args).toContain('--strictPort');
+        expect(plan.port).toBe(target === 'mobile' ? 8083 : target === 'web' ? 4175 : 4176);
+        if (target !== 'mobile') expect(plan.args).toContain('--strictPort');
         else {
             expect(plan.env.CI).toBe('1');
             expect(plan.args).toContain('--localhost');
@@ -88,5 +90,63 @@ describe('専用staging起動', () => {
         const output = JSON.stringify(write.mock.calls);
         expect(output).not.toContain(ref); expect(output).not.toContain('sb_publishable_fake');
         expect(output).toContain('4175');
+    });
+
+    it('previewは専用ポート確認後、一時ビルドだけを配信し終了時に削除する', async () => {
+        const checkPort = vi.fn(); let directory;
+        const execute = vi.fn(async (plan) => {
+            expect(checkPort).toHaveBeenCalledExactlyOnceWith(4176);
+            const output = plan.args[plan.args.indexOf('--outDir') + 1];
+            expect(output).not.toBe(join(plan.cwd, 'dist'));
+            expect(plan.env).toMatchObject(settings());
+            if (execute.mock.calls.length === 1) {
+                directory = output;
+                expect(plan.args[1]).toBe('build');
+                expect(plan.args).toContain(join(plan.cwd, 'vite.staging.config.ts'));
+                await writeFile(join(output, 'owned.txt'), 'only this build');
+            } else {
+                expect(plan.args[1]).toBe('preview');
+                expect(output).toBe(directory);
+                expect(plan.args).toContain('--strictPort');
+                expect(await readFile(join(output, 'owned.txt'), 'utf8')).toBe('only this build');
+            }
+            return 0;
+        });
+        expect(await runStagingSync(['web-preview'], {}, { readSettings: settings, checkPort, execute, write: vi.fn() })).toBe(0);
+        expect(execute).toHaveBeenCalledTimes(2);
+        await expect(access(directory)).rejects.toThrow();
+    });
+
+    it.each(['failure', 'error', 'SIGINT', 'SIGTERM'])('ビルドの%s後はpreviewを開始せず、一時出力も残さない', async (failure) => {
+        const controller = new AbortController(); let directory;
+        const execute = vi.fn(async (plan) => {
+            directory = plan.args[plan.args.indexOf('--outDir') + 1];
+            await writeFile(join(directory, 'partial.txt'), 'partial');
+            if (failure === 'error') throw new Error('sensitive-sentinel');
+            if (failure.startsWith('SIG')) controller.abort(failure);
+            return failure === 'failure' ? 7 : 0;
+        });
+        const write = vi.fn();
+        const code = await runStagingSync(['web-preview'], {}, {
+            readSettings: settings, checkPort: vi.fn(), execute, write, signal: controller.signal,
+        });
+        expect(code).toBe({ failure: 7, error: 1, SIGINT: 130, SIGTERM: 143 }[failure]);
+        expect(execute).toHaveBeenCalledOnce();
+        await expect(access(directory)).rejects.toThrow();
+        expect(JSON.stringify(write.mock.calls)).not.toContain('sensitive-sentinel');
+    });
+
+    it('previewも不正設定・占有ポート・起動前キャンセルでビルドしない', async () => {
+        for (const reason of ['settings', 'port', 'cancel']) {
+            const controller = new AbortController(); if (reason === 'cancel') controller.abort();
+            const execute = vi.fn();
+            const code = await runStagingSync(['web-preview'], {}, {
+                readSettings: () => reason === 'settings' ? {} : settings(),
+                checkPort: async () => { if (reason === 'port') throw new Error('busy'); },
+                execute, write: vi.fn(), signal: controller.signal,
+            });
+            expect(code).toBe(reason === 'cancel' ? 130 : 1);
+            expect(execute).not.toHaveBeenCalled();
+        }
     });
 });

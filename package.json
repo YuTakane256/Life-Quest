@@ -47,6 +47,7 @@
     "test:sync:unit": "node scripts/run-sync-quality.mjs --unit",
     "sync:staging:check": "node scripts/check-staging-sync.mjs",
     "sync:staging:web": "node scripts/run-staging-sync.mjs web",
+    "sync:staging:web:preview": "node scripts/run-staging-sync.mjs web-preview",
     "sync:staging:mobile": "node scripts/run-staging-sync.mjs mobile",
     "test:watch": "vitest"
   },
