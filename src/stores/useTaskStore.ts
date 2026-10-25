@@ -238,6 +238,9 @@ function spawnWebRecurringNext(taskId: string): void {
 export const useTaskStore = create<TaskStoreState>()(
     persist(
         (set, get) => {
+            // 編集の差分は親→子→親の完了状態の順に永続化する。
+            // 連続保存も同じ順で処理し、前の追加より先に次の削除を送らない。
+            const subtaskEditQueues = new Map<string, { isCurrent: () => boolean; done: Promise<void> }>();
             /**
              * 待機中の完了を確定する: 完了フラグ確定・報酬付与・繰り返し生成・complete_task送信。
              * toggleCompleteの5秒タイマー本体とflushPendingCompletions（タブ非表示時の
@@ -338,6 +341,8 @@ export const useTaskStore = create<TaskStoreState>()(
 
                 updateTask: (id: string, updates: Partial<Pick<Task, 'name' | 'dueDate' | 'priority' | 'recurrence' | 'tags' | 'subtasks'>>) => {
                     const now = new Date().toISOString();
+                    const previous = get().tasks.find((task) => task.id === id);
+                    if (!previous) return;
 
                     // サブタスクが更新対象に含まれない場合は単純マージ（core側で分岐）
                     if (updates.subtasks === undefined) {
@@ -369,7 +374,13 @@ export const useTaskStore = create<TaskStoreState>()(
                     }));
                     const updated = get().tasks.find((t) => t.id === id);
                     if (updated) {
-                        void enqueueCloudOperation('upsert_task', {
+                        const isCurrent = captureAuthSessionGuard();
+                        const existing = new Map(previous.subtasks.map((subtask) => [subtask.id, subtask]));
+                        const nextIds = new Set(updated.subtasks.map((subtask) => subtask.id));
+                        const changed = updated.subtasks.filter((subtask) => !existing.has(subtask.id)
+                            || existing.get(subtask.id)!.name !== subtask.name);
+                        const removed = previous.subtasks.filter((subtask) => !nextIds.has(subtask.id));
+                        const queued = enqueueCloudOperation('upsert_task', {
                             p_id: updated.id,
                             p_name: updated.name,
                             p_due_date: updated.dueDate,
@@ -377,6 +388,45 @@ export const useTaskStore = create<TaskStoreState>()(
                             p_recurrence: updated.recurrence,
                             p_tags: updated.tags,
                         }, { dependsOnEntityIds: [id] });
+
+                        const becameComplete = updated.completed && (!previous.completed || pending !== undefined);
+                        if (becameComplete) {
+                            void awardTaskXp(updated.priority, updated.completedAt ?? now, undefined, `task:${id}`)
+                                .then((rewarded) => {
+                                    if (isCurrent() && rewarded) spawnWebRecurringNext(id);
+                                }).catch(() => undefined);
+                        }
+
+                        const prior = subtaskEditQueues.get(id);
+                        const currentTask = () => isCurrent() && get().tasks.some((task) => task.id === id);
+                        const done = (async () => {
+                            if (prior?.isCurrent()) await prior.done;
+                            if (!await queued || !currentTask()) return;
+                            for (const subtask of changed) {
+                                if (!currentTask()) return;
+                                if (!await enqueueCloudOperation('upsert_subtask', {
+                                    p_id: subtask.id, p_task_id: id, p_name: subtask.name,
+                                }, { dependsOnEntityIds: [id, subtask.id], trackEntityId: subtask.id })) return;
+                            }
+                            for (const subtask of removed) {
+                                if (!currentTask()) return;
+                                if (!await enqueueCloudOperation('delete_subtask', { p_id: subtask.id }, {
+                                    dependsOnEntityIds: [id, subtask.id], trackEntityId: subtask.id,
+                                })) return;
+                            }
+                            if (!currentTask()) return;
+                            const current = get().tasks.find((task) => task.id === id)!;
+                            if (becameComplete && current.completed && getGameRewardAuthorityState() !== 'resolving') {
+                                void enqueueCloudOperation('complete_task', { taskId: id }, {
+                                    dependsOnEntityIds: [id, ...changed.map((subtask) => subtask.id), ...removed.map((subtask) => subtask.id)],
+                                });
+                            } else if (previous.completed && !updated.completed && !pending && !current.completed) {
+                                void enqueueCloudOperation('uncomplete_task', { p_id: id }, { dependsOnEntityIds: [id] });
+                            }
+                        })().catch(() => undefined);
+                        const entry = { isCurrent, done };
+                        subtaskEditQueues.set(id, entry);
+                        void done.then(() => { if (subtaskEditQueues.get(id) === entry) subtaskEditQueues.delete(id); });
                     }
                 },
 

@@ -16,6 +16,9 @@ Issue [#819](https://github.com/YuTakane256/Life-Quest/issues/819) / 親 [#699](
   [起動確認とCSP修正の記録](staging-sync-launch.md)を参照。
 - 承認のもとA/Bを2件作成し、T01のA認証とT02のタスク1件往復を確認した。
   [2026-10-25の結果と修正](staging-sync-20261025.md)を参照。T03〜T08は未実行。
+- Web編集フォームのサブタスク差分送信を修正し、検証タスクの子の入れ替えをDB/iOSで確認した。
+  Nativeから追加した子もWebへ戻ることを確認した。
+  [差分編集の確認記録](staging-subtask-edits-20261025.md)を参照。
 
 ## G0：実操作を始めてよい条件
 
