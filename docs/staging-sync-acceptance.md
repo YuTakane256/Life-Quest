@@ -6,7 +6,7 @@ Issue [#819](https://github.com/YuTakane256/Life-Quest/issues/819) / 親 [#699](
 
 ## 現在の状態（2026-10-25）
 
-**認証、タスク/習慣各1件の往復を確認。T04はWebの実オフラインとNativeのHTTP障害を確認し、Nativeの回線切断は残る。T05〜T08は未実行。**
+**認証、タスク/習慣各1件の往復を確認。T04はWebの実オフラインとNativeのHTTP障害、T05はWebの未送信プロセス再起動を確認。Nativeの回線切断/未送信再起動とT06〜T08は未実行。**
 
 - ユーザーが新規作成した専用 `life-quest-staging` をCLIで確認し、mainのDB変更17件・Edge Functions14件を反映済み。
   [CORSとRLSの確認記録](staging-edge-cors.md)を参照。DB初期化・有料プラン変更はしていない。
