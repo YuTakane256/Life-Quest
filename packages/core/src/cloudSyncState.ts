@@ -51,14 +51,20 @@ export function canRequestCloudSync(state: CloudSyncPublicState): boolean {
 export function cloudSyncMessage(state: CloudSyncPublicState): string {
     if (state.availability === 'inactive') return 'ログインすると同期状態を確認できます';
     if (state.availability === 'auth-required' || state.push.failureKinds.includes('auth-required')) return '再ログインすると保留中の同期を再開できます';
-    if (state.push.conflict > 0) return '一部の変更に競合があります。今すぐ同期では自動再送しません';
-    if (state.push.failed > 0) return '一部の変更を同期できませんでした。今すぐ同期では自動再送しません';
     const waiting = state.push.pending + state.push.inflight;
-    if (state.availability === 'offline') return waiting > 0
-        ? `オフラインです。接続後に同期する変更: ${waiting}件` : 'オフラインです。接続後にクラウドの変更を確認します';
-    if (isCloudSyncBusy(state)) return waiting > 0 ? `同期中です。送信待ちの変更: ${waiting}件` : 'クラウドの変更を確認しています';
+    const busy = isCloudSyncBusy(state);
+    const progress = state.availability === 'offline'
+        ? waiting > 0 ? `オフラインです。接続後に同期する変更: ${waiting}件` : 'オフラインです。接続後にクラウドの変更を確認します'
+        : busy ? waiting > 0 ? `同期中です。送信待ちの変更: ${waiting}件` : 'クラウドの変更を確認しています'
+        : waiting > 0 ? `同期を待っている変更: ${waiting}件` : null;
+    const warning = state.push.conflict > 0
+        ? '一部の変更に競合があります。今すぐ同期では自動再送しません'
+        : state.push.failed > 0 ? '一部の変更を同期できませんでした。今すぐ同期では自動再送しません' : null;
+    // 過去の失敗を消さず、新しい変更のオフライン待機/送信状況も伝える。
+    if (warning) return progress ? `${warning}。${progress}` : warning;
+    if (progress && (state.availability === 'offline' || busy)) return progress;
     if (state.pull.phase === 'failed') return '同期を完了できませんでした。接続を確認して再試行してください';
-    if (waiting > 0) return `同期を待っている変更: ${waiting}件`;
+    if (progress) return progress;
     if (state.pull.lastSuccessAt === null) return 'クラウドの変更を確認しています';
     return '同期済み';
 }

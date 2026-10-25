@@ -31,8 +31,8 @@ export function CloudSyncSettings() {
             style={{ backgroundColor: 'var(--color-bg-card)', border: `1px solid ${hasAttention ? 'var(--color-text-danger)' : 'var(--color-border-default)'}` }}
             aria-label="同期"
         >
-            <div className="flex items-start justify-between gap-3">
-                <div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 basis-40">
                     <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>同期</h2>
                     <p role={hasAttention ? 'alert' : 'status'} aria-live="polite" className="text-xs mt-1" style={{ color: hasAttention ? 'var(--color-text-danger)' : 'var(--color-text-muted)' }}>
                         {hasAttention && <TriangleAlert size={14} className="inline mr-1 align-text-bottom" aria-hidden="true" />}
@@ -46,7 +46,7 @@ export function CloudSyncSettings() {
                     type="button"
                     onClick={() => { void handleSync(); }}
                     disabled={!canSync}
-                    className="min-h-11 px-3 rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
+                    className="min-h-11 shrink-0 whitespace-nowrap px-3 rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
                     style={{ color: 'var(--color-accent-primary)', border: '1px solid var(--color-border-default)' }}
                     aria-label="今すぐ同期"
                     aria-busy={busy}
