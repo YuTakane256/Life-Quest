@@ -106,6 +106,65 @@ function batch(user: string, hasMore = false): PullBatch {
 const cleanups: Array<() => void> = [];
 const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 
+describe('Webの複数タブとキャッシュ復元', () => {
+    it('起動時の保存キャッシュ読込を待ち、手動pullの結果を古い読込で上書きしない', async () => {
+        const saved = deferred<string | null>();
+        mocks.storage.getItem.mockImplementation(async (key: string) => key === cloudCacheKey('a', 'tasks')
+            ? saved.promise : mocks.values.get(key) ?? null);
+        mocks.rpc.mockResolvedValue({ data: batch('new'), error: null });
+        const handle = startWebCloudSync('a')!;
+        cleanups.push(handle.stop);
+        const pull = handle.flush();
+        await settle();
+        expect(mocks.rpc).not.toHaveBeenCalled();
+        saved.resolve(JSON.stringify({ tasks: { 'a-task': (batch('a').tasks as object[])[0] }, subtasks: {} }));
+        await pull;
+        expect(mocks.visibleTasks).toEqual(['a-task', 'new-task']);
+    });
+
+    it('別タブが保存カーソルを進めても、このタブが未受信の追加と削除を取りこぼさない', async () => {
+        const handle = startWebCloudSync('a')!;
+        cleanups.push(handle.stop);
+        await settle();
+        mocks.rpc.mockResolvedValueOnce({ data: batch('a'), error: null });
+        await handle.flush();
+        expect(mocks.visibleTasks).toEqual(['a-task']);
+
+        // 別タブはversion 10を受信済みだが、このハンドルのキャッシュはversion 2。
+        mocks.values.set(cloudCursorKey('a'), '10');
+        const update = { next_cursor: 10, has_more: false, tasks: [
+            { ...(batch('a').tasks as object[])[0], version: 10, deleted_at: '2026-10-26T00:00:00Z' },
+            { ...(batch('new').tasks as object[])[0], version: 10 },
+        ] };
+        mocks.rpc.mockImplementation(async (_name, params) => ({
+            data: params.p_after_version < 10 ? update : { next_cursor: 10, has_more: false }, error: null,
+        }));
+        await handle.flush();
+        expect(mocks.visibleTasks).toEqual(['new-task']);
+        expect(mocks.rpc).toHaveBeenLastCalledWith('pull_sync_batch', expect.objectContaining({ p_after_version: 2 }));
+    });
+
+    it.each(['old', 'invalid', 'missing'])('保存済みカーソルより%sなキャッシュから起動してもサーバーの行を復元する', async (cacheState) => {
+        mocks.values.set(cloudCursorKey('a'), '10');
+        if (cacheState === 'old') mocks.values.set(cloudCacheKey('a', 'tasks'), JSON.stringify({
+            tasks: { 'a-task': (batch('a').tasks as object[])[0] }, subtasks: {},
+        }));
+        if (cacheState === 'invalid') mocks.values.set(cloudCacheKey('a', 'tasks'), 'broken JSON');
+        mocks.rpc.mockImplementation(async (_name, params) => ({
+            data: params.p_after_version < 10 ? {
+                next_cursor: 10, has_more: false,
+                tasks: [...(batch('a').tasks as object[]), { ...(batch('new').tasks as object[])[0], version: 10 }],
+            } : { next_cursor: 10, has_more: false }, error: null,
+        }));
+        const handle = startWebCloudSync('a')!;
+        cleanups.push(handle.stop);
+        await settle();
+        await handle.flush();
+        expect(mocks.visibleTasks).toEqual(['a-task', 'new-task']);
+        expect(mocks.rpc).toHaveBeenCalledWith('pull_sync_batch', expect.objectContaining({ p_after_version: 0 }));
+    });
+});
+
 beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();

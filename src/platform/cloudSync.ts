@@ -146,6 +146,14 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     // Invalidate at notification start, not only once later sync hooks reach stop().
     const isAuthSessionCurrent = captureAuthSessionGuard();
     const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration && isAuthSessionCurrent();
+    // localStorage is shared by tabs, while `cache` belongs to this handle.
+    // A different tab's saved cursor does not prove that this cache received its rows.
+    // Rebuild from version 0 once per handle (also repairs missing/stale saved sections),
+    // then advance only through batches this handle actually applied.
+    let appliedCursor = 0;
+    const cacheReady = loadCloudCache(storage, userId).then((restored) => {
+        if (isCurrent()) cache = restored;
+    }).catch(() => { /* A full pull can rebuild the cache when storage becomes available. */ });
     let pushState = getWebCloudOutboxState();
     let online: boolean | null = typeof navigator === 'undefined' ? null : navigator.onLine;
     let manualSync: Promise<void> | null = null;
@@ -188,12 +196,14 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
             seedStores();
         },
         readCursor: async () => {
-            const raw = await storage.getItem(cloudCursorKey(userId));
-            const cursor = raw === null ? 0 : Number(raw);
-            return Number.isFinite(cursor) && cursor >= 0 ? cursor : 0;
+            // A manual/realtime pull must not be overwritten by a later startup load.
+            await cacheReady;
+            return appliedCursor;
         },
         writeCursor: async (cursor) => {
             if (!isCurrent()) return;
+            appliedCursor = cursor;
+            // Keep the existing key compatible, without trusting another tab's value.
             await storage.setItem(cloudCursorKey(userId), String(cursor));
         },
     });
@@ -271,7 +281,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
 
     // 起動: まずキャッシュから復元（オフラインでも表示）→ 初回プル
     void (async () => {
-        cache = await loadCloudCache(storage, userId);
+        await cacheReady;
         if (!isCurrent()) return;
         // pending outboxがある間は、前回のクラウドキャッシュで楽観更新を
         // 上書きしない。送信成功後にのみキャッシュを反映する。
