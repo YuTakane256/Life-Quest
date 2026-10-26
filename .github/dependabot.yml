@@ -43,10 +43,11 @@ updates:
         update-types:
           - version-update:semver-minor
           - version-update:semver-major
-      # SVG is a native ABI dependency too; Lucide peers must not move it past
-      # the version recommended by the installed Expo SDK (#763).
+      # SVG is pinned to the exact Expo recommendation, including its patch.
+      # Update it together with that SDK recommendation, not independently.
       - dependency-name: react-native-svg
         update-types:
+          - version-update:semver-patch
           - version-update:semver-minor
           - version-update:semver-major
       # typescript-eslintがpeer dependencyでtypescript <6.1.0を要求しており、

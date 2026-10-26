@@ -54,11 +54,11 @@
   "dependencies": {
     "@life-quest/core": "file:packages/core",
     "@supabase/supabase-js": "^2.118.0",
-    "lucide-react": "^1.57.0",
+    "lucide-react": "^1.61.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -88,6 +88,8 @@
   "overrides": {
     "@babel/core": "7.29.7",
     "js-yaml": "4.3.0",
+    "react-native-gesture-handler": "3.0.2",
+    "react-native-reanimated": "4.5.1",
     "react-native-svg": "15.15.4",
     "undici": "7.28.0"
   }
