@@ -30,6 +30,19 @@ describe('mobile dependency compatibility', () => {
         expect(mobileRequire('react-native-svg/package.json').version).toBe(bundled['react-native-svg']);
     });
 
+    it('keeps Reanimated and Worklets on the coordinated Expo native versions', () => {
+        for (const name of ['react-native-reanimated', 'react-native-worklets']) {
+            expect(mobileRequire(`${name}/package.json`).version).toBe(bundled[name]);
+            expect(mobileRequire.resolve(name)).toBe(require.resolve(name));
+        }
+    });
+
+    it('keeps the existing gesture-handler native baseline when router peers are resolved', () => {
+        expect(root.overrides['react-native-gesture-handler']).toBe('3.0.2');
+        expect(mobileRequire('react-native-gesture-handler/package.json').version).toBe('3.0.2');
+        expect(mobileRequire.resolve('react-native-gesture-handler')).toBe(require.resolve('react-native-gesture-handler'));
+    });
+
     it('uses one React instance across workspaces and the matching DOM renderer patch', () => {
         expect(mobileRequire.resolve('react')).toBe(require.resolve('react'));
         expect(require('react/package.json').version).toBe(require('react-dom/package.json').version);
@@ -75,8 +88,8 @@ describe('Dependabot native dependency policy', () => {
         const rule = npm.ignore.find((entry) => entry['dependency-name'] === name);
         expect(rule?.['update-types']).toEqual(['version-update:semver-major']);
     });
-    it('treats SVG minor upgrades like the other SDK-managed native dependencies', () => {
+    it('keeps independent SVG updates manual, including patches pinned by the SDK', () => {
         expect(npm.ignore.find((entry) => entry['dependency-name'] === 'react-native-svg')?.['update-types'])
-            .toEqual(['version-update:semver-minor', 'version-update:semver-major']);
+            .toEqual(['version-update:semver-patch', 'version-update:semver-minor', 'version-update:semver-major']);
     });
 });
