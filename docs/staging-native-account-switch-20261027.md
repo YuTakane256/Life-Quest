@@ -5,6 +5,9 @@ main `df8b9dbc0143fe8d80389c91b53bf5e42c421daf`（#837・#838マージ後）か�
 専用iOS Simulatorのparity開発ビルドと既存stagingアカウントA/Bで確認した。
 Webの結果は[別記録](staging-account-switch-20261026.md)を参照。
 
+追加確認: #842で[同一プロセス・中断なしの連続切替](staging-native-continuous-switch-20261027.md)も成功した。
+この文書は途中中断を含む当初の実測として保持し、その結果を連続成功へ読み替えない。
+
 ## 条件
 
 - iPhone 18 Pro / iOS 27.0、402×874pt。通常のSimulatorとは別の専用端末を使用。
