@@ -1,0 +1,46 @@
+{
+  "execution": {
+    "base": "5ad87b53d8757e5ba8f711b7efa4df3e4b9aaf60",
+    "nativeSimulator": true,
+    "physicalDevice": false,
+    "projectAndOwnersVerified": true,
+    "rpcFaultOnly": true,
+    "osOfflineTested": false,
+    "pendingA": 2,
+    "sameOperationIdsAcrossAccountSwitch": true,
+    "draftClosedOnNavigationAndNotReusedByB": true,
+    "bSavedOnce": true,
+    "bTaskIdentitiesVerified": true,
+    "aRestoredOnce": true,
+    "aChildRestoredOnce": true,
+    "originalPriorityAndDeadlineRetained": true,
+    "aAndBStoredQueues": 0,
+    "failed": 0,
+    "conflict": 0,
+    "wrongOwnerRequests": 0,
+    "blockedRequests": 4,
+    "faultRemoved": true,
+    "uninterrupted": true,
+    "sameNativePidAndRuntime": true,
+    "runtimeCheckpoints": 8,
+    "themeSystemPreserved": true
+  },
+  "databaseAudit": {
+    "readOnlyDatabaseAudit": true,
+    "projectVerified": true,
+    "summaries": {
+      "A": {
+        "parentCount": 1,
+        "childCount": 1,
+        "sameParentId": true,
+        "sameChildId": true,
+        "originalFields": true
+      },
+      "B": {
+        "parentCount": 1,
+        "owningUserVerified": true,
+        "freshFormDefaults": true
+      }
+    }
+  }
+}
