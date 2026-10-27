@@ -13,9 +13,9 @@ Life Questは、日々のタスクや習慣の達成を、装備収集・キャ�
 
 | タスクの達成 | キャラクター育成 | 戦闘・攻略 |
 | --- | --- | --- |
-| [<img src="docs/screenshots/readme-20261027/web-dark-tasks.png" width="220" alt="タスクを整理し、日々の達成を記録するWeb画面">](docs/screenshots/readme-20261027/web-dark-tasks.png) | [<img src="docs/screenshots/readme-20261027/web-dark-character.png" width="220" alt="XP、装備、次の宝箱の目標で成長を確認するWeb画面">](docs/screenshots/readme-20261027/web-dark-character.png) | [<img src="docs/screenshots/readme-20261027/web-dark-victory.png" width="220" alt="育てたキャラクターで敵を倒し、獲得XPと攻略の成果を確認するWeb画面">](docs/screenshots/readme-20261027/web-dark-victory.png) |
+| [<img src="docs/screenshots/readme-20261027/web-light-tasks.png" width="220" alt="タスクを整理し、日々の達成を記録するWeb画面">](docs/screenshots/readme-20261027/web-light-tasks.png) | [<img src="docs/screenshots/readme-20261027/web-light-character.png" width="220" alt="XP、装備、次の宝箱の目標で成長を確認するWeb画面">](docs/screenshots/readme-20261027/web-light-character.png) | [<img src="docs/screenshots/readme-20261027/web-light-victory.png" width="220" alt="育てたキャラクターで敵を倒し、獲得XPと攻略の成果を確認するWeb画面">](docs/screenshots/readme-20261027/web-light-victory.png) |
 
-Web版（スマホ幅）の代表画面です。架空のサンプルデータを使用しており、詳しい画面説明とWeb / Mobileの比較は[以下のScreenshots](#screenshots)にまとめています。
+Web版（スマホ幅・ライトモード）の代表画面です。架空のサンプルデータを使用しており、詳しい画面説明とWeb / Mobileの比較は[以下のScreenshots](#screenshots)にまとめています。
 
 [画面を見る](#screenshots) · [ローカルで試す](#ローカル起動) · [技術・設計を見る](#技術的な見どころ)
 
@@ -76,13 +76,13 @@ PCでは予定の整理や振り返りを、スマホでは日々の達成の記
 
 ## Screenshots
 
-**2026-10-27のmain（PR #847反映後）から撮り直した画面です。** 同じ共有fixture・表示日時・テーマで比較しています。架空の匿名データを使い、実ユーザーの情報は含めていません。両テーマの全画像と再現手順は[最新ギャラリー](docs/screenshots/readme-20261027/README.md)にまとめています。
+**2026-10-27のmain（PR #847反映後）から撮り直した画面です。** 同じ共有fixture・表示日時・テーマで比較しています。架空の匿名データを使い、実ユーザーの情報は含めていません。READMEでは内容を見やすく紹介するためライトモードを掲載し、両テーマの全画像と再現手順は[最新ギャラリー](docs/screenshots/readme-20261027/README.md)にまとめています。
 
 ### PCで整理し、スマホで達成を記録する
 
 Web版は一つの実装で画面幅に応じて配置を切り替えます。PC幅（1440×900）のタスク画面では、左のサイドメニューと広い一覧で予定を整理できます。
 
-[<img src="docs/screenshots/readme-20261027/web-dark-tasks-desktop.png" width="960" alt="最新Web版のPC幅：左サイドメニューとタスク・サブタスク一覧">](docs/screenshots/readme-20261027/web-dark-tasks-desktop.png)
+[<img src="docs/screenshots/readme-20261027/web-light-tasks-desktop.png" width="960" alt="最新Web版のPC幅：左サイドメニューとタスク・サブタスク一覧">](docs/screenshots/readme-20261027/web-light-tasks-desktop.png)
 
 | 違い | Web：PC幅 | Web：スマホ幅 |
 | --- | --- | --- |
@@ -94,7 +94,7 @@ Web版は一つの実装で画面幅に応じて配置を切り替えます。PC
 
 | Web：PC幅（1440×900） | Web：スマホ幅（402×874） |
 | --- | --- |
-| [<img src="docs/screenshots/readme-20261027/web-dark-stats-desktop.png" width="480" alt="Web統計のPC幅：4列の集計と横並びのXP・自己ベスト">](docs/screenshots/readme-20261027/web-dark-stats-desktop.png) | [<img src="docs/screenshots/readme-20261027/web-dark-stats.png" width="200" alt="Web統計のスマホ幅：2列の集計と縦に続く記録">](docs/screenshots/readme-20261027/web-dark-stats.png) |
+| [<img src="docs/screenshots/readme-20261027/web-light-stats-desktop.png" width="480" alt="Web統計のPC幅：4列の集計と横並びのXP・自己ベスト">](docs/screenshots/readme-20261027/web-light-stats-desktop.png) | [<img src="docs/screenshots/readme-20261027/web-light-stats.png" width="200" alt="Web統計のスマホ幅：2列の集計と縦に続く記録">](docs/screenshots/readme-20261027/web-light-stats.png) |
 
 ### Web / Mobileで揃えた、毎日の操作
 
@@ -102,8 +102,8 @@ Webは402×874 CSS px、Mobileは同じ論理サイズのiPhone 18 Pro / iOS 27�
 
 | 画面 | Web（スマホ幅） | Mobile（iOS） |
 | --- | --- | --- |
-| タスク | [<img src="docs/screenshots/readme-20261027/web-dark-tasks.png" width="220" alt="Webのタスク：検索・絞り込み・サブタスク・完了一覧">](docs/screenshots/readme-20261027/web-dark-tasks.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-tasks.png" width="220" alt="Mobileのタスク：Webと揃えた一覧と操作導線">](docs/screenshots/readme-20261027/mobile-dark-tasks.png) |
-| 習慣 | [<img src="docs/screenshots/readme-20261027/web-dark-habits.png" width="220" alt="Webの習慣：カテゴリ・達成状況・連続記録">](docs/screenshots/readme-20261027/web-dark-habits.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-habits.png" width="220" alt="Mobileの習慣：カテゴリ・達成状況・メモの入口">](docs/screenshots/readme-20261027/mobile-dark-habits.png) |
+| タスク | [<img src="docs/screenshots/readme-20261027/web-light-tasks.png" width="220" alt="Webのタスク：検索・絞り込み・サブタスク・完了一覧">](docs/screenshots/readme-20261027/web-light-tasks.png) | [<img src="docs/screenshots/readme-20261027/mobile-light-tasks.png" width="220" alt="Mobileのタスク：Webと揃えた一覧と操作導線">](docs/screenshots/readme-20261027/mobile-light-tasks.png) |
+| 習慣 | [<img src="docs/screenshots/readme-20261027/web-light-habits.png" width="220" alt="Webの習慣：カテゴリ・達成状況・連続記録">](docs/screenshots/readme-20261027/web-light-habits.png) | [<img src="docs/screenshots/readme-20261027/mobile-light-habits.png" width="220" alt="Mobileの習慣：カテゴリ・達成状況・メモの入口">](docs/screenshots/readme-20261027/mobile-light-habits.png) |
 
 ### 達成を、育成・収集の楽しさへ
 
@@ -111,14 +111,14 @@ Webは402×874 CSS px、Mobileは同じ論理サイズのiPhone 18 Pro / iOS 27�
 
 | 画面 | Web（スマホ幅） | Mobile（iOS） |
 | --- | --- | --- |
-| キャラクター | [<img src="docs/screenshots/readme-20261027/web-dark-character.png" width="220" alt="Webのキャラ：プロフィール・XP・宝箱目標・装備">](docs/screenshots/readme-20261027/web-dark-character.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-character.png" width="220" alt="Mobileのキャラ：共通素材と同じ情報順序">](docs/screenshots/readme-20261027/mobile-dark-character.png) |
-| インベントリ | [<img src="docs/screenshots/readme-20261027/web-dark-inventory.png" width="220" alt="Webの独立インベントリ：操作モード・絞り込み・未装備一覧">](docs/screenshots/readme-20261027/web-dark-inventory.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-inventory.png" width="220" alt="Mobileの独立インベントリ：Webと揃えた操作モードと一覧">](docs/screenshots/readme-20261027/mobile-dark-inventory.png) |
+| キャラクター | [<img src="docs/screenshots/readme-20261027/web-light-character.png" width="220" alt="Webのキャラ：プロフィール・XP・宝箱目標・装備">](docs/screenshots/readme-20261027/web-light-character.png) | [<img src="docs/screenshots/readme-20261027/mobile-light-character.png" width="220" alt="Mobileのキャラ：共通素材と同じ情報順序">](docs/screenshots/readme-20261027/mobile-light-character.png) |
+| インベントリ | [<img src="docs/screenshots/readme-20261027/web-light-inventory.png" width="220" alt="Webの独立インベントリ：操作モード・絞り込み・未装備一覧">](docs/screenshots/readme-20261027/web-light-inventory.png) | [<img src="docs/screenshots/readme-20261027/mobile-light-inventory.png" width="220" alt="Mobileの独立インベントリ：Webと揃えた操作モードと一覧">](docs/screenshots/readme-20261027/mobile-light-inventory.png) |
 
 宝箱を受け取ったら、開封演出で成果を見せます。以下は両版の青い宝箱を「タップして開ける」段階です。開封済みの結果は獲得履歴で振り返れ、クラウド同期後も履歴を保持するよう修正しています。
 
 | Webの開封演出 | Mobileの開封演出 |
 | --- | --- |
-| [<img src="docs/screenshots/readme-20261027/web-dark-chest.png" width="220" alt="Webの宝箱開封演出：青い宝箱をタップして開ける">](docs/screenshots/readme-20261027/web-dark-chest.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-chest.png" width="220" alt="Mobileの宝箱開封演出：共通の画像と開封の案内">](docs/screenshots/readme-20261027/mobile-dark-chest.png) |
+| [<img src="docs/screenshots/readme-20261027/web-light-chest.png" width="220" alt="Webの宝箱開封演出：青い宝箱をタップして開ける">](docs/screenshots/readme-20261027/web-light-chest.png) | [<img src="docs/screenshots/readme-20261027/mobile-light-chest.png" width="220" alt="Mobileの宝箱開封演出：共通の画像と開封の案内">](docs/screenshots/readme-20261027/mobile-light-chest.png) |
 
 ### 育てた成果を、攻略に使う
 
@@ -126,7 +126,7 @@ Web/Mobileとも通常攻撃は1秒周期で自動進行し、スキルは手動
 
 | Webの勝利画面 | Mobileの勝利画面 |
 | --- | --- |
-| [<img src="docs/screenshots/readme-20261027/web-dark-victory.png" width="220" alt="Webの戦闘結果：勝利と15 XP、次の挑戦への導線">](docs/screenshots/readme-20261027/web-dark-victory.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-victory.png" width="220" alt="Mobileの戦闘結果：同じ勝敗表示と獲得XP">](docs/screenshots/readme-20261027/mobile-dark-victory.png) |
+| [<img src="docs/screenshots/readme-20261027/web-light-victory.png" width="220" alt="Webの戦闘結果：勝利と15 XP、次の挑戦への導線">](docs/screenshots/readme-20261027/web-light-victory.png) | [<img src="docs/screenshots/readme-20261027/mobile-light-victory.png" width="220" alt="Mobileの戦闘結果：同じ勝敗表示と獲得XP">](docs/screenshots/readme-20261027/mobile-light-victory.png) |
 
 掲載画像は代表的な表示状態の比較です。OSのステータスバー・安全領域・文字描画、キーボード・日付入力・権限確認などにはOS固有の違いがあります。戦闘履歴・リプレイは現在Web版の機能です。全画面・全操作の一致、Android実機の合格、ストア公開を示すものではありません。
 
