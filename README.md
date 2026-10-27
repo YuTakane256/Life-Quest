@@ -76,7 +76,7 @@ PCでは予定の整理や振り返りを、スマホでは日々の達成の記
 
 ## Screenshots
 
-**2026-10-27のmain（PR #847反映後）から撮り直した画面です。** 同じ共有fixture・表示日時・テーマで比較しています。架空の匿名データを使い、実ユーザーの情報は含めていません。READMEでは内容を見やすく紹介するためライトモードを掲載し、両テーマの全画像と再現手順は[最新ギャラリー](docs/screenshots/readme-20261027/README.md)にまとめています。
+**2026-10-27のmain（PR #847反映後）から撮り直した画面です。** 同じ共有fixture・表示日時・テーマで比較しています。架空の匿名データを使い、実ユーザーの情報は含めていません。READMEでは内容を見やすく紹介するためライトモードを中心に掲載し、両テーマの全画像と再現手順は[最新ギャラリー](docs/screenshots/readme-20261027/README.md)にまとめています。
 
 ### PCで整理し、スマホで達成を記録する
 
@@ -127,6 +127,14 @@ Web/Mobileとも通常攻撃は1秒周期で自動進行し、スキルは手動
 | Webの勝利画面 | Mobileの勝利画面 |
 | --- | --- |
 | [<img src="docs/screenshots/readme-20261027/web-light-victory.png" width="220" alt="Webの戦闘結果：勝利と15 XP、次の挑戦への導線">](docs/screenshots/readme-20261027/web-light-victory.png) | [<img src="docs/screenshots/readme-20261027/mobile-light-victory.png" width="220" alt="Mobileの戦闘結果：同じ勝敗表示と獲得XP">](docs/screenshots/readme-20261027/mobile-light-victory.png) |
+
+### ライト／ダークの比較
+
+同じWebのタスク画面を、同じデータ・画面幅（402×874）で比較しています。紹介画像はライトモードを中心にしつつ、暗い配色での見え方も確認できます。アプリではライト／ダーク／システムに合わせる設定を選べます。
+
+| ライトモード | ダークモード |
+| --- | --- |
+| [<img src="docs/screenshots/readme-20261027/web-light-tasks.png" width="240" alt="ライトモードのWebタスク画面：同じタスク・サブタスク一覧">](docs/screenshots/readme-20261027/web-light-tasks.png) | [<img src="docs/screenshots/readme-20261027/web-dark-tasks.png" width="240" alt="ダークモードのWebタスク画面：同じタスク・サブタスク一覧">](docs/screenshots/readme-20261027/web-dark-tasks.png) |
 
 掲載画像は代表的な表示状態の比較です。OSのステータスバー・安全領域・文字描画、キーボード・日付入力・権限確認などにはOS固有の違いがあります。戦闘履歴・リプレイは現在Web版の機能です。全画面・全操作の一致、Android実機の合格、ストア公開を示すものではありません。
 
