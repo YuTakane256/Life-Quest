@@ -1,0 +1,26 @@
+appId: com.yutakane.lifequest.parity
+name: README capture rewards (guarded anonymous memory only)
+---
+- stopApp: com.yutakane.lifequest.parity
+- openLink: >-
+    lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1
+- tapOn:
+    text: 開く|Open
+    optional: true
+- tapOn:
+    text: 開く|Open
+    optional: true
+- extendedWaitUntil:
+    visible: ログインボーナスを閉じる
+    timeout: 60000
+- tapOn:
+    point: 2%,50%
+- tapOn: キャラ(, tab,.*)?
+- scrollUntilVisible:
+    element: 青色の宝箱を開封する
+    direction: DOWN
+    centerElement: true
+- tapOn: 青色の宝箱を開封する
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: mobile-${REFERENCE_THEME}-chest

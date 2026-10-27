@@ -1,0 +1,299 @@
+{
+  "capturedAt": "2026-10-27",
+  "sourceCommit": "792acfe9b815516b8fd23328e1f93b2387b17adb",
+  "fixtureWallClock": "2026-08-10T12:00:00Z",
+  "native": "iPhone 18 Pro / iOS 27.0 Simulator",
+  "nativeSource": "Existing parity development build with unchanged native dependencies; JavaScript served from sourceCommit",
+  "webTestsPassed": 36,
+  "nativeCaptureFlowsPassed": 6,
+  "images": [
+    {
+      "file": "mobile-dark-character.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 451402,
+      "sha256": "c0c9e3c471eec830a83a24036686d4549d2b2ff72a4575a8c0f2d347fa6fc45b",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-dark-chest.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 553791,
+      "sha256": "c31e5079c3f1fb31cbd87a705e828aa7045a8f726ed6413e3438b1703d4209a8",
+      "profile": "rewards"
+    },
+    {
+      "file": "mobile-dark-habits.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 221731,
+      "sha256": "684c983f32ad2be4c6be47763a90fb092ecf036472fafaff680ad47f77774f9a",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-dark-inventory.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 231106,
+      "sha256": "4ae64e3dbc5262609a45d3a47c13a1efaca731fb682190a8228bd35597364514",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-dark-map.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 1578691,
+      "sha256": "ce71cb4419a35c8142d9cb8c531623634fe63c01525a917d99064cbccd7ca6c8",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-dark-stats.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 252873,
+      "sha256": "ced198b2aff8e13f59a488a045bf365b5f3cedeefe6a921f04c211f86d204458",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-dark-tasks.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 279722,
+      "sha256": "cc09007b61f1ffcda9da0f256b80de2acad8819291e4319936e0a61d3cc479fb",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-dark-victory.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 1305485,
+      "sha256": "d392922d47edc1932ee5c9f59b7358afdf1b511ed94eaec6f10d0de926c4d3ec",
+      "profile": "battle"
+    },
+    {
+      "file": "mobile-light-character.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 455868,
+      "sha256": "17ac746d8b26a446ad849be67ada1ccbc293768fd20a2cd89728df826bcc6d28",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-light-chest.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 560212,
+      "sha256": "623c1051ce6937e17b0b374a36f05f2f6059d1c031abc129d417f613f24d4fd3",
+      "profile": "rewards"
+    },
+    {
+      "file": "mobile-light-habits.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 222040,
+      "sha256": "cb8d4dc1d1d7505a901dda053ca0a512a7a1b612a69baf7bd428e812749726f9",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-light-inventory.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 235175,
+      "sha256": "42ddf77878bc70cbf20a8e56f0586a6d1189e601c799ba11d577279636449c78",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-light-map.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 1588121,
+      "sha256": "ada2e0d344b0278f4829a1fecc5bca7e810514b833c86d049437ad56f40a9636",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-light-stats.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 258632,
+      "sha256": "86e386fbbf9bb6bf0eef91337f9dabfa0cbc34ff1d21d0e3d36fe43ac1e8e6b2",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-light-tasks.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 294610,
+      "sha256": "742ab2b6457ad75fc7022331ac67d31e0618b7d9ace4588068f64d725d0d7c0d",
+      "profile": "daily"
+    },
+    {
+      "file": "mobile-light-victory.png",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 1311107,
+      "sha256": "da19c74386eee90323fd997a4eeaf9d518e4f773b66d4b802b91df0a5da55413",
+      "profile": "battle"
+    },
+    {
+      "file": "web-dark-character.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 87443,
+      "sha256": "f6b19f694303c2920af9555989e7206db4ba95121d58136b0740ebd372629788",
+      "profile": "daily"
+    },
+    {
+      "file": "web-dark-chest.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 82831,
+      "sha256": "b4af5db45f0d321f738c3074e526b62de49ec4b019ae259f96313f729a1c3ee3",
+      "profile": "rewards"
+    },
+    {
+      "file": "web-dark-habits.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 44307,
+      "sha256": "6b3146115d870dfaf754a3753865abea5e2df8bb7bd594700e5e39e2086d3e0b",
+      "profile": "daily"
+    },
+    {
+      "file": "web-dark-inventory.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 52027,
+      "sha256": "e831e5af43ab9e09ac3e7e14661d33b6d4fc366c3b85072040465184da87e927",
+      "profile": "daily"
+    },
+    {
+      "file": "web-dark-map.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 286383,
+      "sha256": "6e873bbb81166f83d0821623a128207dce17e9b07665a40bb94bafc5d896894d",
+      "profile": "daily"
+    },
+    {
+      "file": "web-dark-stats-desktop.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 111308,
+      "sha256": "5aff0ad6486c115ddc26d5b90a02167c9e84a4395cbd268d2acb7833ed4c88ff",
+      "profile": "daily"
+    },
+    {
+      "file": "web-dark-stats.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 61668,
+      "sha256": "dba1f8fc6f630e893fe874965d28548186695270a5fdf7196e40d7c8625e07ca",
+      "profile": "daily"
+    },
+    {
+      "file": "web-dark-tasks-desktop.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 73685,
+      "sha256": "0c1dee8f367434027026259b7100f97f06ba5bcf9f6a398affbe9a69571a5bc5",
+      "profile": "daily"
+    },
+    {
+      "file": "web-dark-tasks.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 63265,
+      "sha256": "08b2c2b3076d14969a8cfa730ba8fd6fd3cee3add94e6600ea75948536870207",
+      "profile": "daily"
+    },
+    {
+      "file": "web-dark-victory.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 228906,
+      "sha256": "1aeba016635690312fe21f144bce61d8888e86ef796967b91f41f30335e5c94a",
+      "profile": "battle"
+    },
+    {
+      "file": "web-light-character.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 89309,
+      "sha256": "63f4a4044d83321fcdd55603245f6669e02ff5d393252617e3c42d3dea4a65e4",
+      "profile": "daily"
+    },
+    {
+      "file": "web-light-chest.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 90961,
+      "sha256": "8b5e7183c34d5e39cd945d4bd7c3c2bd79c0c2b14883e14ec3b1c46378993a68",
+      "profile": "rewards"
+    },
+    {
+      "file": "web-light-habits.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 45148,
+      "sha256": "3a3a8eaf6d7530925bf5cec051ab41ecb6e81514a28aaf23792f6589a82ac597",
+      "profile": "daily"
+    },
+    {
+      "file": "web-light-inventory.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 54214,
+      "sha256": "914807db3ef5667ae68a75fd92ddea5277d59e3e1ee9eda86ff19eb6e2ede217",
+      "profile": "daily"
+    },
+    {
+      "file": "web-light-map.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 290117,
+      "sha256": "57624aa8c2129f76de971e480aa26c11d89a04e41f8a1250a37790789dd4dbf9",
+      "profile": "daily"
+    },
+    {
+      "file": "web-light-stats-desktop.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 114758,
+      "sha256": "75e594ce594b3308ad291a2f3e70cde914c8e737912b8a35a6b5187d74efccc7",
+      "profile": "daily"
+    },
+    {
+      "file": "web-light-stats.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 63210,
+      "sha256": "002117b43a3052454ac1d64b86440c594755ee0eecfc215591ce45b2c3c33550",
+      "profile": "daily"
+    },
+    {
+      "file": "web-light-tasks-desktop.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 75689,
+      "sha256": "15ea4226c88f3fe0cd58fd766dde4ffe6f1368b8bbb1a3f34b664d5bdd0866ac",
+      "profile": "daily"
+    },
+    {
+      "file": "web-light-tasks.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 64850,
+      "sha256": "f5ec3912598e41586dd5e17a93e38b5743d1773fbad6108b123cf76eccf4e455",
+      "profile": "daily"
+    },
+    {
+      "file": "web-light-victory.png",
+      "width": 402,
+      "height": 874,
+      "bytes": 231090,
+      "sha256": "613f7e94b40633cc7cb79724494ffcfb4f4c4b5ed1e67beeec9ebd6df3a2094a",
+      "profile": "battle"
+    }
+  ]
+}
