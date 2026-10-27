@@ -13,7 +13,7 @@ Life Questは、日々のタスクや習慣の達成を、装備収集・キャ�
 
 | タスクの達成 | キャラクター育成 | 戦闘・攻略 |
 | --- | --- | --- |
-| [<img src="docs/screenshots/daily-parity/web-dark-tasks.png" width="220" alt="タスクを整理し、日々の達成を記録するWeb画面">](docs/screenshots/daily-parity/web-dark-tasks.png) | [<img src="docs/screenshots/character-parity/web-dark-character.png" width="220" alt="XP、装備、次の宝箱の目標で成長を確認するWeb画面">](docs/screenshots/character-parity/web-dark-character.png) | [<img src="docs/screenshots/battle-parity/web-dark-battle.png" width="220" alt="育てたキャラクターと敵のHP、スキル、ログを確認する戦闘中のWeb画面">](docs/screenshots/battle-parity/web-dark-battle.png) |
+| [<img src="docs/screenshots/readme-20261027/web-dark-tasks.png" width="220" alt="タスクを整理し、日々の達成を記録するWeb画面">](docs/screenshots/readme-20261027/web-dark-tasks.png) | [<img src="docs/screenshots/readme-20261027/web-dark-character.png" width="220" alt="XP、装備、次の宝箱の目標で成長を確認するWeb画面">](docs/screenshots/readme-20261027/web-dark-character.png) | [<img src="docs/screenshots/readme-20261027/web-dark-victory.png" width="220" alt="育てたキャラクターで敵を倒し、獲得XPと攻略の成果を確認するWeb画面">](docs/screenshots/readme-20261027/web-dark-victory.png) |
 
 Web版（スマホ幅）の代表画面です。架空のサンプルデータを使用しており、詳しい画面説明とWeb / Mobileの比較は[以下のScreenshots](#screenshots)にまとめています。
 
@@ -64,6 +64,10 @@ PCでは予定の整理や振り返りを、スマホでは日々の達成の記
 
 まずは主要な操作と育成・攻略の流れを確認してもらい、感想や操作で迷った箇所から改善します。その後、同意を得た利用テストで初回の達成や翌日以降の利用などを確認する方針です。収集するデータや指標は事前に定め、実際に確認できた結果と設計上の仮説を区別して記録します。
 
+### 検討中：普段使うAIから、取り組みやすいタスクへ
+
+入力そのものが負担になると、達成を楽しむ体験まで届きません。今後の構想として、普段使っている対話型AIで整理した目標・期限・分解済みタスクをLife Questへ取り込み、アプリでは完了時の手応えや育成・攻略を楽しむ流れを検討しています。**外部AIとの自動連携は未実装**で、具体的な連携方式や登録内容の確認方法は今後の検討項目です。
+
 ## 制作で担当していること
 
 個人開発として、企画・体験設計、機能の優先順位付けから、Web / Mobileの画面・ゲームルール・データ連携の開発まで、一貫して取り組んでいます。
@@ -72,78 +76,59 @@ PCでは予定の整理や振り返りを、スマホでは日々の達成の記
 
 ## Screenshots
 
-### Web：PC幅とスマホ幅に合わせたレイアウト
+**2026-10-27のmain（PR #847反映後）から撮り直した画面です。** 同じ共有fixture・表示日時・テーマで比較しています。架空の匿名データを使い、実ユーザーの情報は含めていません。両テーマの全画像と再現手順は[最新ギャラリー](docs/screenshots/readme-20261027/README.md)にまとめています。
 
-Web版は一つの実装で画面幅に応じてレイアウトを切り替えます。PCでは広い一覧を見ながら整理・振り返りができ、スマホ幅では縦に読み進めながら日々の達成を記録できる構成です。同じデータ・機能を維持し、画面全体を単に拡大・縮小するだけにはしていません。
+### PCで整理し、スマホで達成を記録する
 
-PC幅のタスク画面（1440×900）：画像を押すと原寸で確認できます。
+Web版は一つの実装で画面幅に応じて配置を切り替えます。PC幅（1440×900）のタスク画面では、左のサイドメニューと広い一覧で予定を整理できます。
 
-[<img src="docs/screenshots/web-responsive/web-dark-tasks-desktop.png" width="960" alt="Web版PC幅のタスク画面：左サイドメニューと広い一覧">](docs/screenshots/web-responsive/web-dark-tasks-desktop.png)
+[<img src="docs/screenshots/readme-20261027/web-dark-tasks-desktop.png" width="960" alt="最新Web版のPC幅：左サイドメニューとタスク・サブタスク一覧">](docs/screenshots/readme-20261027/web-dark-tasks-desktop.png)
 
 | 違い | Web：PC幅 | Web：スマホ幅 |
 | --- | --- | --- |
 | 画面移動 | 左のサイドメニュー。Alt＋1〜6でも移動可能 | 下部の6タブから移動 |
-| 統計の配置 | 集計カードを4列、今週のXPと自己ベストを横並びに表示 | 集計カードを2列、グラフや記録を縦に表示 |
+| 統計の配置 | 集計カードを4列、直近7日間のXPと自己ベストを横並びに表示 | 集計カードを2列、グラフや記録を縦に表示 |
 | タスクの操作 | 編集・複製・削除を行にマウスを重ねると表示 | ホバーなしで操作できるよう常時表示 |
 
-以下は同じ架空データ・日時・ダークテーマの統計画面です。PCでは複数の指標を同時に見渡せ、スマホ幅ではスクロールして順に確認できます。
+以下は同じデータの統計画面です。複数の指標を見渡すPCと、縦に読み進めるスマホ幅の違いが分かります。Mobileにも直近7日間のXP、自己ベスト、実績・称号の表示を実装しています。
 
 | Web：PC幅（1440×900） | Web：スマホ幅（402×874） |
 | --- | --- |
-| [<img src="docs/screenshots/web-responsive/web-dark-stats-desktop.png" width="480" alt="Web版PC幅の統計：4列の集計カードと横並びのグラフ・自己ベスト">](docs/screenshots/web-responsive/web-dark-stats-desktop.png) | [<img src="docs/screenshots/web-responsive/web-dark-stats-phone.png" width="200" alt="Web版スマホ幅の統計：2列の集計カードと縦に並ぶグラフ・自己ベスト">](docs/screenshots/web-responsive/web-dark-stats-phone.png) |
+| [<img src="docs/screenshots/readme-20261027/web-dark-stats-desktop.png" width="480" alt="Web統計のPC幅：4列の集計と横並びのXP・自己ベスト">](docs/screenshots/readme-20261027/web-dark-stats-desktop.png) | [<img src="docs/screenshots/readme-20261027/web-dark-stats.png" width="200" alt="Web統計のスマホ幅：2列の集計と縦に続く記録">](docs/screenshots/readme-20261027/web-dark-stats.png) |
 
-タスク・習慣・統計の両テーマ比較と撮影手順は[Webレスポンシブ比較](docs/screenshots/web-responsive/README.md)をご覧ください。この統計比較はWeb版内の画面幅による違いであり、Mobile版の統計画面も統一済みという意味ではありません。
+### Web / Mobileで揃えた、毎日の操作
 
-### Web（スマホ幅）/ Mobileで共通の画面設計
+Webは402×874 CSS px、Mobileは同じ論理サイズのiPhone 18 Pro / iOS 27シミュレーターです。React DOM / React NativeそれぞれのUIを維持し、情報の順序・配色・画像・操作の入口を揃えています。
 
-React製Web版とReact Native製Mobile版で、タスク・習慣の主要画面に共通のデザイン方針を適用しています。情報の順番、検索・絞り込み、追加フォームの入口、カード、カテゴリ表示、配色、アイコンを揃え、WebViewではなくそれぞれのUIとして実装しています。
+| 画面 | Web（スマホ幅） | Mobile（iOS） |
+| --- | --- | --- |
+| タスク | [<img src="docs/screenshots/readme-20261027/web-dark-tasks.png" width="220" alt="Webのタスク：検索・絞り込み・サブタスク・完了一覧">](docs/screenshots/readme-20261027/web-dark-tasks.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-tasks.png" width="220" alt="Mobileのタスク：Webと揃えた一覧と操作導線">](docs/screenshots/readme-20261027/mobile-dark-tasks.png) |
+| 習慣 | [<img src="docs/screenshots/readme-20261027/web-dark-habits.png" width="220" alt="Webの習慣：カテゴリ・達成状況・連続記録">](docs/screenshots/readme-20261027/web-dark-habits.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-habits.png" width="220" alt="Mobileの習慣：カテゴリ・達成状況・メモの入口">](docs/screenshots/readme-20261027/mobile-dark-habits.png) |
 
-以下は同じ架空データ・ダークテーマで撮影した比較です。Webは402×874のスマホ幅、Mobileは同じ論理サイズのiPhone 18 Proシミュレーターです。OSのステータスバー・安全領域・フォント描画の差は残しています。
+### 達成を、育成・収集の楽しさへ
 
-| Web（スマホ幅） | Mobile（iOSシミュレーター） |
+キャラ画面でXP・装備込みの能力値・次の宝箱までの目標を確認し、独立したインベントリで持ち物を管理できます。Mobileにもキャラ内プレビュー、通常/売却/合成のモード切替、種類・レアリティ・並び順のフィルター、獲得履歴を実装しています。
+
+| 画面 | Web（スマホ幅） | Mobile（iOS） |
+| --- | --- | --- |
+| キャラクター | [<img src="docs/screenshots/readme-20261027/web-dark-character.png" width="220" alt="Webのキャラ：プロフィール・XP・宝箱目標・装備">](docs/screenshots/readme-20261027/web-dark-character.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-character.png" width="220" alt="Mobileのキャラ：共通素材と同じ情報順序">](docs/screenshots/readme-20261027/mobile-dark-character.png) |
+| インベントリ | [<img src="docs/screenshots/readme-20261027/web-dark-inventory.png" width="220" alt="Webの独立インベントリ：操作モード・絞り込み・未装備一覧">](docs/screenshots/readme-20261027/web-dark-inventory.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-inventory.png" width="220" alt="Mobileの独立インベントリ：Webと揃えた操作モードと一覧">](docs/screenshots/readme-20261027/mobile-dark-inventory.png) |
+
+宝箱を受け取ったら、開封演出で成果を見せます。以下は両版の青い宝箱を「タップして開ける」段階です。開封済みの結果は獲得履歴で振り返れ、クラウド同期後も履歴を保持するよう修正しています。
+
+| Webの開封演出 | Mobileの開封演出 |
 | --- | --- |
-| <img src="docs/screenshots/daily-parity/web-dark-tasks.png" width="220" alt="Web版タスク：検索、絞り込み、サブタスク、完了一覧"> | <img src="docs/screenshots/daily-parity/mobile-dark-tasks.png" width="220" alt="Mobile版タスク：Webと共通の情報順序と操作導線"> |
-| <img src="docs/screenshots/daily-parity/web-dark-habits.png" width="220" alt="Web版習慣：達成バー、カテゴリ別一覧、連続記録"> | <img src="docs/screenshots/daily-parity/mobile-dark-habits.png" width="220" alt="Mobile版習慣：Webと共通の達成状況、カテゴリ、メモ表示"> |
+| [<img src="docs/screenshots/readme-20261027/web-dark-chest.png" width="220" alt="Webの宝箱開封演出：青い宝箱をタップして開ける">](docs/screenshots/readme-20261027/web-dark-chest.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-chest.png" width="220" alt="Mobileの宝箱開封演出：共通の画像と開封の案内">](docs/screenshots/readme-20261027/mobile-dark-chest.png) |
 
-ライトテーマの比較、再現手順、残る差分は[比較ギャラリー](docs/screenshots/daily-parity/README.md)にまとめています。スクショは匿名の専用比較環境で撮影し、実ユーザーのデータは含めていません。
+### 育てた成果を、攻略に使う
 
-### 達成が成長につながるキャラクター画面
+Web/Mobileとも通常攻撃は1秒周期で自動進行し、スキルは手動選択します。以下は同じ比較条件で大コウモリに勝利し、15 XPを受け取った場面です。マップの4エリア・ステージ選択の比較も[ギャラリー](docs/screenshots/readme-20261027/README.md#マップと戦闘結果)に掲載しています。
 
-タスクを達成して得たXP・レベル・装備による能力値と、「次の宝箱まであと何個か」を一画面で確認できます。日々の入力だけで終わらず、成長と次の目標が見えることを重視し、Web/Mobileでプロフィール、XP、宝箱ロードマップ、装備中の情報順序と素材を揃えています。
-
-| Web（スマホ幅） | Mobile（iOSシミュレーター） |
+| Webの勝利画面 | Mobileの勝利画面 |
 | --- | --- |
-| [<img src="docs/screenshots/character-parity/web-dark-character.png" width="220" alt="Webキャラクター：XP、次の宝箱目標、装備による成長">](docs/screenshots/character-parity/web-dark-character.png) | [<img src="docs/screenshots/character-parity/mobile-dark-character.png" width="220" alt="Mobileキャラクター：Webと共通のプロフィール、宝箱ロードマップ、装備カード">](docs/screenshots/character-parity/mobile-dark-character.png) |
+| [<img src="docs/screenshots/readme-20261027/web-dark-victory.png" width="220" alt="Webの戦闘結果：勝利と15 XP、次の挑戦への導線">](docs/screenshots/readme-20261027/web-dark-victory.png) | [<img src="docs/screenshots/readme-20261027/mobile-dark-victory.png" width="220" alt="Mobileの戦闘結果：同じ勝敗表示と獲得XP">](docs/screenshots/readme-20261027/mobile-dark-victory.png) |
 
-同じ架空データ・日時・テーマの比較です。両テーマの画像と、下部インベントリなどに残る差分は[キャラクター比較](docs/screenshots/character-parity/README.md)をご覧ください。
-
-### 育てたキャラクターで進めるマップ
-
-クリア済みのステージ、次に挑戦できる敵、未解放のエリアを同じ配置と素材で確認できます。「日々の達成 → 成長 → 攻略」というアプリの目的を、タスク・キャラクター・マップの画面でつなげています。
-
-| Web（スマホ幅） | Mobile（iOSシミュレーター） |
-| --- | --- |
-| [<img src="docs/screenshots/map-parity/web-dark-map.png" width="220" alt="Webマップ：背景、4エリア、クリア済みと次の攻略対象">](docs/screenshots/map-parity/web-dark-map.png) | [<img src="docs/screenshots/map-parity/mobile-dark-map.png" width="220" alt="Mobileマップ：Webと同じエリア別の敵一覧と挑戦入口">](docs/screenshots/map-parity/mobile-dark-map.png) |
-
-同じ架空データ・日時・テーマで、最高クリアはステージ2、次の敵は大コウモリです。両テーマの画像、撮影手順、戦闘中に残る違いは[マップ比較](docs/screenshots/map-parity/README.md)をご覧ください。
-
-### 成長を攻略につなげる戦闘画面
-
-共通のキャラクター・敵画像、HP、スキル、ログ、勝敗表示をWeb/Mobileで揃えています。以下は同じ架空データで大コウモリに通常攻撃を1回行った状態です。Mobileは手動攻撃の操作を維持し、Webは自動でターンが進みます。
-
-| Web（スマホ幅） | Mobile（iOSシミュレーター） |
-| --- | --- |
-| [<img src="docs/screenshots/battle-parity/web-dark-battle.png" width="220" alt="Web戦闘：キャラクターと敵、HP、3種類のスキル、ログ">](docs/screenshots/battle-parity/web-dark-battle.png) | [<img src="docs/screenshots/battle-parity/mobile-dark-battle.png" width="220" alt="Mobile戦闘：共通の画像・HP・スキルと手動攻撃">](docs/screenshots/battle-parity/mobile-dark-battle.png) |
-
-両テーマと勝利・敗北の比較、撮影手順、残る操作差は[戦闘比較](docs/screenshots/battle-parity/README.md)をご覧ください。
-
-**UI統一は段階的に進めています。** 掲載比較はタスク・習慣の主要一覧、キャラクターの主要部分、マップ/ステージ選択と戦闘・勝敗の代表画面が対象で、全画面・全操作の一致やストア公開済みを示すものではありません。インベントリの独立画面化、自動/手動の戦闘進行、履歴/リプレイ、宝箱の開封演出などは継続課題です。選択・確認・共有にはOS固有の操作を使い、日付入力やCSVの保存方法など一部の操作差も残っています。Androidは共通コードのビルド確認までで、実機の見た目・操作検証は今後の工程です。
-
-### ゲーム体験（Web版）
-
-宝箱から装備を獲得し、売却・合成・装備へつなげます。開封演出は現在Web版の画像のみを掲載しています。
-
-[<img src="docs/screenshots/portfolio/web-chest.png" width="420" alt="Web版：タスク達成で獲得した宝箱の開封">](docs/screenshots/portfolio/web-chest.png)
+掲載画像は代表的な表示状態の比較です。OSのステータスバー・安全領域・文字描画、キーボード・日付入力・権限確認などにはOS固有の違いがあります。戦闘履歴・リプレイは現在Web版の機能です。全画面・全操作の一致、Android実機の合格、ストア公開を示すものではありません。
 
 ## 主な機能
 
@@ -151,10 +136,10 @@ React製Web版とReact Native製Mobile版で、タスク・習慣の主要画面
 - **習慣管理**: カテゴリ、メモ、休息日、ストリーク、達成率、履歴ヒートマップ
 - **ゲーム進行**: タスク・習慣の報酬、レベル、キャラクターステータス、ログインボーナス、実績・称号
 - **装備とインベントリ**: 宝箱、レアリティ、装備変更、売却、3アイテム合成、フィルター・並び替え
-- **マップ・バトル**: 4エリア・40ステージ、ターン制戦闘、スキル、戦闘履歴・リプレイ
+- **マップ・バトル**: 4エリア・40ステージ、自動の通常攻撃と手動スキル、勝敗表示、戦闘履歴・リプレイ（履歴・リプレイはWeb）
 - **統計**: タスク・習慣の推移、XP、ヒートマップ、実績進捗
 - **設定**: ダーク / ライト / システムテーマ、モーション、通知、バックアップ、同期状態、アカウント管理
-- **認証とアカウント**: メール認証、Google OAuth、iOSのAppleログイン、データを残さない退会フロー
+- **認証とアカウント**: メール認証、Google OAuth、iOSのAppleログイン、Appleの認可失効を考慮した退会処理（実機の最終確認は今後）
 - **クロスプラットフォーム**: WebとMobileで共有するアカウント、データ、ゲームルール、画像アセット、デザイントークン
 
 ## 技術的な見どころ
@@ -167,7 +152,7 @@ WebはReact DOM、MobileはReact Nativeとして個別のUIを維持しながら
 
 ### 2. Supabaseを正とするWeb / Mobile同期
 
-認証にはSupabase Auth、永続化にはPostgreSQLを使用しています。ログイン中の変更は端末内へ即時反映した後、永続outboxから再送されます。Realtimeは変更通知に限定し、実データは`pull_sync_batch` RPCからversion単位で取得することで、テーブル別ページングによる取りこぼしを避けています。
+認証にはSupabase Auth、永続化にはPostgreSQLを使用しています。タスク・習慣などの変更は端末内へ即時反映した後、ユーザー別の永続outboxから再送します。宝箱開封・合成・バトルは、サーバーの確定応答を受けて結果を反映する要求/応答方式です。Realtimeは変更通知に限定し、実データは`pull_sync_batch` RPCからversion単位で取得することで、テーブル別ページングによる取りこぼしを避けています。
 
 ```mermaid
 flowchart LR
@@ -176,6 +161,8 @@ flowchart LR
     W --> O["Local cache + outbox"]
     M --> O
     O --> E["Supabase Edge Functions / RPC"]
+    W -->|"宝箱・合成・戦闘の要求/応答"| E
+    M -->|"宝箱・合成・戦闘の要求/応答"| E
     E --> D["PostgreSQL + RLS"]
     D --> P["Versioned pull"]
     P --> W
@@ -188,7 +175,7 @@ flowchart LR
 
 ### 4. ユーザー境界と障害復旧
 
-RLSに加えて、service roleを利用するEdge FunctionでもJWT由来のユーザーIDと所有権を検証します。ローカルキャッシュとoutboxはユーザーIDごとのnamespaceへ分離し、ログアウト時にはメモリ状態を破棄します。オフライン時の操作は同じoperation IDで再送され、再起動・再接続後も保留操作を復元します。Apple連携ユーザーの退会時は、サーバー側でAppleの認可を失効してからアカウントを削除し、外部処理の失敗時にユーザーデータだけが先に消えないよう保護しています。
+RLSに加えて、service roleを利用するEdge FunctionでもJWT由来のユーザーIDと所有権を検証します。ローカルキャッシュとoutboxはユーザーIDごとのnamespaceへ分離し、ログアウト時にはメモリ状態を破棄します。outboxに保存した操作は同じoperation IDで再送し、再起動・再接続時に復元する設計です。画面の下書き、確認ダイアログ、古い通信応答もアカウント切替の境界で隔離し、別ユーザーへ誤適用しないよう保護しています。Apple連携ユーザーの退会時は、サーバー側でAppleの認可を失効してからアカウントを削除し、外部処理の失敗時にユーザーデータだけが先に消えないよう保護しています。
 
 設計上の判断と背景は[Architecture Decision Records](docs/adr/README.md)に記録しています。
 
@@ -196,12 +183,14 @@ RLSに加えて、service roleを利用するEdge FunctionでもJWT由来のユ�
 
 | 領域 | 採用技術 |
 | --- | --- |
-| Web | React 19, React Router 7, Vite 8, Tailwind CSS 4 |
-| Mobile | Expo 57, React Native 0.86, Expo Router |
-| 言語・状態管理 | TypeScript 6, Zustand 5 |
-| Backend | Supabase Auth, PostgreSQL 17, RLS, Realtime, Edge Functions |
-| Test | Vitest, Playwright, pgTAP, Maestro（ローカル画面比較） |
-| Quality | ESLint, TypeScript project references, GitHub Actions, Dependabot |
+| Web | React 19.3, React Router 7, Vite 8.3, Tailwind CSS 4 |
+| Mobile | Expo SDK 57, React Native 0.86.3, Expo Router / development build |
+| 言語・状態管理 | TypeScript 6.0, Zustand 5 |
+| Backend | Supabase JS 2.118 / Auth, PostgreSQL 17, RLS, Realtime, Edge Functions |
+| Test | Vitest 5, Playwright 1.64, pgTAP, Maestro（ローカルiOS操作・画面比較） |
+| Quality | ESLint, TypeScript project references, GitHub Actions, Dependabot, Supabase CLI 2.122 |
+
+npm依存のバージョンは2026-10-27の[package-lock.json](package-lock.json)に基づきます。
 
 ## リポジトリ構成
 
@@ -239,14 +228,16 @@ npm run dev
 
 `http://localhost:5173`を開きます。Supabaseを設定しない場合も、未ログインのローカルモードで主要機能を確認できます。
 
-### Mobile
+### Mobile（iOS Simulator）
+
+macOSにXcodeとiOS Simulatorを導入し、シミュレーターを起動してから実行します。初回は専用parityアプリのネイティブビルドを作成します。
 
 ```bash
 npm ci
-npm run mobile:start
+npm run mobile:ios
 ```
 
-表示されるExpoの案内から、シミュレータまたは実機で起動します。
+導入済みのparity開発ビルドをクラウド未設定で起動する場合は`npm run mobile:start:anonymous`を使います。通常版の開発ビルド向けMetroは`npm run mobile:start`です。Expo Goだけを前提にした手順ではありません。実機の署名、Android、撮影用の設定は[Mobile README](apps/mobile/README.md)と[比較手順](docs/mobile-visual-reference.md)を参照してください。
 
 ### Supabaseを含むローカル環境
 
@@ -277,7 +268,16 @@ Pull Requestでは型検査、lint、テスト、Web build、Mobile export、Exp
 
 ## 実装状況
 
-Web / Mobileの主要機能、メール・Google・Apple認証のコード、クラウド同期、オフラインoutbox、サーバー権威のゲーム操作まで実装しています。現在はタスク・習慣を起点に画面をWeb準拠へ揃え、残る画面差分・実機検証・配布設定の確認を進めている開発段階です。署名済み実機での認証・通知・退会などの確認と、ストア提出は別工程です。進行中・検討中の内容は[Issues](https://github.com/YuTakane256/Life-Quest/issues)と[全体計画](docs/mobile-web-implementation-roadmap.md)を参照してください。
+現在は[全体計画の④「使い続けられる品質確認」](docs/mobile-web-implementation-roadmap.md)を進行中です。主要な管理・育成・攻略と画面の共通化を実装し、実際の同期・障害復帰を確認しています。⑤の署名済み実機内部配布・ストア公開準備には、まだ進んでいません。
+
+| 項目 | 現在の確認範囲 |
+| --- | --- |
+| 主要画面 | タスク・習慣・キャラ・独立インベントリ・統計・マップ/戦闘・宝箱演出の代表状態を、匿名の同条件画像で比較 |
+| 実アカウントの同期 | 専用stagingのWeb/iOSでタスク・子タスク・習慣の往復、未送信タスク/下書きを伴うA/B切替と元の所有者への復帰を確認 |
+| 障害・再起動 | Webの実オフライン/未送信プロセス再起動、NativeのHTTP障害からの復帰を部分確認 |
+| 報酬の重複防止 | タスク完了と青/木の宝箱開封で、成功応答の喪失・同じキーの再送・送信済み状態の再起動/両端同期を確認 |
+
+確認条件と限界は[staging受け入れ記録](docs/staging-sync-acceptance.md)に残しています。Nativeの実回線切断/未送信オフライン起動、期限切れセッション、合成・戦闘の再送、Android/実機、署名済み認証・通知・退会などには残確認があります。画面比較の成功と、保存・同期・実機の合格は区別しています。進行中・検討中の内容は[Issues](https://github.com/YuTakane256/Life-Quest/issues)を参照してください。
 
 ## 補足資料
 

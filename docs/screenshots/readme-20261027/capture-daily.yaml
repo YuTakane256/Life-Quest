@@ -1,0 +1,57 @@
+appId: com.yutakane.lifequest.parity
+name: README capture daily (guarded anonymous memory only)
+---
+- stopApp: com.yutakane.lifequest.parity
+- openLink: >-
+    lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1
+- tapOn:
+    text: 開く|Open
+    optional: true
+- tapOn:
+    text: 開く|Open
+    optional: true
+- extendedWaitUntil:
+    visible: 今週の計画を整理する.*
+    timeout: 60000
+- tapOn: 完了タスク .*
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: mobile-${REFERENCE_THEME}-tasks
+- tapOn: 習慣(, tab,.*)?
+- extendedWaitUntil:
+    visible: .*読書を20分続ける.*
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: mobile-${REFERENCE_THEME}-habits
+- tapOn: 統計(, tab,.*)?
+- extendedWaitUntil:
+    visible: ⚡ 合計XP
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: mobile-${REFERENCE_THEME}-stats
+- tapOn: キャラ(, tab,.*)?
+- extendedWaitUntil:
+    visible: 星見ユウ
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: mobile-${REFERENCE_THEME}-character
+- scrollUntilVisible:
+    element: インベントリを開く
+    direction: DOWN
+    centerElement: true
+    timeout: 15000
+- tapOn: インベントリを開く
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: mobile-${REFERENCE_THEME}-inventory
+- tapOn: キャラクター画面に戻る
+- tapOn: マップ(, tab,.*)?
+- extendedWaitUntil:
+    visible: '最高到達: ステージ 2'
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: mobile-${REFERENCE_THEME}-map

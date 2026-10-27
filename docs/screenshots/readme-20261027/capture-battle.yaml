@@ -1,0 +1,27 @@
+appId: com.yutakane.lifequest.parity
+name: README capture battle (guarded anonymous memory only)
+---
+- stopApp: com.yutakane.lifequest.parity
+- openLink: >-
+    lifequest-parity://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082&disableOnboarding=1&disableAutoLaunch=1&disableFab=1
+- tapOn:
+    text: 開く|Open
+    optional: true
+- tapOn:
+    text: 開く|Open
+    optional: true
+- extendedWaitUntil:
+    visible: 新しいタスクを追加
+    timeout: 60000
+- tapOn: マップ(, tab,.*)?
+- assertVisible: '最高到達: ステージ 9'
+- tapOn:
+    text: ステージ 3 再挑戦
+    waitToSettleTimeoutMs: 0
+- extendedWaitUntil:
+    visible: 勝利！
+    timeout: 15000
+- assertVisible: 15 XP を獲得！
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: mobile-${REFERENCE_THEME}-victory
