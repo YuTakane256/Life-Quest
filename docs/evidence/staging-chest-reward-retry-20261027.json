@@ -1,0 +1,92 @@
+{
+  "base": "5ff1df7536cee0fa7ca45c41d41c14b1758c41d9",
+  "sourceSha256": "f163ccbf2df387b97ff586fa90ef93aeb526b1e9afcadeff7498ba9b6b048ce1",
+  "preparation": {
+    "ordinaryWebUiTasks": 9,
+    "taskRewardRows": 9,
+    "xpBefore": 130,
+    "xpAfter": 310,
+    "countBefore": 1,
+    "countAfter": 10,
+    "dailyTaskXpBefore": 20,
+    "dailyTaskXpAfter": 200,
+    "blueMilestone": 5,
+    "woodMilestone": 10,
+    "blueCount": 1,
+    "woodCount": 1
+  },
+  "cases": [
+    {
+      "type": "blue",
+      "successfulResponseLost": 1,
+      "forwardedRequests": 2,
+      "sameRetryKey": true,
+      "statuses": [
+        200,
+        200
+      ],
+      "sameCanonicalResponse": true,
+      "pullRequestsTemporarilyHeld": 1,
+      "wrongOwnerRequests": 0,
+      "itemsAfterCommit": 0,
+      "itemsAfterReplay": 0,
+      "chestVersionUnchangedOnReplay": true,
+      "extraXpOnReplay": 0,
+      "extraCompletionCount": 0,
+      "extraTaskXp": 0
+    },
+    {
+      "type": "wood",
+      "successfulResponseLost": 1,
+      "forwardedRequests": 2,
+      "sameRetryKey": true,
+      "statuses": [
+        200,
+        200
+      ],
+      "sameCanonicalResponse": true,
+      "pullRequestsTemporarilyHeld": 1,
+      "wrongOwnerRequests": 0,
+      "itemsAfterCommit": 1,
+      "itemsAfterReplay": 1,
+      "chestVersionUnchangedOnReplay": true,
+      "extraXpOnReplay": 0,
+      "extraCompletionCount": 0,
+      "extraTaskXp": 0
+    }
+  ],
+  "historyFix": {
+    "oldSnapshotDroppedOpenedChests": true,
+    "blueReplayExecutedBeforeFix": true,
+    "blueRestoredAfterFix": true,
+    "woodReplayExecutedAfterFix": true,
+    "nativeHistoryAfterSuccessfulPull": true,
+    "webRuntimeFixLoaded": true,
+    "openedHistoryAfterRestart": 2,
+    "openedHistoryAfterWebSync": 2,
+    "unopenedAfterSync": 0,
+    "deletedAwardRestorationTestedInUnitOnly": true
+  },
+  "final": {
+    "xp": 310,
+    "count": 10,
+    "dailyTaskXp": 200,
+    "battleUnlocked": true,
+    "inventoryCount": 1,
+    "itemTemplate": "wooden_ring",
+    "itemName": "木の指輪",
+    "sameAwardedItemIdAcrossServerWebNative": true,
+    "chestsOpened": 2,
+    "pending": 0,
+    "inflight": 0,
+    "failed": 0,
+    "conflict": 0
+  },
+  "newNativeProcessVerified": true,
+  "normalUiSyncVerified": true,
+  "faultRemoved": true,
+  "themeSystemPreserved": true,
+  "osOfflineTested": false,
+  "unfinishedChestRestartTested": false,
+  "synthesisBattleReplayTested": false
+}

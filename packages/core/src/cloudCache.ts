@@ -6,13 +6,13 @@
  * 組み立てる。キャッシュはオフライン時の表示用でもある。
  *
  * - upsert は version の後退を拒否する（LWWの単調性）
- * - 墓標（deleted_at）はキャッシュには残し、スナップショット構築時に除外する
+ * - 墓標（deleted_at）はキャッシュに残し、現役データからは除外する（開封履歴の装備参照には使用）
  * - 未認証時の既存キー（quest-board-* / life-quest:canonical:*）には一切触れない
  */
 import { calculateLevel, CHARACTER_CONFIG } from './progression.ts';
 import { createEquipmentFromTemplate, type Equipment } from './equipment.ts';
 import { EQUIPMENT_POOL, type ChestReward, type ChestType } from './rewards.ts';
-import type { CharacterState } from './gameState.ts';
+import { capChestQueue, type CharacterState } from './gameState.ts';
 import type { Priority, Recurrence, Subtask, Task } from './tasks.ts';
 import type { Habit, HabitDailyRecord, RestDay } from './habits.ts';
 import {
@@ -269,16 +269,27 @@ export function buildCanonicalGameSnapshot(cache: CloudCache): CanonicalGameSnap
             return [{ ...createEquipmentFromTemplate(asString(row.id), template), equipped: row.equipped === true }];
         });
 
-    const chestQueue: ChestReward[] = Object.values(cache.chests)
-        .filter((row) => notDeleted(row) && row.opened !== true)
-        .map((row) => ({
-            id: asString(row.id),
-            chestType: asString(row.chest_type, 'wood') as ChestType,
-            label: asString(row.label),
-            opened: false,
-            equipment: null,
-            origin: 'cloud' as const,
-            ...(row.is_starter_character === true ? { isStarterCharacter: true } : {}),
+    const chestQueue: ChestReward[] = capChestQueue(Object.values(cache.chests)
+        .filter(notDeleted)
+        // 開封でversionが変わっても獲得順は変えない。履歴表示と保持上限の基準を揃える。
+        .sort((a, b) => asString(a.created_at).localeCompare(asString(b.created_at))
+            || asString(a.id).localeCompare(asString(b.id)))
+        .map((row): ChestReward => {
+            const opened = row.opened === true;
+            // 売却/合成済みの墓標も履歴の参照元にするが、持ち物には復活させない。
+            const awardedItem = opened && typeof row.opened_item_id === 'string'
+                ? cache.inventory_items[row.opened_item_id] : undefined;
+            const template = awardedItem
+                ? EQUIPMENT_POOL.find((candidate) => candidate.id === awardedItem.template_id) : undefined;
+            return {
+                id: asString(row.id),
+                chestType: asString(row.chest_type, 'wood') as ChestType,
+                label: asString(row.label),
+                opened,
+                equipment: awardedItem && template ? createEquipmentFromTemplate(asString(awardedItem.id), template) : null,
+                origin: 'cloud',
+                ...(row.is_starter_character === true ? { isStarterCharacter: true } : {}),
+            };
         }));
 
     // 報酬台帳はサーバーの reward_transactions が正。クライアント側の台帳は

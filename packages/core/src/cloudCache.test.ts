@@ -191,13 +191,100 @@ describe('buildCanonicalGameSnapshot', () => {
         expect(snapshot!.character.baseAttack).toBe(5 + 2 * 2);
         expect(snapshot!.equipment).toHaveLength(1); // 未知テンプレートと墓標は除外
         expect(snapshot!.equipment[0]).toMatchObject({ id: 'i1', templateId: 'wooden_sword', equipped: true });
-        expect(snapshot!.chestQueue).toHaveLength(1); // 開封済みは除外
+        expect(snapshot!.chestQueue).toHaveLength(2); // 開封済みも獲得履歴として保持
         expect(snapshot!.chestQueue[0]).toMatchObject({ id: 'c1', chestType: 'blue', isStarterCharacter: true });
+        expect(snapshot!.chestQueue[1]).toMatchObject({ id: 'c2', opened: true, equipment: null, origin: 'cloud' });
         expect(snapshot!.gachaCount).toBe(7);
         expect(snapshot!.rewardLedger.rewardedTaskIds).toEqual(['t1']);
         expect(snapshot!.rewardLedger.habitBonusDates).toEqual(['2026-07-01']);
         expect(snapshot!.activeTitle).toBe('冒険王');
         expect(snapshot!.battleProgress).toEqual({ battleUnlocked: true, currentStage: 3, maxClearedStage: 2 });
+    });
+
+    it('開封後のpullとキャッシュ復元でも、獲得装備・スターター履歴を残す', async () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            characters: [{ user_id: 'u1', total_xp: 310, gacha_count: 10, battle_unlocked: true, version: 8 }],
+            inventory_items: [{ id: 'award', template_id: 'wooden_sword', equipped: true, version: 8 }],
+            chests: [
+                { id: 'starter', chest_type: 'blue', label: '青色の宝箱', is_starter_character: true, opened: true, created_at: '2026-07-01T00:00:00Z', version: 7 },
+                { id: 'wood', chest_type: 'wood', label: '木の宝箱', opened: true, opened_item_id: 'award', created_at: '2026-07-02T00:00:00Z', version: 8 },
+            ],
+        }));
+        const storage = createMemoryStorage();
+        await persistCloudCache(storage, 'u1', cache);
+        const restored = buildCanonicalGameSnapshot(await loadCloudCache(storage, 'u1'))!;
+        expect(restored.chestQueue).toEqual([
+            expect.objectContaining({ id: 'starter', opened: true, isStarterCharacter: true, equipment: null }),
+            expect.objectContaining({ id: 'wood', opened: true, equipment: expect.objectContaining({ id: 'award', templateId: 'wooden_sword', equipped: false }) }),
+        ]);
+        expect(restored.chestQueue.filter((chest) => !chest.opened)).toEqual([]);
+        expect(restored.equipment).toHaveLength(1);
+        expect(restored.equipment[0].equipped).toBe(true);
+        expect(restored.character.totalXp).toBe(310);
+        expect(restored.gachaCount).toBe(10);
+        expect(restored.battleProgress.battleUnlocked).toBe(true);
+    });
+
+    it('売却/合成で削除された装備は持ち物へ戻さず、履歴の獲得結果だけ復元する', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            characters: [{ user_id: 'u1', version: 1 }],
+            inventory_items: [{ id: 'sold', template_id: 'leather_armor', deleted_at: '2026-07-03T00:00:00Z', version: 5 }],
+            chests: [
+                { id: 'opened', chest_type: 'wood', opened: true, opened_item_id: 'sold', version: 3 },
+                { id: 'deleted-chest', chest_type: 'wood', opened: true, opened_item_id: 'sold', deleted_at: '2026-07-03T00:00:00Z', version: 5 },
+                { id: 'pending', chest_type: 'wood', opened: false, opened_item_id: 'sold', version: 6 },
+            ],
+        }));
+        const snapshot = buildCanonicalGameSnapshot(cache)!;
+        expect(snapshot.equipment).toEqual([]);
+        expect(snapshot.chestQueue.find((chest) => chest.id === 'opened')).toMatchObject({
+            opened: true, equipment: { id: 'sold', templateId: 'leather_armor', equipped: false },
+        });
+        expect(snapshot.chestQueue.some((chest) => chest.id === 'deleted-chest')).toBe(false);
+        expect(snapshot.chestQueue.find((chest) => chest.id === 'pending')).toMatchObject({ opened: false, equipment: null });
+    });
+
+    it('遅れて届く排出装備は次のpullで履歴に解決し、欠落/未知テンプレートは抽選せずnullにする', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            characters: [{ user_id: 'u1', version: 1 }],
+            inventory_items: [{ id: 'unknown', template_id: 'unknown-template', version: 2 }],
+            chests: [
+                { id: 'late', chest_type: 'wood', opened: true, opened_item_id: 'later', version: 2 },
+                { id: 'unknown', chest_type: 'wood', opened: true, opened_item_id: 'unknown', version: 2 },
+            ],
+        }));
+        expect(buildCanonicalGameSnapshot(cache)!.chestQueue.map((chest) => chest.equipment)).toEqual([null, null]);
+        const next = applyPullBatchToCache(cache, batchWith({
+            inventory_items: [{ id: 'later', template_id: 'wooden_sword', version: 3 }],
+        }));
+        expect(buildCanonicalGameSnapshot(next)!.chestQueue.find((chest) => chest.id === 'late')!.equipment).toMatchObject({
+            id: 'later', templateId: 'wooden_sword',
+        });
+    });
+
+    it('開封/更新順によらず獲得順に並べ、既存上限で未開封を優先して保持する', () => {
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
+            characters: [{ user_id: 'u1', version: 1 }],
+            chests: [
+                { id: 'newer', chest_type: 'wood', opened: true, created_at: '2026-07-02T00:00:00Z', version: 2 },
+                { id: 'older', chest_type: 'blue', opened: true, created_at: '2026-07-01T00:00:00Z', version: 10 },
+            ],
+        }));
+        expect(buildCanonicalGameSnapshot(cache)!.chestQueue.map((chest) => chest.id)).toEqual(['older', 'newer']);
+        const many = applyPullBatchToCache(cache, batchWith({
+            chests: [
+                { id: 'unopened', chest_type: 'wood', opened: false, created_at: '2026-01-01T00:00:00Z', version: 1 },
+                ...Array.from({ length: 501 }, (_, index) => ({
+                    id: `opened-${String(index).padStart(3, '0')}`, chest_type: 'wood', opened: true,
+                    created_at: '2026-08-01T00:00:00Z', version: index + 11,
+                })),
+            ],
+        }));
+        const queue = buildCanonicalGameSnapshot(many)!.chestQueue;
+        expect(queue).toHaveLength(500);
+        expect(queue[0]).toMatchObject({ id: 'unopened', opened: false });
+        expect(queue[queue.length - 1].id).toBe('opened-500');
+        expect(queue.some((chest) => chest.id === 'older')).toBe(false);
     });
 });
 
