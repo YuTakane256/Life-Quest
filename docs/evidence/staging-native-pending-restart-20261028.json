@@ -14,7 +14,8 @@
     "sameOperationIds": true,
     "samePayloadsAndDependencies": true,
     "sameParentAndChild": true,
-    "ownerNamespaceKeyMatched": true
+    "ownerNamespaceKeyMatched": true,
+    "dependsOnEmptyForBoth": true
   },
   "automaticRecoveryBeforeManualSync": true,
   "parentRowsAfterRestart": 1,
@@ -48,5 +49,6 @@
   "crashDuringInflightTested": false,
   "postRestartWireKeysRecaptured": false,
   "faultAbsentAfterRestart": true,
-  "faultRemovedBeforeTermination": true
+  "faultRemovedBeforeTermination": true,
+  "explicitDependencyQueueRecoveryTested": false
 }
