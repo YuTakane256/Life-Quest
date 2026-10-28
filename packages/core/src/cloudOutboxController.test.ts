@@ -10,6 +10,7 @@ import {
 } from './cloudOutboxController.ts';
 import { EdgeFunctionError, type EdgeFunctionInvoker } from './edgeFunctions.ts';
 import type { OutboxOp } from './syncOutbox.ts';
+import { cloudOutboxKey } from './cloudPull.ts';
 
 function createMemoryStorage() {
     const map = new Map<string, string>();
@@ -175,6 +176,10 @@ describe('sendOperation', () => {
 });
 
 describe('enqueue', () => {
+    afterEach(() => {
+        resetAuthLifecycleHooks();
+    });
+
     const baseDeps: CloudOutboxControllerDeps = {
         storage: createMemoryStorage(),
         getRpcClient: () => ({ rpc: async () => ({ error: null }) }),
@@ -204,6 +209,117 @@ describe('enqueue', () => {
         expect(ops).toHaveLength(2);
         expect(ops[1].dependsOn).toEqual([ops[0].opId]);
 
+        unregister();
+    });
+
+    it('親と子と完了を待たずに登録しても依存関係を永続化する', async () => {
+        const storage = createMemoryStorage();
+        const controller = createCloudOutboxController({
+            storage,
+            getRpcClient: () => null,
+            getEdgeInvoker: () => null,
+        });
+        const unregister = controller.registerHooks();
+        await notifyLogin('user-a');
+
+        // Mobileの新規フォーム同様、呼び出し側は親の永続化完了を待たない。
+        const parent = controller.enqueue('upsert_task', { p_id: 't1' }, { trackEntityId: 't1' });
+        const child = controller.enqueue('upsert_subtask', { p_id: 's1', p_task_id: 't1' }, {
+            dependsOnEntityIds: ['t1'], trackEntityId: 's1',
+        });
+        const complete = controller.enqueue('complete_subtask', { subtaskId: 's1' }, {
+            dependsOnEntityIds: ['t1', 's1'],
+        });
+        expect(await Promise.all([parent, child, complete])).toEqual([true, true, true]);
+        await controller.getActiveOutbox()?.flush();
+
+        const ops = controller.getActiveOutbox()!.snapshot();
+        expect(ops).toHaveLength(3);
+        expect(ops[1].dependsOn).toEqual([ops[0].opId]);
+        expect(ops[2].dependsOn).toEqual([ops[0].opId, ops[1].opId]);
+        const persisted = JSON.parse((await storage.getItem(cloudOutboxKey('user-a')))!);
+        expect(persisted.ops.map((op: OutboxOp) => op.dependsOn)).toEqual(ops.map((op) => op.dependsOn));
+        unregister();
+    });
+
+    it('同時登録した親の恒久失敗では子孫を送信せず、独立した操作だけを続行する', async () => {
+        const sent: string[] = [];
+        const controller = createCloudOutboxController({
+            storage: createMemoryStorage(),
+            getRpcClient: () => ({ rpc: async (_name, params) => {
+                sent.push(String(params.p_id));
+                return { error: params.p_id === 't1' ? { code: '422', message: 'invalid parent' } : null };
+            } }),
+            getEdgeInvoker: () => async <TResult>() => {
+                sent.push('complete-subtask');
+                return {} as TResult;
+            },
+        });
+        const unregister = controller.registerHooks();
+        await notifyLogin('user-a');
+        await Promise.all([
+            controller.enqueue('upsert_task', { p_id: 't1' }, { trackEntityId: 't1' }),
+            controller.enqueue('upsert_subtask', { p_id: 's1', p_task_id: 't1' }, {
+                dependsOnEntityIds: ['t1'], trackEntityId: 's1',
+            }),
+            controller.enqueue('complete_subtask', { subtaskId: 's1' }, { dependsOnEntityIds: ['s1'] }),
+            controller.enqueue('upsert_task', { p_id: 'independent' }),
+        ]);
+        await controller.getActiveOutbox()?.flush();
+
+        expect(sent).toEqual(['t1', 'independent']);
+        expect(controller.getActiveOutbox()!.snapshot().map((op) => [op.status, op.failure?.kind])).toEqual([
+            ['failed', 'validation'], ['failed', 'dependency'], ['failed', 'dependency'],
+        ]);
+        unregister();
+    });
+
+    it('親の保存に失敗しても、メモリに残る親を後続の依存先として保持する', async () => {
+        const storage = createMemoryStorage();
+        const controller = createCloudOutboxController({
+            storage,
+            getRpcClient: () => null,
+            getEdgeInvoker: () => null,
+        });
+        const unregister = controller.registerHooks();
+        await notifyLogin('user-a');
+        vi.spyOn(storage, 'setItem').mockRejectedValueOnce(new Error('storage unavailable'));
+        await expect(controller.enqueue('upsert_task', { p_id: 't1' }, { trackEntityId: 't1' }))
+            .rejects.toThrow('storage unavailable');
+        await controller.enqueue('upsert_subtask', { p_id: 's1', p_task_id: 't1' }, {
+            dependsOnEntityIds: ['t1'],
+        });
+        await controller.getActiveOutbox()?.flush();
+        const ops = controller.getActiveOutbox()!.snapshot();
+        expect(ops).toHaveLength(2);
+        expect(ops[1].dependsOn).toEqual([ops[0].opId]);
+        unregister();
+    });
+
+    it('保存待ち中にアカウントが切り替わっても予約した依存先を次のユーザーに持ち越さない', async () => {
+        const storage = createMemoryStorage();
+        const controller = createCloudOutboxController({
+            storage,
+            getRpcClient: () => null,
+            getEdgeInvoker: () => null,
+        });
+        const unregister = controller.registerHooks();
+        await notifyLogin('user-a');
+        let releaseWrite!: () => void;
+        const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+        vi.spyOn(storage, 'setItem').mockImplementationOnce(async () => { await writeGate; });
+        const parent = controller.enqueue('upsert_task', { p_id: 't1' }, { trackEntityId: 't1' });
+        const switchAccount = notifyLogin('user-b');
+        releaseWrite();
+        expect(await parent).toBe(false);
+        await switchAccount;
+        await controller.enqueue('upsert_subtask', { p_id: 's1', p_task_id: 't1' }, {
+            dependsOnEntityIds: ['t1'],
+        });
+        await controller.getActiveOutbox()?.flush();
+        const ops = controller.getActiveOutbox()!.snapshot();
+        expect(ops).toHaveLength(1);
+        expect(ops[0].dependsOn).toEqual([]);
         unregister();
     });
 });
