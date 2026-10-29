@@ -142,7 +142,7 @@ export function registerWebAuthStoreHooks(): () => void {
             activeUserId = null;
             // cloudSessionSeededの有無に関係なくログインボーナスはアカウント固有。
             clearLoginBonusCloudSession();
-            if (!cloudSessionSeeded) {
+            if (!cloudSessionSeeded && !(hadAccount && hasPersistedCloudGame())) {
                 if (hadAccount && detachCloudBattle()) return flushCompletionRewardWrites();
                 return; // 匿名の移行元データは残す
             }
