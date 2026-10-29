@@ -40,6 +40,7 @@
  */
 import { captureAuthSessionGuard, registerAuthLifecycleHooks, subscribeAuthSessionScope } from './authLifecycle.ts';
 import { cloudOutboxKey } from './cloudPull.ts';
+import { createEntityId } from './entityId.ts';
 import {
     createSyncOutbox,
     type OutboxDrainResult,
@@ -269,10 +270,19 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
             const parentOpId = pendingEntityOps.get(entityId);
             if (parentOpId) dependsOn.push(parentOpId);
         }
-        const op = await outbox.enqueue({ operation, payload, dependsOn });
+        const opId = createEntityId();
+        const trackedEntityId = options.trackEntityId;
+        const previousOpId = trackedEntityId ? pendingEntityOps.get(trackedEntityId) : undefined;
+        // 呼び出し側はfire-and-forgetで親・子を続けて追加するため、永続化の
+        // awaitより前に依存先を予約する。下位キューも最初のawaitより前にopを追加する。
+        if (trackedEntityId) pendingEntityOps.set(trackedEntityId, opId);
+        const op = await outbox.enqueue({ opId, operation, payload, dependsOn });
         if (!isCurrent() || activeOutbox !== outbox) return false;
-        if (op && options.trackEntityId) {
-            pendingEntityOps.set(options.trackEntityId, op.opId);
+        // 登録拒否時だけ予約を戻す。後続の同一エンティティの予約は上書きしない。
+        // 保存の例外時にはop自体は下位キューに残るので依存情報も維持する。
+        if (!op && trackedEntityId && pendingEntityOps.get(trackedEntityId) === opId) {
+            if (previousOpId) pendingEntityOps.set(trackedEntityId, previousOpId);
+            else pendingEntityOps.delete(trackedEntityId);
         }
         return op !== null;
     }
