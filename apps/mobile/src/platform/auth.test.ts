@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getGameRewardAuthorityState, setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { consumeAnonymousRecoverySuppression } from './pendingRewardOperations';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const state = vi.hoisted(() => ({
     listener: null as null | ((event: string, session: { user: { id: string } } | null) => void),
@@ -48,17 +49,17 @@ vi.mock('expo-web-browser', () => ({
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
     default: {
-        getItem: vi.fn(async () => {
+        getItem: vi.fn(async (key: string) => {
             if (state.storageReadError) throw new Error('storage unavailable');
-            return state.recoveryGate;
+            return key === 'life-quest:auth:recovery-pending:v1' ? state.recoveryGate : null;
         }),
-        setItem: vi.fn(async (_key: string, value: string) => {
+        setItem: vi.fn(async (key: string, value: string) => {
             if (state.storageWriteError) throw new Error('storage unavailable');
-            state.recoveryGate = value;
+            if (key === 'life-quest:auth:recovery-pending:v1') state.recoveryGate = value;
         }),
-        removeItem: vi.fn(async () => {
+        removeItem: vi.fn(async (key: string) => {
             if (state.storageWriteError) throw new Error('storage unavailable');
-            state.recoveryGate = null;
+            if (key === 'life-quest:auth:recovery-pending:v1') state.recoveryGate = null;
         }),
     },
 }));
@@ -379,6 +380,49 @@ describe('Mobile auth reward authority', () => {
         await handleMobilePasswordRecoveryUrl(url);
         await handleMobilePasswordRecoveryUrl(url);
         expect(state.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('交換待機中にログアウトしてキャンセルした後は通常ログインを復旧扱いにしない', async () => {
+        let finish!: () => void;
+        const exchanged = new Promise<void>((resolve) => { finish = resolve; });
+        state.exchangeCodeForSession.mockImplementationOnce(async () => {
+            await exchanged;
+            return { data: { session: null }, error: new Error('expired code') } as never;
+        });
+        const stop = startAuthSessionListener();
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            const callback = handleMobileAuthCallbackUrl('lifequest://settings?code=late-exchange-signout&type=recovery&auth=recovery');
+            await vi.waitFor(() => expect(state.exchangeCodeForSession).toHaveBeenCalledOnce());
+            state.listener?.('SIGNED_OUT', null);
+            finish(); await callback;
+            expect(await cancelPasswordRecovery()).toEqual({ ok: true });
+            state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+            expect(getPasswordRecoveryState()).toBe('idle');
+            expect(state.recoveryGate).toBeNull();
+        } finally { finish(); stop(); }
+    });
+
+    it('復旧フラグの保存待機中にキャンセルされた古いURLはコード交換を始めない', async () => {
+        let finish!: () => void;
+        const saved = new Promise<void>((resolve) => { finish = resolve; });
+        vi.mocked(AsyncStorage.setItem).mockImplementationOnce(async (_key, value) => {
+            await saved; state.recoveryGate = value;
+        });
+        const stop = startAuthSessionListener();
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            const callback = handleMobileAuthCallbackUrl('lifequest://settings?code=late-persist-cancel&type=recovery&auth=recovery');
+            await vi.waitFor(() => expect(AsyncStorage.setItem).toHaveBeenCalledOnce());
+            const cancelled = cancelPasswordRecovery();
+            finish(); await callback;
+            expect(await cancelled).toEqual({ ok: true });
+            expect(state.exchangeCodeForSession).not.toHaveBeenCalled();
+            expect(state.recoveryGate).toBeNull();
+            state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+        } finally { finish(); stop(); }
     });
 
     it('永続された復旧ゲートは再起動時の初期セッションを通常ログインとして処理しない', async () => {

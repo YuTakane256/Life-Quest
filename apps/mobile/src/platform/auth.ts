@@ -81,19 +81,25 @@ function genericAuthFailure(): AuthResult {
     return { ok: false, message: '操作を完了できませんでした。入力内容と接続を確認して、時間をおいてもう一度お試しください。' };
 }
 
-async function persistMobileRecoveryGate(pending: boolean): Promise<boolean> {
-    try {
-        if (pending) await AsyncStorage.setItem(mobileRecoveryGateKey, '1');
-        else await AsyncStorage.removeItem(mobileRecoveryGateKey);
-        mobileRecoveryGate = pending;
-        return true;
-    } catch {
-        return false;
-    }
+let recoveryGateWrites: Promise<void> = Promise.resolve();
+function persistMobileRecoveryGate(pending: boolean, current: () => boolean = () => true): Promise<boolean> {
+    const work = recoveryGateWrites.then(async () => {
+        if (!current()) return false;
+        try {
+            if (pending) await AsyncStorage.setItem(mobileRecoveryGateKey, '1');
+            else await AsyncStorage.removeItem(mobileRecoveryGateKey);
+            if (!current()) return false;
+            mobileRecoveryGate = pending;
+            return true;
+        } catch { return false; }
+    });
+    recoveryGateWrites = work.then(() => undefined);
+    return work;
 }
 
 async function hydrateMobileRecoveryGate(): Promise<boolean> {
     try {
+        await recoveryGateWrites;
         mobileRecoveryGate = (await AsyncStorage.getItem(mobileRecoveryGateKey)) === '1';
         return true;
     } catch {
@@ -106,6 +112,10 @@ async function hydrateMobileRecoveryGate(): Promise<boolean> {
 
 let sessionGeneration = 0;
 let recoveryCallbackGeneration = 0;
+function invalidateMobileRecoveryCallback(): void {
+    recoveryCallbackGeneration += 1;
+    recoveryCallbackInProgress = false;
+}
 let recoveryTeardown: Promise<void> = Promise.resolve();
 
 /** Invalidate the old worker scope synchronously; duplicate SDK events share its cleanup barrier. */
@@ -124,7 +134,7 @@ function receiveMobileRecoverySession(): void {
     const current = () => generation === sessionGeneration;
     void pauseMobileCloudForRecovery().then(async () => {
         if (!current()) return;
-        const persisted = mobileRecoveryGate || await persistMobileRecoveryGate(true);
+        const persisted = mobileRecoveryGate || await persistMobileRecoveryGate(true, current);
         if (!current()) return;
         if (persisted) setPasswordRecoveryState('ready');
         else { recoveryGateHydrationFailed = true; setPasswordRecoveryState('invalid'); }
@@ -133,7 +143,7 @@ function receiveMobileRecoverySession(): void {
 
 async function activateMobileSession(userId: string): Promise<boolean> {
     const generation = ++sessionGeneration;
-    recoveryCallbackGeneration += 1;
+    invalidateMobileRecoveryCallback();
     const current = () => generation === sessionGeneration;
     beginMobileCloudSessionCheck();
     setGameRewardAuthorityState('resolving');
@@ -293,7 +303,8 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
     }
     const { data, error: sessionError } = await client.auth.getSession();
     if (!current() || sessionError || data.session?.user.id !== owner) return genericAuthFailure();
-    if (!await persistMobileRecoveryGate(false)) {
+    if (!await persistMobileRecoveryGate(false, current)) {
+        if (!current()) return genericAuthFailure();
         setPasswordRecoveryState('invalid');
         return genericAuthFailure();
     }
@@ -310,8 +321,8 @@ export async function cancelPasswordRecovery(): Promise<AuthResult> {
     const client = getMobileSupabaseClient();
     if (!client) return notConfigured();
     const generation = ++sessionGeneration;
-    recoveryCallbackGeneration += 1;
-    await recoveryTeardown;
+    invalidateMobileRecoveryCallback();
+    await Promise.all([recoveryTeardown, recoveryGateWrites]);
     if (generation !== sessionGeneration) return genericAuthFailure();
     suppressRecoverySignOut = true;
     try {
@@ -323,7 +334,8 @@ export async function cancelPasswordRecovery(): Promise<AuthResult> {
         if (generation !== sessionGeneration) return genericAuthFailure();
         const anonymousGeneration = await finishMobileAnonymousSession();
         if (anonymousGeneration !== sessionGeneration) return genericAuthFailure();
-        if (!await persistMobileRecoveryGate(false)) {
+        if (!await persistMobileRecoveryGate(false, () => anonymousGeneration === sessionGeneration)) {
+            if (anonymousGeneration !== sessionGeneration) return genericAuthFailure();
             setPasswordRecoveryState('invalid');
             return genericAuthFailure();
         }
@@ -380,7 +392,9 @@ export async function handleMobileAuthCallbackUrl(url: string): Promise<void> {
             sessionGeneration += 1;
             await pauseMobileCloudForRecovery();
             if (!currentCallback()) return;
-            if (!await persistMobileRecoveryGate(true)) {
+            const persisted = await persistMobileRecoveryGate(true, currentCallback);
+            if (!currentCallback()) return;
+            if (!persisted) {
                 recoveryGateHydrationFailed = true;
                 setPasswordRecoveryState('invalid');
                 return;
@@ -588,7 +602,7 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
     }
     if (event === 'SIGNED_OUT') {
         if (suppressRecoverySignOut) return;
-        recoveryCallbackGeneration += 1;
+        invalidateMobileRecoveryCallback();
         if (mobileRecoveryGate || passwordRecoveryState === 'ready') setPasswordRecoveryState('invalid');
         detachPendingRewardOperations({ suppressAnonymousRecovery: true });
         const generation = ++sessionGeneration;
@@ -630,7 +644,7 @@ export function startAuthSessionListener(): () => void {
     return () => {
         active = false;
         sessionGeneration += 1;
-        recoveryCallbackGeneration += 1;
+        invalidateMobileRecoveryCallback();
         data.subscription.unsubscribe();
     };
 }
