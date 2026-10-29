@@ -304,19 +304,25 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
             if (!canRun()) return null;
             const opId = input.opId ?? generateId();
             if (ops.some((op) => op.opId === opId)) return null; // 二重enqueue無視
+            // 失敗後に追加された依存操作も停止する。恒久失敗時のcascadeだけでは、
+            // 再起動後などで後から加わる子をfailedへ遷移させられない。
+            const failedDependency = (input.dependsOn ?? []).some((id) => ops.some((op) =>
+                op.opId === id && (op.status === 'failed' || op.status === 'conflict')));
             const op: OutboxOp = {
                 opId,
                 operation: input.operation,
                 payload: input.payload,
                 dependsOn: input.dependsOn ?? [],
                 baseVersion: input.baseVersion ?? null,
-                status: 'pending',
+                status: failedDependency ? 'failed' : 'pending',
                 enqueuedAt: now(),
                 optimisticSnapshot: input.optimisticSnapshot ?? null,
+                ...(failedDependency ? { failure: { kind: 'dependency' as const, occurredAt: now() } } : {}),
             };
             ops = [...ops, op];
             notify();
             await persist();
+            if (failedDependency && canRun()) await deps.onPermanentFailure?.(op);
             requestDrainInternal();
             return op;
         },
