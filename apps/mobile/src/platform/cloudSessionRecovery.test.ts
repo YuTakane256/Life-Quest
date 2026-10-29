@@ -46,6 +46,12 @@ describe('Mobile cloud cache authentication boundary', () => {
         memory.set('life-quest:cloud:a:cache:tasks:v1', JSON.stringify({ tasks: { other: { id: 'other', version: 1 } } }));
         expect(await checkMobileCloudSessionOwner(null)).toBe(true);
     });
+    it('旧版の同じ所有者へログインした時も初回pull前のログアウト用に所有者を記録する', async () => {
+        memory.set('quest-board-tasks', JSON.stringify({ state: { tasks: [{ id: 'cloud-task' }] } }));
+        memory.set('life-quest:cloud:a:cache:tasks:v1', JSON.stringify({ tasks: { 'cloud-task': { id: 'cloud-task', version: 1 } } }));
+        expect(await checkMobileCloudSessionOwner('a')).toBe(true);
+        expect(memory.get(MOBILE_CLOUD_DISPLAY_OWNER_KEY)).toBe('a');
+    });
     it('同じXPやキャラクター名だけで匿名進行の所有者を推定しない', async () => {
         memory.set('quest-board-game', JSON.stringify({ state: { character: { name: '勇者', totalXp: 20 }, gachaCount: 0 } }));
         memory.set('life-quest:cloud:a:cache:game:v1', JSON.stringify({ characters: { a: { name: '勇者', total_xp: 20, gacha_count: 0, version: 2 } } }));

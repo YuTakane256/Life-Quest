@@ -79,11 +79,15 @@ export async function checkMobileCloudSessionOwner(
     try {
         const owner = await readDisplayOwner();
         if (!isCurrent()) return false;
-        if (owner && owner !== userId) {
-            // Persist the legacy discovery so deleting the expired SDK session cannot erase provenance.
-            await rememberMobileCloudDisplayOwner(owner);
-            if (isCurrent()) publish('required');
-            return false;
+        if (owner) {
+            // Also retain legacy provenance on a valid same-owner login, even if
+            // the first cloud pull fails before an explicit logout can clean up.
+            await rememberMobileCloudDisplayOwner(owner, isCurrent);
+            if (!isCurrent()) return false;
+            if (owner !== userId) {
+                publish('required');
+                return false;
+            }
         }
         acceptedUserId = userId;
         return true;
