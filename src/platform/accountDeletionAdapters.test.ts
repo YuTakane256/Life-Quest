@@ -22,7 +22,7 @@ vi.mock('@life-quest/core/gameRewardAuthority', () => ({ setGameRewardAuthorityS
 vi.mock('expo-linking', () => ({ getInitialURL: vi.fn(), addEventListener: vi.fn() }));
 vi.mock('expo-auth-session', () => ({ makeRedirectUri: vi.fn() }));
 vi.mock('expo-web-browser', () => ({ maybeCompleteAuthSession: vi.fn() }));
-vi.mock('@react-native-async-storage/async-storage', () => ({ default: { getItem: vi.fn(), setItem: vi.fn(), removeItem: vi.fn() } }));
+vi.mock('@react-native-async-storage/async-storage', () => ({ default: { getItem: vi.fn(async () => null), getAllKeys: vi.fn(async () => []), setItem: vi.fn(), removeItem: vi.fn() } }));
 vi.mock('../../apps/mobile/src/platform/appleSignIn', () => ({ signInWithAppleNative: vi.fn() }));
 import { deleteCurrentAccount as deleteWeb } from './auth';
 import { deleteCurrentAccount as deleteMobile, startAuthSessionListener as startMobileListener } from '../../apps/mobile/src/platform/auth';
@@ -96,7 +96,7 @@ it('実Mobile auth listenerの報酬復元待機中でも、SDK Bへの旧削除
     const pending = deleteMobile({ userId: 'a', isActive: captureAuthSessionScope().isCurrent });
     await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledOnce());
     mocks.identities.forEach((event) => event('SIGNED_IN', { user: { id: 'b' } }));
-    expect(mocks.restoreMobile).toHaveBeenCalledWith('b'); expect(captureAuthSessionScope().userId).toBe('a');
+    await vi.waitFor(() => expect(mocks.restoreMobile).toHaveBeenCalledWith('b')); expect(captureAuthSessionScope().userId).toBe('a');
     rpc.resolve({ apple_revocation: 'manual_required' }); expect(await pending).toMatchObject({ ok: false });
     expect(mocks.cleanup).not.toHaveBeenCalled(); expect(mocks.signOut).not.toHaveBeenCalled();
     restore.resolve(); await vi.waitFor(() => expect(captureAuthSessionScope().userId).toBe('b')); stop(); expect(mocks.identities.size).toBe(0);

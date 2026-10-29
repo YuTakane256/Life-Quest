@@ -32,6 +32,28 @@ vi.mock('../stores/useMobileLoginBonusStore', () => ({
 void AsyncStorage;
 
 describe('Mobileログアウト時のストアクリア（ADR-009）', () => {
+    it('再起動後にpull未完了でも保存済み所有者の明示ログアウトでは表示を片付ける', async () => {
+        const { MOBILE_CLOUD_DISPLAY_OWNER_KEY } = await import('./cloudSessionRecovery');
+        registerMobileAuthStoreHooks();
+        await notifyLogin('a');
+        vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce('a').mockResolvedValueOnce('a');
+        await notifyLogout();
+        expect(useMobileTaskStore.getState().tasks).toEqual([]);
+        expect(AsyncStorage.removeItem).toHaveBeenCalledWith(MOBILE_CLOUD_DISPLAY_OWNER_KEY);
+    });
+
+    it('保存済み所有者を読む間に新しいログインが始まったら古いログアウトはクリアしない', async () => {
+        registerMobileAuthStoreHooks();
+        await notifyLogin('a');
+        let finish!: (value: string) => void;
+        vi.mocked(AsyncStorage.getItem).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+        const leaving = notifyLogout();
+        await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+        await notifyLogin('b');
+        finish('a');
+        await leaving;
+        expect(useMobileTaskStore.getState().tasks.map((task) => task.id)).toEqual(['local-1']);
+    });
     it.each(['logout', 'switch'])('未seedでも旧宝箱演出は破棄するが報酬は消さない: %s', async (transition) => {
         const unregister = registerMobileAuthStoreHooks();
         await notifyLogin('a');

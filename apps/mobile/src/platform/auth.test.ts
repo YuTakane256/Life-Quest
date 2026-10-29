@@ -19,7 +19,16 @@ const state = vi.hoisted(() => ({
     storageWriteError: false,
     notifyLogin: vi.fn(async () => undefined),
     notifyLogout: vi.fn(async () => undefined),
+    checkCloudOwner: vi.fn(async (_userId: string | null, current: () => boolean = () => true) => current()),
     signInWithAppleNative: vi.fn(async (): Promise<{ ok: boolean; appleAuthorizationRecorded?: boolean }> => ({ ok: true })),
+}));
+
+vi.mock('./cloudSessionRecovery', () => ({
+    checkMobileCloudSessionOwner: state.checkCloudOwner,
+    getMobileCloudRecoveryState: vi.fn(() => 'ready'),
+    isMobileCloudSessionAccepted: vi.fn(() => true),
+    beginMobileCloudSessionCheck: vi.fn(),
+    finishMobileCloudSessionCheck: vi.fn(),
 }));
 
 vi.mock('expo-linking', () => ({
@@ -104,6 +113,7 @@ import {
     signInWithGoogle,
     signInWithApple,
     startAuthSessionListener,
+    signInWithEmail,
     updatePasswordFromRecovery,
 } from './auth';
 
@@ -116,6 +126,7 @@ describe('Mobile auth reward authority', () => {
         state.storageWriteError = false;
         clearPasswordRecoveryState();
         vi.clearAllMocks();
+        state.checkCloudOwner.mockImplementation(async (_id, current = () => true) => current());
     });
 
     it('TOKEN_REFRESHEDでresolvingへ戻さず、保留操作の再処理を招かない', async () => {
@@ -129,6 +140,37 @@ describe('Mobile auth reward authority', () => {
         } finally {
             stop();
         }
+    });
+
+    it('期限切れ起動のクラウドキャッシュを匿名の報酬へ切り替えない', async () => {
+        state.checkCloudOwner.mockResolvedValue(false);
+        const stop = startAuthSessionListener();
+        state.listener?.('INITIAL_SESSION', null);
+        await vi.waitFor(() => expect(state.checkCloudOwner).toHaveBeenCalledWith(null, expect.any(Function)));
+        expect(getGameRewardAuthorityState()).toBe('resolving');
+        expect(state.notifyLogin).not.toHaveBeenCalled();
+        stop();
+    });
+
+    it('別アカウントでは直接ログインAPIからも移行・同期を開始しない', async () => {
+        state.checkCloudOwner.mockResolvedValue(false);
+        expect(await signInWithEmail('b@example.com', 'secret')).toMatchObject({ ok: false });
+        expect(state.notifyLogin).not.toHaveBeenCalled();
+        expect(getGameRewardAuthorityState()).toBe('resolving');
+    });
+
+    it('遅延した未認証判定は新しいログインを匿名へ巻き戻さない', async () => {
+        let finish!: (value: boolean) => void;
+        state.checkCloudOwner.mockImplementationOnce(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+        const stop = startAuthSessionListener();
+        state.listener?.('INITIAL_SESSION', null);
+        await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+        state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
+        await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+        finish(true);
+        await Promise.resolve();
+        expect(getGameRewardAuthorityState()).toBe('authenticated');
+        stop();
     });
 
     it('実SIGNED_OUTイベントはanonymous遷移前に保留キューの匿名回収を抑止する', async () => {

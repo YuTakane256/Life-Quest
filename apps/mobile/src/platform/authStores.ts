@@ -12,6 +12,7 @@ import { discardMobilePendingTaskCompletions, useMobileTaskStore } from '../stor
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
 import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import { beginMobileLoginBonusCloudSession, clearMobileLoginBonusCloudSession } from '../stores/useMobileLoginBonusStore';
+import { hasMobileCloudDisplayOwner, releaseMobileCloudDisplayOwner } from './cloudSessionRecovery';
 
 let cloudSessionSeeded = false;
 
@@ -64,16 +65,21 @@ export function registerMobileAuthStoreHooks(): () => void {
             }
             beginMobileLoginBonusCloudSession(userId);
         },
-        onLogout: () => {
+        onLogout: async () => {
+            const previousOwner = activeUserId;
+            const current = captureAuthSessionScope().isCurrent;
             const hadAccount = activeUserId !== null;
             activeUserId = null;
             clearMobileLoginBonusCloudSession();
-            if (!cloudSessionSeeded) {
+            const persistedCloud = previousOwner !== null && await hasMobileCloudDisplayOwner(previousOwner);
+            if (!current()) return;
+            if (!cloudSessionSeeded && !persistedCloud) {
                 if (hadAccount) detachCloudBattle();
                 return; // 匿名の移行元データは残す
             }
             clearMobileCloudStores();
             cloudSessionSeeded = false;
+            if (previousOwner) await releaseMobileCloudDisplayOwner(previousOwner);
         },
     });
     return () => { unsubscribeScope(); unregisterHooks(); };

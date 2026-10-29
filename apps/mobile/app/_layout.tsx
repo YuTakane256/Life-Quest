@@ -16,6 +16,7 @@ import { usePalette } from '../src/theme/usePalette';
 import { LoginBonusOverlay } from '../src/components/LoginBonusOverlay';
 import { ChestOpeningOverlay } from '../src/components/ChestOpeningOverlay';
 import { InventoryOperationsProvider } from '../src/components/InventoryOperationsProvider';
+import { CloudSessionRecoveryGate } from '../src/components/CloudSessionRecoveryGate';
 
 export default function RootLayout() {
     const { palette, resolvedTheme } = usePalette();
@@ -60,6 +61,7 @@ export default function RootLayout() {
             </InventoryOperationsProvider>
             <LoginBonusOverlay />
             <ChestOpeningOverlay />
+            <CloudSessionRecoveryGate />
         </>
     );
 }
