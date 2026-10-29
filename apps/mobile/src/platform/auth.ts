@@ -1,7 +1,7 @@
 /**
  * Mobileの認証サービス（#503、メール認証のみ）。Webの src/platform/auth.ts と同型。
  */
-import { notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
 import { beginMobileCloudSessionCheck, checkMobileCloudSessionOwner, finishMobileCloudSessionCheck, getMobileCloudRecoveryState, isMobileCloudSessionAccepted } from './cloudSessionRecovery';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type { BattleAuthState } from '@life-quest/core/battleStartPolicy';
@@ -108,7 +108,15 @@ let sessionGeneration = 0;
 async function activateMobileSession(userId: string): Promise<boolean> {
     const generation = ++sessionGeneration;
     const current = () => generation === sessionGeneration;
+    beginMobileCloudSessionCheck();
     setGameRewardAuthorityState('resolving');
+    const previousOwner = captureAuthSessionScope().userId;
+    if (previousOwner !== null && previousOwner !== userId) {
+        // Stop A's workers before any of them can use the SDK's new B session.
+        // A cold start has no active scope: its retained display must stay protected.
+        await notifyLogout();
+        if (!current()) return false;
+    }
     if (!await checkMobileCloudSessionOwner(userId, current) || !current()) return false;
     await restorePendingRewardOperations(userId).catch(() => undefined);
     if (!current()) return false;
@@ -122,6 +130,7 @@ async function activateMobileSession(userId: string): Promise<boolean> {
 async function finishMobileAnonymousSession(): Promise<void> {
     const generation = ++sessionGeneration;
     const current = () => generation === sessionGeneration;
+    beginMobileCloudSessionCheck();
     setGameRewardAuthorityState('resolving');
     if (await checkMobileCloudSessionOwner(null, current) && current()) {
         finishMobileCloudSessionCheck();
@@ -502,6 +511,7 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
     }
     if (event === 'PASSWORD_RECOVERY' && session) {
         sessionGeneration += 1;
+        beginMobileCloudSessionCheck();
         recoveryCallbackInProgress = false;
         if (mobileRecoveryGate) {
             setPasswordRecoveryState('ready');
@@ -518,6 +528,8 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
     }
     if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
         if (recoveryCallbackInProgress || mobileRecoveryGate || passwordRecoveryState === 'ready') {
+            sessionGeneration += 1;
+            beginMobileCloudSessionCheck();
             setPasswordRecoveryState('ready');
             return;
         }
@@ -537,6 +549,7 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
         if (suppressRecoverySignOut) return;
         detachPendingRewardOperations({ suppressAnonymousRecovery: true });
         const generation = ++sessionGeneration;
+        beginMobileCloudSessionCheck();
         setGameRewardAuthorityState('resolving');
         void notifyLogout().then(() => {
             if (generation === sessionGeneration) void finishMobileAnonymousSession();

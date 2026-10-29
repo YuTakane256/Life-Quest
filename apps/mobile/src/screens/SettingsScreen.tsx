@@ -458,7 +458,7 @@ export default function SettingsScreen({ recoveryOnly = false }: { recoveryOnly?
                                     >
                                         <Text style={styles.primaryButtonText}>{mode === 'signIn' ? 'ログイン' : mode === 'signUp' ? '新規登録' : '再設定メールを送る'}</Text>
                                     </Pressable>
-                                    {!recoveryOnly && <Pressable
+                                    {(!recoveryOnly || mode !== 'signIn') && <Pressable
                                         accessibilityRole="button"
                                         accessibilityLabel={mode === 'signIn' ? '新規登録へ切り替える' : 'ログインへ切り替える'}
                                         onPress={() => { setMode(mode === 'signIn' ? 'signUp' : 'signIn'); setPassword(''); setPasswordConfirmation(''); }}

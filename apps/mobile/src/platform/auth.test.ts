@@ -17,8 +17,9 @@ const state = vi.hoisted(() => ({
     recoveryGate: null as string | null,
     storageReadError: false,
     storageWriteError: false,
-    notifyLogin: vi.fn(async () => undefined),
-    notifyLogout: vi.fn(async () => undefined),
+    scopeOwner: null as string | null,
+    notifyLogin: vi.fn(async (userId: string) => { state.scopeOwner = userId; }),
+    notifyLogout: vi.fn(async () => { state.scopeOwner = null; }),
     checkCloudOwner: vi.fn(async (_userId: string | null, current: () => boolean = () => true) => current()),
     signInWithAppleNative: vi.fn(async (): Promise<{ ok: boolean; appleAuthorizationRecorded?: boolean }> => ({ ok: true })),
 }));
@@ -84,6 +85,7 @@ vi.mock('./supabase', () => ({
 }));
 
 vi.mock('@life-quest/core/authLifecycle', () => ({
+    captureAuthSessionScope: () => ({ userId: state.scopeOwner }),
     notifyLogin: state.notifyLogin,
     notifyLogout: state.notifyLogout,
 }));
@@ -120,6 +122,7 @@ import {
 describe('Mobile auth reward authority', () => {
     afterEach(() => {
         state.listener = null;
+        state.scopeOwner = null;
         setGameRewardAuthorityState('anonymous');
         state.recoveryGate = null;
         state.storageReadError = false;
@@ -156,7 +159,46 @@ describe('Mobile auth reward authority', () => {
         state.checkCloudOwner.mockResolvedValue(false);
         expect(await signInWithEmail('b@example.com', 'secret')).toMatchObject({ ok: false });
         expect(state.notifyLogin).not.toHaveBeenCalled();
+        expect(state.notifyLogout).not.toHaveBeenCalled();
         expect(getGameRewardAuthorityState()).toBe('resolving');
+    });
+
+    it('稼働中AからSDK Bへ切り替わったら旧workerの停止後にBを確認する', async () => {
+        state.scopeOwner = 'a';
+        const stop = startAuthSessionListener();
+        state.listener?.('SIGNED_IN', { user: { id: 'b' } });
+        await vi.waitFor(() => expect(state.notifyLogin).toHaveBeenCalledWith('b'));
+        expect(state.notifyLogout).toHaveBeenCalledOnce();
+        expect(state.notifyLogout.mock.invocationCallOrder[0]).toBeLessThan(state.checkCloudOwner.mock.invocationCallOrder[0]);
+        stop();
+    });
+
+    it('同じアカウントの再通知ではlogoutしない', async () => {
+        state.scopeOwner = 'a';
+        const stop = startAuthSessionListener();
+        state.listener?.('SIGNED_IN', { user: { id: 'a' } });
+        await vi.waitFor(() => expect(state.notifyLogin).toHaveBeenCalledWith('a'));
+        expect(state.notifyLogout).not.toHaveBeenCalled();
+        stop();
+    });
+
+    it('Aの片付け待機中にCがログインしたら古いBの起動を再開しない', async () => {
+        state.scopeOwner = 'a';
+        let finish!: () => void;
+        state.notifyLogout.mockImplementationOnce(() => {
+            state.scopeOwner = null;
+            return new Promise<void>((resolve) => { finish = resolve; });
+        });
+        const stop = startAuthSessionListener();
+        state.listener?.('SIGNED_IN', { user: { id: 'b' } });
+        await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+        state.listener?.('SIGNED_IN', { user: { id: 'c' } });
+        await vi.waitFor(() => expect(state.notifyLogin).toHaveBeenCalledWith('c'));
+        finish();
+        await Promise.resolve();
+        expect(state.notifyLogin).not.toHaveBeenCalledWith('b');
+        expect(getGameRewardAuthorityState()).toBe('authenticated');
+        stop();
     });
 
     it('遅延した未認証判定は新しいログインを匿名へ巻き戻さない', async () => {

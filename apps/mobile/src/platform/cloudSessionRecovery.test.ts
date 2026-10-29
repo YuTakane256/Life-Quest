@@ -46,6 +46,18 @@ describe('Mobile cloud cache authentication boundary', () => {
         memory.set('life-quest:cloud:a:cache:tasks:v1', JSON.stringify({ tasks: { other: { id: 'other', version: 1 } } }));
         expect(await checkMobileCloudSessionOwner(null)).toBe(true);
     });
+    it('同じXPやキャラクター名だけで匿名進行の所有者を推定しない', async () => {
+        memory.set('quest-board-game', JSON.stringify({ state: { character: { name: '勇者', totalXp: 20 }, gachaCount: 0 } }));
+        memory.set('life-quest:cloud:a:cache:game:v1', JSON.stringify({ characters: { a: { name: '勇者', total_xp: 20, gacha_count: 0, version: 2 } } }));
+        expect(await checkMobileCloudSessionOwner(null)).toBe(true);
+        expect(memory.has(MOBILE_CLOUD_DISPLAY_OWNER_KEY)).toBe(false);
+    });
+    it('旧版のゲームだけの表示も装備の安定IDが一致すれば保護する', async () => {
+        memory.set('quest-board-game', JSON.stringify({ state: { equipment: [{ id: 'cloud-item' }], chestQueue: [] } }));
+        memory.set('life-quest:cloud:a:cache:game:v1', JSON.stringify({ inventory_items: { 'cloud-item': { id: 'cloud-item', version: 1 } } }));
+        expect(await checkMobileCloudSessionOwner(null)).toBe(false);
+        expect(memory.get(MOBILE_CLOUD_DISPLAY_OWNER_KEY)).toBe('a');
+    });
     it('読取・所有者保存失敗で匿名や別アカウントへ切り替えない', async () => {
         vi.mocked(AsyncStorage.getItem).mockRejectedValueOnce(new Error('read failed'));
         expect(await checkMobileCloudSessionOwner(null)).toBe(false);

@@ -88,7 +88,7 @@ describe.each([{ name: 'Web', remove: deleteWeb }, { name: 'Mobile', remove: del
     });
 });
 
-it('実Mobile auth listenerの報酬復元待機中でも、SDK Bへの旧削除のcleanupを開始しない', async () => {
+it('実Mobile auth listenerの旧A停止・報酬復元待機中でも、SDK Bへの旧削除のcleanupを開始しない', async () => {
     const restore = deferred<void>(); const rpc = deferred<{ apple_revocation: string }>();
     mocks.restoreMobile.mockReturnValueOnce(restore.promise); mocks.invoke.mockReturnValueOnce(rpc.promise);
     const stop = startMobileListener(); await Promise.resolve(); await Promise.resolve();
@@ -96,7 +96,7 @@ it('実Mobile auth listenerの報酬復元待機中でも、SDK Bへの旧削除
     const pending = deleteMobile({ userId: 'a', isActive: captureAuthSessionScope().isCurrent });
     await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledOnce());
     mocks.identities.forEach((event) => event('SIGNED_IN', { user: { id: 'b' } }));
-    await vi.waitFor(() => expect(mocks.restoreMobile).toHaveBeenCalledWith('b')); expect(captureAuthSessionScope().userId).toBe('a');
+    await vi.waitFor(() => expect(mocks.restoreMobile).toHaveBeenCalledWith('b')); expect(captureAuthSessionScope().userId).toBeNull();
     rpc.resolve({ apple_revocation: 'manual_required' }); expect(await pending).toMatchObject({ ok: false });
     expect(mocks.cleanup).not.toHaveBeenCalled(); expect(mocks.signOut).not.toHaveBeenCalled();
     restore.resolve(); await vi.waitFor(() => expect(captureAuthSessionScope().userId).toBe('b')); stop(); expect(mocks.identities.size).toBe(0);

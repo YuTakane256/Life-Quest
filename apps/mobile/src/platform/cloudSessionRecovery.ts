@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { buildCanonicalGameSnapshot, loadCloudCache } from '@life-quest/core/cloudCache';
+import { loadCloudCache } from '@life-quest/core/cloudCache';
 
 /** Display provenance only. Authentication still comes from Supabase's validated session. */
 export const MOBILE_CLOUD_DISPLAY_OWNER_KEY = 'life-quest:mobile:cloud-display-owner:v1';
@@ -51,6 +51,8 @@ async function readDisplayOwner(): Promise<string | null> {
     ]);
     const taskIds = new Set((tasks?.tasks ?? []).map((task: { id: string }) => task.id));
     const habitIds = new Set((habits?.habits ?? []).map((habit: { id: string }) => habit.id));
+    const equipmentIds = new Set((game?.equipment ?? []).map((item: { id: string }) => item.id));
+    const chestIds = new Set((game?.chestQueue ?? []).map((chest: { id: string }) => chest.id));
     const owners = new Set<string>();
     for (const key of keys) {
         const match = /^life-quest:cloud:([^:]+):cache:[^:]+:v1$/.exec(key);
@@ -59,12 +61,10 @@ async function readDisplayOwner(): Promise<string | null> {
     const matches: string[] = [];
     for (const owner of owners) {
         const cache = await loadCloudCache(AsyncStorage, owner);
-        const cachedGame = buildCanonicalGameSnapshot(cache);
-        const hasProgress = cachedGame && (cachedGame.character.totalXp > 0 || cachedGame.gachaCount > 0 || cachedGame.equipment.length > 0);
         if (Object.keys(cache.tasks).some((id) => taskIds.has(id))
             || Object.keys(cache.habits).some((id) => habitIds.has(id))
-            || (hasProgress && JSON.stringify(game?.character) === JSON.stringify(cachedGame.character)
-                && game?.gachaCount === cachedGame.gachaCount)) matches.push(owner);
+            || Object.keys(cache.inventory_items).some((id) => equipmentIds.has(id))
+            || Object.keys(cache.chests).some((id) => chestIds.has(id))) matches.push(owner);
     }
     if (matches.length > 1) throw new Error('Ambiguous display provenance');
     return matches[0] ?? null;
