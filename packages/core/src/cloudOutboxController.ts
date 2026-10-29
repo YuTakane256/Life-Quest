@@ -169,6 +169,26 @@ export interface CloudOutboxController {
     registerHooks: () => () => void;
 }
 
+/** 保存形式を変えず、アプリが追跡する作成/更新操作のエンティティを復元する。 */
+function restoredEntityId(op: OutboxOp): string | null {
+    let field: string;
+    switch (op.operation) {
+        case 'upsert_task':
+        case 'upsert_subtask':
+        case 'delete_subtask':
+        case 'upsert_habit':
+            field = 'p_id';
+            break;
+        case 'set_habit_log':
+            field = 'p_habit_id';
+            break;
+        default:
+            return null;
+    }
+    const id = op.payload?.[field];
+    return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
 export function createCloudOutboxController(deps: CloudOutboxControllerDeps): CloudOutboxController {
     let activeOutbox: SyncOutbox | null = null;
     let activeUserId: string | null = null;
@@ -350,6 +370,12 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
                     if (!isCurrent()) {
                         await stopOutbox(outbox);
                         return;
+                    }
+                    // 自動drain・購読通知より前に復元する。FIFOの後の操作を
+                    // 最新として追跡し、保存済みdependsOnやopId自体は変更しない。
+                    for (const op of outbox.snapshot()) {
+                        const entityId = restoredEntityId(op);
+                        if (entityId) pendingEntityOps.set(entityId, op.opId);
                     }
                     activeOutbox = outbox;
                     activeUserId = userId;
