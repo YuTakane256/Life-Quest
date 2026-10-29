@@ -225,12 +225,8 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         }
     };
 
-    const scheduler = createInsurancePullScheduler({
-        requestPull: () => { void pullNow().catch(() => undefined); },
-    });
-
     // 楽観更新が残ったままpullすると、古いクラウド状態で一時的に上書きされうる。
-    // 再接続・フォアグラウンド復帰ではoutboxを先に空にしてからpullを要求する。
+    // Realtime・定期処理を含む全ての自動トリガでoutboxを先に処理する。
     const recoverConnection = async (): Promise<boolean> => {
         if (!isCurrent()) return false;
         const { retryablePending } = await drainOutboxAndWait();
@@ -248,13 +244,17 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         return isCurrent();
     };
 
+    const scheduler = createInsurancePullScheduler({
+        requestPull: () => { void recoverConnection().catch(() => undefined); },
+    });
+
     // Realtime: 全書き込み操作が必ずsync_versionsをUPDATEするため、1購読で全変更を検知できる
     const channel = client
         .channel(`cloud-sync-${userId}`)
         .on(
             'postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'sync_versions', filter: `user_id=eq.${userId}` },
-            () => { void pullNow().catch(() => undefined); },
+            () => { void recoverConnection().catch(() => undefined); },
         )
         .subscribe();
 
