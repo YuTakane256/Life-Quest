@@ -6,7 +6,7 @@
  * - ログアウトは notifyLogout の全フック完了を待ってから解決する（ADR-009:
  *   ストアのメモリ即時クリアがログアウトAPIの一部として完了する契約）
  */
-import { notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type { BattleAuthState } from '@life-quest/core/battleStartPolicy';
 import { getWebSupabaseClient } from './supabase';
@@ -32,6 +32,17 @@ let passwordRecoveryState: PasswordRecoveryState = 'idle';
 const passwordRecoveryListeners = new Set<(state: PasswordRecoveryState) => void>();
 let recoveryCallbackInProgress = false;
 let suppressRecoverySignOut = false;
+let recoveryGeneration = 0;
+let recoveryTeardown: Promise<void> = Promise.resolve();
+
+function pauseWebCloudForRecovery(): Promise<void> {
+    setGameRewardAuthorityState('resolving');
+    setPasswordRecoveryState('idle');
+    detachPendingWebRewardOperations();
+    const stopping = captureAuthSessionScope().userId !== null ? notifyLogout() : Promise.resolve();
+    recoveryTeardown = Promise.all([recoveryTeardown, stopping]).then(() => undefined);
+    return recoveryTeardown;
+}
 const webRecoveryGateKey = 'life-quest:auth:recovery-pending:v1';
 const processedWebGoogleOAuthCodes = new Set<string>();
 type GoogleOAuthState = { status: 'idle' } | { status: 'success' } | { status: 'error'; message: string };
@@ -101,7 +112,8 @@ function notConfigured(): AuthResult {
 }
 
 function hasWebRecoveryGate(): boolean {
-    return typeof window !== 'undefined' && window.localStorage.getItem(webRecoveryGateKey) === '1';
+    try { return typeof window !== 'undefined' && window.localStorage.getItem(webRecoveryGateKey) === '1'; }
+    catch { return true; } // Unknown persisted recovery state must not start cloud work.
 }
 
 function setWebRecoveryGate(pending: boolean): void {
@@ -223,19 +235,30 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
     if (password.length < 6) return { ok: false, message: 'パスワードは6文字以上で入力してください。' };
     const client = getWebSupabaseClient();
     if (!client) return notConfigured();
+    const generation = recoveryGeneration;
+    const current = () => generation === recoveryGeneration;
+    await recoveryTeardown;
+    if (!current() || passwordRecoveryState !== 'ready') return genericAuthFailure();
+    const before = await client.auth.getSession();
+    if (!current() || before.error || !before.data.session) return genericAuthFailure();
+    const owner = before.data.session.user.id;
     const { error } = await client.auth.updateUser({ password });
+    if (!current()) return genericAuthFailure();
     if (error) {
         setPasswordRecoveryState('invalid');
         return { ok: false, message: 'このリンクは無効または期限切れです。パスワードを再設定してください。' };
     }
-    setWebRecoveryGate(false);
+    const { data, error: sessionError } = await client.auth.getSession();
+    if (!current() || sessionError || data.session?.user.id !== owner) return genericAuthFailure();
+    try { setWebRecoveryGate(false); }
+    catch { setPasswordRecoveryState('invalid'); return genericAuthFailure(); }
     setPasswordRecoveryState('idle');
-    const { data } = await client.auth.getSession();
     if (data.session) {
         setGameRewardAuthorityState('resolving');
         try { restorePendingWebRewardOperations(data.session.user.id); } catch { /* メモリ保留は維持する */ }
         await notifyLogin(data.session.user.id);
         await flushCompletionRewardWrites();
+        if (!current()) return genericAuthFailure();
         setGameRewardAuthorityState('authenticated');
     }
     return { ok: true };
@@ -245,15 +268,20 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
 export async function cancelPasswordRecovery(): Promise<AuthResult> {
     const client = getWebSupabaseClient();
     if (!client) return notConfigured();
+    const generation = ++recoveryGeneration;
+    await recoveryTeardown;
+    if (generation !== recoveryGeneration) return genericAuthFailure();
     suppressRecoverySignOut = true;
     try {
         const { error } = await client.auth.signOut({ scope: 'local' });
+        if (generation !== recoveryGeneration) return genericAuthFailure();
         if (error) return { ok: false, message: 'ログアウトを完了できませんでした。接続を確認してもう一度お試しください。' };
         detachPendingWebRewardOperations();
         await notifyLogout();
-        setGameRewardAuthorityState('anonymous');
+        if (generation !== recoveryGeneration) return genericAuthFailure();
         setWebRecoveryGate(false);
         setPasswordRecoveryState('idle');
+        setGameRewardAuthorityState('anonymous');
         return { ok: true };
     } catch {
         return { ok: false, message: 'ログアウトを完了できませんでした。接続を確認してもう一度お試しください。' };
@@ -463,6 +491,8 @@ export const getGameAuthState = getBattleAuthState;
  * 戻り値で購読解除できる。
  */
 export function startAuthSessionListener(): () => void {
+    recoveryGeneration += 1;
+    setPasswordRecoveryState('idle');
     let sessionGeneration = 0;
     const finishAnonymous = () => {
         const generation = ++sessionGeneration;
@@ -484,7 +514,11 @@ export function startAuthSessionListener(): () => void {
         return () => { sessionGeneration += 1; };
     }
     recoveryCallbackInProgress = isRecoveryCallbackUrl() || hasWebRecoveryGate();
-    if (isRecoveryCallbackUrl()) setWebRecoveryGate(true);
+    if (recoveryCallbackInProgress) void pauseWebCloudForRecovery();
+    if (isRecoveryCallbackUrl()) {
+        try { setWebRecoveryGate(true); }
+        catch { setPasswordRecoveryState('invalid'); }
+    }
     if (hasRecoveryFailureInUrl()) {
         recoveryCallbackInProgress = false;
         setPasswordRecoveryState('invalid');
@@ -495,11 +529,17 @@ export function startAuthSessionListener(): () => void {
         // Invalidate an older no-session recovery before a new login can seed stores.
         if (session && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
             sessionGeneration += 1;
+            recoveryGeneration += 1;
         }
         if (event === 'PASSWORD_RECOVERY' && session) {
             recoveryCallbackInProgress = false;
-            setWebRecoveryGate(true);
-            setPasswordRecoveryState('ready');
+            const generation = recoveryGeneration;
+            const stopped = pauseWebCloudForRecovery();
+            try { setWebRecoveryGate(true); }
+            catch { setPasswordRecoveryState('invalid'); scrubRecoveryUrl(); return; }
+            void stopped.then(() => {
+                if (generation === recoveryGeneration) setPasswordRecoveryState('ready');
+            });
             scrubRecoveryUrl();
             return;
         }
@@ -507,7 +547,15 @@ export function startAuthSessionListener(): () => void {
             // Recovery sessions can emit SIGNED_IN before PASSWORD_RECOVERY.
             // They must not start migration/sync until the password is updated.
             if (recoveryCallbackInProgress || hasWebRecoveryGate() || passwordRecoveryState === 'ready') {
-                if (hasWebRecoveryGate() && passwordRecoveryState === 'idle') setPasswordRecoveryState('ready');
+                const invalid = passwordRecoveryState === 'invalid';
+                const generation = recoveryGeneration;
+                const stopped = pauseWebCloudForRecovery();
+                try { setWebRecoveryGate(true); }
+                catch { setPasswordRecoveryState('invalid'); return; }
+                void stopped.then(() => {
+                    if (generation === recoveryGeneration && !invalid) setPasswordRecoveryState('ready');
+                });
+                if (invalid) setPasswordRecoveryState('invalid');
                 return;
             }
             setGameRewardAuthorityState('resolving');
@@ -528,6 +576,8 @@ export function startAuthSessionListener(): () => void {
         }
         if (event === 'SIGNED_OUT') {
             if (suppressRecoverySignOut) return;
+            recoveryGeneration += 1;
+            if (hasWebRecoveryGate() || passwordRecoveryState === 'ready') setPasswordRecoveryState('invalid');
             sessionGeneration += 1;
             // authenticatedの保留操作をanonymous報酬として消費させない。
             // 永続キーは残し、同一userの次回ログインでのみ復元する。
@@ -546,5 +596,5 @@ export function startAuthSessionListener(): () => void {
     });
     void handleWebGoogleOAuthCallback();
     void handleWebAppleOAuthCallback();
-    return () => { sessionGeneration += 1; data.subscription.unsubscribe(); };
+    return () => { sessionGeneration += 1; recoveryGeneration += 1; data.subscription.unsubscribe(); };
 }

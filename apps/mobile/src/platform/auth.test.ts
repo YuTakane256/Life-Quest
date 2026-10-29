@@ -348,6 +348,7 @@ describe('Mobile auth reward authority', () => {
         const stop = startAuthSessionListener();
         state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
         expect(getGameRewardAuthorityState()).toBe('resolving');
+        await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
         await expect(updatePasswordFromRecovery('secret1')).resolves.toEqual({ ok: true });
         expect(state.updateUser).toHaveBeenCalledWith({ password: 'secret1' });
         expect(getGameRewardAuthorityState()).toBe('authenticated');

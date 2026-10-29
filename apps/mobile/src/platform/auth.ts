@@ -105,8 +105,35 @@ async function hydrateMobileRecoveryGate(): Promise<boolean> {
 }
 
 let sessionGeneration = 0;
+let recoveryCallbackGeneration = 0;
+let recoveryTeardown: Promise<void> = Promise.resolve();
+
+/** Invalidate the old worker scope synchronously; duplicate SDK events share its cleanup barrier. */
+function pauseMobileCloudForRecovery(): Promise<void> {
+    beginMobileCloudSessionCheck();
+    setGameRewardAuthorityState('resolving');
+    setPasswordRecoveryState('idle');
+    detachPendingRewardOperations({ suppressAnonymousRecovery: true });
+    const stopping = captureAuthSessionScope().userId !== null ? notifyLogout() : Promise.resolve();
+    recoveryTeardown = Promise.all([recoveryTeardown, stopping]).then(() => undefined);
+    return recoveryTeardown;
+}
+
+function receiveMobileRecoverySession(): void {
+    const generation = ++sessionGeneration;
+    const current = () => generation === sessionGeneration;
+    void pauseMobileCloudForRecovery().then(async () => {
+        if (!current()) return;
+        const persisted = mobileRecoveryGate || await persistMobileRecoveryGate(true);
+        if (!current()) return;
+        if (persisted) setPasswordRecoveryState('ready');
+        else { recoveryGateHydrationFailed = true; setPasswordRecoveryState('invalid'); }
+    });
+}
+
 async function activateMobileSession(userId: string): Promise<boolean> {
     const generation = ++sessionGeneration;
+    recoveryCallbackGeneration += 1;
     const current = () => generation === sessionGeneration;
     beginMobileCloudSessionCheck();
     setGameRewardAuthorityState('resolving');
@@ -127,7 +154,7 @@ async function activateMobileSession(userId: string): Promise<boolean> {
     return true;
 }
 
-async function finishMobileAnonymousSession(): Promise<void> {
+async function finishMobileAnonymousSession(): Promise<number> {
     const generation = ++sessionGeneration;
     const current = () => generation === sessionGeneration;
     beginMobileCloudSessionCheck();
@@ -136,6 +163,7 @@ async function finishMobileAnonymousSession(): Promise<void> {
         finishMobileCloudSessionCheck();
         setGameRewardAuthorityState('anonymous');
     }
+    return generation;
 }
 
 function protectedCacheFailure(): AuthResult {
@@ -250,17 +278,27 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
     if (password.length < 6) return { ok: false, message: 'パスワードは6文字以上で入力してください。' };
     const client = getMobileSupabaseClient();
     if (!client) return notConfigured();
+    const generation = sessionGeneration;
+    const current = () => generation === sessionGeneration;
+    await recoveryTeardown;
+    if (!current() || passwordRecoveryState !== 'ready') return genericAuthFailure();
+    const before = await client.auth.getSession();
+    if (!current() || before.error || !before.data.session) return genericAuthFailure();
+    const owner = before.data.session.user.id;
     const { error } = await client.auth.updateUser({ password });
+    if (!current()) return genericAuthFailure();
     if (error) {
         setPasswordRecoveryState('invalid');
         return { ok: false, message: 'このリンクは無効または期限切れです。パスワードを再設定してください。' };
     }
+    const { data, error: sessionError } = await client.auth.getSession();
+    if (!current() || sessionError || data.session?.user.id !== owner) return genericAuthFailure();
     if (!await persistMobileRecoveryGate(false)) {
         setPasswordRecoveryState('invalid');
         return genericAuthFailure();
     }
+    if (!current()) return genericAuthFailure();
     setPasswordRecoveryState('idle');
-    const { data } = await client.auth.getSession();
     if (data.session) {
         if (!await activateMobileSession(data.session.user.id)) return protectedCacheFailure();
     }
@@ -271,17 +309,25 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
 export async function cancelPasswordRecovery(): Promise<AuthResult> {
     const client = getMobileSupabaseClient();
     if (!client) return notConfigured();
+    const generation = ++sessionGeneration;
+    recoveryCallbackGeneration += 1;
+    await recoveryTeardown;
+    if (generation !== sessionGeneration) return genericAuthFailure();
     suppressRecoverySignOut = true;
     try {
         const { error } = await client.auth.signOut({ scope: 'local' });
+        if (generation !== sessionGeneration) return genericAuthFailure();
         if (error) return { ok: false, message: 'ログアウトを完了できませんでした。接続を確認してもう一度お試しください。' };
         detachPendingRewardOperations({ suppressAnonymousRecovery: true });
         await notifyLogout();
-        await finishMobileAnonymousSession();
+        if (generation !== sessionGeneration) return genericAuthFailure();
+        const anonymousGeneration = await finishMobileAnonymousSession();
+        if (anonymousGeneration !== sessionGeneration) return genericAuthFailure();
         if (!await persistMobileRecoveryGate(false)) {
             setPasswordRecoveryState('invalid');
             return genericAuthFailure();
         }
+        if (anonymousGeneration !== sessionGeneration) return genericAuthFailure();
         setPasswordRecoveryState('idle');
         return { ok: true };
     } catch {
@@ -326,9 +372,14 @@ export async function handleMobileAuthCallbackUrl(url: string): Promise<void> {
     const code = params.get('code');
     if (!code || processedRecoveryUrls.has(url)) return;
     processedRecoveryUrls.add(url);
+    const callbackGeneration = isRecoveryCallback ? ++recoveryCallbackGeneration : 0;
+    const currentCallback = () => !isRecoveryCallback || callbackGeneration === recoveryCallbackGeneration;
     try {
         if (isRecoveryCallback) {
             recoveryCallbackInProgress = true;
+            sessionGeneration += 1;
+            await pauseMobileCloudForRecovery();
+            if (!currentCallback()) return;
             if (!await persistMobileRecoveryGate(true)) {
                 recoveryGateHydrationFailed = true;
                 setPasswordRecoveryState('invalid');
@@ -336,15 +387,18 @@ export async function handleMobileAuthCallbackUrl(url: string): Promise<void> {
             }
         }
         const result = await client.auth.exchangeCodeForSession(code);
+        if (!currentCallback()) return;
         if (result?.error) {
             if (isRecoveryCallback) setPasswordRecoveryState('invalid');
         } else if (result?.data.session && isRecoveryCallback) {
+            await recoveryTeardown;
+            if (!currentCallback() || !mobileRecoveryGate) return;
             setPasswordRecoveryState('ready');
         }
     } catch {
-        setPasswordRecoveryState('invalid');
+        if (currentCallback()) setPasswordRecoveryState('invalid');
     } finally {
-        recoveryCallbackInProgress = false;
+        if (currentCallback()) recoveryCallbackInProgress = false;
     }
 }
 
@@ -506,31 +560,18 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
         return;
     }
     if (recoveryGateHydrationFailed) {
+        if (session) void pauseMobileCloudForRecovery();
         setPasswordRecoveryState('invalid');
         return;
     }
     if (event === 'PASSWORD_RECOVERY' && session) {
-        sessionGeneration += 1;
-        beginMobileCloudSessionCheck();
         recoveryCallbackInProgress = false;
-        if (mobileRecoveryGate) {
-            setPasswordRecoveryState('ready');
-        } else {
-            void persistMobileRecoveryGate(true).then((persisted) => {
-                if (persisted) setPasswordRecoveryState('ready');
-                else {
-                    recoveryGateHydrationFailed = true;
-                    setPasswordRecoveryState('invalid');
-                }
-            });
-        }
+        receiveMobileRecoverySession();
         return;
     }
     if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
         if (recoveryCallbackInProgress || mobileRecoveryGate || passwordRecoveryState === 'ready') {
-            sessionGeneration += 1;
-            beginMobileCloudSessionCheck();
-            setPasswordRecoveryState('ready');
+            receiveMobileRecoverySession();
             return;
         }
         void activateMobileSession(session.user.id);
@@ -547,6 +588,8 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
     }
     if (event === 'SIGNED_OUT') {
         if (suppressRecoverySignOut) return;
+        recoveryCallbackGeneration += 1;
+        if (mobileRecoveryGate || passwordRecoveryState === 'ready') setPasswordRecoveryState('invalid');
         detachPendingRewardOperations({ suppressAnonymousRecovery: true });
         const generation = ++sessionGeneration;
         beginMobileCloudSessionCheck();
@@ -559,6 +602,7 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
 
 /** アプリ起動時に呼ぶ。復旧ゲートの復元後にのみ通常セッションを有効化する。 */
 export function startAuthSessionListener(): () => void {
+    setPasswordRecoveryState('idle');
     beginMobileCloudSessionCheck();
     const client = getMobileSupabaseClient();
     if (!client) {
@@ -575,6 +619,7 @@ export function startAuthSessionListener(): () => void {
         if (!active) return;
         if (!hydrated) {
             deferredAuthEvent = null;
+            void pauseMobileCloudForRecovery();
             setPasswordRecoveryState('invalid');
             return;
         }
@@ -585,6 +630,7 @@ export function startAuthSessionListener(): () => void {
     return () => {
         active = false;
         sessionGeneration += 1;
+        recoveryCallbackGeneration += 1;
         data.subscription.unsubscribe();
     };
 }

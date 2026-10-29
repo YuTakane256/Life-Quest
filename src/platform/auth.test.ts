@@ -50,6 +50,7 @@ vi.mock('./supabase', () => ({
 }));
 
 vi.mock('@life-quest/core/authLifecycle', () => ({
+    captureAuthSessionScope: () => ({ userId: null }),
     notifyLogin: state.notifyLogin,
     notifyLogout: state.notifyLogout,
 }));
@@ -262,9 +263,10 @@ describe('Web auth pending reward ownership', () => {
         const stop = startAuthSessionListener();
         try {
             state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
-            expect(getPasswordRecoveryState()).toBe('ready');
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
             state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
             expect(getGameRewardAuthorityState()).toBe('resolving');
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
             await expect(updatePasswordFromRecovery('secret1')).resolves.toEqual({ ok: true });
             expect(state.updateUser).toHaveBeenCalledWith({ password: 'secret1' });
             expect(getGameRewardAuthorityState()).toBe('authenticated');
@@ -286,12 +288,12 @@ describe('Web auth pending reward ownership', () => {
         }
     });
 
-    it('永続された復旧ゲートは初期セッションを通常ログインとして処理しない', () => {
+    it('永続された復旧ゲートは初期セッションを通常ログインとして処理しない', async () => {
         localStorage.setItem('life-quest:auth:recovery-pending:v1', '1');
         const stop = startAuthSessionListener();
         try {
             state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
-            expect(getPasswordRecoveryState()).toBe('ready');
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
             expect(getGameRewardAuthorityState()).toBe('resolving');
         } finally {
             stop();
@@ -315,6 +317,7 @@ describe('Web auth pending reward ownership', () => {
         const stop = startAuthSessionListener();
         try {
             state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
             state.signOut.mockResolvedValueOnce({ error: new Error('offline') } as never);
             await expect(cancelPasswordRecovery()).resolves.toMatchObject({ ok: false });
             expect(getPasswordRecoveryState()).toBe('ready');
