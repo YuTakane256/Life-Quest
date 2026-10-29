@@ -1,7 +1,8 @@
 /**
  * Mobileの認証サービス（#503、メール認証のみ）。Webの src/platform/auth.ts と同型。
  */
-import { notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
+import { beginMobileCloudSessionCheck, checkMobileCloudSessionOwner, finishMobileCloudSessionCheck, getMobileCloudRecoveryState, isMobileCloudSessionAccepted } from './cloudSessionRecovery';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type { BattleAuthState } from '@life-quest/core/battleStartPolicy';
 import { getMobileSupabaseClient } from './supabase';
@@ -103,16 +104,51 @@ async function hydrateMobileRecoveryGate(): Promise<boolean> {
     }
 }
 
+let sessionGeneration = 0;
+async function activateMobileSession(userId: string): Promise<boolean> {
+    const generation = ++sessionGeneration;
+    const current = () => generation === sessionGeneration;
+    beginMobileCloudSessionCheck();
+    setGameRewardAuthorityState('resolving');
+    const previousOwner = captureAuthSessionScope().userId;
+    if (previousOwner !== null && previousOwner !== userId) {
+        // Stop A's workers before any of them can use the SDK's new B session.
+        // A cold start has no active scope: its retained display must stay protected.
+        await notifyLogout();
+        if (!current()) return false;
+    }
+    if (!await checkMobileCloudSessionOwner(userId, current) || !current()) return false;
+    await restorePendingRewardOperations(userId).catch(() => undefined);
+    if (!current()) return false;
+    await notifyLogin(userId);
+    if (!current()) return false;
+    finishMobileCloudSessionCheck();
+    setGameRewardAuthorityState('authenticated');
+    return true;
+}
+
+async function finishMobileAnonymousSession(): Promise<void> {
+    const generation = ++sessionGeneration;
+    const current = () => generation === sessionGeneration;
+    beginMobileCloudSessionCheck();
+    setGameRewardAuthorityState('resolving');
+    if (await checkMobileCloudSessionOwner(null, current) && current()) {
+        finishMobileCloudSessionCheck();
+        setGameRewardAuthorityState('anonymous');
+    }
+}
+
+function protectedCacheFailure(): AuthResult {
+    return { ok: false, message: '保存データを保護しています。以前と同じアカウントでログインしてください。保存領域のエラーがある場合は、空き容量や端末の状態を確認してください。' };
+}
+
 export async function signUpWithEmail(email: string, password: string): Promise<AuthResult> {
     const client = getMobileSupabaseClient();
     if (!client) return notConfigured();
     const { data, error } = await client.auth.signUp({ email, password, options: { emailRedirectTo: mobileEmailVerificationRedirectUrl } });
     if (error) return genericAuthFailure();
     if (data.session && data.user) {
-        setGameRewardAuthorityState('resolving');
-        await restorePendingRewardOperations(data.user.id).catch(() => undefined);
-        await notifyLogin(data.user.id);
-        setGameRewardAuthorityState('authenticated');
+        if (!await activateMobileSession(data.user.id)) return protectedCacheFailure();
     }
     return { ok: true, emailVerificationPending: Boolean(data.user && !data.session) };
 }
@@ -123,10 +159,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
     const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) return genericAuthFailure();
     if (data.user) {
-        setGameRewardAuthorityState('resolving');
-        await restorePendingRewardOperations(data.user.id).catch(() => undefined);
-        await notifyLogin(data.user.id);
-        setGameRewardAuthorityState('authenticated');
+        if (!await activateMobileSession(data.user.id)) return protectedCacheFailure();
     }
     return { ok: true };
 }
@@ -229,10 +262,7 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
     setPasswordRecoveryState('idle');
     const { data } = await client.auth.getSession();
     if (data.session) {
-        setGameRewardAuthorityState('resolving');
-        await restorePendingRewardOperations(data.session.user.id).catch(() => undefined);
-        await notifyLogin(data.session.user.id);
-        setGameRewardAuthorityState('authenticated');
+        if (!await activateMobileSession(data.session.user.id)) return protectedCacheFailure();
     }
     return { ok: true };
 }
@@ -247,7 +277,7 @@ export async function cancelPasswordRecovery(): Promise<AuthResult> {
         if (error) return { ok: false, message: 'ログアウトを完了できませんでした。接続を確認してもう一度お試しください。' };
         detachPendingRewardOperations({ suppressAnonymousRecovery: true });
         await notifyLogout();
-        setGameRewardAuthorityState('anonymous');
+        await finishMobileAnonymousSession();
         if (!await persistMobileRecoveryGate(false)) {
             setPasswordRecoveryState('invalid');
             return genericAuthFailure();
@@ -414,7 +444,7 @@ export async function signOutUser(): Promise<AuthResult> {
         setPasswordRecoveryState('invalid');
         return genericAuthFailure();
     }
-    setGameRewardAuthorityState('anonymous');
+    await finishMobileAnonymousSession();
     return { ok: true };
 }
 
@@ -449,6 +479,7 @@ export async function getCurrentUser(): Promise<AuthUserInfo | null> {
     if (!client) return null;
     const { data } = await client.auth.getSession();
     if (!data.session) return null;
+    if (getMobileCloudRecoveryState() !== 'ready' && !isMobileCloudSessionAccepted(data.session.user.id)) return null;
     return { userId: data.session.user.id, email: data.session.user.email ?? null };
 }
 
@@ -459,6 +490,7 @@ export async function getBattleAuthState(): Promise<BattleAuthState> {
     try {
         const { data, error } = await client.auth.getSession();
         if (error) return { kind: 'unavailable' };
+        if (getMobileCloudRecoveryState() !== 'ready' && (!data.session || !isMobileCloudSessionAccepted(data.session.user.id))) return { kind: 'unavailable' };
         return data.session ? { kind: 'authenticated', userId: data.session.user.id } : { kind: 'anonymous' };
     } catch {
         return { kind: 'unavailable' };
@@ -478,6 +510,8 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
         return;
     }
     if (event === 'PASSWORD_RECOVERY' && session) {
+        sessionGeneration += 1;
+        beginMobileCloudSessionCheck();
         recoveryCallbackInProgress = false;
         if (mobileRecoveryGate) {
             setPasswordRecoveryState('ready');
@@ -494,13 +528,12 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
     }
     if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
         if (recoveryCallbackInProgress || mobileRecoveryGate || passwordRecoveryState === 'ready') {
+            sessionGeneration += 1;
+            beginMobileCloudSessionCheck();
             setPasswordRecoveryState('ready');
             return;
         }
-        setGameRewardAuthorityState('resolving');
-        void restorePendingRewardOperations(session.user.id).catch(() => undefined)
-            .then(() => notifyLogin(session.user.id))
-            .then(() => setGameRewardAuthorityState('authenticated'));
+        void activateMobileSession(session.user.id);
         return;
     }
     if (event === 'INITIAL_SESSION' && !session) {
@@ -509,23 +542,28 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
             return;
         }
         detachPendingRewardOperations();
-        setGameRewardAuthorityState('anonymous');
+        void finishMobileAnonymousSession();
         return;
     }
     if (event === 'SIGNED_OUT') {
         if (suppressRecoverySignOut) return;
         detachPendingRewardOperations({ suppressAnonymousRecovery: true });
-        setGameRewardAuthorityState('anonymous');
-        void notifyLogout();
+        const generation = ++sessionGeneration;
+        beginMobileCloudSessionCheck();
+        setGameRewardAuthorityState('resolving');
+        void notifyLogout().then(() => {
+            if (generation === sessionGeneration) void finishMobileAnonymousSession();
+        });
     }
 }
 
 /** アプリ起動時に呼ぶ。復旧ゲートの復元後にのみ通常セッションを有効化する。 */
 export function startAuthSessionListener(): () => void {
+    beginMobileCloudSessionCheck();
     const client = getMobileSupabaseClient();
     if (!client) {
-        setGameRewardAuthorityState('anonymous');
-        return () => {};
+        void finishMobileAnonymousSession();
+        return () => { sessionGeneration += 1; };
     }
     let active = true;
     recoveryGateHydrated = false;
@@ -546,6 +584,7 @@ export function startAuthSessionListener(): () => void {
     });
     return () => {
         active = false;
+        sessionGeneration += 1;
         data.subscription.unsubscribe();
     };
 }

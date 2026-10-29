@@ -14,6 +14,7 @@ import {
     createEmptyCloudCache,
     loadCloudCache,
     persistCloudCache,
+    getSeedableSections,
     type CloudCache,
 } from '@life-quest/core/cloudCache';
 import {
@@ -29,6 +30,7 @@ import {
     type CloudSyncPublicState,
 } from '@life-quest/core/cloudSyncState';
 import { markCloudSessionSeeded } from './authStores';
+import { rememberMobileCloudDisplayOwner } from './cloudSessionRecovery';
 import {
     drainOutboxAndWait,
     getMobileCloudOutboxState,
@@ -94,7 +96,10 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         publish();
     });
 
-    const seedStores = (): void => {
+    const seedStores = async (): Promise<void> => {
+        if (!isCurrent()) return;
+        if (!Object.values(getSeedableSections(cache)).some(Boolean)) return;
+        await rememberMobileCloudDisplayOwner(userId, isCurrent);
         if (!isCurrent()) return;
         if (applyCloudCacheToMobileStores(cache) && isCurrent()) {
             markCloudSessionSeeded();
@@ -115,7 +120,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
             if (!isCurrent()) return;
             cache = applyPullBatchToCache(cache, batch);
             await persistCloudCache(AsyncStorage, userId, cache, isCurrent);
-            seedStores();
+            await seedStores();
         },
         readCursor: async () => {
             const raw = await AsyncStorage.getItem(cloudCursorKey(userId));
@@ -200,7 +205,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         if (!isCurrent()) return;
         // 前回セッションの保留操作があるなら、古いキャッシュで楽観更新を
         // 上書きしない。送信成功後にだけキャッシュを適用する。
-        if (await recoverConnection()) seedStores();
+        if (await recoverConnection()) await seedStores();
     })().catch(() => undefined);
 
     publish();

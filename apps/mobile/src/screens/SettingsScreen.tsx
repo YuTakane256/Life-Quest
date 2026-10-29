@@ -78,7 +78,7 @@ async function readStorageSummary(): Promise<StorageSummary> {
     };
 }
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ recoveryOnly = false }: { recoveryOnly?: boolean } = {}) {
     const configured = readMobileSupabaseEnv() !== null;
     const themeMode = useMobileSettingsStore((state) => state.themeMode);
     const setThemeMode = useMobileSettingsStore((state) => state.setThemeMode);
@@ -314,14 +314,15 @@ export default function SettingsScreen() {
     const handleDelete = () => { if (!authBusy && !importing) void deletion.submit(deleteState.confirmation, deleteText); };
 
     return (
-        <SafeAreaView edges={TAB_SCREEN_EDGES} style={styles.safeArea}>
+        <SafeAreaView edges={recoveryOnly ? ['top', 'bottom', 'left', 'right'] : TAB_SCREEN_EDGES} style={styles.safeArea}>
             <ScrollView contentContainerStyle={styles.scroll}>
                 <View style={styles.header}>
-                    <Text style={styles.title}>設定</Text>
+                    <Text style={styles.title}>{recoveryOnly ? '保存データを保護しています' : '設定'}</Text>
                 </View>
 
                 <View style={styles.stack}>
                     <Card title="アカウント" styles={styles}>
+                        {recoveryOnly && <Text accessibilityRole="alert" style={styles.hint}>以前のクラウドデータを保持しています。同じアカウントで再ログインすると再開できます。確認が完了するまで、タスクの変更・報酬の獲得・別アカウントへの取り込みは行いません。</Text>}
                         <Text style={styles.hint}>WebとMobileで同じデータを使います</Text>
                         {!configured ? (
                             <Text style={styles.mutedText}>
@@ -457,14 +458,14 @@ export default function SettingsScreen() {
                                     >
                                         <Text style={styles.primaryButtonText}>{mode === 'signIn' ? 'ログイン' : mode === 'signUp' ? '新規登録' : '再設定メールを送る'}</Text>
                                     </Pressable>
-                                    <Pressable
+                                    {(!recoveryOnly || mode !== 'signIn') && <Pressable
                                         accessibilityRole="button"
                                         accessibilityLabel={mode === 'signIn' ? '新規登録へ切り替える' : 'ログインへ切り替える'}
                                         onPress={() => { setMode(mode === 'signIn' ? 'signUp' : 'signIn'); setPassword(''); setPasswordConfirmation(''); }}
                                         hitSlop={8}
                                     >
                                         <Text style={styles.linkText}>{mode === 'signIn' ? 'アカウントを作る' : 'ログインへ戻る'}</Text>
-                                    </Pressable>
+                                    </Pressable>}
                                     {mode === 'signIn' && <Pressable accessibilityRole="button" accessibilityLabel="パスワードを忘れた場合" onPress={() => { setMode('passwordReset'); setPassword(''); setPasswordConfirmation(''); }} hitSlop={8}><Text style={styles.linkText}>パスワードを忘れた場合</Text></Pressable>}
                                 </View>
                             </View>
@@ -473,6 +474,7 @@ export default function SettingsScreen() {
                         {deleteState.message && <Text accessibilityRole="alert" style={styles.message}>{deleteState.message}</Text>}
                     </Card>
 
+                    {!recoveryOnly && <>
                     <Card title="同期" styles={styles}>
                         <Text
                             accessibilityRole={syncState.attention === 'required' ? 'alert' : undefined}
@@ -609,6 +611,7 @@ export default function SettingsScreen() {
                             <Metric label="クラウド関連" value={`${storageSummary.cloudKeyCount}`} styles={styles} />
                         </View>
                     </Card>
+                    </>}
                 </View>
             </ScrollView>
         </SafeAreaView>
