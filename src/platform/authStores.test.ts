@@ -20,6 +20,7 @@ import { applyCloudCacheToWebStores } from './cloudSync';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { flushCompletionRewardWrites, getCompletionRewardGeneration, resetCompletionRewardStorage, seedCloudCompletionRewardStorage } from './completionRewards';
 import { hasPendingBattleResult } from '@life-quest/core/battle';
+import { buildWebImportSnapshot } from './cloudMigration';
 
 function task(id: string) {
     return {
@@ -265,6 +266,41 @@ describe('expired cloud session cache isolation', () => {
         await flushCompletionRewardWrites();
     });
     afterEach(async () => { await flushCompletionRewardWrites(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+    it('有効Aの初回pull前に離れた場合も、永続cloud表示をBの移行元にしない', async () => {
+        const unregister = registerWebAuthStoreHooks();
+        const ownerQueueKey = 'life-quest:cloud:a:outbox:v1';
+        const ownerQueue = JSON.stringify({ ops: [{ opId: 'original-a', payload: { p_id: 'cloud-only' } }] });
+        localStorage.setItem(ownerQueueKey, ownerQueue);
+        try {
+            await notifyLogin('a'); // No markCloudSessionSeeded: first pull has not completed.
+            await notifyLogout();
+            await notifyLogin('b');
+            expect(buildWebImportSnapshot().tasks).toEqual([]);
+            expect(useGameStore.getState().character.totalXp).toBe(0);
+            expect(localStorage.getItem(ownerQueueKey)).toBe(ownerQueue);
+        } finally { unregister(); resetAuthLifecycleHooks(); }
+    });
+
+    it('所有者未復元のcold未認証ではcloudキャッシュを退避前に消さない', async () => {
+        const unregister = registerWebAuthStoreHooks();
+        try {
+            await notifyLogout();
+            expect(useTaskStore.getState().tasks.map((value) => value.id)).toEqual(['cloud-only']);
+            expect(useGameStore.getState().character.totalXp).toBe(110);
+        } finally { unregister(); resetAuthLifecycleHooks(); }
+    });
+
+    it('認証済みでもcloud未反映の匿名移行元は保持する', async () => {
+        resetCompletionRewardStorage(() => useGameStore.setState({ completionRewardKeys: ['local-paid'] }));
+        await flushCompletionRewardWrites();
+        const unregister = registerWebAuthStoreHooks();
+        try {
+            await notifyLogin('a'); await notifyLogout();
+            expect(useTaskStore.getState().tasks.map((value) => value.id)).toEqual(['cloud-only']);
+            expect(useGameStore.getState().character.totalXp).toBe(110);
+        } finally { unregister(); resetAuthLifecycleHooks(); }
+    });
 
     it('archives cloud data before starting fresh anonymous progress, which survives reload', async () => {
         const oldGame = localStorage.getItem('quest-board-game');

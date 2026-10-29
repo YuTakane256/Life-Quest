@@ -134,7 +134,7 @@ function receiveMobileRecoverySession(): void {
     const current = () => generation === sessionGeneration;
     void pauseMobileCloudForRecovery().then(async () => {
         if (!current()) return;
-        const persisted = mobileRecoveryGate || await persistMobileRecoveryGate(true, current);
+        const persisted = await persistMobileRecoveryGate(true, current);
         if (!current()) return;
         if (persisted) setPasswordRecoveryState('ready');
         else { recoveryGateHydrationFailed = true; setPasswordRecoveryState('invalid'); }

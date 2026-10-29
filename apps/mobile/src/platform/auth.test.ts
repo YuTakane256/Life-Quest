@@ -425,6 +425,33 @@ describe('Mobile auth reward authority', () => {
         } finally { finish(); stop(); }
     });
 
+    it('旧パスワード更新のフラグ削除待機中に来た新しい復旧セッションも永続化する', async () => {
+        let finish!: () => void;
+        const removed = new Promise<void>((resolve) => { finish = resolve; });
+        let stop = startAuthSessionListener();
+        try {
+            state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
+            vi.mocked(AsyncStorage.removeItem).mockImplementationOnce(async () => {
+                await removed; state.recoveryGate = null;
+            });
+            const saving = updatePasswordFromRecovery('secret1');
+            await vi.waitFor(() => expect(AsyncStorage.removeItem).toHaveBeenCalledOnce());
+            state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-new' } });
+            await Promise.resolve(); await Promise.resolve();
+            expect(getPasswordRecoveryState()).not.toBe('ready');
+            finish();
+            expect(await saving).toMatchObject({ ok: false });
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
+            expect(state.recoveryGate).toBe('1');
+            stop(); stop = startAuthSessionListener();
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-new' } });
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+        } finally { finish(); stop(); }
+    });
+
     it('永続された復旧ゲートは再起動時の初期セッションを通常ログインとして処理しない', async () => {
         state.recoveryGate = '1';
         const stop = startAuthSessionListener();
