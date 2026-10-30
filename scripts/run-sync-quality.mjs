@@ -37,6 +37,7 @@ const unitFiles = [
     'packages/core/src/syncOutbox.test.ts',
     'packages/core/src/cloudOutboxSession.test.ts',
     'src/platform/cloudSyncSession.test.ts',
+    'src/platform/cloudSyncRecoveryOrdering.test.ts',
     'src/components/ui/CloudSyncSettings.test.tsx',
     'src/platform/cloudOutboxTransport.test.ts',
     'src/platform/taskCompletionSession.test.ts',

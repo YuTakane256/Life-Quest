@@ -2,8 +2,7 @@
  * Mobileのクラウド同期v1（#504、ADR-008/009）。Web版（src/platform/cloudSync.ts）と同型。
  *
  * 保険プルトリガ: 起動 / AppState active復帰 / 定期5分（activeの間のみ）。
- * ネットワーク再接続トリガはAppState復帰で大半が拾えるため、
- * NetInfoによる明示検知はオフラインキュー（#505）と同時に導入する。
+ * NetInfoの再接続通知でも、未送信操作の処理後に受信する。
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
@@ -78,6 +77,12 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     const generation = ++cloudSyncGeneration;
     const isAuthSessionCurrent = captureAuthSessionGuard();
     const isCurrent = (): boolean => !stopped && generation === cloudSyncGeneration && isAuthSessionCurrent();
+    // 保存カーソルだけでは、このハンドルのキャッシュが全行を持つと保証できない。
+    // Webと同様、起動時は0から再構築し、実際に反映した差分だけ進める。
+    let appliedCursor = 0;
+    const cacheReady = loadCloudCache(AsyncStorage, userId).then((restored) => {
+        if (isCurrent()) cache = restored;
+    }).catch(() => { /* 保存領域が復帰すれば、全件pullからキャッシュを再構築できる。 */ });
     let pushState = getMobileCloudOutboxState();
     let online: boolean | null = null;
     let manualSync: Promise<void> | null = null;
@@ -123,12 +128,13 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
             await seedStores();
         },
         readCursor: async () => {
-            const raw = await AsyncStorage.getItem(cloudCursorKey(userId));
-            const cursor = raw === null ? 0 : Number(raw);
-            return Number.isFinite(cursor) && cursor >= 0 ? cursor : 0;
+            // 起動時の遅い読込が、手動/Realtime受信の新しい結果を上書きしない。
+            await cacheReady;
+            return appliedCursor;
         },
         writeCursor: async (cursor) => {
             if (!isCurrent()) return;
+            appliedCursor = cursor;
             await AsyncStorage.setItem(cloudCursorKey(userId), String(cursor));
         },
     });
@@ -150,11 +156,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         }
     };
 
-    const scheduler = createInsurancePullScheduler({
-        requestPull: () => { void pullNow().catch(() => undefined); },
-    });
-
-    // 再接続時は、古いクラウド状態をpullする前にローカルの保留操作を送る。
+    // 全ての自動トリガで、古いクラウド状態をpullする前に保留操作を送る。
     const recoverConnection = async (): Promise<boolean> => {
         if (!isCurrent()) return false;
         const { retryablePending } = await drainOutboxAndWait();
@@ -170,12 +172,16 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         return isCurrent();
     };
 
+    const scheduler = createInsurancePullScheduler({
+        requestPull: () => { void recoverConnection().catch(() => undefined); },
+    });
+
     const channel = client
         .channel(`cloud-sync-${userId}`)
         .on(
             'postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'sync_versions', filter: `user_id=eq.${userId}` },
-            () => { void pullNow().catch(() => undefined); },
+            () => { void recoverConnection().catch(() => undefined); },
         )
         .subscribe();
 
@@ -201,7 +207,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
 
     // 起動: まずキャッシュから復元（オフラインでも表示）→ 初回プル
     void (async () => {
-        cache = await loadCloudCache(AsyncStorage, userId);
+        await cacheReady;
         if (!isCurrent()) return;
         // 前回セッションの保留操作があるなら、古いキャッシュで楽観更新を
         // 上書きしない。送信成功後にだけキャッシュを適用する。
