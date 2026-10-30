@@ -1,5 +1,8 @@
 # セキュリティの確認範囲と残課題（2026-10-30）
 
+2026-10-31追記: [Metroの画像解析依存の除去](metro-image-security-20261031.md)でimage-sizeのHigh警告を解消。
+以下の監査表は10月30日時点の記録で、最新は全依存Critical 0 / High 6 / Low 8。残課題は#871で継続する。
+
 計画④ [#699](https://github.com/YuTakane256/Life-Quest/issues/699) の途中で、認証・権限・秘密値・依存を確認した。
 今回の修正は [#870](https://github.com/YuTakane256/Life-Quest/issues/870)、残る依存/実環境設定は [#871](https://github.com/YuTakane256/Life-Quest/issues/871) で追跡する。
 **基本的な防御はあるが、本番運用の安全性を保証する監査ではない。漏洩履歴や実運用の侵害有無を調査した記録でもない。**
