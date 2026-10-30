@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import indexHtml from '../../index.html?raw';
+import { WEB_RESPONSE_SECURITY_HEADERS } from './webSecurityPolicy';
 
 function getMetaContent(attribute: string, value: string): string {
     const pattern = new RegExp(
@@ -31,7 +32,9 @@ describe('app shell security policy', () => {
         expect(policy.get('script-src')).toEqual(["'self'"]);
         expect(policy.get('object-src')).toEqual(["'none'"]);
         expect(policy.get('frame-src')).toEqual(["'none'"]);
-        expect(policy.get('frame-ancestors')).toEqual(["'none'"]);
+        // This directive is effective only in an HTTP response header.
+        expect(policy.has('frame-ancestors')).toBe(false);
+        expect(WEB_RESPONSE_SECURITY_HEADERS['Content-Security-Policy']).toBe("frame-ancestors 'none'");
         expect(policy.get('form-action')).toEqual(["'none'"]);
         expect(policy.get('base-uri')).toEqual(["'self'"]);
         expect(policy.get('connect-src')).toEqual(["'self'"]);
@@ -46,7 +49,8 @@ describe('app shell security policy', () => {
 
     it('keeps referrer and permissions policies locked down', () => {
         expect(getMetaContent('name', 'referrer')).toBe('strict-origin-when-cross-origin');
-        expect(getMetaContent('http-equiv', 'Permissions-Policy')).toBe(
+        expect(getMetaContent('http-equiv', 'Permissions-Policy')).toBe('');
+        expect(WEB_RESPONSE_SECURITY_HEADERS['Permissions-Policy']).toBe(
             'camera=(), microphone=(), geolocation=(), payment=(), usb=(), clipboard-read=(), clipboard-write=(self)',
         );
     });
