@@ -1,5 +1,12 @@
 import type { Plugin } from 'vite';
 import { isIP } from 'node:net';
+import { containsServerCredential } from './check-service-role.mjs';
+
+export function assertPublicSupabaseKey(value: string | undefined): void {
+    if (value && containsServerCredential(value)) {
+        throw new Error('VITE_SUPABASE_ANON_KEY contains a server-only credential (value hidden).');
+    }
+}
 
 /** Permit only the configured Supabase origin and its Realtime WebSocket origin. */
 export function supabaseConnectSources(value: string | undefined): string[] {
@@ -34,6 +41,7 @@ export function supabaseCspPlugin(): Plugin {
         name: 'life-quest-supabase-csp',
         configResolved(config) {
             // Resolved env respects envDir=false in the isolated staging config.
+            assertPublicSupabaseKey(config.env.VITE_SUPABASE_ANON_KEY);
             sources = supabaseConnectSources(config.env.VITE_SUPABASE_URL);
         },
         transformIndexHtml(html) { return applySupabaseConnectPolicy(html, sources); },
