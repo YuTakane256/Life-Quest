@@ -11,7 +11,8 @@ function runReleaseValidation(environment: Record<string, string>): ReturnType<t
 
 describe('mobile release configuration validation', () => {
     it('rejects a public Supabase secret key injected through the environment', () => {
-        const result = runReleaseValidation({ EXPO_PUBLIC_SUPABASE_ANON_KEY: 'sb_secret_not-for-mobile' });
+        const syntheticSecret = ['sb', 'secret', 'not-for-mobile'].join('_');
+        const result = runReleaseValidation({ EXPO_PUBLIC_SUPABASE_ANON_KEY: syntheticSecret });
         expect(result.status).not.toBe(0);
         expect(result.stderr).toContain('sb_secret_*');
     });

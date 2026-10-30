@@ -19,6 +19,10 @@ pnpm-debug.log*
 # エディタ / OS が生成するファイル
 .DS_Store
 *.local
+.env
+.env.*
+!.env.example
+!.env.*.example
 .idea/
 .vscode/*
 !.vscode/extensions.json
