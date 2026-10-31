@@ -123,7 +123,10 @@ import {
 } from './auth';
 
 describe('Mobile auth reward authority', () => {
-    afterEach(() => {
+    afterEach(async () => {
+        // Clear the retained recovery intent through the normal cancellation contract.
+        state.storageReadError = false; state.storageWriteError = false;
+        await cancelPasswordRecovery(); consumeAnonymousRecoverySuppression();
         state.listener = null;
         state.scopeOwner = null;
         setGameRewardAuthorityState('anonymous');
@@ -133,6 +136,162 @@ describe('Mobile auth reward authority', () => {
         clearPasswordRecoveryState();
         vi.clearAllMocks();
         state.checkCloudOwner.mockImplementation(async (_id, current = () => true) => current());
+    });
+
+    function delayedGate() {
+        let resolve!: (value: string | null) => void;
+        const promise = new Promise<string | null>((done) => { resolve = done; });
+        vi.mocked(AsyncStorage.getItem).mockImplementationOnce(() => promise);
+        return { resolve };
+    }
+    const settle = async () => { for (let n = 0; n < 40; n++) await Promise.resolve(); };
+
+    it('起動ゲート読込中の初期ログインをtoken更新やUSER_UPDATEDで失わない', async () => {
+        const gate = delayedGate(); const stop = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            state.listener?.('USER_UPDATED', { user: { id: 'user-1' } });
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+            gate.resolve(null);
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+            expect(state.notifyLogin).toHaveBeenCalledExactlyOnceWith('user-1');
+        } finally { gate.resolve(null); stop(); }
+    });
+
+    it('起動ゲート読込中のログアウトを遅いtoken更新で取り消さない', async () => {
+        const gate = delayedGate(); const stop = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
+            state.listener?.('SIGNED_OUT', null);
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            gate.resolve(null);
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('anonymous'));
+            expect(state.notifyLogin).not.toHaveBeenCalled(); expect(state.notifyLogout).toHaveBeenCalledTimes(1);
+        } finally { gate.resolve(null); stop(); }
+    });
+
+    it('起動中のPASSWORD_RECOVERYは後続SIGNED_INでも通常ログインへ置き換えない', async () => {
+        const gate = delayedGate(); const stop = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
+            state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            gate.resolve(null);
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
+            expect(state.notifyLogin).not.toHaveBeenCalled(); expect(state.recoveryGate).toBe('1');
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+        } finally { gate.resolve(null); stop(); }
+    });
+
+    it('停止済みSDK listenerの遅い通知を無視する', async () => {
+        const stop = startAuthSessionListener();
+        state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
+        await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+        const old = state.listener!; stop(); old('SIGNED_OUT', null); await settle();
+        expect(state.notifyLogout).not.toHaveBeenCalled(); expect(getGameRewardAuthorityState()).toBe('authenticated');
+    });
+
+    it('旧listenerの遅いゲート読込・通知は新listenerのBを変更しない', async () => {
+        const oldGate = delayedGate(); const stopOld = startAuthSessionListener(); const oldListener = state.listener!;
+        await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+        const newGate = delayedGate(); const stopNew = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalledTimes(2));
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-b' } }); newGate.resolve(null);
+            await vi.waitFor(() => expect(state.notifyLogin).toHaveBeenCalledWith('user-b'));
+            oldGate.resolve('1'); await settle(); oldListener('SIGNED_OUT', null); await settle();
+            expect(state.notifyLogout).not.toHaveBeenCalled();
+            expect(getGameRewardAuthorityState()).toBe('authenticated'); expect(getPasswordRecoveryState()).toBe('idle');
+        } finally { oldGate.resolve(null); newGate.resolve(null); stopOld(); stopNew(); }
+    });
+
+    it('匿名の初期通知もUSER_UPDATEDで失わない', async () => {
+        const gate = delayedGate(); const stop = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('INITIAL_SESSION', null); state.listener?.('USER_UPDATED', null);
+            gate.resolve(null);
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('anonymous'));
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+        } finally { gate.resolve(null); stop(); }
+    });
+
+    it('旧listenerの解除は新listenerの進行中の本人確認を無効化しない', async () => {
+        const oldGate = delayedGate(); const stopOld = startAuthSessionListener();
+        await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+        let ownerChecked!: (ok: boolean) => void;
+        state.checkCloudOwner.mockImplementationOnce(() => new Promise<boolean>((resolve) => { ownerChecked = resolve; }));
+        const stopNew = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-b' } });
+            await vi.waitFor(() => expect(state.checkCloudOwner).toHaveBeenCalled());
+            stopOld(); ownerChecked(true);
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+            expect(state.notifyLogin).toHaveBeenCalledExactlyOnceWith('user-b');
+        } finally { oldGate.resolve(null); stopOld(); stopNew(); }
+    });
+
+    it('起動中に届いた復旧意図を書き込めなければ通常ログインへ進まない', async () => {
+        const gate = delayedGate(); const stop = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
+            state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
+            state.storageWriteError = true; gate.resolve(null);
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('invalid'));
+            expect(state.notifyLogin).not.toHaveBeenCalled(); expect(getGameRewardAuthorityState()).toBe('resolving');
+        } finally { gate.resolve(null); stop(); }
+    });
+
+    it('復旧ゲートの保存待ち中のログアウトも最新状態として処理する', async () => {
+        const gate = delayedGate(); const stop = startAuthSessionListener();
+        let release!: () => void;
+        vi.mocked(AsyncStorage.setItem).mockImplementationOnce(async (_key, value) => {
+            await new Promise<void>((done) => { release = done; }); state.recoveryGate = value;
+        });
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-1' } }); gate.resolve(null);
+            await vi.waitFor(() => expect(AsyncStorage.setItem).toHaveBeenCalled());
+            state.listener?.('SIGNED_OUT', null); state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            release();
+            await vi.waitFor(() => expect(state.notifyLogout).toHaveBeenCalledTimes(1));
+            expect(state.notifyLogin).not.toHaveBeenCalled(); expect(getPasswordRecoveryState()).toBe('invalid');
+            expect(state.recoveryGate).toBe('1');
+        } finally { gate.resolve(null); release?.(); stop(); }
+    });
+
+    it('listenerを置き換えても読込前の復旧意図を失わない', async () => {
+        const oldGate = delayedGate(); const stopOld = startAuthSessionListener();
+        await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+        state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
+        const stopNew = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
+            stopOld(); oldGate.resolve(null); await settle();
+            expect(state.notifyLogin).not.toHaveBeenCalled(); expect(state.recoveryGate).toBe('1');
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+        } finally { oldGate.resolve(null); stopOld(); stopNew(); }
+    });
+
+    it('読込中にキャンセルしたゲートを古い1の読取結果で復活させない', async () => {
+        const gate = delayedGate(); const stop = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('INITIAL_SESSION', { user: { id: 'user-1' } });
+            await expect(cancelPasswordRecovery()).resolves.toEqual({ ok: true });
+            state.listener?.('SIGNED_OUT', null); gate.resolve('1');
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalledTimes(2));
+            await settle();
+            expect(state.recoveryGate).toBeNull(); expect(getPasswordRecoveryState()).toBe('idle');
+            expect(state.notifyLogin).not.toHaveBeenCalled(); expect(getGameRewardAuthorityState()).toBe('anonymous');
+        } finally { gate.resolve(null); stop(); }
     });
 
     it('TOKEN_REFRESHEDでresolvingへ戻さず、保留操作の再処理を招かない', async () => {

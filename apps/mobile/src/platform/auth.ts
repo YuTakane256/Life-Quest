@@ -31,10 +31,11 @@ let passwordRecoveryState: PasswordRecoveryState = 'idle';
 const passwordRecoveryListeners = new Set<(state: PasswordRecoveryState) => void>();
 let recoveryCallbackInProgress = false;
 let suppressRecoverySignOut = false;
-let recoveryGateHydrated = false;
 let recoveryGateHydrationFailed = false;
 let mobileRecoveryGate = false;
-let deferredAuthEvent: { event: string; session: { user: { id: string } } | null } | null = null;
+// Recovery intent survives listener replacement until a guarded write settles it.
+let mobileRecoveryIntent = false;
+let authListenerGeneration = 0;
 const processedRecoveryUrls = new Set<string>();
 // The browser result and Linking listener can receive the same deep link at the
 // same time. Keep the PKCE exchange single-flight and share its outcome.
@@ -90,6 +91,7 @@ function persistMobileRecoveryGate(pending: boolean, current: () => boolean = ()
             else await AsyncStorage.removeItem(mobileRecoveryGateKey);
             if (!current()) return false;
             mobileRecoveryGate = pending;
+            mobileRecoveryIntent = false;
             return true;
         } catch { return false; }
     });
@@ -97,16 +99,23 @@ function persistMobileRecoveryGate(pending: boolean, current: () => boolean = ()
     return work;
 }
 
-async function hydrateMobileRecoveryGate(): Promise<boolean> {
+async function hydrateMobileRecoveryGate(current: () => boolean): Promise<boolean> {
     try {
-        await recoveryGateWrites;
-        mobileRecoveryGate = (await AsyncStorage.getItem(mobileRecoveryGateKey)) === '1';
-        return true;
-    } catch {
-        recoveryGateHydrationFailed = true;
+        while (current()) {
+            const writes = recoveryGateWrites;
+            await writes;
+            if (!current()) return false;
+            const restored = await AsyncStorage.getItem(mobileRecoveryGateKey);
+            if (!current()) return false;
+            // A cancellation/recovery write may have completed during this read.
+            if (writes !== recoveryGateWrites) continue;
+            mobileRecoveryGate = mobileRecoveryIntent || restored === '1';
+            return true;
+        }
         return false;
-    } finally {
-        recoveryGateHydrated = true;
+    } catch {
+        if (current()) recoveryGateHydrationFailed = true;
+        return false;
     }
 }
 
@@ -130,6 +139,8 @@ function pauseMobileCloudForRecovery(): Promise<void> {
 }
 
 function receiveMobileRecoverySession(): void {
+    mobileRecoveryIntent = true;
+    mobileRecoveryGate = true;
     const generation = ++sessionGeneration;
     const current = () => generation === sessionGeneration;
     void pauseMobileCloudForRecovery().then(async () => {
@@ -569,10 +580,6 @@ export async function getBattleAuthState(): Promise<BattleAuthState> {
 export const getGameAuthState = getBattleAuthState;
 
 function applyMobileAuthEvent(event: string, session: { user: { id: string } } | null): void {
-    if (!recoveryGateHydrated) {
-        deferredAuthEvent = { event, session };
-        return;
-    }
     if (recoveryGateHydrationFailed) {
         if (session) void pauseMobileCloudForRecovery();
         setPasswordRecoveryState('invalid');
@@ -622,35 +629,78 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
 
 /** アプリ起動時に呼ぶ。復旧ゲートの復元後にのみ通常セッションを有効化する。 */
 export function startAuthSessionListener(): () => void {
+    const generation = ++authListenerGeneration;
+    let active = true;
+    const current = (): boolean => active && generation === authListenerGeneration;
+    // A replacement listener must not finish initialization started by its predecessor.
+    sessionGeneration += 1;
+    const stopCurrent = (): void => {
+        const ownsListener = current();
+        active = false;
+        if (!ownsListener) return;
+        authListenerGeneration += 1;
+        sessionGeneration += 1;
+        invalidateMobileRecoveryCallback();
+    };
     setPasswordRecoveryState('idle');
     beginMobileCloudSessionCheck();
     const client = getMobileSupabaseClient();
     if (!client) {
         void finishMobileAnonymousSession();
-        return () => { sessionGeneration += 1; };
+        return stopCurrent;
     }
-    let active = true;
-    recoveryGateHydrated = false;
+    let hydrated = false;
+    let deferredAuthEvent: { event: string; session: { user: { id: string } } | null } | null = null;
     recoveryGateHydrationFailed = false;
-    deferredAuthEvent = null;
     setGameRewardAuthorityState('resolving');
-    const { data } = client.auth.onAuthStateChange((event, session) => applyMobileAuthEvent(event, session));
-    void hydrateMobileRecoveryGate().then((hydrated) => {
-        if (!active) return;
+    const { data } = client.auth.onAuthStateChange((event, session) => {
+        if (!current()) return;
         if (!hydrated) {
+            const identity = session ? { user: { id: session.user.id } } : null;
+            // Coalesce identity transitions, never let advisory events erase startup/logout.
+            if (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT'
+                || ((event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') && session)) {
+                deferredAuthEvent = { event, session: identity };
+                if (event === 'PASSWORD_RECOVERY') {
+                    mobileRecoveryIntent = true;
+                    mobileRecoveryGate = true;
+                }
+            } else if (event === 'TOKEN_REFRESHED' && session
+                && (!deferredAuthEvent || deferredAuthEvent.event === 'TOKEN_REFRESHED')) {
+                deferredAuthEvent = { event, session: identity };
+            }
+            return;
+        }
+        applyMobileAuthEvent(event, session);
+    });
+    void hydrateMobileRecoveryGate(current).then(async (restored) => {
+        if (!current()) return;
+        if (!restored) {
             deferredAuthEvent = null;
             void pauseMobileCloudForRecovery();
             setPasswordRecoveryState('invalid');
             return;
         }
+        if (mobileRecoveryIntent) {
+            // Preserve recovery intent even if SIGNED_IN/SIGNED_OUT followed it while loading.
+            mobileRecoveryGate = true;
+            const persisted = await persistMobileRecoveryGate(true, current);
+            if (!current()) return;
+            if (!persisted) {
+                recoveryGateHydrationFailed = true;
+                deferredAuthEvent = null;
+                void pauseMobileCloudForRecovery();
+                setPasswordRecoveryState('invalid');
+                return;
+            }
+        }
+        hydrated = true;
         const pending = deferredAuthEvent;
         deferredAuthEvent = null;
         if (pending) applyMobileAuthEvent(pending.event, pending.session);
     });
     return () => {
-        active = false;
-        sessionGeneration += 1;
-        invalidateMobileRecoveryCallback();
+        stopCurrent();
         data.subscription.unsubscribe();
     };
 }

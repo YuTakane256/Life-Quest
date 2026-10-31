@@ -14,7 +14,7 @@ const sdk = vi.hoisted(() => ({
 function client(platform: string) {
     return { auth: {
         getSession: async () => ({ data: { session: sdk.owner ? { user: { id: sdk.owner } } : null }, error: null }),
-        updateUser: sdk.update,
+        updateUser: sdk.update, signOut: async () => ({ error: null }),
         onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => {
             sdk.listeners.set(platform, listener);
             return { data: { subscription: { unsubscribe: () => sdk.listeners.delete(platform) } } };
@@ -60,7 +60,7 @@ beforeEach(() => {
     sdk.owner = 'b'; sdk.update.mockReset().mockResolvedValue({ error: null });
     web.clearPasswordRecoveryState(); mobile.clearPasswordRecoveryState();
 });
-afterEach(() => { resetAuthLifecycleHooks(); setGameRewardAuthorityState('resolving'); });
+afterEach(async () => { resetAuthLifecycleHooks(); await mobile.cancelPasswordRecovery(); setGameRewardAuthorityState('resolving'); });
 
 describe.each([{ platform: 'web', auth: web }, { platform: 'mobile', auth: mobile }])('$platform recovery session isolation (real lifecycle, stub SDK)', ({ platform, auth }) => {
     async function start() {
@@ -179,5 +179,63 @@ describe.each([{ platform: 'web', auth: web }, { platform: 'mobile', auth: mobil
             expect(getGameRewardAuthorityState()).not.toBe('authenticated');
             if (event === 'PASSWORD_RECOVERY') await vi.waitFor(() => expect(auth.getPasswordRecoveryState()).toBe('ready'));
         } finally { stop(); }
+    });
+});
+
+// Hold the real listener's storage boundary; lifecycle and owner-scoped outbox remain real.
+describe('Mobile startup event buffering with real lifecycle/outbox', () => {
+    it('keeps queued A work with A when advisory notifications follow INITIAL_SESSION', async () => {
+        const gate = deferred<string | null>();
+        const read = vi.spyOn(AsyncStorage, 'getItem'); const originalRead = read.getMockImplementation()!;
+        read.mockImplementation((key) => key === 'life-quest:auth:recovery-pending:v1' ? gate.promise : originalRead(key));
+        const controller = createCloudOutboxController({ storage: {
+            getItem: async (key) => sdk.storage.get(key) ?? null,
+            setItem: async (key, value) => { sdk.storage.set(key, value); },
+            removeItem: async (key) => { sdk.storage.delete(key); },
+        }, getRpcClient: () => null, getEdgeInvoker: () => null });
+        const unregister = controller.registerHooks();
+        await notifyLogin('a');
+        await controller.enqueue('upsert_task', { p_id: 'task-a', p_name: 'A task' });
+        await controller.getActiveOutbox()!.flush();
+        const queued = controller.getActiveOutbox()!.snapshot().map(({ opId, payload }) => ({ opId, payload }));
+        sdk.owner = 'a'; const stop = mobile.startAuthSessionListener();
+        try {
+            sdk.listeners.get('mobile')!('INITIAL_SESSION', { user: { id: 'a' } });
+            sdk.listeners.get('mobile')!('TOKEN_REFRESHED', { user: { id: 'a' } });
+            sdk.listeners.get('mobile')!('USER_UPDATED', { user: { id: 'a' } });
+            gate.resolve(null);
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+            expect(captureAuthSessionScope().userId).toBe('a');
+            expect(controller.getActiveOutbox()!.snapshot().map(({ opId, payload }) => ({ opId, payload }))).toEqual(queued);
+            expect(sdk.storage.has(cloudOutboxKey('b'))).toBe(false);
+        } finally { gate.resolve(null); stop(); unregister(); read.mockRestore(); }
+    });
+
+    it('initializes only latest B and leaves A operation IDs/payloads in A namespace', async () => {
+        const gate = deferred<string | null>();
+        const read = vi.spyOn(AsyncStorage, 'getItem'); const originalRead = read.getMockImplementation()!;
+        read.mockImplementation((key) => key === 'life-quest:auth:recovery-pending:v1' ? gate.promise : originalRead(key));
+        const controller = createCloudOutboxController({ storage: {
+            getItem: async (key) => sdk.storage.get(key) ?? null,
+            setItem: async (key, value) => { sdk.storage.set(key, value); },
+            removeItem: async (key) => { sdk.storage.delete(key); },
+        }, getRpcClient: () => null, getEdgeInvoker: () => null });
+        const unregister = controller.registerHooks(); await notifyLogin('a');
+        const previous = captureAuthSessionGuard();
+        await controller.enqueue('upsert_task', { p_id: 'task-a', p_name: 'A task' });
+        await controller.getActiveOutbox()!.flush();
+        const queued = controller.getActiveOutbox()!.snapshot().map(({ opId, payload }) => ({ opId, payload }));
+        const initialized: string[] = []; registerAuthLifecycleHooks({ onLogin: (owner) => { initialized.push(owner); } });
+        const stop = mobile.startAuthSessionListener();
+        try {
+            sdk.listeners.get('mobile')!('INITIAL_SESSION', { user: { id: 'a' } });
+            sdk.owner = 'b'; sdk.listeners.get('mobile')!('SIGNED_IN', { user: { id: 'b' } });
+            sdk.listeners.get('mobile')!('TOKEN_REFRESHED', { user: { id: 'b' } }); gate.resolve(null);
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+            expect(initialized).toEqual(['b']); expect(captureAuthSessionScope().userId).toBe('b'); expect(previous()).toBe(false);
+            expect(controller.getActiveOutbox()!.snapshot()).toEqual([]);
+            const saved = JSON.parse(sdk.storage.get(cloudOutboxKey('a'))!).ops as { opId: string; payload: unknown }[];
+            expect(saved.map(({ opId, payload }) => ({ opId, payload }))).toEqual(queued);
+        } finally { gate.resolve(null); stop(); unregister(); read.mockRestore(); }
     });
 });
