@@ -214,9 +214,11 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         },
         writeCursor: async (cursor) => {
             if (!isCurrent()) return;
-            appliedCursor = cursor;
             // Keep the existing key compatible, without trusting another tab's value.
             await storage.setItem(cloudCursorKey(userId), String(cursor));
+            if (!isCurrent()) return;
+            // Advance only after persistence acknowledges this owner's cursor.
+            appliedCursor = cursor;
         },
     });
 

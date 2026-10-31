@@ -431,6 +431,78 @@ for (const platform of [
             expect(platform.state().pull.phase).toBe('idle'); expect(mocks.values.get(cloudCursorKey('a'))).toBe('3');
         });
 
+        it.each([false, true])('cursor write failure (bytes saved=%s) retries from the last acknowledged cursor', async (saveBeforeReject) => {
+            await start();
+            const revised = (version: number): PullBatch => ({ ...batch('a'), next_cursor: version,
+                tasks: (batch('a').tasks as object[]).map((task) => ({ ...task, version, name: `revision-${version}` })),
+            });
+            mocks.rpc.mockResolvedValue({ data: revised(2), error: null });
+            await platform.active()!.syncNow(); const lastSuccessAt = platform.state().pull.lastSuccessAt;
+            let fail = true;
+            mocks.storage.setItem.mockImplementation(async (key: string, value: string) => {
+                if (key === cloudCursorKey('a') && value === '3' && fail) {
+                    fail = false;
+                    if (saveBeforeReject) mocks.values.set(key, value);
+                    throw new Error('private-storage-diagnostic');
+                }
+                mocks.values.set(key, value);
+            });
+            mocks.rpc.mockClear();
+            mocks.rpc.mockImplementation(async (_name, params) => ({ data: params.p_after_version === 2
+                ? revised(3) : { next_cursor: 3, has_more: false }, error: null }));
+            await platform.active()!.syncNow();
+            expect(platform.state().pull).toEqual({ phase: 'failed', lastSuccessAt });
+            expect(platform.state().attention).toBe('required'); expect(platform.state().availability).toBe('ready');
+            expect(JSON.stringify(platform.state())).not.toContain('private');
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe(saveBeforeReject ? '3' : '2');
+            expect(mocks.values.get(cloudCacheKey('a', 'tasks'))).toContain('revision-3');
+            expect(mocks.visibleTasks).toEqual(['a-task']);
+            await platform.active()!.syncNow();
+            expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'pull_sync_batch', expect.objectContaining({ p_after_version: 2 }));
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('3');
+            expect(mocks.visibleTasks).toEqual(['a-task']); expect(platform.state().pull.phase).toBe('idle');
+        });
+
+        it('a later page cursor-save failure stops paging and retries from the last acknowledged page', async () => {
+            await start(); let fail = true;
+            const page = (owner: string, version: number, more: boolean): PullBatch => ({ ...batch(owner, more), next_cursor: version,
+                tasks: (batch(owner).tasks as object[]).map((task) => ({ ...task, version })),
+            });
+            mocks.rpc.mockImplementation(async (_name, params) => ({ data: params.p_after_version === 0 ? page('a', 2, true)
+                : params.p_after_version === 2 ? page('b', 3, true) : page('c', 4, false), error: null }));
+            mocks.storage.setItem.mockImplementation(async (key: string, value: string) => {
+                if (key === cloudCursorKey('a') && value === '3' && fail) { fail = false; throw new Error('disk full'); }
+                mocks.values.set(key, value);
+            });
+            await platform.active()!.syncNow();
+            expect(mocks.rpc.mock.calls.map(([, params]) => params.p_after_version)).toEqual([0, 2]);
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('2'); expect(mocks.visibleTasks).toEqual(['a-task', 'b-task']);
+            expect(platform.state().pull.phase).toBe('failed');
+            await platform.active()!.syncNow();
+            expect(mocks.rpc.mock.calls.map(([, params]) => params.p_after_version)).toEqual([0, 2, 2, 3]);
+            expect(mocks.visibleTasks).toEqual(['a-task', 'b-task', 'c-task']);
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('4'); expect(platform.state().pull.phase).toBe('idle');
+        });
+
+        it('a delayed A cursor write cannot resume A paging or change B feedback', async () => {
+            await start(); const saved = deferred<void>();
+            mocks.storage.setItem.mockImplementation(async (key: string, value: string) => {
+                if (key === cloudCursorKey('a')) await saved.promise;
+                mocks.values.set(key, value);
+            });
+            mocks.rpc.mockResolvedValueOnce({ data: batch('a', true), error: null }).mockResolvedValue({ data: batch('b'), error: null });
+            const old = platform.active()!.syncNow(); await settle();
+            expect(mocks.storage.setItem).toHaveBeenCalledWith(cloudCursorKey('a'), '2');
+            await notifyLogin('b'); await settle(); await platform.active()!.syncNow();
+            const current = platform.state(); const requestCount = mocks.rpc.mock.calls.length;
+            saved.resolve(); await old;
+            expect(mocks.rpc).toHaveBeenCalledTimes(requestCount);
+            expect(mocks.visibleTasks).toEqual(['b-task']); expect(platform.state()).toEqual(current);
+            expect(mocks.values.get(cloudCursorKey('b'))).toBe('2');
+            // Already-started storage writes may finish, exclusively in A's namespace.
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('2');
+        });
+
         it('does not pull if connectivity is lost during retry', async () => {
             await start();
             const retry = deferred<void>(); mocks.retry.mockReturnValueOnce(retry.promise);
