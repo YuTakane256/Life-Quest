@@ -13,6 +13,34 @@ export interface PullBatch {
     [table: string]: unknown;
 }
 
+function assertCloudCursor(value: unknown): asserts value is number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new Error('cloud pull cursor invalid');
+    }
+}
+
+/** Validate only pagination controls; table contents remain unknown and are handled by the cache. */
+function inspectPullEnvelope(value: unknown, afterVersion: number): { batch: PullBatch; nextCursor: number; hasMore: boolean } {
+    let nextCursor: unknown;
+    let hasMore: unknown;
+    try {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
+        const next = Object.getOwnPropertyDescriptor(value, 'next_cursor');
+        const more = Object.getOwnPropertyDescriptor(value, 'has_more');
+        if (!next || !more || !Object.prototype.hasOwnProperty.call(next, 'value')
+            || !Object.prototype.hasOwnProperty.call(more, 'value')) throw new Error();
+        nextCursor = next.value;
+        hasMore = more.value;
+    } catch {
+        throw new Error('cloud pull response invalid');
+    }
+    if (typeof nextCursor !== 'number' || !Number.isSafeInteger(nextCursor) || nextCursor < afterVersion
+        || typeof hasMore !== 'boolean' || (hasMore && nextCursor === afterVersion)) {
+        throw new Error('cloud pull response invalid');
+    }
+    return { batch: value as PullBatch, nextCursor, hasMore };
+}
+
 /** Fixed, non-sensitive signal for a pull that must wait for authentication. */
 export class CloudPullAuthError extends Error {
     constructor(reason: 'account' | 'request') {
@@ -30,7 +58,7 @@ export interface AccountBoundCloudPullDeps {
     expectedUserId: string;
     isActive: () => boolean;
     getSession: () => Promise<CloudPullSession | null>;
-    call: (afterVersion: number, maxVersions: number, accessToken: string) => Promise<PullBatch>;
+    call: (afterVersion: number, maxVersions: number, accessToken: string) => Promise<unknown>;
 }
 
 /** Bind each request to its owning account, even before auth lifecycle notifications arrive. */
@@ -54,11 +82,13 @@ export function createAccountBoundCloudPullFetcher(deps: AccountBoundCloudPullDe
         return session;
     };
     return async (afterVersion, maxVersions) => {
+        assertActive();
+        assertCloudCursor(afterVersion);
         const session = await readOwnerSession();
         assertActive();
         // Capture before the SDK can switch its default Authorization to another account.
         const token = session.accessToken;
-        let batch: PullBatch;
+        let batch: unknown;
         try {
             batch = await deps.call(afterVersion, maxVersions, token);
         } catch (error) {
@@ -76,7 +106,7 @@ export function createAccountBoundCloudPullFetcher(deps: AccountBoundCloudPullDe
         // A same-owner token refresh is valid; a different owner must never seed this cache.
         await readOwnerSession();
         assertActive();
-        return batch;
+        return inspectPullEnvelope(batch, afterVersion).batch;
     };
 }
 
@@ -109,8 +139,10 @@ export function createCloudPullRunner(deps: CloudPullDeps): CloudPullRunner {
     const pullLoop = async (): Promise<void> => {
         if (!isActive()) return;
         let cursor = await deps.readCursor();
+        if (!isActive()) return;
+        assertCloudCursor(cursor);
         while (isActive()) {
-            let batch: PullBatch;
+            let batch: unknown;
             try {
                 batch = await deps.fetchBatch(cursor, maxVersions);
             } catch (error) {
@@ -118,15 +150,16 @@ export function createCloudPullRunner(deps: CloudPullDeps): CloudPullRunner {
                 throw error;
             }
             if (!isActive()) return;
-            await deps.applyBatch(batch);
+            const checked = inspectPullEnvelope(batch, cursor);
+            await deps.applyBatch(checked.batch);
             if (!isActive()) return;
             // カーソルは「実際に返って適用したバッチのnext_cursor」にのみ前進させる
             //（ADR-005: 独立クエリでの前進は取りこぼしの温床になるため禁止）
-            if (batch.next_cursor > cursor) {
-                cursor = batch.next_cursor;
+            if (checked.nextCursor > cursor) {
+                cursor = checked.nextCursor;
                 await deps.writeCursor(cursor);
             }
-            if (!batch.has_more) break;
+            if (!checked.hasMore) break;
         }
     };
 

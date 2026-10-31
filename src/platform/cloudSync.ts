@@ -33,7 +33,6 @@ import {
     createAccountBoundCloudPullFetcher,
     createCloudPullRunner,
     createInsurancePullScheduler,
-    type PullBatch,
 } from '@life-quest/core/cloudPull';
 import {
     createInactiveCloudSyncState,
@@ -199,7 +198,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
                 }).setHeader('Authorization', `Bearer ${token}`);
                 if (status === 401) throw new CloudPullAuthError('request');
                 if (error) throw new Error('cloud pull request failed');
-                return data as PullBatch;
+                return data;
             },
         }),
         applyBatch: async (batch) => {
