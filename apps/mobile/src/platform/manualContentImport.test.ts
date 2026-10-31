@@ -98,6 +98,29 @@ describe('Mobile手動統合の候補・承認・再試行', () => {
         expect(fetchFn).not.toHaveBeenCalled();
     });
 
+    it('413は日本語で案内し、候補・backup・同じ再送キーを保持する（HTTP応答スタブ）', async () => {
+        const backup = JSON.stringify({ tasks: [task('backed-up')], habits: [], dailyRecords: [] });
+        mocks.values.set(preMigrationBackupKey('a'), backup);
+        const pending = await getPendingMobileContent('a');
+        const original = JSON.stringify(pending);
+        fetchFn.mockResolvedValueOnce(new Response('<html>private-response-marker</html>', { status: 413 }));
+        expect(await approveMobileContentImport(pending)).toEqual({ status: 'error',
+            message: '送信データが大きすぎるため、処理できません。内容を確認してください。' });
+        expect(JSON.stringify(pending)).toBe(original);
+        expect(mocks.values.get(preMigrationBackupKey('a'))).toBe(backup);
+        expect(useMobileTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local']);
+        // A later success is simulated, not a claim that unchanged oversized data will fit.
+        expect(await approveMobileContentImport(pending)).toEqual({ status: 'imported' });
+        expect(fetchFn.mock.calls[0][1].body).toBe(fetchFn.mock.calls[1][1].body);
+    });
+
+    it('診断HTML中の移行コードをWeb初回移行の案内と取り違えない', async () => {
+        const pending = await getPendingMobileContent('a');
+        fetchFn.mockResolvedValueOnce(new Response('<html>private-response-marker web_migration_required</html>', { status: 409 }));
+        expect(await approveMobileContentImport(pending)).toEqual({ status: 'error', message: 'import_mobile_content failed: 409' });
+        expect(pending.tasks.map((item) => item.id)).toEqual(['local']);
+    });
+
     it('Web初回移行が必要な失敗でも候補と再送キーを保持する', async () => {
         const pending = await getPendingMobileContent('a');
         fetchFn.mockResolvedValueOnce(new Response('{"error":"web_migration_required"}', { status: 409 }));
