@@ -1,5 +1,7 @@
 # セキュリティの確認範囲と残課題（2026-10-30）
 
+2026-10-31追記: [クライアント診断ログの固定化](client-diagnostics-privacy-20261031.md)で、背景処理の生例外とoutbox操作IDをconsoleへ渡さない。production renderの任意nameも固定分類へ限定。開発時render/SDK・runtime独自ログ/実監視の全体確認は残す。
+
 2026-10-31追記: [クライアントHTTPエラーの本文秘匿](client-http-error-privacy-20261031.md)で、任意本文のError転記を制限し、固定コードのゲーム/移行判定を維持。HTTP以外の例外と実環境ログ/監視全体は残課題。
 
 2026-10-31追記: [Edge API本文の実バイト数・root検査](edge-request-limits-20261031.md)を追加。認証後の本文に5MiBの転送上限を設け、上限内の通常移行と超過時の拒否を区別する。実配信・レート制限等の確認は残す。

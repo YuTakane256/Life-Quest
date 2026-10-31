@@ -50,6 +50,23 @@ afterEach(async () => {
 });
 
 describe.each([{ name: 'Web', store: web }, { name: 'Mobile', store: mobile }])('$nameのログインボーナス境界', ({ store, name }) => {
+    it('予期しないSDK例外を秘匿して再試行を維持し、ローカル報酬を重ねない', async () => {
+        const failure = Object.assign(new Error('private-auth-detail'), { details: 'private-auth-detail' });
+        const report = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            mocks.auth.mockRejectedValueOnce(failure);
+            expect(await store.getState().checkDailyLogin()).toEqual({ kind: 'retryable-error' });
+            expect(report).toHaveBeenCalledOnce();
+            expect(report.mock.calls[0]).not.toContain(failure);
+            expect(JSON.stringify(report.mock.calls)).not.toContain('private-auth-detail');
+            expect(store.getState().claimStatus).toBe('retryable-error');
+            expect(mocks.claim).not.toHaveBeenCalled();
+            expect(mocks.xp).not.toHaveBeenCalled(); expect(mocks.chest).not.toHaveBeenCalled();
+            await store.getState().checkDailyLogin();
+            expect(mocks.claim).toHaveBeenCalledOnce();
+            expect(store.getState().pendingBonus).not.toBeNull();
+        } finally { report.mockRestore(); }
+    });
     it('同一スコープの連続確認は同じPromiseを共有し、同日成功後は再送しない', async () => {
         const response = deferred<CloudLoginBonusResult>(); mocks.claim.mockReturnValueOnce(response.promise);
         const first = store.getState().checkDailyLogin(); const second = store.getState().checkDailyLogin();

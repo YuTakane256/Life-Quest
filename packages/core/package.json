@@ -179,6 +179,10 @@
     "./validation": {
       "types": "./src/validation.ts",
       "import": "./src/validation.ts"
+    },
+    "./diagnostics": {
+      "types": "./src/diagnostics.ts",
+      "import": "./src/diagnostics.ts"
     }
   },
   "scripts": {

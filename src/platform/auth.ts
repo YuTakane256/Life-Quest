@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 /**
  * Webの認証サービス（#503、メール認証のみ）。
  *
@@ -506,7 +507,7 @@ export function startAuthSessionListener(): () => void {
                 await prepareWebAnonymousSession(current);
             }
             if (current()) setGameRewardAuthorityState('anonymous');
-        }).catch((error) => console.warn('Anonymous session preparation failed; cloud cache is retained.', error));
+        }).catch((error) => console.warn(...createClientDiagnosticLogArgs('anonymous_session_prepare_failed', error)));
     };
     const client = getWebSupabaseClient();
     if (!client) {

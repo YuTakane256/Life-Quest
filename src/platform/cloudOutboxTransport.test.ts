@@ -11,7 +11,7 @@ vi.mock('./supabase', () => ({ getWebSupabaseClient: () => ({
     rpc: () => ({ setHeader: async (name: string, value: string) => {
         expect(name).toBe('Authorization');
         mock.headers.push(value);
-        return { status: mock.status, error: mock.status === 401 ? { message: 'expired', code: 'PGRST301' } : null };
+        return { status: mock.status, error: mock.status === 401 ? { message: 'expired', code: 'PGRST301' } : mock.status >= 400 ? { message: 'private-rpc-detail', code: String(mock.status) } : null };
     } }),
 }) }));
 vi.mock('./edgeFunctions', () => ({ getWebEdgeFunctionInvoker: () => null }));
@@ -73,4 +73,21 @@ it('実際のSupabase SDKが後からBのtokenを取得しても、明示したA
     const [, options] = fetchFn.mock.calls[0];
     expect(new Headers(options?.headers).get('Authorization')).toBe('Bearer a-captured-token');
     expect(JSON.parse(options!.body as string)).toEqual({ p_key: 'same-id' });
+
 });
+
+    it('恒久失敗の診断へ操作IDを出さず、キューのIDとpayloadを保持する', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const unregister = registerWebOutboxHooks();
+        try {
+            await notifyLogin('a'); mock.status = 403;
+            await enqueueCloudOperation('delete_task', { p_id: 'private-row-id' });
+            const outbox = getActiveWebOutbox()!; await outbox.flush();
+            const [op] = outbox.snapshot();
+            expect(op).toMatchObject({ status: 'failed', operation: 'delete_task', payload: { p_id: 'private-row-id' } });
+            expect(warn).toHaveBeenCalledOnce();
+            const log = JSON.stringify(warn.mock.calls);
+            expect(log).not.toContain(op.opId); expect(log).not.toContain('private-row-id'); expect(log).not.toContain('private-rpc-detail');
+            expect(warn.mock.calls[0][1]).toMatchObject({ event: 'outbox_permanent_failure', redacted: true });
+        } finally { await notifyLogout(); unregister(); warn.mockRestore(); }
+    });

@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createWebPersistStorage } from '../platform/storage';
@@ -76,7 +77,7 @@ async function awardTaskXp(
     const dateStr = isoToJstYmd(completedAt) ?? toIsoDatePart(completedAt);
     if (generation === getCompletionRewardGeneration()) {
         try { statsStore.getState().logTaskXp(dateStr, xpReward); }
-        catch (error) { console.warn('Reward is committed, but its statistics could not be saved.', error); }
+        catch (error) { console.warn(...createClientDiagnosticLogArgs('task_reward_stats_failed', error)); }
     }
     return true;
 }

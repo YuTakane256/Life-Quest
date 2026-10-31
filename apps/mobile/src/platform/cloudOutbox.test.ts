@@ -17,7 +17,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 
 const rpcCalls: { operation: string; params: Record<string, unknown> }[] = [];
 const headerCalls: unknown[][] = [];
-const session = vi.hoisted(() => ({ user: 'user-a', token: 'token-a' }));
+const session = vi.hoisted(() => ({ user: 'user-a', token: 'token-a', status: 200 }));
 
 vi.mock('./supabase', () => ({
     getMobileSupabaseClient: () => ({
@@ -28,7 +28,7 @@ vi.mock('./supabase', () => ({
             rpcCalls.push({ operation, params });
             return { setHeader: async (...args: unknown[]) => {
                 headerCalls.push(args);
-                return { data: {}, error: null, status: 200 };
+                return { data: {}, error: session.status >= 400 ? { message: 'private-rpc-detail', code: String(session.status) } : null, status: session.status };
             } };
         }),
     }),
@@ -57,6 +57,7 @@ function makeOp(operation: string, payload: Record<string, unknown>): OutboxOp {
 
 describe('cloudOutboxの送信ルーティング（#505）', () => {
     beforeEach(() => {
+        session.status = 200;
         rpcCalls.length = 0;
         headerCalls.length = 0;
         session.user = 'user-a'; session.token = 'token-a';
@@ -116,4 +117,20 @@ describe('cloudOutboxの送信ルーティング（#505）', () => {
             error: 'unknown operation: bogus_operation',
         });
     });
+    it('恒久失敗の診断へ操作IDを出さず、キューのIDとpayloadを保持する', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const unregister = registerMobileOutboxHooks();
+        try {
+            await notifyLogin('user-a'); session.status = 403;
+            await enqueueCloudOperation('delete_task', { p_id: 'private-row-id' });
+            const outbox = getActiveMobileOutbox()!; await outbox.flush();
+            const [op] = outbox.snapshot();
+            expect(op).toMatchObject({ status: 'failed', operation: 'delete_task', payload: { p_id: 'private-row-id' } });
+            expect(warn).toHaveBeenCalledOnce();
+            const log = JSON.stringify(warn.mock.calls);
+            expect(log).not.toContain(op.opId); expect(log).not.toContain('private-row-id'); expect(log).not.toContain('private-rpc-detail');
+            expect(warn.mock.calls[0][1]).toMatchObject({ event: 'outbox_permanent_failure', redacted: true });
+        } finally { await notifyLogout(); unregister(); warn.mockRestore(); }
+    });
+
 });

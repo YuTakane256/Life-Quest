@@ -1,3 +1,5 @@
+import { getSafeErrorName } from '@life-quest/core/diagnostics';
+
 interface RenderErrorInfo {
     componentStack?: string | null;
 }
@@ -6,10 +8,6 @@ export type RenderErrorLogArgs = [
     message: string,
     ...details: unknown[],
 ];
-
-function getErrorName(error: unknown): string {
-    return error instanceof Error && error.name ? error.name : 'UnknownError';
-}
 
 export function createRenderErrorLogArgs(
     error: unknown,
@@ -24,7 +22,7 @@ export function createRenderErrorLogArgs(
         'Unhandled app render error',
         {
             redacted: true,
-            errorName: getErrorName(error),
+            errorName: getSafeErrorName(error),
             hasComponentStack: Boolean(info.componentStack),
         },
     ];
