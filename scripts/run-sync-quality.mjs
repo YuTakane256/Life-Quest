@@ -34,6 +34,7 @@ const unitFiles = [
     'packages/core/src/cloudPull.test.ts',
     'packages/core/src/cloudCache.test.ts',
     'packages/core/src/cloudCacheValidation.test.ts',
+    'packages/core/src/cloudCacheRestore.test.ts',
     'packages/core/src/cloudSyncState.test.ts',
     'packages/core/src/syncOutbox.test.ts',
     'packages/core/src/cloudOutboxSession.test.ts',
@@ -44,6 +45,7 @@ const unitFiles = [
     'src/platform/taskCompletionSession.test.ts',
     'apps/mobile/src/platform/cloudOutbox.test.ts',
     'apps/mobile/src/platform/networkRecovery.test.ts',
+    'apps/mobile/src/platform/cloudSessionRecovery.test.ts',
 ];
 
 export function syncQualityPlan(args, env) {

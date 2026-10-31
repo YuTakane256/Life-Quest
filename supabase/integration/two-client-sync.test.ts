@@ -17,6 +17,8 @@ import {
     createEmptyCloudCache,
     extractSyncedSettings,
     getSeedableSections,
+    loadCloudCache,
+    persistCloudCache,
     type CloudCache,
 } from '@life-quest/core/cloudCache';
 import { cloudCursorKey, cloudOutboxKey, CloudPullAuthError, createAccountBoundCloudPullFetcher, createCloudPullRunner, type PullBatch } from '@life-quest/core/cloudPull';
@@ -383,6 +385,29 @@ describe.skipIf(!enabled)('#507 2クライアント同期E2E（ローカルSupab
         expect(cursor).toBe(0); expect(cache).toEqual(createEmptyCloudCache());
         damage = false; await runner.flush();
         expect(afters).toEqual([0, 0]); expect(cursor).toBeGreaterThan(0); expect(cache).toEqual(reference.cache);
+    });
+
+    it('rebuilds a damaged persisted section from actual RPC rows while preserving healthy sections', async () => {
+        const reference = createDevice(user); await reference.runner.flush();
+        const storage = createMemoryStorage(); await persistCloudCache(storage, user.id, reference.cache);
+        const taskKey = `life-quest:cloud:${user.id}:cache:tasks:v1`;
+        storage.map.set(taskKey, JSON.stringify({ tasks: { orphan: null }, subtasks: reference.cache.subtasks }));
+        const damaged = storage.map.get(taskKey);
+        let cache = await loadCloudCache(storage, user.id); let cursor = 0;
+        expect(cache.tasks).toEqual({}); expect(cache.subtasks).toEqual({});
+        expect(cache.characters).toEqual(reference.cache.characters); expect(storage.map.get(taskKey)).toBe(damaged);
+        const runner = createCloudPullRunner({ readCursor: async () => cursor,
+            fetchBatch: async (after, max) => {
+                const { data, error } = await user.client.rpc('pull_sync_batch', { p_after_version: after, p_max_versions: max });
+                expect(error).toBeNull(); return data as PullBatch;
+            },
+            applyBatch: async (batch) => {
+                cache = applyPullBatchToCache(cache, batch); await persistCloudCache(storage, user.id, cache);
+            },
+            writeCursor: async (next) => { cursor = next; },
+        });
+        await runner.flush(); expect(cursor).toBeGreaterThan(0); expect(cache).toEqual(reference.cache);
+        expect(await loadCloudCache(storage, user.id)).toEqual(reference.cache);
     });
 
     it('validates actual one-version pages and an empty final response without changing convergence', async () => {
