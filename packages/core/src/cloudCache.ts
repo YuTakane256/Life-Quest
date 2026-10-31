@@ -72,6 +72,14 @@ function rowKey(table: CloudTableName, row: object): string {
     }
 }
 
+/** The same minimal row contract is required for network pages and persisted row maps. */
+function inspectCloudRow(table: CloudTableName, raw: unknown): { key: string; version: number; row: CloudRow } {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('cloud pull rows invalid');
+    const version = ownDataValue(raw, 'version');
+    if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) throw new Error('cloud pull rows invalid');
+    return { key: rowKey(table, raw), version, row: raw as CloudRow };
+}
+
 /**
  * バッチをキャッシュへ適用する（新しいキャッシュを返す）。
  * 不正な既知テーブル/行/PK/versionは読み飛ばさずページ全体を拒否する。
@@ -88,14 +96,11 @@ export function applyPullBatchToCache(cache: CloudCache, batch: PullBatch): Clou
             if (rows.length === 0) continue;
             const updated = { ...next[table] };
             for (const raw of rows) {
-                if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error();
-                const version = ownDataValue(raw, 'version');
-                if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) throw new Error();
-                const key = rowKey(table, raw);
+                const { key, version, row } = inspectCloudRow(table, raw);
                 const existing = Object.prototype.hasOwnProperty.call(updated, key) ? updated[key] : undefined;
                 if (existing && Number(existing.version) > version) continue;
                 // Assignment to __proto__ would change the map prototype and silently drop that row.
-                Object.defineProperty(updated, key, { value: raw as CloudRow, enumerable: true, writable: true, configurable: true });
+                Object.defineProperty(updated, key, { value: row, enumerable: true, writable: true, configurable: true });
             }
             next[table] = updated;
         }
@@ -414,13 +419,22 @@ export async function loadCloudCache(
         const raw = await storage.getItem(cloudCacheKey(userId, section as CloudCacheSection));
         if (!raw) continue;
         try {
-            const parsed = JSON.parse(raw) as Record<string, Record<string, CloudRow>>;
+            const parsed: unknown = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+            const restored: Partial<CloudCache> = {};
             for (const table of tables) {
-                const rows = parsed[table];
-                if (rows && typeof rows === 'object' && !Array.isArray(rows)) {
-                    cache[table] = rows;
-                }
+                if (!Object.prototype.hasOwnProperty.call(parsed, table)) continue;
+                const rows = ownDataValue(parsed, table);
+                if (!rows || typeof rows !== 'object' || Array.isArray(rows)) throw new Error();
+                restored[table] = Object.fromEntries(Object.entries(rows).map(([savedKey, value]) => {
+                    const { key, row } = inspectCloudRow(table, value);
+                    // A mismatched map key would leave a duplicate or stale alias after a valid upsert.
+                    if (savedKey !== key) throw new Error();
+                    return [key, row];
+                }));
             }
+            // Commit only once every present table in this section has been validated.
+            Object.assign(cache, restored);
         } catch {
             // 壊れたセクションは空のまま（次のプルで再構築される）
         }

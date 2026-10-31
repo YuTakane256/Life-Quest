@@ -477,6 +477,37 @@ for (const platform of [
             expect(mocks.visibleTasks).toEqual(['a-task', 'fixed']); expect(platform.state().pull.phase).toBe('idle');
         });
 
+        it.each([
+            { name: 'null row', saved: { orphan: null } },
+            { name: 'string version', saved: { 'a-task': { id: 'a-task', version: '999', name: 'private-stale' } } },
+            { name: 'map-key mismatch', saved: { alias: { id: 'a-task', version: 2, name: 'private-stale' } } },
+        ])('rebuilds a corrupt saved task section ($name) without altering another owner or queued work', async ({ saved }) => {
+            const ownerB = JSON.stringify({ tasks: { 'b-task': (batch('b').tasks as object[])[0] }, subtasks: {} });
+            mocks.values.set(cloudCacheKey('b', 'tasks'), ownerB);
+            const queueKey = 'life-quest:cloud:a:outbox:v1'; const queue = 'private-pending-operation-evidence';
+            mocks.values.set(queueKey, queue);
+            mocks.values.set(cloudCacheKey('a', 'tasks'), JSON.stringify({ tasks: saved, subtasks: {} }));
+            // A saved marker must not prevent a full rebuild of this handle's cache.
+            mocks.values.set(cloudCursorKey('a'), '999');
+            const damaged = mocks.values.get(cloudCacheKey('a', 'tasks'));
+            await start(); mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'private-network' }, status: 503 });
+            await platform.active()!.syncNow();
+            expect(platform.state().pull.phase).toBe('failed');
+            expect(mocks.values.get(cloudCacheKey('a', 'tasks'))).toBe(damaged);
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('999');
+            expect(mocks.values.get(queueKey)).toBe(queue); expect(mocks.values.get(cloudCacheKey('b', 'tasks'))).toBe(ownerB);
+            mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
+            await platform.active()!.syncNow();
+            expect(mocks.rpc).toHaveBeenCalledWith('pull_sync_batch', expect.objectContaining({ p_after_version: 0 }));
+            expect(platform.state().pull.phase).toBe('idle'); expect(mocks.visibleTasks).toEqual(['a-task']);
+            const restored = JSON.parse(mocks.values.get(cloudCacheKey('a', 'tasks'))!);
+            expect(Object.keys(restored.tasks)).toEqual(['a-task']); expect(restored.tasks['a-task'].version).toBe(2);
+            expect(restored.tasks['a-task'].name).toBe('a private task');
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('2');
+            expect(mocks.values.get(cloudCacheKey('b', 'tasks'))).toBe(ownerB); expect(mocks.values.get(queueKey)).toBe(queue);
+            expect(mocks.storage.removeItem).not.toHaveBeenCalled();
+        });
+
         it.each([false, true])('cursor write failure (bytes saved=%s) retries from the last acknowledged cursor', async (saveBeforeReject) => {
             await start();
             const revised = (version: number): PullBatch => ({ ...batch('a'), next_cursor: version,
