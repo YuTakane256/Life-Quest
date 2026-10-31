@@ -68,6 +68,16 @@ describe.each([{ platform: 'web', auth: web }, { platform: 'mobile', auth: mobil
         await new Promise((resolve) => setTimeout(resolve, 0));
         return stop;
     }
+    it('TOKEN_REFRESHED during password recovery cannot notify normal cloud resume', async () => {
+        await notifyLogin('b'); const refresh = vi.fn();
+        registerAuthLifecycleHooks({ onTokenRefreshed: refresh });
+        const stop = await start();
+        try {
+            emit('PASSWORD_RECOVERY'); await Promise.resolve();
+            emit('TOKEN_REFRESHED'); await Promise.resolve();
+            expect(refresh).not.toHaveBeenCalled();
+        } finally { stop(); }
+    });
     function emit(event: string, owner: string | null = 'b') {
         sdk.owner = owner ?? '';
         sdk.listeners.get(platform)!(event, owner ? { user: { id: owner } } : null);

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
-import { createAccountBoundCloudPullFetcher, createCloudPullRunner, type CloudPullSession, type PullBatch } from './cloudPull';
+import { CloudPullAuthError, createAccountBoundCloudPullFetcher, createCloudPullRunner, type CloudPullSession, type PullBatch } from './cloudPull';
 
 const batch: PullBatch = { next_cursor: 8, has_more: false };
 const owner = { userId: 'a', accessToken: 'a-secret-token' };
@@ -22,6 +22,22 @@ describe('account-bound cloud pull', () => {
         const f = fixture(); f.getSession.mockResolvedValue(session);
         await expect(f.fetchBatch(3, 20)).rejects.toThrow('cloud pull account changed');
         expect(f.call).not.toHaveBeenCalled();
+    });
+    it('keeps the fixed authentication signal while sanitizing ordinary request errors', async () => {
+        const f = fixture();
+        f.call.mockRejectedValueOnce(new CloudPullAuthError('request'));
+        await expect(f.fetchBatch(3, 20)).rejects.toBeInstanceOf(CloudPullAuthError);
+        f.call.mockRejectedValueOnce(new Error('private detail 401 unauthorized'));
+        await expect(f.fetchBatch(3, 20)).rejects.not.toBeInstanceOf(CloudPullAuthError);
+        expect(await f.fetchBatch(3, 20)).toBe(batch);
+    });
+    it('a late401 for an old token stays retryable when the same owner already refreshed', async () => {
+        const f = fixture();
+        f.getSession.mockResolvedValueOnce(owner).mockResolvedValue({ ...owner, accessToken: 'a-refreshed-token' });
+        f.call.mockRejectedValueOnce(new CloudPullAuthError('request'));
+        await expect(f.fetchBatch(3, 20)).rejects.toThrow(/^cloud pull request failed$/);
+        expect(await f.fetchBatch(3, 20)).toBe(batch);
+        expect(f.call.mock.calls.map(([, , token]) => token)).toEqual([owner.accessToken, 'a-refreshed-token']);
     });
     it('does not echo SDK authentication diagnostics', async () => {
         const f = fixture(); f.getSession.mockRejectedValue(new Error('private token and user details'));

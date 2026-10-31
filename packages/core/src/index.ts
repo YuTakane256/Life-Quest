@@ -1,5 +1,6 @@
 export {
     notifyLogin,
+    notifyTokenRefreshed,
     notifyLogout,
     registerAuthLifecycleHooks,
     resetAuthLifecycleHooks,

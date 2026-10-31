@@ -19,7 +19,7 @@ import {
     getSeedableSections,
     type CloudCache,
 } from '@life-quest/core/cloudCache';
-import { cloudCursorKey, cloudOutboxKey, createAccountBoundCloudPullFetcher, createCloudPullRunner, type PullBatch } from '@life-quest/core/cloudPull';
+import { cloudCursorKey, cloudOutboxKey, CloudPullAuthError, createAccountBoundCloudPullFetcher, createCloudPullRunner, type PullBatch } from '@life-quest/core/cloudPull';
 import { createSyncOutbox, type OutboxOp, type OutboxSendResult } from '@life-quest/core/syncOutbox';
 
 const DB_URL = process.env.SUPABASE_DB_URL;
@@ -343,6 +343,25 @@ describe.skipIf(!enabled)('#507 2クライアント同期E2E（ローカルSupab
         expect(Object.keys(boundCache.tasks).sort()).toEqual([...ownerIds].sort());
         switchAfterResponse = true;
         await expect(fetchBatch(0, 200)).rejects.toThrow('cloud pull account changed');
+    });
+
+    it('actual HTTP401 remains an authentication signal when the SDK has a valid default token', async () => {
+        const sdk = createClient(API_URL!, ANON_KEY!, { accessToken: async () => user.token });
+        let status: number | undefined;
+        const fetchBatch = createAccountBoundCloudPullFetcher({
+            expectedUserId: user.id, isActive: () => true,
+            getSession: async () => ({ userId: user.id, accessToken: 'invalid-test-jwt' }),
+            call: async (after, max, token) => {
+                const result = await sdk.rpc('pull_sync_batch', { p_after_version: after, p_max_versions: max })
+                    .setHeader('Authorization', `Bearer ${token}`);
+                status = result.status;
+                if (result.status === 401) throw new CloudPullAuthError('request');
+                if (result.error) throw result.error;
+                return result.data as PullBatch;
+            },
+        });
+        await expect(fetchBatch(0, 200)).rejects.toBeInstanceOf(CloudPullAuthError);
+        expect(status).toBe(401);
     });
 
 });

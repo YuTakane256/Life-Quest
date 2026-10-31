@@ -4,6 +4,7 @@ import {
     captureAuthSessionGuard,
     captureAuthSessionScope,
     notifyLogin,
+    notifyTokenRefreshed,
     notifyLogout,
     registerAuthLifecycleHooks,
     resetAuthLifecycleHooks,
@@ -213,5 +214,30 @@ describe('authLifecycle', () => {
         await Promise.all([logout, login]);
 
         expect(laterLogout).not.toHaveBeenCalled();
+    });
+});
+
+
+describe('same-owner token refresh notifications', () => {
+    it('preserves scope and settled initialization and never runs login hooks', async () => {
+        const login = vi.fn(); const refresh = vi.fn();
+        registerAuthLifecycleHooks({ onLogin: login, onTokenRefreshed: refresh });
+        await notifyLogin('a'); const scope = captureAuthSessionScope(); const settled = waitForAuthLifecycleSettled();
+        await notifyTokenRefreshed('a');
+        expect(refresh).toHaveBeenCalledExactlyOnceWith('a'); expect(login).toHaveBeenCalledTimes(1);
+        expect(scope.isCurrent()).toBe(true); expect(captureAuthSessionScope().userId).toBe('a');
+        expect(waitForAuthLifecycleSettled()).toBe(settled);
+    });
+    it('ignores refreshes for a different or signed-out owner', async () => {
+        const refresh = vi.fn(); registerAuthLifecycleHooks({ onTokenRefreshed: refresh });
+        await notifyTokenRefreshed('a'); await notifyLogin('a'); await notifyTokenRefreshed('b');
+        await notifyLogout(); await notifyTokenRefreshed('a'); expect(refresh).not.toHaveBeenCalled();
+    });
+    it('does not deliver a delayed refresh to later hooks after an account switch', async () => {
+        let finish!: () => void; const gate = new Promise<void>((resolve) => { finish = resolve; });
+        const next = vi.fn();
+        registerAuthLifecycleHooks({ onTokenRefreshed: () => gate }); registerAuthLifecycleHooks({ onTokenRefreshed: next });
+        await notifyLogin('a'); const pending = notifyTokenRefreshed('a'); await notifyLogin('b'); finish(); await pending;
+        expect(next).not.toHaveBeenCalled();
     });
 });

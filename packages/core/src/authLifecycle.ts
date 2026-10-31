@@ -15,6 +15,8 @@
 export interface AuthLifecycleHooks {
     /** セッション確立時（ログイン・セッション復元）。userIdはJWT由来。 */
     onLogin?: (userId: string) => void | Promise<void>;
+    /** Same-owner SDK token refresh; does not initialize stores or change the auth scope. */
+    onTokenRefreshed?: (userId: string) => void | Promise<void>;
     /** ログアウト時。クラウド同期対象ストアのメモリ即時クリア等を行う。 */
     onLogout?: () => void | Promise<void>;
 }
@@ -101,6 +103,13 @@ async function runHooks(
 /** セッション確立を全フックへ通知する。 */
 export function notifyLogin(userId: string): Promise<void> {
     return notifyTransition(userId, (hooks) => hooks.onLogin?.(userId));
+}
+
+/** Refresh is advisory and only reaches the current owner; it is not a login transition. */
+export function notifyTokenRefreshed(userId: string): Promise<void> {
+    if (scopeUserId !== userId) return Promise.resolve();
+    const isCurrent = captureAuthSessionGuard();
+    return runHooks((hooks) => hooks.onTokenRefreshed?.(userId), () => isCurrent() && scopeUserId === userId);
 }
 
 /** ログアウトを全フックへ通知する。全フック完了後に解決する。 */

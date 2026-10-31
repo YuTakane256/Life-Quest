@@ -106,3 +106,17 @@ describe('shared sync feedback', () => {
         expect(cloudSyncMessage(state())).toBe('同期済み');
     });
 });
+
+
+describe('pull authentication feedback', () => {
+    it.each([true, false, null])('pull-only auth-required takes precedence over advisory connectivity (%s)', (online) => {
+        const pull = { phase: 'auth-required' as const, lastSuccessAt: '2026-10-31T00:00:00Z' };
+        expect(deriveCloudSyncAvailability(readyPush, online, pull)).toBe('auth-required');
+        expect(deriveCloudSyncAttention(readyPush, pull)).toBe('required');
+        const state: CloudSyncPublicState = { availability: 'ready', push: readyPush, pull, attention: 'required' };
+        expect(canRequestCloudSync(state)).toBe(false);
+        expect(cloudSyncMessage(state)).toContain('再ログイン');
+        expect(cloudSyncMessage(state)).not.toContain('再試行');
+        expect(deriveCloudSyncAvailability({ ...readyPush, availability: 'inactive' }, online, pull)).toBe('inactive');
+    });
+});
