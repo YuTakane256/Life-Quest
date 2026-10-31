@@ -9,6 +9,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { containsServerCredential } from './public-client-environment.cjs';
 
 const TARGET_DIRS = ['src', 'apps/mobile/src', 'apps/mobile/app', 'packages'];
 const TARGET_CONFIGS = ['apps/mobile/app.config.ts', 'apps/mobile/app.json', 'apps/mobile/eas.json'];
@@ -16,16 +17,7 @@ const IGNORED_DIR_NAMES = new Set(['node_modules', 'dist', '.expo', 'coverage'])
 const TARGET_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json']);
 const PATTERN = /service_role|SERVICE_ROLE|APPLE_(?:PRIVATE_KEY|TEAM_ID|KEY_ID|(?:WEB_)?CLIENT_IDS?|TOKEN_ENCRYPTION_KEY)/;
 
-/** Static credential detection only; never return/log the matched credential. */
-export function containsServerCredential(content) {
-    if (/sb_secret_[A-Za-z0-9_-]+|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(content)) return true;
-    for (const match of content.matchAll(/\beyJ[A-Za-z0-9_-]+\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+\b/g)) {
-        try {
-            if (JSON.parse(Buffer.from(match[1], 'base64url').toString('utf8')).role === 'service_role') return true;
-        } catch { /* Non-JWT source text is not a credential. */ }
-    }
-    return false;
-}
+export { containsServerCredential };
 
 export function findClientSecretViolations(content, file) {
     return content.split('\n').flatMap((line, index) => PATTERN.test(line) || containsServerCredential(line)
