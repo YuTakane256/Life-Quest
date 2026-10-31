@@ -24,7 +24,7 @@ vi.mock('../platform/edgeFunctions', () => ({
 }));
 
 import { runCloudChestOpen } from './useCloudChestOpen';
-import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
+import { createEdgeFunctionInvoker, EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import type { Equipment } from '@life-quest/core/equipment';
 
 const dummyEquipment: Equipment = {
@@ -156,4 +156,16 @@ describe('runCloudChestOpen', () => {
         expect(deps.applyCloudChestResult).toHaveBeenCalledWith('chest-1', null, null, true);
         expect(result).toEqual({ tag: 'applied', equipment: null });
     });
+    it.each(['chest_already_opened', 'idempotency_key_operation_mismatch'])('共有invokerの安全な409でも宝箱の判定を維持する: %s', async (code) => {
+        const invoke = createEdgeFunctionInvoker({ functionsUrl: 'https://example.invalid', anonKey: 'test',
+            getSession: async () => ({ accessToken: 'test', userId: 'a' }), refreshSession: async () => null,
+            fetchFn: vi.fn(async () => new Response(JSON.stringify({ error: code, details: 'private-response-marker' }), { status: 409 })) });
+        const deps = makeDeps({ openCloudChest: vi.fn(async () => { await invoke('open_chest'); return null; }) });
+        const result = await runCloudChestOpen('chest-1', 'same-key', deps);
+        expect(result.tag).toBe(code === 'chest_already_opened' ? 'discarded' : 'error');
+        expect(deps.discardSyncedChest).toHaveBeenCalledTimes(code === 'chest_already_opened' ? 1 : 0);
+        expect(deps.localOpenChest).not.toHaveBeenCalled();
+        expect(deps.applyCloudChestResult).not.toHaveBeenCalled();
+    });
+
 });

@@ -10,6 +10,8 @@
  * セッション取得・リフレッシュ・fetch を注入して使う。
  */
 
+import { edgeHttpErrorMessage, sanitizeEdgeErrorDetail } from './edgeErrorPolicy.ts';
+
 export interface EdgeSession {
     accessToken: string;
     userId?: string;
@@ -99,11 +101,12 @@ export function createEdgeFunctionInvoker(deps: EdgeFunctionDeps): EdgeFunctionI
         if (!response.ok) {
             let detail = '';
             try {
-                detail = await response.text();
+                detail = sanitizeEdgeErrorDetail(response.status, await response.text());
             } catch {
                 // 本文が読めなくてもステータスで判断できる
             }
-            throw new EdgeFunctionError('http-error', `${name} failed: ${response.status} ${detail}`.trim(), response.status);
+            assertActive();
+            throw new EdgeFunctionError('http-error', edgeHttpErrorMessage(name, response.status, detail), response.status);
         }
         const result = await response.json() as TResult;
         assertActive();
