@@ -24,7 +24,7 @@ serveGameFunction(async (ctx) => {
         .eq('user_id', ctx.userId)
         .eq('key', idempotencyKey)
         .maybeSingle<{ operation: string; result: unknown | null }>();
-    if (replayError) return json(500, { error: replayError.message });
+    if (replayError) return json(500, { error: 'internal_error' });
     if (replay?.operation === 'claim_login_bonus' && replay.result !== null) return json(200, replay.result);
 
     const today = getTodayJst();
@@ -34,7 +34,7 @@ serveGameFunction(async (ctx) => {
         .select('login_streak, last_login_bonus_date, version')
         .eq('user_id', ctx.userId)
         .single<{ login_streak: number; last_login_bonus_date: string | null; version: number }>();
-    if (error || !character) return json(500, { error: error?.message ?? 'character not found' });
+    if (error || !character) return json(500, { error: 'internal_error' });
 
     const bonus = computeLoginBonus(character.last_login_bonus_date, character.login_streak, today);
     if (!bonus) {

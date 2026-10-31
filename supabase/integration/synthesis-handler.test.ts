@@ -64,7 +64,7 @@ describe('synthesis HTTP handler idempotency', () => {
         const { ctx } = context(read === 0 ? [failure] : [{ data: null, error: null }, failure]);
         const response = await synthesizeItems(ctx);
         expect(response.status).toBe(500);
-        expect(await response.json()).toEqual({ error: 'ledger unavailable' });
+        expect(await response.json()).toEqual({ error: 'internal_error' });
         expect(callApply).not.toHaveBeenCalled();
     });
 
