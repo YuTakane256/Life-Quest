@@ -22,7 +22,14 @@ const storage = {
 };
 function client(platform: string) {
     const channel = { on: (_kind: string, _filter: unknown, cb: () => void) => { f.realtime.set(platform, cb); return channel; }, subscribe: () => channel };
-    return { rpc: (_name: string, params: Record<string, unknown>) => f.rpc(platform, params), channel: () => channel, removeChannel: async () => {} };
+    return {
+        auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-a' }, access_token: 'owner-a-token' } }, error: null }) },
+        rpc: (_name: string, params: Record<string, unknown>) => {
+            const request = f.rpc(platform, params);
+            return Object.assign(request, { setHeader: () => request });
+        },
+        channel: () => channel, removeChannel: async () => {},
+    };
 }
 function outboxState() { return { ...createInactiveCloudSyncState().push, availability: 'ready' as const }; }
 vi.mock('@life-quest/core/cloudCache', async (original) => ({ ...await original<typeof import('@life-quest/core/cloudCache')>(), loadCloudCache: () => f.load() }));

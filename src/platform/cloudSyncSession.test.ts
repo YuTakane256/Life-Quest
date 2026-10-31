@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin, notifyLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin as notifyScopeLogin, notifyLogout as notifyScopeLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { cloudCacheKey, type CloudCache } from '@life-quest/core/cloudCache';
 import { cloudCursorKey, type PullBatch } from '@life-quest/core/cloudPull';
 import { createInactiveCloudSyncState } from '@life-quest/core/cloudSyncState';
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
     const realtime: Array<() => void> = [];
     const storage = { getItem: vi.fn(), setItem: vi.fn(), removeItem: vi.fn() };
     return {
-        values, rpc, realtime, storage,
+        values, rpc, realtime, storage, sdkUser: 'a' as string | null, headers: [] as string[],
         visibleTasks: [] as string[],
         seeded: vi.fn(), bonus: vi.fn(), drain: vi.fn(), retry: vi.fn(),
         push: { availability: 'ready', pending: 0, inflight: 0, failed: 0, conflict: 0,
@@ -20,7 +20,13 @@ const mocks = vi.hoisted(() => {
         pushListeners: [] as Array<(state: CloudOutboxPublicState) => void>,
         network: [] as Array<(state: { isConnected: boolean | null; isInternetReachable: boolean | null }) => void>,
         client: {
-            rpc,
+            auth: { getSession: async () => ({ data: { session: mocks.sdkUser === null ? null : {
+                user: { id: mocks.sdkUser }, access_token: `token-${mocks.sdkUser}`,
+            } }, error: null }) },
+            rpc: (name: string, params: Record<string, unknown>) => {
+                const request = rpc(name, params);
+                return Object.assign(request, { setHeader: (_name: string, token: string) => { mocks.headers.push(token); return request; } });
+            },
             channel: () => {
                 const channel = {
                     on: (_event: string, _filter: unknown, callback: () => void) => {
@@ -103,6 +109,8 @@ function batch(user: string, hasMore = false): PullBatch {
             completed_at: null, created_at: '2026-10-15T00:00:00Z' }],
     };
 }
+async function notifyLogin(userId: string) { mocks.sdkUser = userId; await notifyScopeLogin(userId); }
+async function notifyLogout() { mocks.sdkUser = null; await notifyScopeLogout(); }
 const cleanups: Array<() => void> = [];
 const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 
@@ -169,7 +177,7 @@ beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     mocks.values.clear();
-    mocks.visibleTasks = [];
+    mocks.visibleTasks = []; mocks.sdkUser = 'a'; mocks.headers.length = 0;
     mocks.realtime.length = 0;
     mocks.network.length = 0; mocks.pushListeners.length = 0;
     Object.assign(mocks.push, { ...createInactiveCloudSyncState().push, availability: 'ready' });
@@ -200,6 +208,44 @@ for (const platform of [
             }
         };
         const start = async () => { cleanups.push(platform.register()); await notifyLogin('a'); await settle(); };
+
+        it('SDKだけBへ切り替わったらAの受信を送らず、Aのキャッシュとカーソルを保持する', async () => {
+            await start();
+            mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
+            await platform.active()!.flush();
+            const before = [...mocks.values.entries()]; const visible = [...mocks.visibleTasks];
+            mocks.rpc.mockClear(); mocks.sdkUser = 'b';
+            mocks.rpc.mockResolvedValue({ data: batch('b'), error: null });
+            await expect(platform.active()!.flush()).rejects.toThrow(/cloud pull/);
+            expect(mocks.rpc).not.toHaveBeenCalled();
+            expect([...mocks.values.entries()]).toEqual(before); expect(mocks.visibleTasks).toEqual(visible);
+            mocks.sdkUser = 'a';
+            await platform.active()!.flush();
+            expect(mocks.rpc).toHaveBeenCalledOnce();
+        });
+
+        it('受信中にSDKだけBへ切り替わったら応答を適用せず、Aの保存を保持する', async () => {
+            await start();
+            mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
+            await platform.active()!.flush();
+            const before = [...mocks.values.entries()]; const visible = [...mocks.visibleTasks];
+            const response = deferred<{ data: PullBatch; error: null }>();
+            mocks.rpc.mockReturnValueOnce(response.promise);
+            const pending = platform.active()!.flush(); await settle();
+            mocks.sdkUser = 'b'; response.resolve({ data: batch('new'), error: null });
+            await expect(pending).rejects.toThrow(/cloud pull/);
+            expect([...mocks.values.entries()]).toEqual(before); expect(mocks.visibleTasks).toEqual(visible);
+            expect(mocks.headers.at(-1)).toBe('Bearer token-a');
+        });
+
+        it('SDKセッションがない間は受信せず、同じAの復帰で通常受信へ戻る', async () => {
+            await start(); mocks.sdkUser = null;
+            await expect(platform.active()!.flush()).rejects.toThrow(/cloud pull/);
+            expect(mocks.rpc).not.toHaveBeenCalled();
+            mocks.sdkUser = 'a'; mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
+            await platform.active()!.flush();
+            expect(mocks.visibleTasks).toEqual(['a-task']);
+        });
 
         it('publishes offline/online, preserves offline across unknown, and does not manually send offline', async () => {
             await start();
@@ -451,6 +497,7 @@ for (const platform of [
             mocks.rpc.mockReturnValueOnce(response.promise).mockResolvedValue({ data: batch('b'), error: null });
             const pullA = a.flush();
             await settle();
+            mocks.sdkUser = 'b'; // Direct startup also follows the SDK owner.
             const b = platform.start('b')!;
             cleanups.push(b.stop);
             await settle();

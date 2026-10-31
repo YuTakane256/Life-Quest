@@ -1,5 +1,7 @@
 # Life Quest：画面統一 → 品質確認 → 配布準備
 
+2026-10-31追記: [受信同期のアカウント固定](cloud-pull-account-binding-20261031.md)で、SDKの切替通知が遅れた場合も送信前後の所有者を確認し、捕捉したトークンで受信する。DB/RLS/保存形式は維持し、実環境や認証回復UI等の確認は残す。
+
 親Issue: [#688](https://github.com/YuTakane256/Life-Quest/issues/688)。2026-10-09に承認された実装順。
 
 基準は最新Webのスマホ幅。React Nativeを維持し、WebViewへ置換しない。表示内容・操作結果を揃え、キーボード、日付入力、権限確認、safe areaはネイティブを維持する。
