@@ -112,7 +112,82 @@ describe('shared Edge Function browser requests', () => {
         const service = { rpc: vi.fn().mockResolvedValue({ data: null, error: { message } }) };
         const response = await callApply(service as unknown as ReturnType<typeof createServiceClient>, 'complete_task_apply', {});
         expect(response.status).toBe(status);
+        expect(await response.json()).toEqual({ error: status === 500 ? 'internal_error' : message });
+        expectCors(response);
+    });
+});
+
+
+describe('Edge Function error privacy', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+        vi.stubGlobal('Deno', { serve: (handler: RequestHandler) => { requestHandler = handler; } });
+        vi.mocked(verifyUser).mockResolvedValue('verified-owner');
+        serveGameFunction(businessHandler);
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it.each([
+        ['not_found_or_forbidden', 404], ['stage_locked', 409], ['battle_locked', 409],
+        ['cannot_sell_equipped_item', 409], ['chest_already_opened', 409],
+        ['invalid ingredients', 409], ['invalid ingredients: bad count', 409], ['invalid ingredients: duplicates', 409],
+        ['web_migration_required', 409], ['payload too large', 400], ['idempotency_key_operation_mismatch', 500],
+    ])('preserves the exact public DB error %s', async (message, status) => {
+        const service = { rpc: vi.fn().mockResolvedValue({ data: null, error: { message } }) };
+        const response = await callApply(service as unknown as ReturnType<typeof createServiceClient>, 'test_apply', {});
+        expect(response.status).toBe(status);
         expect(await response.json()).toEqual({ error: message });
         expectCors(response);
+    });
+
+    it.each([
+        'relation private_tokens does not exist',
+        'not_found_or_forbidden: private row content',
+        'query failed: stage_locked; SELECT private_column FROM private_tokens',
+        'invalid ingredients: private item details',
+        'payload too large\nprivate payload content',
+        'web_migration_required; private database detail',
+        'idempotency_key_operation_mismatch: private database detail',
+    ])('does not echo DB details or classify partial matches: %s', async (message) => {
+        const service = { rpc: vi.fn().mockResolvedValue({ data: null, error: { message, details: 'private detail', hint: 'private hint' } }) };
+        const response = await callApply(service as unknown as ReturnType<typeof createServiceClient>, 'test_apply', {});
+        expect(response.status).toBe(500);
+        expect(await response.json()).toEqual({ error: 'internal_error' });
+        expectCors(response);
+    });
+
+    it.each([new Error('private connection details'), { message: 'private exception details' }, 'private thrown value'])('does not echo an unexpected handler exception', async (failure) => {
+            businessHandler.mockRejectedValue(failure);
+            const response = await requestHandler(request());
+            expect(response.status).toBe(500);
+            expect(await response.json()).toEqual({ error: 'internal_error' });
+            expectCors(response);
+        });
+
+    it('does not echo a service-client creation exception', async () => {
+        vi.mocked(createServiceClient).mockImplementation(() => { throw new Error('private client configuration'); });
+        const response = await requestHandler(request());
+        expect(response.status).toBe(500);
+        expect(await response.json()).toEqual({ error: 'internal_error' });
+        expect(businessHandler).not.toHaveBeenCalled();
+    });
+
+    it.each(['auth_failure', 'account_deletion_failed', 'apple_authorization_record_failed', 'apple_revocation_failed', 'idempotency_key_operation_mismatch'])('retains fixed server error %s but strips extra fields', async (error) => {
+            const response = json(error === 'apple_revocation_failed' ? 503 : 500, { error, details: 'private detail', hint: 'private hint' });
+            expect(await response.json()).toEqual({ error });
+            expectCors(response);
+        });
+
+    it.each([null, 'private failure', { error: 'private failure', details: 'private detail' }])('defensively hides unknown direct 5xx response bodies', async (body) => {
+            expect(await json(500, body).json()).toEqual({ error: 'internal_error' });
+        });
+
+    it('preserves successful payloads and controlled input errors', async () => {
+        const data = { item: { id: 'test-item' }, version: 42 };
+        expect(await json(200, data).json()).toEqual(data);
+        businessHandler.mockRejectedValue(new BadRequestError('invalid_stage'));
+        expect(await (await requestHandler(request())).json()).toEqual({ error: 'invalid_stage' });
+        businessHandler.mockRejectedValue(new NotFoundError('character_missing'));
+        expect(await (await requestHandler(request())).json()).toEqual({ error: 'character_missing' });
     });
 });

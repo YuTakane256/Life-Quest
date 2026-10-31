@@ -1,7 +1,7 @@
 /**
  * Edge Function共通のリクエスト処理骨格。
  * - OPTIONSの事前確認に応答し、POSTはJWT検証（ADR-007）とJSONパース後に処理する
- * - DB関数のエラーメッセージをHTTPステータスへ写像する
+ * - DB関数の既知の業務エラーだけを公開し、内部エラーの詳細は返さない
  */
 import { createServiceClient, UnauthorizedError, verifyUser } from './auth.ts';
 
@@ -13,7 +13,18 @@ const CORS_HEADERS = {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// Only these fixed, intentional server codes may leave the API. Never send
+// database messages, exception objects, details/hints or request data in 5xx.
+const PUBLIC_SERVER_ERRORS = new Set([
+    'internal_error', 'auth_failure', 'account_deletion_failed',
+    'apple_authorization_record_failed', 'apple_revocation_failed', 'idempotency_key_operation_mismatch',
+]);
+
 export function json(status: number, body: unknown): Response {
+    if (status >= 500) {
+        const code = typeof body === 'object' && body !== null && 'error' in body ? body.error : null;
+        body = { error: typeof code === 'string' && PUBLIC_SERVER_ERRORS.has(code) ? code : 'internal_error' };
+    }
     return new Response(JSON.stringify(body), {
         status,
         headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -27,12 +38,17 @@ export class NotFoundError extends Error {
     }
 }
 
-const ERROR_STATUS_BY_MESSAGE: [pattern: RegExp, status: number][] = [
-    [/not_found_or_forbidden/, 404],
-    [/stage_locked|battle_locked|cannot_sell_equipped_item|chest_already_opened|invalid ingredients/, 409],
-    [/web_migration_required/, 409],
-    [/payload too large/, 400],
-];
+// Exact matches only: a known word inside a SQL/transport error must not
+// turn the surrounding private diagnostic into a public 4xx response.
+const ERROR_STATUS_BY_MESSAGE = new Map<string, number>([
+    ['not_found_or_forbidden', 404],
+    ['stage_locked', 409], ['battle_locked', 409], ['cannot_sell_equipped_item', 409],
+    ['chest_already_opened', 409], ['invalid ingredients', 409],
+    ['invalid ingredients: bad count', 409], ['invalid ingredients: duplicates', 409],
+    ['web_migration_required', 409], ['payload too large', 400], ['settings payload too large', 400],
+    // Existing API contract: reject reuse across operations, without exposing DB details.
+    ['idempotency_key_operation_mismatch', 500],
+]);
 
 export interface HandlerContext {
     userId: string;
@@ -48,10 +64,9 @@ export async function callApply(
 ): Promise<Response> {
     const { data, error } = await service.rpc(fn, params);
     if (error) {
-        for (const [pattern, status] of ERROR_STATUS_BY_MESSAGE) {
-            if (pattern.test(error.message)) return json(status, { error: error.message });
-        }
-        return json(500, { error: error.message });
+        const status = ERROR_STATUS_BY_MESSAGE.get(error.message);
+        if (status !== undefined) return json(status, { error: error.message });
+        return json(500, { error: 'internal_error' });
     }
     return json(200, data);
 }
@@ -84,7 +99,7 @@ export function serveGameFunction(
         } catch (error) {
             if (error instanceof BadRequestError) return json(400, { error: error.message });
             if (error instanceof NotFoundError) return json(404, { error: error.message });
-            return json(500, { error: error instanceof Error ? error.message : 'internal_error' });
+            return json(500, { error: 'internal_error' });
         }
     });
 }

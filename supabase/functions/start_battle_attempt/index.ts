@@ -40,7 +40,7 @@ serveGameFunction(async (ctx) => {
             .is('deleted_at', null),
     ]);
     if (characterRes.error || !characterRes.data) throw new NotFoundError('character_missing');
-    if (itemsRes.error) return json(500, { error: itemsRes.error.message });
+    if (itemsRes.error) return json(500, { error: 'internal_error' });
 
     // 実効ステータスをサーバーが独立に算出（core共有ルール）
     const level = calculateLevel(Number(characterRes.data.total_xp));

@@ -24,7 +24,7 @@ serveGameFunction(async (ctx) => {
             .is('deleted_at', null),
     ]);
     if (habitsRes.error || logsRes.error) {
-        return json(500, { error: habitsRes.error?.message ?? logsRes.error?.message });
+        return json(500, { error: 'internal_error' });
     }
 
     const habits: Habit[] = (habitsRes.data ?? []).map((row) => ({

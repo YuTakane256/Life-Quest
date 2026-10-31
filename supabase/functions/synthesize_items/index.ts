@@ -27,7 +27,7 @@ export async function synthesizeItems(ctx: HandlerContext): Promise<Response> {
             .eq('user_id', ctx.userId)
             .eq('key', idempotencyKey)
             .maybeSingle<{ operation: string; result: unknown | null }>();
-        if (replayError) return json(500, { error: replayError.message });
+        if (replayError) return json(500, { error: 'internal_error' });
         if (replay && replay.operation !== 'synthesize_items') {
             return json(409, { error: 'idempotency_key_operation_mismatch' });
         }
@@ -43,7 +43,7 @@ export async function synthesizeItems(ctx: HandlerContext): Promise<Response> {
         .eq('user_id', ctx.userId)
         .in('id', itemIds as string[])
         .is('deleted_at', null);
-    if (error) return json(500, { error: error.message });
+    if (error) return json(500, { error: 'internal_error' });
 
     const inventory: Equipment[] = (rows ?? []).flatMap((row) => {
         const template = EQUIPMENT_POOL.find((candidate) => candidate.id === row.template_id);

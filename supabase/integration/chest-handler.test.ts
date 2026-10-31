@@ -52,7 +52,9 @@ describe('chest HTTP handler idempotency', () => {
     it.each([0, 1])('fails closed on ledger errors at read %s', async (read) => {
         const failure = { data: null, error: { message: 'ledger unavailable' } };
         const { ctx } = context(read === 0 ? [failure] : [miss, failure]);
-        expect((await openChest(ctx)).status).toBe(500);
+        const response = await openChest(ctx);
+        expect(response.status).toBe(500);
+        expect(await response.json()).toEqual({ error: 'internal_error' });
         expect(callApply).not.toHaveBeenCalled();
     });
     it('rejects keys from another operation', async () => {
