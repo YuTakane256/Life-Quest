@@ -412,6 +412,25 @@ for (const platform of [
             expect(initialized).not.toHaveBeenCalled();
         });
 
+        it('invalid pull controls keep cached data/cursor and success time, then recover on an ordinary retry', async () => {
+            await start(); mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
+            await platform.active()!.syncNow();
+            const saved = [...mocks.values.entries()]; const visible = [...mocks.visibleTasks];
+            const lastSuccessAt = platform.state().pull.lastSuccessAt;
+            mocks.rpc.mockClear(); mocks.rpc.mockResolvedValue({ data: { ...batch('private'), next_cursor: 200, has_more: 'false' }, error: null });
+            await platform.active()!.syncNow();
+            expect(mocks.rpc).toHaveBeenCalledTimes(1);
+            expect(platform.state().pull).toEqual({ phase: 'failed', lastSuccessAt });
+            expect(platform.state().availability).toBe('ready'); expect(platform.state().attention).toBe('required');
+            expect([...mocks.values.entries()]).toEqual(saved); expect(mocks.visibleTasks).toEqual(visible);
+            expect(JSON.stringify(platform.state())).not.toContain('private');
+            mocks.rpc.mockResolvedValue({ data: { ...batch('a'), next_cursor: 3,
+                tasks: (batch('a').tasks as object[]).map((task) => ({ ...task, version: 3 })),
+            }, error: null });
+            await platform.active()!.syncNow();
+            expect(platform.state().pull.phase).toBe('idle'); expect(mocks.values.get(cloudCursorKey('a'))).toBe('3');
+        });
+
         it('does not pull if connectivity is lost during retry', async () => {
             await start();
             const retry = deferred<void>(); mocks.retry.mockReturnValueOnce(retry.promise);

@@ -364,4 +364,27 @@ describe.skipIf(!enabled)('#507 2クライアント同期E2E（ローカルSupab
         expect(status).toBe(401);
     });
 
+    it('validates actual one-version pages and an empty final response without changing convergence', async () => {
+        const full = createDevice(user); await full.runner.flush();
+        let cursor = 0; let cache = createEmptyCloudCache();
+        const pages: PullBatch[] = []; const writes: number[] = [];
+        const runner = createCloudPullRunner({
+            maxVersionsPerBatch: 1, readCursor: async () => cursor,
+            fetchBatch: async (after, max) => {
+                const { data, error } = await user.client.rpc('pull_sync_batch', { p_after_version: after, p_max_versions: max });
+                expect(error).toBeNull(); return data as PullBatch;
+            },
+            applyBatch: (batch) => { pages.push(batch); cache = applyPullBatchToCache(cache, batch); },
+            writeCursor: async (next) => { cursor = next; writes.push(next); },
+        });
+        await runner.flush();
+        expect(pages.length).toBeGreaterThan(1); expect(pages.some((page) => page.has_more)).toBe(true);
+        expect(cache).toEqual(full.cache);
+        expect(writes.every((value, index) => value > (writes[index - 1] ?? 0))).toBe(true);
+        const finalCursor = cursor; const writeCount = writes.length;
+        await runner.flush();
+        expect(pages.at(-1)).toMatchObject({ next_cursor: finalCursor, has_more: false });
+        expect(writes).toHaveLength(writeCount); expect(cache).toEqual(full.cache);
+    }, 15_000);
+
 });
