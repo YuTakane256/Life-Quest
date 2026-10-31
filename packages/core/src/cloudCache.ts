@@ -41,44 +41,67 @@ export function createEmptyCloudCache(): CloudCache {
     return Object.fromEntries(CLOUD_TABLES.map((table) => [table, {}])) as CloudCache;
 }
 
-/** テーブルごとの行キー（PK） */
-function rowKey(table: CloudTableName, row: CloudRow): string | null {
+/** Read required transport fields without accepting inherited values or invoking accessors. */
+function ownDataValue(record: object, key: string): unknown {
+    const field = Object.getOwnPropertyDescriptor(record, key);
+    if (!field || !Object.prototype.hasOwnProperty.call(field, 'value')) {
+        throw new Error('cloud pull rows invalid');
+    }
+    return field.value;
+}
+
+/** テーブルごとの行キー（PK）。表示項目の変換は既存のsnapshot builderへ委ねる。 */
+function rowKey(table: CloudTableName, row: object): string {
+    const keyPart = (field: string): string => {
+        const value = ownDataValue(row, field);
+        if (typeof value !== 'string' || value.length === 0) throw new Error('cloud pull rows invalid');
+        return value;
+    };
     switch (table) {
         case 'profiles':
         case 'user_settings':
         case 'characters':
-            return typeof row.user_id === 'string' ? row.user_id : null;
+            return keyPart('user_id');
         case 'habit_logs':
-            return typeof row.habit_id === 'string' && typeof row.date === 'string'
-                ? `${row.habit_id}:${row.date}` : null;
+            return `${keyPart('habit_id')}:${keyPart('date')}`;
         case 'rest_days':
         case 'stats_daily':
-            return typeof row.date === 'string' ? row.date : null;
+            return keyPart('date');
         default:
-            return typeof row.id === 'string' ? row.id : null;
+            return keyPart('id');
     }
 }
 
 /**
  * バッチをキャッシュへ適用する（新しいキャッシュを返す）。
+ * 不正な既知テーブル/行/PK/versionは読み飛ばさずページ全体を拒否する。
  * 同一行はversionが同じか進んでいる場合のみ置き換える。
  */
 export function applyPullBatchToCache(cache: CloudCache, batch: PullBatch): CloudCache {
     const next: CloudCache = { ...cache };
-    for (const table of CLOUD_TABLES) {
-        const rows = batch[table];
-        if (!Array.isArray(rows) || rows.length === 0) continue;
-        const updated = { ...next[table] };
-        for (const raw of rows) {
-            if (typeof raw !== 'object' || raw === null) continue;
-            const row = raw as CloudRow;
-            const key = rowKey(table, row);
-            if (key === null) continue;
-            const existing = updated[key];
-            if (existing && Number(existing.version) > Number(row.version)) continue;
-            updated[key] = row;
+    try {
+        for (const table of CLOUD_TABLES) {
+            // Omitted sections are compatible with partial batches; a present section must be an array.
+            if (!Object.prototype.hasOwnProperty.call(batch, table)) continue;
+            const rows = ownDataValue(batch, table);
+            if (!Array.isArray(rows)) throw new Error();
+            if (rows.length === 0) continue;
+            const updated = { ...next[table] };
+            for (const raw of rows) {
+                if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error();
+                const version = ownDataValue(raw, 'version');
+                if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) throw new Error();
+                const key = rowKey(table, raw);
+                const existing = Object.prototype.hasOwnProperty.call(updated, key) ? updated[key] : undefined;
+                if (existing && Number(existing.version) > version) continue;
+                // Assignment to __proto__ would change the map prototype and silently drop that row.
+                Object.defineProperty(updated, key, { value: raw as CloudRow, enumerable: true, writable: true, configurable: true });
+            }
+            next[table] = updated;
         }
-        next[table] = updated;
+    } catch {
+        // Never retain arbitrary response values or inspection diagnostics in the error/cause.
+        throw new Error('cloud pull rows invalid');
     }
     return next;
 }

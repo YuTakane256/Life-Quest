@@ -364,6 +364,27 @@ describe.skipIf(!enabled)('#507 2クライアント同期E2E（ローカルSupab
         expect(status).toBe(401);
     });
 
+    it('rejects a malformed table in an actual RPC page without acknowledging any part, then converges on retry', async () => {
+        const reference = createDevice(user); await reference.runner.flush();
+        let cache = createEmptyCloudCache(); let cursor = 0; let damage = true;
+        const afters: number[] = [];
+        const runner = createCloudPullRunner({ readCursor: async () => cursor,
+            fetchBatch: async (after, max) => {
+                afters.push(after);
+                const { data, error } = await user.client.rpc('pull_sync_batch', { p_after_version: after, p_max_versions: max });
+                expect(error).toBeNull();
+                // Corrupt only the transport fixture; the server rows are never changed.
+                return (damage ? { ...data, chests: null } : data) as PullBatch;
+            },
+            applyBatch: (batch) => { cache = applyPullBatchToCache(cache, batch); },
+            writeCursor: async (next) => { cursor = next; },
+        });
+        await expect(runner.flush()).rejects.toThrow(/^cloud pull rows invalid$/);
+        expect(cursor).toBe(0); expect(cache).toEqual(createEmptyCloudCache());
+        damage = false; await runner.flush();
+        expect(afters).toEqual([0, 0]); expect(cursor).toBeGreaterThan(0); expect(cache).toEqual(reference.cache);
+    });
+
     it('validates actual one-version pages and an empty final response without changing convergence', async () => {
         const full = createDevice(user); await full.runner.flush();
         let cursor = 0; let cache = createEmptyCloudCache();
