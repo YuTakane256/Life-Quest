@@ -100,6 +100,34 @@ describe.skipIf(!enabled)('#502 サーバー権威RPC（ローカルSupabase統�
         }
     });
 
+    it.each([null, []])('Edge本文のrootが非オブジェクトなら400で拒否し報酬を変更しない: %s', async (body) => {
+        const before = await getCharacter();
+        const response = await callFn('complete_task', body);
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: 'invalid_body' });
+        expect(await getCharacter()).toEqual(before);
+    });
+
+    it('Edge本文の5MiB超過を413で拒否し報酬を変更しない', async () => {
+        const before = await getCharacter();
+        const response = await fetch(`${FUNCTIONS_URL}/complete_task`, {
+            method: 'POST', headers: { Authorization: `Bearer ${user.token}`, 'Content-Type': 'application/json' },
+            body: ' '.repeat(5 * 1024 * 1024) + '{}',
+        });
+        expect(response.status).toBe(413);
+        expect(await response.json()).toEqual({ error: 'payload_too_large' });
+        expect(await getCharacter()).toEqual(before);
+    });
+
+    it('Edge本文がちょうど5MiBなら読み込みを通過して既存の必須項目検査へ進む', async () => {
+        const response = await fetch(`${FUNCTIONS_URL}/complete_task`, {
+            method: 'POST', headers: { Authorization: `Bearer ${user.token}`, 'Content-Type': 'application/json' },
+            body: ' '.repeat(5 * 1024 * 1024 - 2) + '{}',
+        });
+        expect(response.status).toBe(400);
+        expect(((await response.json()) as { error: string }).error).toMatch(/^missing_or_invalid_/);
+    });
+
     it('update_character_profile: name/avatarを更新し、base_version不一致はconflictを返す', async () => {
         const first = await user.client.rpc('update_character_profile', {
             p_name: 'テスト勇者', p_avatar: 'male', p_base_version: null, p_key: uuid(),

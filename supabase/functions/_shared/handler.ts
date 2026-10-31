@@ -4,6 +4,7 @@
  * - DB関数の既知の業務エラーだけを公開し、内部エラーの詳細は返さない
  */
 import { createServiceClient, UnauthorizedError, verifyUser } from './auth.ts';
+import { readJsonObject, RequestBodyError } from './requestBody.ts';
 
 // Cookie認証は使わず、POSTのBearer JWT検証を維持する。
 // Webの配信元・ローカル開発・Nativeで同じAPIを利用できるようにする。
@@ -89,8 +90,9 @@ export function serveGameFunction(
 
         let body: Record<string, unknown>;
         try {
-            body = await req.json() as Record<string, unknown>;
-        } catch {
+            body = await readJsonObject(req);
+        } catch (error) {
+            if (error instanceof RequestBodyError) return json(error.status, { error: error.code });
             return json(400, { error: 'invalid_json' });
         }
 
