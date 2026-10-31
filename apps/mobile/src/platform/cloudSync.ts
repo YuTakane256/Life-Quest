@@ -175,7 +175,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     const recoverConnection = async (): Promise<boolean> => {
         if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
         const { retryablePending } = await drainOutboxAndWait();
-        if (!isCurrent() || retryablePending) return false;
+        if (!isCurrent() || retryablePending || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
         let pulled = false;
         try {
             await pullNow();
@@ -294,6 +294,13 @@ export function registerMobileCloudSyncHooks(): () => void {
             if (activeUserId === userId && activeHandle?.isActive()
                 && getMobileCloudSyncState().pull.phase !== 'auth-required') return;
             activeHandle?.stop();
+            activeHandle = startMobileCloudSync(userId);
+            activeUserId = activeHandle ? userId : null;
+        },
+        onTokenRefreshed: (userId) => {
+            if (activeUserId !== userId || !activeHandle?.isActive()
+                || getMobileCloudSyncState().pull.phase !== 'auth-required') return;
+            activeHandle.stop();
             activeHandle = startMobileCloudSync(userId);
             activeUserId = activeHandle ? userId : null;
         },

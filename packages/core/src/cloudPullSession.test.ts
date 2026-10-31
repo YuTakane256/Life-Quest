@@ -31,6 +31,14 @@ describe('account-bound cloud pull', () => {
         await expect(f.fetchBatch(3, 20)).rejects.not.toBeInstanceOf(CloudPullAuthError);
         expect(await f.fetchBatch(3, 20)).toBe(batch);
     });
+    it('a late401 for an old token stays retryable when the same owner already refreshed', async () => {
+        const f = fixture();
+        f.getSession.mockResolvedValueOnce(owner).mockResolvedValue({ ...owner, accessToken: 'a-refreshed-token' });
+        f.call.mockRejectedValueOnce(new CloudPullAuthError('request'));
+        await expect(f.fetchBatch(3, 20)).rejects.toThrow(/^cloud pull request failed$/);
+        expect(await f.fetchBatch(3, 20)).toBe(batch);
+        expect(f.call.mock.calls.map(([, , token]) => token)).toEqual([owner.accessToken, 'a-refreshed-token']);
+    });
     it('does not echo SDK authentication diagnostics', async () => {
         const f = fixture(); f.getSession.mockRejectedValue(new Error('private token and user details'));
         await expect(f.fetchBatch(3, 20)).rejects.toThrow(/^cloud pull authentication unavailable$/);

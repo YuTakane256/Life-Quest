@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
     const realtime: Array<() => void> = [];
     const storage = { getItem: vi.fn(), setItem: vi.fn(), removeItem: vi.fn() };
     return {
-        values, rpc, realtime, storage, sdkUser: 'a' as string | null, sdkError: false, headers: [] as string[],
+        values, rpc, realtime, storage, sdkUser: 'a' as string | null, sdkError: false, authListeners: [] as Array<(event: string, session: { user: { id: string } } | null) => void>, headers: [] as string[],
         visibleTasks: [] as string[],
         seeded: vi.fn(), bonus: vi.fn(), drain: vi.fn(), retry: vi.fn(),
         push: { availability: 'ready', pending: 0, inflight: 0, failed: 0, conflict: 0,
@@ -20,7 +20,9 @@ const mocks = vi.hoisted(() => {
         pushListeners: [] as Array<(state: CloudOutboxPublicState) => void>,
         network: [] as Array<(state: { isConnected: boolean | null; isInternetReachable: boolean | null }) => void>,
         client: {
-            auth: { getSession: async () => ({ data: { session: mocks.sdkUser === null ? null : {
+            auth: { onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => {
+                mocks.authListeners.push(listener); return { data: { subscription: { unsubscribe() {} } } };
+            }, getSession: async () => ({ data: { session: mocks.sdkUser === null ? null : {
                 user: { id: mocks.sdkUser }, access_token: `token-${mocks.sdkUser}`,
             } }, error: mocks.sdkError ? { message: 'private-sdk-error' } : null }) },
             rpc: (name: string, params: Record<string, unknown>) => {
@@ -51,8 +53,8 @@ vi.mock('@react-native-community/netinfo', () => ({ default: { addEventListener:
     mocks.network.push(callback);
     return () => { mocks.network.splice(mocks.network.indexOf(callback), 1); };
 } } }));
-vi.mock('./authStores', () => ({ markCloudSessionSeeded: mocks.seeded }));
-vi.mock('../../apps/mobile/src/platform/authStores', () => ({ markCloudSessionSeeded: mocks.seeded }));
+vi.mock('./authStores', () => ({ markCloudSessionSeeded: mocks.seeded, hasPersistedCloudGame: () => false, prepareWebAnonymousSession: async () => {} }));
+vi.mock('../../apps/mobile/src/platform/authStores', () => ({ markCloudSessionSeeded: mocks.seeded, hasPersistedCloudGame: () => false, prepareWebAnonymousSession: async () => {} }));
 vi.mock('../stores/useLoginBonusStore', () => ({ requestLoginBonusRecheck: mocks.bonus }));
 vi.mock('../../apps/mobile/src/stores/useMobileLoginBonusStore', () => ({ requestMobileLoginBonusRecheck: mocks.bonus }));
 vi.mock('./canonicalSync', () => ({
@@ -89,6 +91,20 @@ vi.mock('../../apps/mobile/src/platform/cloudOutbox', () => {
         },
     };
 });
+
+vi.mock('./completionRewards', () => ({ flushCompletionRewardWrites: async () => {} }));
+vi.mock('./edgeFunctions', () => ({ getWebEdgeFunctionInvoker: () => null }));
+vi.mock('../../apps/mobile/src/platform/edgeFunctions', () => ({ getMobileEdgeFunctionInvoker: () => null }));
+vi.mock('./accountDeletion', () => ({ cleanupDeletedWebAccount: async () => {} }));
+vi.mock('../../apps/mobile/src/platform/accountDeletion', () => ({ cleanupDeletedMobileAccount: async () => {} }));
+vi.mock('./pendingRewardOperations', () => ({ detachPendingWebRewardOperations: vi.fn(), restorePendingWebRewardOperations: vi.fn() }));
+vi.mock('../../apps/mobile/src/platform/pendingRewardOperations', () => ({ detachPendingRewardOperations: vi.fn(), restorePendingRewardOperations: async () => {} }));
+vi.mock('expo-linking', () => ({ getInitialURL: async () => null, addEventListener: () => ({ remove() {} }) }));
+vi.mock('expo-auth-session', () => ({ makeRedirectUri: () => 'lifequest://settings' }));
+vi.mock('expo-web-browser', () => ({ maybeCompleteAuthSession() {} }));
+vi.mock('../../apps/mobile/src/platform/appleSignIn', () => ({ signInWithAppleNative: vi.fn() }));
+import * as webAuth from './auth';
+import * as mobileAuth from '../../apps/mobile/src/platform/auth';
 
 import { getActiveWebCloudSync, getWebCloudSyncState, registerWebCloudSyncHooks, startWebCloudSync } from './cloudSync';
 import {
@@ -177,7 +193,9 @@ beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     mocks.values.clear();
-    mocks.visibleTasks = []; mocks.sdkUser = 'a'; mocks.sdkError = false; mocks.headers.length = 0;
+    mocks.visibleTasks = []; mocks.sdkUser = 'a'; mocks.sdkError = false; mocks.headers.length = 0; mocks.authListeners.length = 0;
+    localStorage.clear(); window.history.replaceState(null, '', '/settings');
+    webAuth.clearPasswordRecoveryState(); mobileAuth.clearPasswordRecoveryState();
     mocks.realtime.length = 0;
     mocks.network.length = 0; mocks.pushListeners.length = 0;
     Object.assign(mocks.push, { ...createInactiveCloudSyncState().push, availability: 'ready' });
@@ -372,6 +390,26 @@ for (const platform of [
             expect(JSON.stringify(platform.state())).not.toContain('private');
             mocks.sdkError = false; mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
             await platform.active()!.syncNow(); expect(platform.state().pull.phase).toBe('idle');
+        });
+
+        it('the real SDK TOKEN_REFRESHED listener resumes only the same-owner blocked pull without login initialization', async () => {
+            await start(); const initialized = vi.fn(); registerAuthLifecycleHooks({ onLogin: initialized });
+            const auth = platform.name === 'Web' ? webAuth : mobileAuth;
+            cleanups.push(auth.startAuthSessionListener()); await settle();
+            const normal = platform.active();
+            mocks.authListeners.at(-1)!('TOKEN_REFRESHED', { user: { id: 'a' } }); await settle();
+            expect(platform.active()).toBe(normal);
+            mocks.rpc.mockResolvedValue({ data: null, error: { message: 'private' }, status: 401 });
+            await platform.active()!.syncNow();
+            expect(platform.state().pull.phase).toBe('auth-required');
+            mocks.authListeners.at(-1)!('TOKEN_REFRESHED', { user: { id: 'b' } }); await settle();
+            expect(platform.active()).toBe(normal); expect(platform.state().pull.phase).toBe('auth-required');
+            mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
+            mocks.authListeners.at(-1)!('TOKEN_REFRESHED', { user: { id: 'a' } }); await settle();
+            expect(platform.active()).not.toBe(normal);
+            await platform.active()!.syncNow();
+            expect(platform.state().availability).toBe('ready'); expect(platform.state().pull.phase).toBe('idle');
+            expect(initialized).not.toHaveBeenCalled();
         });
 
         it('does not pull if connectivity is lost during retry', async () => {

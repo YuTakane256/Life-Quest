@@ -1,7 +1,7 @@
 /**
  * Mobileの認証サービス（#503、メール認証のみ）。Webの src/platform/auth.ts と同型。
  */
-import { captureAuthSessionScope, notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, notifyLogin, notifyLogout, notifyTokenRefreshed } from '@life-quest/core/authLifecycle';
 import { beginMobileCloudSessionCheck, checkMobileCloudSessionOwner, finishMobileCloudSessionCheck, getMobileCloudRecoveryState, isMobileCloudSessionAccepted } from './cloudSessionRecovery';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type { BattleAuthState } from '@life-quest/core/battleStartPolicy';
@@ -581,6 +581,12 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
     if (event === 'PASSWORD_RECOVERY' && session) {
         recoveryCallbackInProgress = false;
         receiveMobileRecoverySession();
+        return;
+    }
+    if (event === 'TOKEN_REFRESHED' && session) {
+        if (!recoveryCallbackInProgress && !mobileRecoveryGate && passwordRecoveryState !== 'ready') {
+            void notifyTokenRefreshed(session.user.id);
+        }
         return;
     }
     if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {

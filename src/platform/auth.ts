@@ -7,7 +7,7 @@ import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
  * - ログアウトは notifyLogout の全フック完了を待ってから解決する（ADR-009:
  *   ストアのメモリ即時クリアがログアウトAPIの一部として完了する契約）
  */
-import { captureAuthSessionScope, notifyLogin, notifyLogout } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, notifyLogin, notifyLogout, notifyTokenRefreshed } from '@life-quest/core/authLifecycle';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type { BattleAuthState } from '@life-quest/core/battleStartPolicy';
 import { getWebSupabaseClient } from './supabase';
@@ -542,6 +542,12 @@ export function startAuthSessionListener(): () => void {
                 if (generation === recoveryGeneration) setPasswordRecoveryState('ready');
             });
             scrubRecoveryUrl();
+            return;
+        }
+        if (event === 'TOKEN_REFRESHED' && session) {
+            if (!recoveryCallbackInProgress && !hasWebRecoveryGate() && passwordRecoveryState !== 'ready') {
+                void notifyTokenRefreshed(session.user.id);
+            }
             return;
         }
         if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {

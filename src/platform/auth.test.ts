@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
     signOut: vi.fn(async () => ({ error: null })),
     invoke: vi.fn(async () => ({ recorded: true })),
     notifyLogin: vi.fn(async () => undefined),
+    notifyTokenRefreshed: vi.fn(async () => undefined),
     notifyLogout: vi.fn(async () => undefined),
 }));
 
@@ -52,6 +53,7 @@ vi.mock('./supabase', () => ({
 vi.mock('@life-quest/core/authLifecycle', () => ({
     captureAuthSessionScope: () => ({ userId: null }),
     notifyLogin: state.notifyLogin,
+    notifyTokenRefreshed: state.notifyTokenRefreshed,
     notifyLogout: state.notifyLogout,
 }));
 

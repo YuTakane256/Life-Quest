@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
     storageWriteError: false,
     scopeOwner: null as string | null,
     notifyLogin: vi.fn(async (userId: string) => { state.scopeOwner = userId; }),
+    notifyTokenRefreshed: vi.fn(async () => undefined),
     notifyLogout: vi.fn(async () => { state.scopeOwner = null; }),
     checkCloudOwner: vi.fn(async (_userId: string | null, current: () => boolean = () => true) => current()),
     signInWithAppleNative: vi.fn(async (): Promise<{ ok: boolean; appleAuthorizationRecorded?: boolean }> => ({ ok: true })),
@@ -88,6 +89,7 @@ vi.mock('./supabase', () => ({
 vi.mock('@life-quest/core/authLifecycle', () => ({
     captureAuthSessionScope: () => ({ userId: state.scopeOwner }),
     notifyLogin: state.notifyLogin,
+    notifyTokenRefreshed: state.notifyTokenRefreshed,
     notifyLogout: state.notifyLogout,
 }));
 

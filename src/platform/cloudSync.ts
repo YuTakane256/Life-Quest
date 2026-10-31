@@ -245,7 +245,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     const recoverConnection = async (): Promise<boolean> => {
         if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
         const { retryablePending } = await drainOutboxAndWait();
-        if (!isCurrent() || retryablePending) return false;
+        if (!isCurrent() || retryablePending || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
         let pulled = false;
         try {
             await pullNow();
@@ -373,6 +373,13 @@ export function registerWebCloudSyncHooks(): () => void {
             if (activeUserId === userId && activeHandle?.isActive()
                 && getWebCloudSyncState().pull.phase !== 'auth-required') return;
             activeHandle?.stop();
+            activeHandle = startWebCloudSync(userId);
+            activeUserId = activeHandle ? userId : null;
+        },
+        onTokenRefreshed: (userId) => {
+            if (activeUserId !== userId || !activeHandle?.isActive()
+                || getWebCloudSyncState().pull.phase !== 'auth-required') return;
+            activeHandle.stop();
             activeHandle = startWebCloudSync(userId);
             activeUserId = activeHandle ? userId : null;
         },

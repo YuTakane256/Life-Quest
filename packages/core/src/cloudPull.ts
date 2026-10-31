@@ -63,7 +63,12 @@ export function createAccountBoundCloudPullFetcher(deps: AccountBoundCloudPullDe
             batch = await deps.call(afterVersion, maxVersions, token);
         } catch (error) {
             assertActive();
-            if (error instanceof CloudPullAuthError) throw error;
+            if (error instanceof CloudPullAuthError) {
+                // A refresh may have completed while the old-token request was in flight.
+                // Do not latch authentication wait for credentials the SDK already replaced.
+                const current = await readOwnerSession();
+                if (current.accessToken === token) throw error;
+            }
             // eslint-disable-next-line preserve-caught-error -- Raw SDK/storage diagnostics must not survive as error.cause.
             throw new Error('cloud pull request failed');
         }
