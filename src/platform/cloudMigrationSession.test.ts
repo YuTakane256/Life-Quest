@@ -128,4 +128,18 @@ describe('Web初回移行のセッション境界', () => {
         expect(await maybeRunWebCloudImport('a')).toBe(true);
         expect(fetchFn).toHaveBeenCalledTimes(1);
     });
+    it('network例外の内容をログへ出さず、初回移行を未完了のまま再試行できる', async () => {
+        await notifyLogin('a');
+        const failure = Object.assign(new Error('private-network-detail'), { details: 'private-network-detail' });
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        fetchFn.mockRejectedValueOnce(failure);
+        expect(await maybeRunWebCloudImport('a')).toBe(false);
+        expect(warn).toHaveBeenCalledOnce();
+        expect(warn.mock.calls[0]).not.toContain(failure);
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('private-network-detail');
+        expect(useTaskStore.getState().tasks.map((task) => task.id)).toEqual(['local-a']);
+        expect(await maybeRunWebCloudImport('a')).toBe(true);
+        expect(fetchFn.mock.calls[0][1].body).toBe(fetchFn.mock.calls[1][1].body);
+    });
+
 });

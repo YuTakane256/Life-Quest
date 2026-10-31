@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 /**
  * Mobileのオフラインキュー（#505、ADR-004/009）。
  *
@@ -46,9 +47,9 @@ const controller = createCloudOutboxController({
         const { getMobileEdgeFunctionInvoker } = await import('./edgeFunctions');
         return getMobileEdgeFunctionInvoker();
     },
-    onPermanentFailure: (op) => {
+    onPermanentFailure: () => {
         // 楽観更新の巻き戻しは次のプルのサーバー正で収束させる（v1）
-        console.warn(`outbox op failed permanently: ${op.operation} (${op.opId})`);
+        console.warn(...createClientDiagnosticLogArgs('outbox_permanent_failure'));
     },
 });
 

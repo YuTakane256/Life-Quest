@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 /**
  * Mobileの初回クラウド接続（#506 フローB / ADR-011）。
  *
@@ -251,7 +252,7 @@ export function registerMobileCloudMigrationHooks(): () => void {
             try {
                 await ensurePreMigrationBackup(userId);
             } catch (error) {
-                if (isCurrent()) console.warn('pre-migration backup failed', error);
+                if (isCurrent()) console.warn(...createClientDiagnosticLogArgs('mobile_pre_migration_backup_failed', error));
             }
         },
     });

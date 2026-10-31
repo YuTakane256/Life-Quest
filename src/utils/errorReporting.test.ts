@@ -42,4 +42,17 @@ describe('createRenderErrorLogArgs', () => {
             },
         ]);
     });
+    it.each([new Error('private diagnostic'), new TypeError('private diagnostic')])('does not trust a custom error.name in production', (error) => {
+        error.name = 'private-error-name';
+        const args = createRenderErrorLogArgs(error, {}, false);
+        expect(args[1]).toMatchObject({ errorName: error instanceof TypeError ? 'TypeError' : 'Error' });
+        expect(JSON.stringify(args)).not.toContain('private-error-name');
+    });
+    it('does not invoke an error.name getter while reporting a production failure', () => {
+        const error = new Error('private diagnostic');
+        const readName = () => { throw new Error('private getter diagnostic'); };
+        Object.defineProperty(error, 'name', { get: readName });
+        expect(() => createRenderErrorLogArgs(error, {}, false)).not.toThrow();
+    });
+
 });

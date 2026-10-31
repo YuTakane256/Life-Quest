@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 /**
  * Webのクラウド書き込みoutbox（Gap A、Epic #473）。
  *
@@ -54,9 +55,9 @@ const controller = createCloudOutboxController({
         }, options);
     },
     getEdgeInvoker: () => getWebEdgeFunctionInvoker(),
-    onPermanentFailure: (op) => {
+    onPermanentFailure: () => {
         // 楽観更新の巻き戻しは次のプルのサーバー正で収束させる（v1、Mobileと同方針）
-        console.warn(`outbox op failed permanently: ${op.operation} (${op.opId})`);
+        console.warn(...createClientDiagnosticLogArgs('outbox_permanent_failure'));
     },
 });
 

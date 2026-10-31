@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createWebPersistStorage } from '../platform/storage';
@@ -232,7 +233,7 @@ export const useLoginBonusStore = create<LoginBonusStoreState>()(
                             return result;
                         } catch (error) {
                             if (!isCurrent()) return { kind: 'auth-changed' };
-                            console.error('checkDailyLogin failed', error);
+                            console.error(...createClientDiagnosticLogArgs('login_bonus_check_failed', error));
                             const result: LoginBonusClaimResult = { kind: 'retryable-error' };
                             set({ claimStatus: 'retryable-error', claimMessage: getLoginBonusClaimMessage(result) });
                             return result;

@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 /**
  * Mobile版デイリーログインボーナス。Web `src/stores/useLoginBonusStore.ts`の移植。
  *
@@ -259,7 +260,7 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
                             return result;
                         } catch (error) {
                             if (!isCurrent()) return { kind: 'auth-changed' };
-                            console.error('checkDailyLogin failed', error);
+                            console.error(...createClientDiagnosticLogArgs('login_bonus_check_failed', error));
                             const result: LoginBonusClaimResult = { kind: 'retryable-error' };
                             set({ claimStatus: 'retryable-error', claimMessage: getLoginBonusClaimMessage(result) });
                             return result;

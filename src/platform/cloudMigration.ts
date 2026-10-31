@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 /**
  * Webの初回クラウド移行（#506 フローA / ADR-011）。
  *
@@ -111,7 +112,7 @@ export function maybeRunWebCloudImport(userId: string): Promise<boolean> {
             }, { isActive: isCurrent });
             return isCurrent();
         } catch (error) {
-            if (isCurrent()) console.warn('web cloud import failed (will retry next login)', error);
+            if (isCurrent()) console.warn(...createClientDiagnosticLogArgs('web_cloud_import_failed', error));
             return false;
         }
     };

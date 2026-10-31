@@ -1,3 +1,4 @@
+import { createClientDiagnosticLogArgs } from '@life-quest/core/diagnostics';
 /**
  * Webストアと canonical Repository の同期ブリッジ。
  *
@@ -219,7 +220,7 @@ export function startWebCanonicalSync(
             }
             await syncNow();
         } catch (error) {
-            console.warn('canonical sync init failed', error);
+            console.warn(...createClientDiagnosticLogArgs('canonical_sync_init_failed', error));
         }
     })();
 
