@@ -19,7 +19,7 @@ import {
     getSeedableSections,
     type CloudCache,
 } from '@life-quest/core/cloudCache';
-import { cloudCursorKey, cloudOutboxKey, createCloudPullRunner, type PullBatch } from '@life-quest/core/cloudPull';
+import { cloudCursorKey, cloudOutboxKey, createAccountBoundCloudPullFetcher, createCloudPullRunner, type PullBatch } from '@life-quest/core/cloudPull';
 import { createSyncOutbox, type OutboxOp, type OutboxSendResult } from '@life-quest/core/syncOutbox';
 
 const DB_URL = process.env.SUPABASE_DB_URL;
@@ -314,4 +314,35 @@ describe.skipIf(!enabled)('#507 2クライアント同期E2E（ローカルSupab
             themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21,
         });
     });
+    it('captured A token wins over the SDK default B token with real RLS, and a changed owner discards the result', async () => {
+        const ownerDevice = createDevice(user);
+        await ownerDevice.runner.flush();
+        const ownerIds = ownerDevice.taskSnapshot().tasks.map((task) => task.id);
+        expect(ownerIds.length).toBeGreaterThan(0);
+        // Deliberately split captured session metadata from the SDK default token to model
+        // a switch after capture. Server-side JWT validation and RLS remain authoritative.
+        const sdk = createClient(API_URL!, ANON_KEY!, { accessToken: async () => attacker.token });
+        const defaultB = await sdk.rpc('pull_sync_batch', { p_after_version: 0, p_max_versions: 200 });
+        expect(defaultB.error).toBeNull();
+        const defaultBCache = applyPullBatchToCache(createEmptyCloudCache(), defaultB.data as PullBatch);
+        expect(Object.keys(defaultBCache.tasks).some((id) => ownerIds.includes(id))).toBe(false);
+        let sessionOwner = user.id;
+        let switchAfterResponse = false;
+        const fetchBatch = createAccountBoundCloudPullFetcher({
+            expectedUserId: user.id, isActive: () => true,
+            getSession: async () => ({ userId: sessionOwner, accessToken: user.token }),
+            call: async (after, max, token) => {
+                const { data, error } = await sdk.rpc('pull_sync_batch', { p_after_version: after, p_max_versions: max })
+                    .setHeader('Authorization', `Bearer ${token}`);
+                if (error) throw error;
+                if (switchAfterResponse) sessionOwner = attacker.id;
+                return data as PullBatch;
+            },
+        });
+        const boundCache = applyPullBatchToCache(createEmptyCloudCache(), await fetchBatch(0, 200));
+        expect(Object.keys(boundCache.tasks).sort()).toEqual([...ownerIds].sort());
+        switchAfterResponse = true;
+        await expect(fetchBatch(0, 200)).rejects.toThrow('cloud pull account changed');
+    });
+
 });

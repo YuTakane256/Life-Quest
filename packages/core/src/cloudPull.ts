@@ -13,6 +13,58 @@ export interface PullBatch {
     [table: string]: unknown;
 }
 
+export interface CloudPullSession {
+    userId: string;
+    accessToken: string;
+}
+
+export interface AccountBoundCloudPullDeps {
+    expectedUserId: string;
+    isActive: () => boolean;
+    getSession: () => Promise<CloudPullSession | null>;
+    call: (afterVersion: number, maxVersions: number, accessToken: string) => Promise<PullBatch>;
+}
+
+/** Bind each request to its owning account, even before auth lifecycle notifications arrive. */
+export function createAccountBoundCloudPullFetcher(deps: AccountBoundCloudPullDeps): CloudPullDeps['fetchBatch'] {
+    const assertActive = (): void => {
+        if (!deps.isActive()) throw new Error('cloud pull session inactive');
+    };
+    const readOwnerSession = async (): Promise<CloudPullSession> => {
+        assertActive();
+        let session: CloudPullSession | null;
+        try {
+            session = await deps.getSession();
+        } catch {
+            assertActive();
+            throw new Error('cloud pull authentication unavailable');
+        }
+        assertActive();
+        if (!session || !session.accessToken || session.userId !== deps.expectedUserId) {
+            throw new Error('cloud pull account changed');
+        }
+        return session;
+    };
+    return async (afterVersion, maxVersions) => {
+        const session = await readOwnerSession();
+        assertActive();
+        // Capture before the SDK can switch its default Authorization to another account.
+        const token = session.accessToken;
+        let batch: PullBatch;
+        try {
+            batch = await deps.call(afterVersion, maxVersions, token);
+        } catch {
+            assertActive();
+            throw new Error('cloud pull request failed');
+        }
+        assertActive();
+        // A same-owner token refresh is valid; a different owner must never seed this cache.
+        await readOwnerSession();
+        assertActive();
+        return batch;
+    };
+}
+
 export interface CloudPullDeps {
     /** pull_sync_batch(after_version, max_versions) の呼び出し */
     fetchBatch: (afterVersion: number, maxVersions: number) => Promise<PullBatch>;
@@ -43,7 +95,13 @@ export function createCloudPullRunner(deps: CloudPullDeps): CloudPullRunner {
         if (!isActive()) return;
         let cursor = await deps.readCursor();
         while (isActive()) {
-            const batch = await deps.fetchBatch(cursor, maxVersions);
+            let batch: PullBatch;
+            try {
+                batch = await deps.fetchBatch(cursor, maxVersions);
+            } catch (error) {
+                if (!isActive()) return;
+                throw error;
+            }
             if (!isActive()) return;
             await deps.applyBatch(batch);
             if (!isActive()) return;

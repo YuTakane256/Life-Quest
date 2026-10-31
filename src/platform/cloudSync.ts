@@ -29,6 +29,7 @@ import {
 } from '@life-quest/core/cloudCache';
 import {
     cloudCursorKey,
+    createAccountBoundCloudPullFetcher,
     createCloudPullRunner,
     createInsurancePullScheduler,
     type PullBatch,
@@ -181,14 +182,23 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
 
     const runner = createCloudPullRunner({
         isActive: isCurrent,
-        fetchBatch: async (afterVersion, maxVersions) => {
-            const { data, error } = await client.rpc('pull_sync_batch', {
-                p_after_version: afterVersion,
-                p_max_versions: maxVersions,
-            });
-            if (error) throw new Error(error.message);
-            return data as PullBatch;
-        },
+        fetchBatch: createAccountBoundCloudPullFetcher({
+            expectedUserId: userId,
+            isActive: isCurrent,
+            getSession: async () => {
+                const { data, error } = await client.auth.getSession();
+                if (error || !data.session) return null;
+                return { userId: data.session.user.id, accessToken: data.session.access_token };
+            },
+            call: async (afterVersion, maxVersions, token) => {
+                const { data, error } = await client.rpc('pull_sync_batch', {
+                    p_after_version: afterVersion,
+                    p_max_versions: maxVersions,
+                }).setHeader('Authorization', `Bearer ${token}`);
+                if (error) throw new Error('cloud pull request failed');
+                return data as PullBatch;
+            },
+        }),
         applyBatch: async (batch) => {
             if (!isCurrent()) return;
             cache = applyPullBatchToCache(cache, batch);
