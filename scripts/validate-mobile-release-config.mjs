@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { assertPublicMobileEnvironment } from './public-client-environment.cjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const releaseIdentifier = 'com.yutakane.lifequest';
@@ -21,25 +22,6 @@ function readJson(relativePath) {
 
 function assert(condition, message) {
     if (!condition) fail(message);
-}
-
-function containsServiceRoleJwt(value) {
-    const payload = value.split('.')[1];
-    if (!payload) return false;
-    try {
-        const decoded = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64url').toString('utf8');
-        return JSON.parse(decoded).role === 'service_role';
-    } catch {
-        return false;
-    }
-}
-
-function validatePublicEnvironment(environment) {
-    for (const [name, value] of Object.entries(environment)) {
-        if (!name.startsWith('EXPO_PUBLIC_') || typeof value !== 'string') continue;
-        assert(!/sb_secret_/i.test(value), `${name} must not contain an sb_secret_* key`);
-        assert(!containsServiceRoleJwt(value), `${name} must not contain a JWT with role=service_role`);
-    }
 }
 
 function expoPublicConfig(variant) {
@@ -76,7 +58,7 @@ const eas = readJson('apps/mobile/eas.json');
 const profiles = eas.build;
 const appConfigSource = readFileSync(new URL('../apps/mobile/app.config.ts', import.meta.url), 'utf8');
 
-validatePublicEnvironment(process.env);
+assertPublicMobileEnvironment(process.env);
 assert(!JSON.stringify(eas).match(/(?:projectId|owner|credentialsSource|clientSecret|service_role)/i), 'eas.json must not contain project, credential, or secret placeholders');
 assert(eas.cli?.appVersionSource === 'remote', 'EAS must manage build-number increments remotely');
 validateProfile(profiles, 'development', 'parity');

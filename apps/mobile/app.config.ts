@@ -1,4 +1,5 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
+import { assertPublicMobileEnvironment } from '../../scripts/public-client-environment.cjs';
 
 const RELEASE_BUNDLE_ID = 'com.yutakane.lifequest';
 const PARITY_BUNDLE_ID = 'com.yutakane.lifequest.parity';
@@ -23,6 +24,7 @@ function readAppVariant(): AppVariant {
  * select the isolated parity app so Maestro can safely clear only its state.
  */
 export default ({ config }: ConfigContext): ExpoConfig => {
+    assertPublicMobileEnvironment(process.env);
     const variant = readAppVariant();
     const isParity = variant === 'parity';
     const isPreview = variant === 'preview';
