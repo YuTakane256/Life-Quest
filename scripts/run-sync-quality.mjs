@@ -45,6 +45,7 @@ const unitFiles = [
     'src/platform/taskCompletionSession.test.ts',
     'apps/mobile/src/platform/cloudOutbox.test.ts',
     'apps/mobile/src/platform/networkRecovery.test.ts',
+    'apps/mobile/src/platform/cloudSessionRecovery.test.ts',
 ];
 
 export function syncQualityPlan(args, env) {

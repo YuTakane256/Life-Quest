@@ -60,7 +60,8 @@ async function readDisplayOwner(): Promise<string | null> {
     }
     const matches: string[] = [];
     for (const owner of owners) {
-        const cache = await loadCloudCache(AsyncStorage, owner);
+        // An omitted corrupt section is not evidence that the shared display is anonymous.
+        const cache = await loadCloudCache(AsyncStorage, owner, { rejectInvalidSections: true });
         if (Object.keys(cache.tasks).some((id) => taskIds.has(id))
             || Object.keys(cache.habits).some((id) => habitIds.has(id))
             || Object.keys(cache.inventory_items).some((id) => equipmentIds.has(id))

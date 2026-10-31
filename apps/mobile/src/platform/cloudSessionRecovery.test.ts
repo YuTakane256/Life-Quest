@@ -8,7 +8,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
 } }));
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { beginMobileCloudSessionCheck, checkMobileCloudSessionOwner, finishMobileCloudSessionCheck,
-    getMobileCloudRecoveryState, MOBILE_CLOUD_DISPLAY_OWNER_KEY, releaseMobileCloudDisplayOwner,
+    getMobileCloudRecoveryState, isMobileCloudSessionAccepted, MOBILE_CLOUD_DISPLAY_OWNER_KEY, releaseMobileCloudDisplayOwner,
     rememberMobileCloudDisplayOwner } from './cloudSessionRecovery';
 
 describe('Mobile cloud cache authentication boundary', () => {
@@ -41,6 +41,27 @@ describe('Mobile cloud cache authentication boundary', () => {
         expect(memory.get('quest-board-tasks')).toBe(tasks);
         expect(await checkMobileCloudSessionOwner('b')).toBe(false);
     });
+    it.each([null, 'b', 'a'])('旧版の所有者不明・破損sectionは%sの権限を許可しない', async (userId) => {
+        memory.set('quest-board-tasks', JSON.stringify({ state: { tasks: [{ id: 'cloud-task' }] } }));
+        memory.set('life-quest:cloud:a:cache:tasks:v1', JSON.stringify({
+            tasks: { 'cloud-task': { id: 'cloud-task', version: 1 } }, subtasks: { orphan: null },
+        }));
+        memory.set('life-quest:cloud:a:outbox:v1', 'pending-operation-evidence');
+        const before = [...memory];
+        expect(await checkMobileCloudSessionOwner(userId)).toBe(false);
+        expect(getMobileCloudRecoveryState()).toBe('storage-error');
+        expect(isMobileCloudSessionAccepted('a')).toBe(false); expect(isMobileCloudSessionAccepted('b')).toBe(false);
+        expect(memory.has(MOBILE_CLOUD_DISPLAY_OWNER_KEY)).toBe(false); expect([...memory]).toEqual(before);
+    });
+    it('所有者markerが確定していれば壊れたcacheでも同じ本人の再構築を許可する', async () => {
+        await rememberMobileCloudDisplayOwner('a');
+        memory.set('life-quest:cloud:a:cache:tasks:v1', '{broken json');
+        const before = [...memory];
+        expect(await checkMobileCloudSessionOwner(null)).toBe(false);
+        expect(await checkMobileCloudSessionOwner('b')).toBe(false);
+        expect(await checkMobileCloudSessionOwner('a')).toBe(true);
+        expect(isMobileCloudSessionAccepted('a')).toBe(true); expect([...memory]).toEqual(before);
+    });
     it('過去のクラウドキャッシュがあるだけでは匿名データをロックしない', async () => {
         memory.set('quest-board-tasks', JSON.stringify({ state: { tasks: [{ id: 'local' }] } }));
         memory.set('life-quest:cloud:a:cache:tasks:v1', JSON.stringify({ tasks: { other: { id: 'other', version: 1 } } }));
@@ -54,7 +75,7 @@ describe('Mobile cloud cache authentication boundary', () => {
     });
     it('同じXPやキャラクター名だけで匿名進行の所有者を推定しない', async () => {
         memory.set('quest-board-game', JSON.stringify({ state: { character: { name: '勇者', totalXp: 20 }, gachaCount: 0 } }));
-        memory.set('life-quest:cloud:a:cache:game:v1', JSON.stringify({ characters: { a: { name: '勇者', total_xp: 20, gacha_count: 0, version: 2 } } }));
+        memory.set('life-quest:cloud:a:cache:game:v1', JSON.stringify({ characters: { a: { user_id: 'a', name: '勇者', total_xp: 20, gacha_count: 0, version: 2 } } }));
         expect(await checkMobileCloudSessionOwner(null)).toBe(true);
         expect(memory.has(MOBILE_CLOUD_DISPLAY_OWNER_KEY)).toBe(false);
     });

@@ -50,6 +50,16 @@ describe('persisted cloud cache row boundary', () => {
         expect((await loadCloudCache(storage, 'a')).subtasks).toEqual({});
     });
 
+    it('can require a trustworthy full restore for ownership decisions instead of hiding a discarded section', async () => {
+        const storage = memory();
+        storage.values.set(cloudCacheKey('a', 'tasks'), JSON.stringify({ tasks: { t: { id: 't', version: 1 } }, subtasks: { broken: null } }));
+        const before = [...storage.values.entries()];
+        await expect(loadCloudCache(storage, 'a', { rejectInvalidSections: true })).rejects.toThrow(/^cloud cache section invalid$/);
+        expect([...storage.values.entries()]).toEqual(before); expect(storage.setItem).not.toHaveBeenCalled(); expect(storage.removeItem).not.toHaveBeenCalled();
+        storage.values.set(cloudCacheKey('a', 'tasks'), JSON.stringify({ tasks: { t: { id: 't', version: 1 } } }));
+        expect(Object.keys((await loadCloudCache(storage, 'a', { rejectInvalidSections: true })).tasks)).toEqual(['t']);
+    });
+
     it('does not convert a storage read failure into silent corruption recovery', async () => {
         const storage = memory(); const failure = new Error('storage unavailable');
         storage.getItem.mockRejectedValueOnce(failure);

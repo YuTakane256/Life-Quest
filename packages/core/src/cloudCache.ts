@@ -413,6 +413,7 @@ export async function persistCloudCache(
 export async function loadCloudCache(
     storage: RepositoryStorage,
     userId: string,
+    options: { rejectInvalidSections?: boolean } = {},
 ): Promise<CloudCache> {
     const cache = createEmptyCloudCache();
     for (const [section, tables] of Object.entries(CACHE_SECTIONS)) {
@@ -436,6 +437,8 @@ export async function loadCloudCache(
             // Commit only once every present table in this section has been validated.
             Object.assign(cache, restored);
         } catch {
+            // Provenance decisions must distinguish missing data from discarded, untrustworthy data.
+            if (options.rejectInvalidSections) throw new Error('cloud cache section invalid');
             // 壊れたセクションは空のまま（次のプルで再構築される）
         }
     }
