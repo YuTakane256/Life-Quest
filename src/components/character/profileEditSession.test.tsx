@@ -19,7 +19,7 @@ vi.mock('../../platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqu
 vi.mock('../../../apps/mobile/src/platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isCloudOutboxActive: () => false }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: { getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}) } }));
 vi.mock('./InventorySection', () => ({ InventorySection: () => null }));
-vi.mock('../../hooks/useCloudChestOpen', () => ({ useCloudChestOpen: () => ({ openingChestId: null, errorChestId: null, openChest: vi.fn(), retry: vi.fn() }) }));
+vi.mock('../../hooks/useChestOperations', () => ({ useChestOperations: () => ({ openingChestId: null, errorChestId: null, openChest: vi.fn(), retry: vi.fn() }) }));
 vi.mock('./ProfileEditor', async (original) => {
     const { ProfileEditor } = await original<typeof import('./ProfileEditor')>();
     return { ProfileEditor: (props: ProfileEditorProps) => { mocks.editor = props; return createElement(ProfileEditor, props); } };

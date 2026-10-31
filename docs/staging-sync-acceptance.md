@@ -1,5 +1,7 @@
 # 計画④：実Web↔Mobile同期の受け入れ確認
 
+2026-11-01追記: [Web画面移動後の宝箱再送](chest-navigation-quality-20261101.md)を実App/ストア・認証/通信スタブで修正。T07の既存実測は維持し、未完了開封の実再起動や新しいstaging確認の合格には数えない。
+
 2026-11-01追記: T07の合成は承認済みAの装備が1個で必要数3個に不足し、実操作は未実行。[Web画面移動で再試行情報を失う経路](synthesis-navigation-quality-20261101.md)はUI/通信スタブで修正するが、実staging合成の合格とは扱わない。
 
 Issue [#819](https://github.com/YuTakane256/Life-Quest/issues/819) / 親 [#699](https://github.com/YuTakane256/Life-Quest/issues/699)。
