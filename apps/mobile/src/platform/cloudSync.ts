@@ -146,8 +146,10 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         },
         writeCursor: async (cursor) => {
             if (!isCurrent()) return;
-            appliedCursor = cursor;
             await AsyncStorage.setItem(cloudCursorKey(userId), String(cursor));
+            if (!isCurrent()) return;
+            // Advance only after persistence acknowledges this owner's cursor.
+            appliedCursor = cursor;
         },
     });
 
