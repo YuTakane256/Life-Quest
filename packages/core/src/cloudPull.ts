@@ -13,6 +13,14 @@ export interface PullBatch {
     [table: string]: unknown;
 }
 
+/** Fixed, non-sensitive signal for a pull that must wait for authentication. */
+export class CloudPullAuthError extends Error {
+    constructor(reason: 'account' | 'request') {
+        super(reason === 'account' ? 'cloud pull account changed' : 'cloud pull authentication required');
+        this.name = 'CloudPullAuthError';
+    }
+}
+
 export interface CloudPullSession {
     userId: string;
     accessToken: string;
@@ -41,7 +49,7 @@ export function createAccountBoundCloudPullFetcher(deps: AccountBoundCloudPullDe
         }
         assertActive();
         if (!session || !session.accessToken || session.userId !== deps.expectedUserId) {
-            throw new Error('cloud pull account changed');
+            throw new CloudPullAuthError('account');
         }
         return session;
     };
@@ -53,8 +61,10 @@ export function createAccountBoundCloudPullFetcher(deps: AccountBoundCloudPullDe
         let batch: PullBatch;
         try {
             batch = await deps.call(afterVersion, maxVersions, token);
-        } catch {
+        } catch (error) {
             assertActive();
+            if (error instanceof CloudPullAuthError) throw error;
+            // eslint-disable-next-line preserve-caught-error -- Raw SDK/storage diagnostics must not survive as error.cause.
             throw new Error('cloud pull request failed');
         }
         assertActive();

@@ -1,6 +1,6 @@
 import type { CloudOutboxPublicState } from './cloudOutboxController.ts';
 
-export type CloudPullPhase = 'idle' | 'pulling' | 'failed';
+export type CloudPullPhase = 'idle' | 'pulling' | 'failed' | 'auth-required';
 
 export interface CloudSyncPublicState {
     availability: 'inactive' | 'ready' | 'offline' | 'auth-required';
@@ -25,7 +25,7 @@ export function deriveCloudSyncAttention(
     push: CloudOutboxPublicState,
     pull: CloudSyncPublicState['pull'],
 ): CloudSyncPublicState['attention'] {
-    if (push.failed > 0 || push.conflict > 0 || pull.phase === 'failed' || push.failureKinds.includes('auth-required')) {
+    if (push.failed > 0 || push.conflict > 0 || pull.phase === 'failed' || pull.phase === 'auth-required' || push.failureKinds.includes('auth-required')) {
         return 'required';
     }
     if (push.pending > 0 || push.inflight > 0 || pull.phase === 'pulling') return 'waiting';
@@ -33,9 +33,9 @@ export function deriveCloudSyncAttention(
 }
 
 /** OS connectivity is advisory: unknown is not offline, and online is not server success. */
-export function deriveCloudSyncAvailability(push: CloudOutboxPublicState, online: boolean | null): CloudSyncPublicState['availability'] {
+export function deriveCloudSyncAvailability(push: CloudOutboxPublicState, online: boolean | null, pull?: CloudSyncPublicState['pull']): CloudSyncPublicState['availability'] {
     if (push.availability === 'inactive') return 'inactive';
-    if (push.failureKinds.includes('auth-required')) return 'auth-required';
+    if (push.failureKinds.includes('auth-required') || pull?.phase === 'auth-required') return 'auth-required';
     return online === false ? 'offline' : 'ready';
 }
 
@@ -44,13 +44,13 @@ export function isCloudSyncBusy(state: CloudSyncPublicState): boolean {
 }
 
 export function canRequestCloudSync(state: CloudSyncPublicState): boolean {
-    return state.availability === 'ready' && !state.push.failureKinds.includes('auth-required') && !isCloudSyncBusy(state);
+    return state.availability === 'ready' && state.pull.phase !== 'auth-required' && !state.push.failureKinds.includes('auth-required') && !isCloudSyncBusy(state);
 }
 
 /** Shared information order for Web and Native; never include operation contents/errors. */
 export function cloudSyncMessage(state: CloudSyncPublicState): string {
     if (state.availability === 'inactive') return 'ログインすると同期状態を確認できます';
-    if (state.availability === 'auth-required' || state.push.failureKinds.includes('auth-required')) return '再ログインすると保留中の同期を再開できます';
+    if (state.availability === 'auth-required' || state.pull.phase === 'auth-required' || state.push.failureKinds.includes('auth-required')) return '再ログインすると保留中の同期を再開できます';
     const waiting = state.push.pending + state.push.inflight;
     const busy = isCloudSyncBusy(state);
     const progress = state.availability === 'offline'

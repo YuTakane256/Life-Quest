@@ -29,6 +29,7 @@ import {
 } from '@life-quest/core/cloudCache';
 import {
     cloudCursorKey,
+    CloudPullAuthError,
     createAccountBoundCloudPullFetcher,
     createCloudPullRunner,
     createInsurancePullScheduler,
@@ -162,7 +163,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     const publish = (): void => {
         if (!isCurrent()) return;
         publishCloudSyncState({
-            availability: deriveCloudSyncAvailability(pushState, online),
+            availability: deriveCloudSyncAvailability(pushState, online, pullState),
             push: pushState,
             pull: pullState,
             attention: deriveCloudSyncAttention(pushState, pullState),
@@ -187,14 +188,16 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
             isActive: isCurrent,
             getSession: async () => {
                 const { data, error } = await client.auth.getSession();
-                if (error || !data.session) return null;
+                if (error) throw new Error('cloud pull authentication unavailable');
+                if (!data.session) return null;
                 return { userId: data.session.user.id, accessToken: data.session.access_token };
             },
             call: async (afterVersion, maxVersions, token) => {
-                const { data, error } = await client.rpc('pull_sync_batch', {
+                const { data, error, status } = await client.rpc('pull_sync_batch', {
                     p_after_version: afterVersion,
                     p_max_versions: maxVersions,
                 }).setHeader('Authorization', `Bearer ${token}`);
+                if (status === 401) throw new CloudPullAuthError('request');
                 if (error) throw new Error('cloud pull request failed');
                 return data as PullBatch;
             },
@@ -219,7 +222,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     });
 
     const pullNow = async (): Promise<void> => {
-        if (!isCurrent()) return;
+        if (!isCurrent() || pullState.phase === 'auth-required') return;
         pullState = { ...pullState, phase: 'pulling' };
         publish();
         try {
@@ -227,10 +230,12 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
             if (!isCurrent()) return;
             pullState = { phase: 'idle', lastSuccessAt: new Date().toISOString() };
             publish();
-        } catch {
+        } catch (error) {
             if (!isCurrent()) return;
-            pullState = { ...pullState, phase: 'failed' };
+            pullState = { ...pullState, phase: error instanceof CloudPullAuthError ? 'auth-required' : 'failed' };
             publish();
+            if (error instanceof CloudPullAuthError) throw error;
+            // eslint-disable-next-line preserve-caught-error -- Raw SDK/storage diagnostics must not survive as error.cause.
             throw new Error('cloud pull failed');
         }
     };
@@ -238,7 +243,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     // 楽観更新が残ったままpullすると、古いクラウド状態で一時的に上書きされうる。
     // Realtime・定期処理を含む全ての自動トリガでoutboxを先に処理する。
     const recoverConnection = async (): Promise<boolean> => {
-        if (!isCurrent()) return false;
+        if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
         const { retryablePending } = await drainOutboxAndWait();
         if (!isCurrent() || retryablePending) return false;
         let pulled = false;
@@ -303,18 +308,18 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         isActive: isCurrent,
         flush: () => runner.flush(),
         syncNow: () => {
-            if (!isCurrent() || deriveCloudSyncAvailability(pushState, online) !== 'ready') return Promise.resolve();
+            if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) !== 'ready') return Promise.resolve();
             if (manualSync) return manualSync;
             const work = (async () => {
                 try {
                     await retryPendingOutbox();
-                    if (!isCurrent() || deriveCloudSyncAvailability(pushState, online) !== 'ready') return;
+                    if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) !== 'ready') return;
                     const state = getWebCloudOutboxState();
                     if (state.pending > 0 || state.inflight > 0) return;
                     await pullNow();
-                } catch {
+                } catch (error) {
                     if (!isCurrent()) return;
-                    pullState = { ...pullState, phase: 'failed' };
+                    pullState = { ...pullState, phase: error instanceof CloudPullAuthError ? 'auth-required' : 'failed' };
                     publish();
                 }
             })();
@@ -364,7 +369,9 @@ export function stopWebCloudSyncForAccountDeletion(): void {
 export function registerWebCloudSyncHooks(): () => void {
     const unregister = registerAuthLifecycleHooks({
         onLogin: (userId) => {
-            if (activeUserId === userId && activeHandle?.isActive()) return;
+            // Only a blocked pull needs a fresh handle on same-owner authentication.
+            if (activeUserId === userId && activeHandle?.isActive()
+                && getWebCloudSyncState().pull.phase !== 'auth-required') return;
             activeHandle?.stop();
             activeHandle = startWebCloudSync(userId);
             activeUserId = activeHandle ? userId : null;

@@ -63,6 +63,11 @@ describe('CloudSyncSettingsの実描画/操作', () => {
         const current = ready(); current.availability = 'auth-required'; current.push.failureKinds = ['auth-required']; publish(current);
         expect(host.querySelector('[role="alert"]')?.textContent).toContain('再ログイン'); expect(button().disabled).toBe(true);
     });
+    it('pushが空でも受信の認証待ちは再ログインを案内し同期ボタンを無効化する', () => {
+        const current = ready(); current.pull.phase = 'auth-required'; publish(current);
+        expect(host.querySelector('[role="alert"]')?.textContent).toContain('再ログイン');
+        expect(button().disabled).toBe(true);
+    });
     it('一時失敗では再試行を案内し、競合は自動再送されないと区別する', () => {
         publish({ ...ready(), pull: { phase: 'failed', lastSuccessAt: null } });
         expect(host.querySelector('[role="alert"]')?.textContent).toContain('再試行'); expect(button().disabled).toBe(false);
