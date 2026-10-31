@@ -23,7 +23,7 @@ vi.mock('../../../apps/mobile/src/platform/cloudOutbox', () => ({ enqueueCloudOp
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
 } }));
-vi.mock('../../hooks/useCloudItemSynthesis', () => ({ useCloudItemSynthesis: () => ({
+vi.mock('../../hooks/useInventorySynthesis', () => ({ useInventorySynthesis: () => ({
     synthesize: mocks.synthesize, retry: mocks.retry, isSynthesizing: false, hasError: mocks.hasError,
 }) }));
 vi.mock('../../../apps/mobile/src/hooks/useInventorySynthesis', () => ({ useInventorySynthesis: () => ({

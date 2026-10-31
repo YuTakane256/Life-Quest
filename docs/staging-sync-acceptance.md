@@ -1,5 +1,7 @@
 # 計画④：実Web↔Mobile同期の受け入れ確認
 
+2026-11-01追記: T07の合成は承認済みAの装備が1個で必要数3個に不足し、実操作は未実行。[Web画面移動で再試行情報を失う経路](synthesis-navigation-quality-20261101.md)はUI/通信スタブで修正するが、実staging合成の合格とは扱わない。
+
 Issue [#819](https://github.com/YuTakane256/Life-Quest/issues/819) / 親 [#699](https://github.com/YuTakane256/Life-Quest/issues/699)。
 匿名の画面比較・モック回帰・ローカルDB統合を、実アプリの同期成功と取り違えないための確認表。
 この文書と事前診断だけで④完了とはしない。⑤の署名済み内部配布・ストア提出とは別の段階。
