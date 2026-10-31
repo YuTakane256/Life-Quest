@@ -17,7 +17,7 @@ import { useGameStore } from '../../stores/useGameStore';
 import type { Equipment, Rarity } from '../../types';
 import { SLOT_ICONS, SLOT_LABELS } from './equipmentPresentation';
 import { createInventoryConfirmation, filterAndSortInventory, INVENTORY_SELECTION_CHANGED, reconcileSynthesisSelection, toggleSynthesisSelection, type InventoryRarityFilter, type InventorySlotFilter, type InventorySortMode } from '../../core/inventory';
-import { useCloudItemSynthesis } from '../../hooks/useCloudItemSynthesis';
+import { useInventorySynthesis } from '../../hooks/useInventorySynthesis';
 import { getEquipmentRowA11y } from './equipmentRowA11y';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useInteractionScope } from '../../hooks/useInteractionScope';
@@ -49,7 +49,7 @@ export function InventoryPage() {
 export function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?: number; showViewAll?: boolean }) {
     const equipment = useGameStore((state) => state.equipment);
     const sellItem = useGameStore((state) => state.sellItem);
-    const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useCloudItemSynthesis();
+    const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useInventorySynthesis();
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
     const [selectedForSynth, setSelectedForSynth] = useState<readonly Equipment[]>([]);
     const [selectionNotice, setSelectionNotice] = useState('');
