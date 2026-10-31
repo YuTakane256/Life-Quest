@@ -431,6 +431,52 @@ for (const platform of [
             expect(platform.state().pull.phase).toBe('idle'); expect(mocks.values.get(cloudCursorKey('a'))).toBe('3');
         });
 
+        it.each([
+            { name: 'table shape', invalid: { tasks: { private: 'malformed' } } },
+            { name: 'row shape', invalid: { tasks: [null] } },
+            { name: 'row key', invalid: { tasks: [{ version: 3, name: 'private' }] } },
+            { name: 'row version', invalid: { tasks: [{ id: 'a-task', version: '3', name: 'private' }] } },
+        ])('invalid $name keeps all persisted sections and retries the same page', async ({ invalid }) => {
+            await start(); mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
+            await platform.active()!.syncNow();
+            const saved = [...mocks.values.entries()]; const visible = [...mocks.visibleTasks];
+            const lastSuccessAt = platform.state().pull.lastSuccessAt;
+            mocks.storage.setItem.mockClear(); mocks.rpc.mockClear();
+            mocks.rpc.mockResolvedValue({ data: { next_cursor: 3, has_more: true,
+                characters: [{ user_id: 'a', version: 3 }], ...invalid,
+            }, error: null });
+            await platform.active()!.syncNow();
+            expect(mocks.rpc).toHaveBeenCalledTimes(1); expect(mocks.storage.setItem).not.toHaveBeenCalled();
+            expect(platform.state().pull).toEqual({ phase: 'failed', lastSuccessAt });
+            expect(platform.state().attention).toBe('required'); expect(platform.state().availability).toBe('ready');
+            expect([...mocks.values.entries()]).toEqual(saved); expect(mocks.visibleTasks).toEqual(visible);
+            expect(JSON.stringify(platform.state())).not.toContain('private');
+            mocks.rpc.mockResolvedValue({ data: { ...batch('a'), next_cursor: 3,
+                tasks: (batch('a').tasks as object[]).map((task) => ({ ...task, version: 3 })),
+            }, error: null });
+            await platform.active()!.syncNow();
+            expect(mocks.rpc).toHaveBeenLastCalledWith('pull_sync_batch', expect.objectContaining({ p_after_version: 2 }));
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('3'); expect(platform.state().pull.phase).toBe('idle');
+        });
+
+        it('retains an earlier accepted page and rejects every section of a later malformed page', async () => {
+            await start();
+            const first = { ...batch('a', true), next_cursor: 3 };
+            mocks.rpc.mockResolvedValueOnce({ data: first, error: null }).mockResolvedValueOnce({ data: {
+                next_cursor: 4, has_more: false, tasks: [{ id: 'private-new', version: 4 }], chests: null,
+            }, error: null });
+            await platform.active()!.syncNow();
+            expect(platform.state().pull.phase).toBe('failed'); expect(mocks.values.get(cloudCursorKey('a'))).toBe('3');
+            expect(mocks.visibleTasks).toEqual(['a-task']);
+            expect(mocks.values.get(cloudCacheKey('a', 'tasks'))).not.toContain('private-new');
+            mocks.rpc.mockResolvedValue({ data: { next_cursor: 4, has_more: false,
+                tasks: [{ id: 'fixed', version: 4, created_at: '2026-10-15T00:00:00Z' }], chests: [],
+            }, error: null });
+            await platform.active()!.syncNow();
+            expect(mocks.rpc).toHaveBeenLastCalledWith('pull_sync_batch', expect.objectContaining({ p_after_version: 3 }));
+            expect(mocks.visibleTasks).toEqual(['a-task', 'fixed']); expect(platform.state().pull.phase).toBe('idle');
+        });
+
         it.each([false, true])('cursor write failure (bytes saved=%s) retries from the last acknowledged cursor', async (saveBeforeReject) => {
             await start();
             const revised = (version: number): PullBatch => ({ ...batch('a'), next_cursor: version,
