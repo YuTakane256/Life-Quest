@@ -131,7 +131,7 @@ describe('Edge Function error privacy', () => {
         ['not_found_or_forbidden', 404], ['stage_locked', 409], ['battle_locked', 409],
         ['cannot_sell_equipped_item', 409], ['chest_already_opened', 409],
         ['invalid ingredients', 409], ['invalid ingredients: bad count', 409], ['invalid ingredients: duplicates', 409],
-        ['web_migration_required', 409], ['payload too large', 400],
+        ['web_migration_required', 409], ['payload too large', 400], ['idempotency_key_operation_mismatch', 500],
     ])('preserves the exact public DB error %s', async (message, status) => {
         const service = { rpc: vi.fn().mockResolvedValue({ data: null, error: { message } }) };
         const response = await callApply(service as unknown as ReturnType<typeof createServiceClient>, 'test_apply', {});
@@ -147,6 +147,7 @@ describe('Edge Function error privacy', () => {
         'invalid ingredients: private item details',
         'payload too large\nprivate payload content',
         'web_migration_required; private database detail',
+        'idempotency_key_operation_mismatch: private database detail',
     ])('does not echo DB details or classify partial matches: %s', async (message) => {
         const service = { rpc: vi.fn().mockResolvedValue({ data: null, error: { message, details: 'private detail', hint: 'private hint' } }) };
         const response = await callApply(service as unknown as ReturnType<typeof createServiceClient>, 'test_apply', {});
@@ -171,7 +172,7 @@ describe('Edge Function error privacy', () => {
         expect(businessHandler).not.toHaveBeenCalled();
     });
 
-    it.each(['auth_failure', 'account_deletion_failed', 'apple_authorization_record_failed', 'apple_revocation_failed'])('retains fixed server error %s but strips extra fields', async (error) => {
+    it.each(['auth_failure', 'account_deletion_failed', 'apple_authorization_record_failed', 'apple_revocation_failed', 'idempotency_key_operation_mismatch'])('retains fixed server error %s but strips extra fields', async (error) => {
             const response = json(error === 'apple_revocation_failed' ? 503 : 500, { error, details: 'private detail', hint: 'private hint' });
             expect(await response.json()).toEqual({ error });
             expectCors(response);

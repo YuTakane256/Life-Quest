@@ -17,7 +17,7 @@ const CORS_HEADERS = {
 // database messages, exception objects, details/hints or request data in 5xx.
 const PUBLIC_SERVER_ERRORS = new Set([
     'internal_error', 'auth_failure', 'account_deletion_failed',
-    'apple_authorization_record_failed', 'apple_revocation_failed',
+    'apple_authorization_record_failed', 'apple_revocation_failed', 'idempotency_key_operation_mismatch',
 ]);
 
 export function json(status: number, body: unknown): Response {
@@ -46,6 +46,8 @@ const ERROR_STATUS_BY_MESSAGE = new Map<string, number>([
     ['chest_already_opened', 409], ['invalid ingredients', 409],
     ['invalid ingredients: bad count', 409], ['invalid ingredients: duplicates', 409],
     ['web_migration_required', 409], ['payload too large', 400], ['settings payload too large', 400],
+    // Existing API contract: reject reuse across operations, without exposing DB details.
+    ['idempotency_key_operation_mismatch', 500],
 ]);
 
 export interface HandlerContext {
