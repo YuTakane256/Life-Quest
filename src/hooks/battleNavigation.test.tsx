@@ -124,6 +124,12 @@ describe('Web battle results across actual routes', () => {
         expect(useGameStore.getState().character.totalXp).toBe(5); expect(useBattleHistoryStore.getState().history).toHaveLength(1);
         expect(mocks.resolve).toHaveBeenCalledTimes(1); expect(button('次へ').disabled).toBe(false);
     });
+    it.each(['/map/', '/MAP'])('resolves restored results on router-equivalent map URL %s', async (path) => {
+        await render(path);
+        expect(host.textContent).toContain('勝利！'); expect(mocks.resolve).toHaveBeenCalledTimes(1);
+        expect(useGameStore.getState().character.totalXp).toBe(5); expect(useBattleHistoryStore.getState().history).toHaveLength(1);
+        expect(button('次へ').disabled).toBe(false); expect(button('マップへ').disabled).toBe(false);
+    });
     it('does not initiate resolution on unrelated startup routes, then resolves once on entering the map in StrictMode', async () => {
         await render('/tasks', true); expect(mocks.auth).not.toHaveBeenCalled(); expect(mocks.resolve).not.toHaveBeenCalled();
         await click('go-map'); expect(mocks.resolve).toHaveBeenCalledTimes(1);
