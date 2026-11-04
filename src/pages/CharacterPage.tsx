@@ -11,7 +11,7 @@ import heroImg from '@life-quest/assets/images/hero.png';
 import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { useInteractionScope } from '../hooks/useInteractionScope';
 import { ProfileEditor } from '../components/character/ProfileEditor';
-import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
+import { useChestOperations } from '../hooks/useChestOperations';
 import { useTitleStore } from '../stores/useTitleStore';
 import { InventorySection } from '../components/character/InventorySection';
 import { SLOT_ICONS, SLOT_LABELS } from '../components/character/equipmentPresentation';
@@ -36,7 +36,7 @@ export function CharacterPage() {
     const equipment = useGameStore((state) => state.equipment);
     const gachaCount = useGameStore((state) => state.gachaCount);
     const chestQueue = useGameStore((state) => state.chestQueue);
-    const { openingChestId, errorChestId, openChest, retry: retryOpenChest } = useCloudChestOpen();
+    const { openingChestId, errorChestId, openChest, retry: retryOpenChest } = useChestOperations();
     const activeTitle = useTitleStore((state) => state.activeTitle);
 
     type Owner = { isCurrent: () => boolean; accepts: ReturnType<typeof captureCharacterProfile> };
@@ -168,7 +168,7 @@ export function CharacterPage() {
                             <div key={chest.id} className="flex flex-col items-center">
                                 <button
                                     onClick={() => void openChest(chest.id)}
-                                    disabled={openingChestId === chest.id}
+                                    disabled={openingChestId !== null}
                                     className="px-4 py-3 rounded-xl animate-pulse-glow transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex flex-col items-center"
                                     style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-accent-gold)', minWidth: '120px' }}
                                 >

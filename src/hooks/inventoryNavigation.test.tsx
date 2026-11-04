@@ -11,7 +11,7 @@ import App from '../App';
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), synth: vi.fn(), apply: vi.fn(), local: vi.fn() }));
 vi.mock('../platform/auth', () => ({ getGameAuthState: mocks.auth }));
-vi.mock('../platform/gameCloud', () => ({ synthesizeCloudItems: mocks.synth }));
+vi.mock('../platform/gameCloud', () => ({ synthesizeCloudItems: mocks.synth, openCloudChest: vi.fn() }));
 vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: vi.fn(), isWebCloudOutboxActive: () => false }));
 vi.mock('../utils/notifications', () => ({ runNotificationChecks: vi.fn(), cancelNotificationChecks: vi.fn() }));
 vi.mock('../stores/useLoginBonusStore', () => ({ useLoginBonusStore: { getState: () => ({ checkDailyLogin() {} }) } }));
