@@ -66,7 +66,8 @@ export async function runCloudBattleResolve(
     }
 }
 
-export function useCloudBattleResolve(): UseCloudBattleResolveResult {
+/** allowAutoResolve gates new attempts only; an initiated request/retry survives route changes. */
+export function useCloudBattleResolve(allowAutoResolve = true): UseCloudBattleResolveResult {
     const battle = useGameStore((state) => state.battle);
     const applyResolvedCloudBattle = useGameStore((state) => state.applyResolvedCloudBattle);
     const [resolveState, setResolveState] = useState<CloudBattleResolveState>('idle');
@@ -134,11 +135,11 @@ export function useCloudBattleResolve(): UseCloudBattleResolveResult {
             operationScope.cancel(); resolvedAttemptIdRef.current = null; pendingRef.current = null; appliedAttemptRef.current = null; bindingRef.current = null;
             setResolveState('idle'); setGranted(null); return;
         }
-        if (resolvedAttemptIdRef.current === battle.battleAttemptId) return;
+        if (!allowAutoResolve || resolvedAttemptIdRef.current === battle.battleAttemptId) return;
         operationScope.cancel(); appliedAttemptRef.current = null;
         void runResolve(battle.battleAttemptId, battle.actions);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [battle.status, battle.rewardMode, battle.battleAttemptId, battle.currentStage, operationScope.revision]);
+    }, [battle.status, battle.rewardMode, battle.battleAttemptId, battle.currentStage, operationScope.revision, allowAutoResolve]);
 
     const retry = (): void => {
         const pending = pendingRef.current;
