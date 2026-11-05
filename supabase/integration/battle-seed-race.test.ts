@@ -169,6 +169,7 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         const attempt = await game.startBattleAttempt(1, crypto.randomUUID(), createdUserId!);
         expect(attempt).not.toBeNull();
         const actions = startAndWin(platform, attempt!);
+        expect((platform === 'Web' ? useGameStore.getState() : useMobileGameStore.getState()).character.totalXp).toBe(initialXp);
         const key = crypto.randomUUID();
         const resolve = (idempotencyKey: string) => game.resolveBattleAttempt(attempt!.battleAttemptId, actions,
             { expectedUserId: createdUserId!, idempotencyKey });
@@ -199,14 +200,19 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         }
         seed(platform, cache);
         assertSettled(platform, expectedXp); // No response has reached the seed-first/lost-response store yet.
-        if (response && delivery === '同期が先') deliver(platform, attempt!.battleAttemptId, response);
+        if (response && delivery === '同期が先') {
+            deliver(platform, attempt!.battleAttemptId, response);
+            assertSettled(platform, expectedXp);
+        }
         // The public Edge short-circuits a resolved attempt before SQL key replay.
         const replay = await resolve(key);
         expect(replay).toMatchObject({ outcome: 'victory', granted: false, already_resolved: true });
         deliver(platform, attempt!.battleAttemptId, replay);
+        assertSettled(platform, expectedXp);
         const otherKey = await resolve(crypto.randomUUID());
         expect(otherKey).toMatchObject({ outcome: 'victory', granted: false, already_resolved: true });
         deliver(platform, attempt!.battleAttemptId, otherKey);
+        assertSettled(platform, expectedXp);
         seed(platform, await pull()); seed(platform, cache);
         assertSettled(platform, expectedXp);
         const rewards = await pg.query(`select count(*) as count, sum(xp_delta) as xp from public.reward_transactions
