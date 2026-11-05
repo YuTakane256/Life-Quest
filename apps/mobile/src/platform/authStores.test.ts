@@ -101,13 +101,16 @@ describe('Mobileログアウト時のストアクリア（ADR-009）', () => {
         expect(useMobileGameStore.getState().activeBattle?.battleAttemptId).toBe('attempt-a');
         unregister();
     });
-    it.each(['logout', 'switch'])('未seedの匿名由来ローカル戦闘と進行は保持する: %s', async (transition) => {
+    it.each(['logout', 'switch'])('未seedの実行中local戦闘だけ片付け、進行とタスクは保持する: %s', async (transition) => {
         const unregister = registerMobileAuthStoreHooks();
-        await notifyLogin('a'); setCloudBattle();
-        useMobileGameStore.setState((state) => ({ activeBattle: { ...state.activeBattle!, rewardMode: 'local', battleAttemptId: null } }));
-        const previous = useMobileGameStore.getState().activeBattle;
+        await notifyLogin('a');
+        useMobileGameStore.setState({ battleProgress: { battleUnlocked: true, currentStage: 1, maxClearedStage: 0 } });
+        expect(useMobileGameStore.getState().startBattle(1)).toBe(true);
+        const previous = useMobileGameStore.getState();
         if (transition === 'logout') await notifyLogout(); else await notifyLogin('b');
-        expect(useMobileGameStore.getState().activeBattle).toBe(previous);
+        expect(useMobileGameStore.getState().activeBattle).toBeNull();
+        expect(useMobileGameStore.getState().character).toEqual(previous.character);
+        expect(useMobileGameStore.getState().battleProgress).toEqual(previous.battleProgress);
         expect(useMobileTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
         unregister();
     });

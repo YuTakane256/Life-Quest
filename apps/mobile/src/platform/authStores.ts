@@ -2,9 +2,10 @@
  * ログアウト時のストア即時クリア（Mobile側、#503で契約定義、ADR-009）。
  * Webの src/platform/authStores.ts と同型。クラウドデータがシードされた
  * セッションでのみクリアする（未シードならローカル専用データを守る）。
+ * 実行中local戦闘の一時runtimeは、画面の有無に関係なく認証世代で隔離する。
  * #504 が pull_sync_batch でシードした時点で markCloudSessionSeeded() を呼ぶ。
  */
-import { captureAuthSessionScope, registerAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, captureAuthSessionScope, registerAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { invalidatePendingHabitEffects, useMobileHabitStore } from '../stores/useMobileHabitStore';
@@ -39,8 +40,23 @@ export function clearMobileCloudStores(): void {
 
 /** ログアウトフックを登録する。アプリ起動時に一度だけ呼ぶ。 */
 export function registerMobileAuthStoreHooks(): () => void {
+    // Track the runtime's creation scope even while the map/timer is unmounted.
+    const localBattleIdentity = () => {
+        const battle = useMobileGameStore.getState().activeBattle;
+        return battle?.rewardMode === 'local' && battle.state.outcome === 'ongoing' ? battle.actors : null;
+    };
+    let localBattle = localBattleIdentity();
+    let isCurrentLocalBattleSession = captureAuthSessionGuard();
+    const unsubscribeBattle = useMobileGameStore.subscribe(() => {
+        const next = localBattleIdentity();
+        if (next === localBattle) return; // Turns and unrelated writes keep the original scope.
+        localBattle = next;
+        isCurrentLocalBattleSession = captureAuthSessionGuard();
+    });
     let pendingOwner = captureAuthSessionScope().userId;
     const unsubscribeScope = subscribeAuthSessionScope(({ userId }) => {
+        // A preceding subscriber may already have started a battle in the new scope.
+        if (localBattle && !isCurrentLocalBattleSession()) useMobileGameStore.getState().clearActiveBattle();
         useMobileGameStore.getState().clearPendingChestReveal();
         const previous = pendingOwner;
         pendingOwner = userId;
@@ -82,5 +98,5 @@ export function registerMobileAuthStoreHooks(): () => void {
             if (previousOwner) await releaseMobileCloudDisplayOwner(previousOwner);
         },
     });
-    return () => { unsubscribeScope(); unregisterHooks(); };
+    return () => { unsubscribeBattle(); unsubscribeScope(); unregisterHooks(); };
 }

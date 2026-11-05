@@ -96,6 +96,17 @@ describe('Web automatic battle lifecycle through the real map', () => {
             expect(useBattleHistoryStore.getState().history).toEqual([]);
         } finally { unregister(); }
     });
+    it('does not revive an anonymous fight after leaving the map and logging in', async () => {
+        await notifyLogout(); setGameRewardAuthorityState('anonymous'); const unregister = registerWebAuthStoreHooks();
+        try {
+            useGameStore.getState().startBattle(1); await render(); const stale = queuedTick();
+            await act(async () => root.render(createElement('div', null, 'Tasks')));
+            await act(async () => notifyLogin('new-owner'));
+            await render(); act(() => stale()); await advance(5000);
+            expect(battle().status).toBe('idle'); expect(battle().actions).toEqual([]); expect(host.textContent).toContain('最高到達');
+            expect(useBattleHistoryStore.getState().history).toEqual([]);
+        } finally { unregister(); }
+    });
     it('does not clear a newer local battle installed before the old auth listener runs', async () => {
         await notifyLogout(); setGameRewardAuthorityState('anonymous');
         const unsubscribe = subscribeAuthSessionScope(() => useGameStore.getState().startBattle(1));

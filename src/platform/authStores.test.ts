@@ -69,13 +69,16 @@ describe('Webログアウト時のストアクリア（ADR-009）', () => {
         expect(useGameStore.getState().battle.battleAttemptId).toBe('restored');
         unregister();
     });
-    it.each(['logout', 'switch'])('未seedの匿名由来ローカル戦闘と進行は保持する: %s', async (transition) => {
+    it.each(['logout', 'switch'])('未seedの実行中local戦闘だけ片付け、進行とタスクは保持する: %s', async (transition) => {
         const unregister = registerWebAuthStoreHooks();
         await notifyLogin('a');
-        useGameStore.setState((state) => ({ battle: { ...state.battle, status: 'fighting', rewardMode: 'local', battleAttemptId: null } }));
-        const previous = useGameStore.getState().battle;
+        useGameStore.setState((state) => ({ battle: { ...state.battle, battleUnlocked: true } }));
+        useGameStore.getState().startBattle(1);
+        const previous = useGameStore.getState();
         if (transition === 'logout') await notifyLogout(); else await notifyLogin('b');
-        expect(useGameStore.getState().battle).toBe(previous);
+        expect(useGameStore.getState().battle.status).toBe('idle');
+        expect(useGameStore.getState().character).toEqual(previous.character);
+        expect(useGameStore.getState().battle.maxClearedStage).toBe(previous.battle.maxClearedStage);
         expect(useTaskStore.getState().tasks.map((item) => item.id)).toEqual(['local-1']);
         unregister();
     });
