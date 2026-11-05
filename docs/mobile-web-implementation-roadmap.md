@@ -1,5 +1,7 @@
 # Life Quest：画面統一 → 品質確認 → 配布準備
 
+2026-11-05追記: [Mobileの戦闘開始と画面再作成](mobile-battle-start-navigation-quality-20261105.md)で、stage/key・失敗案内・排他をRoot内で保持する。離脱中の本人応答は画面移動なしで反映し、戻っただけでは再送せず、攻撃はマップ復帰後に再開する。OS終了後の永続復旧や実Expo Router/実staging確認とは区別する。
+
 2026-11-05追記: [画面外の認証切替とlocal戦闘の隔離](battle-auth-boundary-quality-20261105.md)で、Webのマップ離脱中やMobileのblur/disabled中も旧世代の実行中local戦闘を片付け、復帰後の引継ぎを防ぐ。保存済み進行・完了済み結果と新世代の別戦闘は保持する。実端末/実stagingや再起動後の永続復旧とは区別する。
 
 2026-11-05追記: [Mobile自動戦闘の認証切替とAppState現在値の保護](mobile-automatic-battle-session-quality-20261105.md)で、表示中の旧local戦闘を認証切替時に片付け、保存済み進行/所持品を保つ。非activeの現在値でも攻撃を止め、復帰は新しい間隔で再開する。JS回帰と実端末のOS/実staging確認は区別する。
