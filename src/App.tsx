@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { HelpCircle } from 'lucide-react';
+import { BattleStartProvider } from './components/battle/BattleStartProvider';
 import { BattleResultProvider } from './components/battle/BattleResultProvider';
 import { ChestOperationsProvider } from './components/character/ChestOperationsProvider';
 import { InventoryOperationsProvider } from './components/character/InventoryOperationsProvider';
@@ -86,31 +87,33 @@ function App() {
                     <InventoryOperationsProvider>
                         <ChestOperationsProvider>
                             <BattleResultProvider>
-                                <ThemeController />
-                                <div className="app-shell flex flex-col relative">
-                                    <main className="app-main flex-1">
-                                        <Suspense fallback={<RouteLoading />}>
-                                            <Routes>
-                                                <Route path="/" element={<Navigate to="/tasks" replace />} />
-                                                <Route path="/tasks" element={<TasksPage />} />
-                                                <Route path="/habits" element={<HabitsPage />} />
-                                                <Route path="/character" element={<CharacterPage />} />
-                                                <Route path="/character/inventory" element={<InventoryPage />} />
-                                                <Route path="/map" element={<MapBattlePage />} />
-                                                <Route path="/stats" element={<StatsPage />} />
-                                                <Route path="/settings" element={<SettingsPage />} />
-                                                <Route path="/help" element={<HelpPage />} />
-                                                <Route path="*" element={<NotFoundPage />} />
-                                            </Routes>
-                                        </Suspense>
-                                    </main>
-                                    <HelpFloatingButton />
-                                    <BottomNav />
-                                    <LevelUpOverlay />
-                                    <LoginBonusOverlay />
-                                    <ChestOpeningOverlay />
-                                    <CompletionRewardNotice />
-                                </div>
+                                <BattleStartProvider>
+                                    <ThemeController />
+                                    <div className="app-shell flex flex-col relative">
+                                        <main className="app-main flex-1">
+                                            <Suspense fallback={<RouteLoading />}>
+                                                <Routes>
+                                                    <Route path="/" element={<Navigate to="/tasks" replace />} />
+                                                    <Route path="/tasks" element={<TasksPage />} />
+                                                    <Route path="/habits" element={<HabitsPage />} />
+                                                    <Route path="/character" element={<CharacterPage />} />
+                                                    <Route path="/character/inventory" element={<InventoryPage />} />
+                                                    <Route path="/map" element={<MapBattlePage />} />
+                                                    <Route path="/stats" element={<StatsPage />} />
+                                                    <Route path="/settings" element={<SettingsPage />} />
+                                                    <Route path="/help" element={<HelpPage />} />
+                                                    <Route path="*" element={<NotFoundPage />} />
+                                                </Routes>
+                                            </Suspense>
+                                        </main>
+                                        <HelpFloatingButton />
+                                        <BottomNav />
+                                        <LevelUpOverlay />
+                                        <LoginBonusOverlay />
+                                        <ChestOpeningOverlay />
+                                        <CompletionRewardNotice />
+                                    </div>
+                                </BattleStartProvider>
                             </BattleResultProvider>
                         </ChestOperationsProvider>
                     </InventoryOperationsProvider>
