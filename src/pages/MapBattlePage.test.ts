@@ -18,7 +18,7 @@ vi.mock('../stores/useBattleHistoryStore', () => ({
 vi.mock('../hooks/useCloudBattleStart', () => ({ useCloudBattleStart: () => ({
     isStarting: false, startError: null, startStage: refs.start, retry: vi.fn(),
 }) }));
-vi.mock('../hooks/useCloudBattleResolve', () => ({ useCloudBattleResolve: () => ({
+vi.mock('../hooks/useBattleResult', () => ({ useBattleResult: () => ({
     resolveState: refs.status, granted: false, retry: refs.retry,
 }) }));
 
