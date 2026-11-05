@@ -1,5 +1,7 @@
 # Life Quest：画面統一 → 品質確認 → 配布準備
 
+2026-11-05追記: [Mobile自動戦闘の認証切替とAppState現在値の保護](mobile-automatic-battle-session-quality-20261105.md)で、表示中の旧local戦闘を認証切替時に片付け、保存済み進行/所持品を保つ。非activeの現在値でも攻撃を止め、復帰は新しい間隔で再開する。JS回帰と実端末のOS/実staging確認は区別する。
+
 2026-11-05追記: [Web自動戦闘の非表示・古い時計の停止](web-automatic-battle-quality-20261105.md)で、非表示中・別戦闘/認証・画面離脱後の自動攻撃を止め、復帰後は新しい間隔で再開する。通常の攻撃/手動スキル・報酬は維持し、実ブラウザー背景制御・OS/実staging検証とは区別する。
 
 2026-11-05追記: [Web再読込後の戦闘復元](battle-restore-quality-20261105.md)で、snapshotを復元しない戦闘中やcloud runtimeを待機状態へ戻し、操作停止とローカル報酬の誤表示を防ぐ。保存済み進行/所持品・旧local結果・別タブの実行中battleを維持し、所有者付きの永続復旧・実staging再起動は残す。
