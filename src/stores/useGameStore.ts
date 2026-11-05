@@ -653,11 +653,15 @@ export const useGameStore = create<GameStoreState>()(
                 let appliedItem: Equipment | null = null;
                 set((state) => {
                     const existingItem = state.equipment.find((equipment) => equipment.id === resultId) ?? null;
-                    appliedItem = existingItem ?? generatedItem;
+                    // A later pull/sale/synthesis may already have consumed this result.
+                    // With neither result nor ingredients left, do not recreate an old
+                    // response; a genuinely missing result will arrive through normal pull.
+                    const hasIngredient = state.equipment.some((equipment) => ingredientIds.includes(equipment.id));
+                    appliedItem = existingItem ?? (hasIngredient ? generatedItem : null);
                     return {
                         equipment: capEquipmentCollection([
                             ...state.equipment.filter((equipment) => !ingredientIds.includes(equipment.id)),
-                            ...(!existingItem && generatedItem ? [generatedItem] : []),
+                            ...(!existingItem && appliedItem ? [appliedItem] : []),
                         ]),
                     };
                 });
