@@ -17,6 +17,7 @@ import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { getEnemyImageSrc } from '../config/enemyImages';
 import { useBattleResult } from '../hooks/useBattleResult';
 import { useBattleStart } from '../hooks/useBattleStart';
+import { useAutomaticBattle } from '../hooks/useAutomaticBattle';
 
 
 function getEnemyImage(stage: number) {
@@ -33,7 +34,7 @@ function getSkillTone(skill: BattleSkillDefinition): { icon: string; color: stri
 }
 
 export function MapBattlePage() {
-    const { battle, character, getEffectiveStats, processBattleTurn, resetBattle, advanceStage, activateBattleSkill } = useGameStore();
+    const { battle, character, getEffectiveStats, resetBattle, advanceStage, activateBattleSkill } = useGameStore();
     const history = useBattleHistoryStore((s) => s.history);
     const [showVictoryDialog, setShowVictoryDialog] = useState(false);
     const [selectedMapId, setSelectedMapId] = useState(() => {
@@ -43,7 +44,6 @@ export function MapBattlePage() {
     });
     const [replayEntry, setReplayEntry] = useState<BattleHistoryEntry | null>(null);
     const [showAllHistory, setShowAllHistory] = useState(false);
-    const battleIntervalRef = useRef<number | null>(null);
     const logEndRef = useRef<HTMLDivElement>(null);
     const effectiveStats = getEffectiveStats();
     const { resolveState, granted, retry } = useBattleResult();
@@ -62,19 +62,7 @@ export function MapBattlePage() {
         ? requestedMap : MAP_CONFIG[0];
     const mapStages = getMapStages(selectedMap);
 
-    useEffect(() => {
-        if (battle.status === 'fighting') {
-            battleIntervalRef.current = window.setInterval(() => {
-                processBattleTurn();
-            }, BATTLE_CONFIG.TURN_INTERVAL_MS);
-        }
-        return () => {
-            if (battleIntervalRef.current) {
-                clearInterval(battleIntervalRef.current);
-                battleIntervalRef.current = null;
-            }
-        };
-    }, [battle.status, processBattleTurn]);
+    useAutomaticBattle(battle);
 
     useEffect(() => {
         if (battle.status === 'victory') setShowVictoryDialog(true);
