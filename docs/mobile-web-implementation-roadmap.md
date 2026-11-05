@@ -1,6 +1,6 @@
 # Life Quest：画面統一 → 品質確認 → 配布準備
 
-2026-11-05追記: [Mobileの戦闘結果送信と画面移動](mobile-battle-result-navigation-quality-20261105.md)で、開始済みattempt/actions/key・失敗状態・排他をRoot内で保持し、戻っただけの再送を防ぐ。新しい自動送信はmap経路だけで始め、離脱中の本人応答は画面移動なしで一度反映する。実端末/実stagingやOS終了後の永続復旧とは区別する。
+2026-11-05追記: [Mobileの戦闘結果送信と画面移動](mobile-battle-result-navigation-quality-20261105.md)で、開始済みattempt/actions/key・失敗状態・排他をRoot内で保持し、戻っただけの再送を防ぐ。新しい自動送信はmap経路だけで始め、離脱中の本人応答は画面移動なしで一度反映する。同一所有者の確定attemptと十分に新しいcharacterを先に受信した場合は、遅い応答でXPを重ねない。実端末/実stagingやOS終了後の永続復旧とは区別する。
 
 2026-11-05追記: [Mobileの戦闘開始と画面再作成](mobile-battle-start-navigation-quality-20261105.md)で、stage/key・失敗案内・排他をRoot内で保持する。離脱中の本人応答は画面移動なしで反映し、戻っただけでは再送せず、攻撃はマップ復帰後に再開する。OS終了後の永続復旧や実Expo Router/実staging確認とは区別する。
 

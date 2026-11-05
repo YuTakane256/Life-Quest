@@ -2,6 +2,8 @@ import { act, createElement, forwardRef, StrictMode, useEffect, useImperativeHan
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
+import { applyCloudCacheToMobileStores } from '../platform/cloudSeed';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { createBattleEngineState, type BattleActors } from '@life-quest/core/battle';
 import RootLayout from '../../app/_layout';
@@ -22,7 +24,10 @@ vi.mock('../platform/notifications', () => ({ registerNotificationChecks: () => 
 vi.mock('../platform/loginBonusCheck', () => ({ registerLoginBonusCheck: () => () => {} }));
 vi.mock('../platform/cloudSync', () => ({ registerMobileCloudSyncHooks: () => () => {} }));
 vi.mock('../platform/cloudOutbox', () => ({ registerMobileOutboxHooks: () => () => {} }));
-vi.mock('../platform/canonicalSync', () => ({ startMobileCanonicalSync: () => ({ stop() {} }) }));
+vi.mock('../platform/canonicalSync', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../platform/canonicalSync')>(),
+    startMobileCanonicalSync: () => ({ stop() {} }),
+}));
 vi.mock('../stores/rewardSync', () => ({ startRewardSync: () => () => {} }));
 vi.mock('../stores/statsLogSeed', () => ({ startStatsLogSeed: () => () => {} }));
 vi.mock('../components/LoginBonusOverlay', () => ({ LoginBonusOverlay: () => null }));
@@ -170,10 +175,14 @@ describe('Mobile battle results through real root/map and navigation/native stub
         await act(async () => root.unmount()); mounted = false; await act(async () => pending.resolve(response()));
         expect(mocks.resolve.mock.calls[0][2].isActive()).toBe(false); expect(useMobileGameStore.getState().character.totalXp).toBe(0);
     });
-    it('does not apply again if canonical sync already confirmed the result while away', async () => {
+    it.each([false, true])('does not apply again after real cloud seed while away (retained map: %s)', async (retained) => {
+        mocks.retainMap = retained;
         const pending = deferred<unknown>(); mocks.resolve.mockReturnValueOnce(pending.promise); await render(); await render('tasks');
-        await act(async () => { const game = useMobileGameStore.getState(); useMobileGameStore.setState({ activeBattle: { ...game.activeBattle!, battleAttemptId: null },
-            character: { ...game.character, totalXp: 5 }, battleProgress: { ...game.battleProgress, maxClearedStage: 1 } }); pending.resolve(response()); });
+        const cache = applyPullBatchToCache(createEmptyCloudCache(), { next_cursor: 10, has_more: false,
+            characters: [{ user_id: 'a', total_xp: 5, max_cleared_stage: 1, battle_unlocked: true, version: 10 }],
+            battle_attempts: [{ id: 'attempt-a', user_id: 'a', stage: 1, status: 'resolved', outcome: 'victory', version: 10 }],
+        });
+        await act(async () => { expect(applyCloudCacheToMobileStores(cache)).toBe(true); pending.resolve(response()); });
         expect(useMobileGameStore.getState().character.totalXp).toBe(5); await render(); expect(mocks.resolve).toHaveBeenCalledTimes(1);
     });
     it('rejects a stale response after another terminal attempt replaces it while away', async () => {

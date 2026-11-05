@@ -15,6 +15,8 @@ import {
     getSeedableSections,
     type CloudCache,
 } from '@life-quest/core/cloudCache';
+import { captureAuthSessionScope } from '@life-quest/core/authLifecycle';
+import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { resolveHabitReminderHour } from '@life-quest/core/notifications';
 import { seedSectionData } from './canonicalSync';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
@@ -39,7 +41,28 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
     if (seedable.game) {
         const game = buildCanonicalGameSnapshot(cache);
         if (game) {
+            const scope = captureAuthSessionScope();
+            const battle = useMobileGameStore.getState().activeBattle;
+            const attempt = battle?.battleAttemptId ? cache.battle_attempts[battle.battleAttemptId] : undefined;
+            // Use the same character row as buildCanonicalGameSnapshot. The resolve RPC
+            // commits a victory's character XP and resolved attempt at the same version.
+            const character = Object.values(cache.characters)[0];
+            const confirmed = battle?.rewardMode === 'cloud'
+                && (battle.state.outcome === 'victory' || battle.state.outcome === 'defeat')
+                && attempt?.id === battle.battleAttemptId && attempt.status === 'resolved'
+                && attempt.stage === battle.stage && attempt.outcome === battle.state.outcome
+                && scope.userId !== null && attempt.user_id === scope.userId && character?.user_id === scope.userId
+                && Number.isSafeInteger(attempt.version) && attempt.version > 0
+                && Number.isSafeInteger(character.version) && character.version >= attempt.version;
             seedSectionData('game', game);
+            const current = useMobileGameStore.getState().activeBattle;
+            if (confirmed && scope.isCurrent() && current?.actors === battle.actors
+                && current.battleAttemptId === battle.battleAttemptId && current.stage === battle.stage
+                && current.rewardMode === 'cloud' && current.state.outcome === battle.state.outcome) {
+                // XP/progress came from the authoritative snapshot; never add them again
+                // when the original granted:true response arrives later.
+                useMobileGameStore.setState({ activeBattle: { ...current, battleAttemptId: null } });
+            }
             seeded = true;
         }
     }

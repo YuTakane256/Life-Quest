@@ -12,21 +12,29 @@
 
 認証世代・attemptの結び付け、operation scopeの排他、旧finallyの保護、source変更や同期先行での適用拒否は既存処理を維持する。勝利/敗北・granted=false・匿名/同期済み結果の扱い、開始フックと自動攻撃の制御も維持する。
 
+## 同期が確定応答より先に届く場合（2026-11-06追記）
+
+独立レビューで、当初の同期テストは手動でattemptを消しており、実際のseedがXPだけを先に更新する経路を再現していないと分かった。実際の[受信seed](../apps/mobile/src/platform/cloudSeed.ts)とcanonical反映を使う回帰へ置き換え、5 XPを受信した後に元のgranted=true応答で10 XPへ増える問題を再現した。これは従来の表示中/保持タブにも存在する処理だった。
+
+game seedでは、現在のcloud終端戦闘に一致する確定済みattemptと、同一所有者・同じ版以降のcharacterを確認した場合だけ、保存済みXPをそのまま採用して未確定attempt印を解除する。RPCは勝利時のcharacterとattemptを同じversionで確定するため、XP受信済みの保守的な証拠になる。snapshot生成と同じ先頭character行を使い、正の安全整数のversionだけを認める。適用直前にも認証世代・actors/id/stage/mode/outcomeを確認し、途中で置き換わった戦闘を消さない。表示runtimeは残し、XPを新たに加えない。古いcharacter・未確定/別attempt・owner/outcome不一致なら解除せず、通常応答/再試行へ任せる。敗北やgranted=falseでcharacterの版が古い場合も保守的に待つ。
+
+この変更はDB/API/保存形式を変えず、既存の受信行とメモリ内runtimeだけを利用する。実stagingでこの競合を新たに検証した扱いにはしない。
+
 ## 検証
 
-[新規20件](../apps/mobile/src/screens/battleResultNavigation.test.ts)は実RootLayout・MapScreen・MapOverview/BattleOverview・Mobileゲームストア・認証ストア登録・開始/結果/自動攻撃フックを使用する。Stackはmount/unmountまたは保持タブを表すナビゲーションスタブ、RNの表示/FlatList/focus/AppStateはDOM/JSスタブとする。認証SDK/通信・保存・Rootの無関係な同期/通知/演出初期化もスタブ。StrictMode・fake timer・遅延応答でタイミングを制御する。
+[画面回帰21件](../apps/mobile/src/screens/battleResultNavigation.test.ts)は実RootLayout・MapScreen・MapOverview/BattleOverview・Mobileゲームストア・認証ストア登録・開始/結果/自動攻撃フックを使用する。Stackはmount/unmountまたは保持タブを表すナビゲーションスタブ、RNの表示/FlatList/focus/AppStateはDOM/JSスタブとする。認証SDK/通信・保存・Rootの無関係な同期/通知/演出初期化もスタブ。StrictMode・fake timer・遅延応答でタイミングを制御する。
 
-修正前11失敗/9成功→新規20件成功。開始の画面移動、既存の結果処理・認証境界・Web画面移動も含む5ファイル88件が成功した。
+画面回帰21件と[受信確定の回帰10件](../apps/mobile/src/platform/battleResultSeed.test.ts)を追加。最終31件を変更前のmainへ適用すると15失敗/16成功、修正後は31件成功した。既存の開始/結果・受信seed・認証境界・Web画面移動も含む7ファイル105件が成功した。
 
 - 失敗/離脱中失敗を保持し、明示再試行だけで同じattempt/actions/keyを送る。
 - 再作成後も処理中は二重送信せず、離脱中の応答を一度反映し、画面を移動しない。
 - 勝利/敗北、granted=false、local/同期済み結果、保持されたタブの既存再送を維持する。
 - 未表示/再表示前の新しい結果、保持された非表示タブでは自動送信を待ち、`/map`へ戻って開始する。
 - Aの旧応答/旧finallyをBの送信へ混ぜず、非同期の認証清掃前にも旧attemptをBへ結び直さない。A再ログインでも旧結果を適用しない。
-- Root終了・別attemptへの置換・同期先行では古い結果を適用しない。同一所有者通知では継続する。
+- Root終了・別attemptへの置換・同一所有者の確定attempt/十分に新しいcharacterの先行受信では、古い結果を重ねて適用しない。同一所有者通知では継続する。
 - 通常の自動攻撃→cloud勝利→結果送信を一回分に保ち、確定応答の前にはXPを加えない。
 
-同期品質のunit対象へ追加する。既存の開始回帰にはpathnameのRouterスタブだけを追加する。全体・型検査・Lint・secrets・Web/PWAビルド・匿名Android出力・独立レビュー・最終HEADの通常CI3件の結果はPR/Issueへ記録する。
+受信seedの10件では、確定した勝利/敗北、古いcharacter・未確定/別attempt・owner/outcome不一致、seed中の新戦闘/認証切替も確認する。同期品質のunit対象へ両ファイルを追加する。既存の開始回帰にはpathnameのRouterスタブだけを追加する。全体・型検査・Lint・secrets・Web/PWAビルド・匿名Android出力・独立レビュー・最終HEADの通常CI3件の結果はPR/Issueへ記録する。
 
 ## 範囲と残り
 
