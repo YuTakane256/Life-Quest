@@ -1,5 +1,7 @@
 # Life Quest：画面統一 → 品質確認 → 配布準備
 
+2026-11-06追記: [戦闘結果の実DB/Edge統合検証](battle-seed-integration-quality-20261106.md)を追加。Web/Mobileの同期先行・応答先行・確定後の応答喪失と、同一キー再送/反復pullで報酬が1回に留まることを既存ローカルCIで確認する。実staging・端末UI・OS終了後の永続復旧とは区別する。
+
 2026-11-06追記: [Webの受信先行時の戦闘結果](web-battle-result-seed-quality-20261106.md)で、確定attemptと十分に新しいcharacterを受信済みならXPを増やさず履歴を一度記録する。表示中runtimeのステージを保持し、受信した別ステージで戦闘や履歴を入れ替えない。実staging/全ブラウザーや終了後の永続復旧とは区別する。
 
 2026-11-05追記: [Mobileの戦闘結果送信と画面移動](mobile-battle-result-navigation-quality-20261105.md)で、開始済みattempt/actions/key・失敗状態・排他をRoot内で保持し、戻っただけの再送を防ぐ。新しい自動送信はmap経路だけで始め、離脱中の本人応答は画面移動なしで一度反映する。同一所有者の確定attemptと十分に新しいcharacterを先に受信した場合は、遅い応答でXPを重ねない。実端末/実stagingやOS終了後の永続復旧とは区別する。
