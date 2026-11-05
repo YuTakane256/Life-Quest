@@ -53,6 +53,7 @@ const unitFiles = [
     'src/hooks/battleAuthBoundary.test.ts',
     'apps/mobile/src/screens/battleStartNavigation.test.ts',
     'apps/mobile/src/screens/battleResultNavigation.test.ts',
+    'apps/mobile/src/screens/chestNavigation.test.ts',
     'apps/mobile/src/platform/battleResultSeed.test.ts',
     'src/platform/battleResultSeed.test.ts',
     'apps/mobile/src/platform/cloudOutbox.test.ts',

@@ -29,7 +29,7 @@ vi.mock('../../hooks/useInventorySynthesis', () => ({ useInventorySynthesis: () 
 vi.mock('../../../apps/mobile/src/hooks/useInventorySynthesis', () => ({ useInventorySynthesis: () => ({
     synthesize: mocks.synthesize, retry: mocks.retry, isSynthesizing: false, hasError: mocks.hasError,
 }) }));
-vi.mock('../../../apps/mobile/src/hooks/useCloudChestOpen', () => ({ useCloudChestOpen: () => ({ openChest: vi.fn(), retry: vi.fn() }) }));
+vi.mock('../../../apps/mobile/src/hooks/useChestOperations', () => ({ useChestOperations: () => ({ openingChestId: null, errorChestId: null, openChest: vi.fn(), retry: vi.fn() }) }));
 vi.mock('../../../apps/mobile/src/components/CharacterOverview', () => ({ CharacterOverview: () => createElement('div', {}, 'プロフィールと成長') }));
 vi.mock('lucide-react-native', () => ({ Check: () => null, ChevronDown: () => null, History: () => null, SlidersHorizontal: () => null, X: () => null }));
 vi.mock('../../../apps/mobile/src/theme/usePalette', async () => {
