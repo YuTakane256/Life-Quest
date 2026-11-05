@@ -6,13 +6,13 @@ import { CharacterOverview } from '../components/CharacterOverview';
 import { CharacterLevelUpNotice } from '../components/CharacterLevelUpNotice';
 import { ChestAcquisitionHistory } from '../components/ChestAcquisitionHistory';
 import { InventorySection } from '../components/InventorySection';
-import { useCloudChestOpen } from '../hooks/useCloudChestOpen';
+import { useChestOperations } from '../hooks/useChestOperations';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { usePalette } from '../theme/usePalette';
 
 export default function CharacterScreen() {
     const hasHydrated = useMobileGameStore((state) => state.hasHydrated);
-    const { openingChestId, errorChestId, openChest, retry } = useCloudChestOpen();
+    const { openingChestId, errorChestId, openChest, retry } = useChestOperations();
     const { palette } = usePalette();
     if (!hasHydrated) return <SafeAreaView edges={TAB_SCREEN_EDGES} style={{ flex: 1, backgroundColor: palette.bg.primary }}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: palette.text.muted }}>保存データを読み込み中…</Text></View>

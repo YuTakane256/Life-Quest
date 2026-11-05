@@ -18,6 +18,7 @@ import { ChestOpeningOverlay } from '../src/components/ChestOpeningOverlay';
 import { BattleResultProvider } from '../src/components/BattleResultProvider';
 import { BattleStartProvider } from '../src/components/BattleStartProvider';
 import { InventoryOperationsProvider } from '../src/components/InventoryOperationsProvider';
+import { ChestOperationsProvider } from '../src/components/ChestOperationsProvider';
 import { CloudSessionRecoveryGate } from '../src/components/CloudSessionRecoveryGate';
 
 export default function RootLayout() {
@@ -54,6 +55,7 @@ export default function RootLayout() {
     return (
         <>
             <StatusBar style={resolvedTheme === 'light' ? 'dark' : 'light'} />
+            <ChestOperationsProvider>
             <InventoryOperationsProvider>
             <BattleResultProvider>
             <BattleStartProvider>
@@ -65,6 +67,7 @@ export default function RootLayout() {
             </BattleStartProvider>
             </BattleResultProvider>
             </InventoryOperationsProvider>
+            </ChestOperationsProvider>
             <LoginBonusOverlay />
             <ChestOpeningOverlay />
             <CloudSessionRecoveryGate />

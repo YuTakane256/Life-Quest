@@ -255,9 +255,9 @@ export function CharacterOverview({
                                 <Pressable
                                     accessibilityRole="button"
                                     accessibilityLabel={`${chest.label}を開封する`}
-                                    disabled={openingChestId === chest.id}
+                                    disabled={openingChestId !== null}
                                     accessibilityState={{
-                                        disabled: openingChestId === chest.id,
+                                        disabled: openingChestId !== null,
                                     }}
                                     onPress={() =>
                                         onOpenChest(chest.id, chest.label)
@@ -265,7 +265,7 @@ export function CharacterOverview({
                                     style={({ pressed }) => [
                                         s.chest,
                                         (pressed ||
-                                            openingChestId === chest.id) && {
+                                            openingChestId !== null) && {
                                             opacity: 0.5,
                                         },
                                     ]}
