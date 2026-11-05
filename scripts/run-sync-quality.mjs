@@ -46,6 +46,7 @@ const unitFiles = [
     'src/hooks/inventoryNavigation.test.tsx',
     'src/hooks/chestNavigation.test.tsx',
     'src/hooks/battleNavigation.test.tsx',
+    'src/hooks/battleStartNavigation.test.tsx',
     'apps/mobile/src/platform/cloudOutbox.test.ts',
     'apps/mobile/src/platform/networkRecovery.test.ts',
     'apps/mobile/src/platform/cloudSessionRecovery.test.ts',

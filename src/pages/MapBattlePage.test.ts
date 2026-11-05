@@ -15,7 +15,7 @@ vi.mock('../stores/useGameStore', () => ({ useGameStore: () => refs.store }));
 vi.mock('../stores/useBattleHistoryStore', () => ({
     useBattleHistoryStore: (select: (value: { history: BattleHistoryEntry[] }) => unknown) => select({ history: [] }),
 }));
-vi.mock('../hooks/useCloudBattleStart', () => ({ useCloudBattleStart: () => ({
+vi.mock('../hooks/useBattleStart', () => ({ useBattleStart: () => ({
     isStarting: false, startError: null, startStage: refs.start, retry: vi.fn(),
 }) }));
 vi.mock('../hooks/useBattleResult', () => ({ useBattleResult: () => ({
@@ -68,7 +68,7 @@ describe('Web battle result controls and fixed actor display', () => {
         expect(container.textContent).not.toContain('15 XP を獲得！');
         expect(button('次へ').disabled).toBe(false);
         await act(async () => button('次へ').click());
-        expect(refs.start).toHaveBeenCalledWith(4, expect.any(Function));
+        expect(refs.start).toHaveBeenCalledWith(4, refs.store.advanceStage);
     });
     it('uses the battle snapshot HP ceiling and labels the final-stage continuation as replay', async () => {
         refs.store.battle.rewardMode = 'local';
@@ -77,7 +77,7 @@ describe('Web battle result controls and fixed actor display', () => {
         expect(container.querySelector('[aria-label="星見ユウ のHP"]')?.getAttribute('aria-valuemax')).toBe('125');
         expect(button('再挑戦').disabled).toBe(false);
         await act(async () => button('再挑戦').click());
-        expect(refs.start).toHaveBeenCalledWith(40, expect.any(Function));
+        expect(refs.start).toHaveBeenCalledWith(40, refs.store.advanceStage);
     });
     it('preserves the cloud defeat attempt until retrying its result', async () => {
         refs.store.battle.status = 'defeat'; refs.status = 'error';

@@ -16,7 +16,7 @@ import heroImg from '@life-quest/assets/images/hero.png';
 import heroMaleImg from '@life-quest/assets/images/hero_male.png';
 import { getEnemyImageSrc } from '../config/enemyImages';
 import { useBattleResult } from '../hooks/useBattleResult';
-import { useCloudBattleStart } from '../hooks/useCloudBattleStart';
+import { useBattleStart } from '../hooks/useBattleStart';
 
 
 function getEnemyImage(stage: number) {
@@ -49,14 +49,12 @@ export function MapBattlePage() {
     const { resolveState, granted, retry } = useBattleResult();
     const isSyncingResult = hasPendingBattleResult(battle.status === 'victory' || battle.status === 'defeat' ? battle.status : 'ongoing', battle.rewardMode, battle.battleAttemptId)
         || (battle.rewardMode === 'cloud' && resolveState === 'syncing');
-    const { isStarting, startError, startStage, retry: retryStart } = useCloudBattleStart();
+    const { isStarting, startError, startStage, retry: retryStart } = useBattleStart();
 
     const handleNextStage = async () => {
         const nextStage = Math.min(battle.currentStage + 1, BATTLE_CONFIG.STAGES.length);
-        await startStage(nextStage, () => {
-            advanceStage();
-            setShowVictoryDialog(false);
-        });
+        // Keep legacy victory progress compatible, without retaining a route-local state setter.
+        await startStage(nextStage, advanceStage);
     };
 
     const requestedMap = MAP_CONFIG.find(m => m.id === selectedMapId) || MAP_CONFIG[0];
