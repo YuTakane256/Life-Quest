@@ -11,6 +11,7 @@ export function useAutomaticBattle(battle: ActiveMobileBattle | null, enabled: b
     const stage = battle?.stage;
     const outcome = battle?.state.outcome;
     const attemptId = battle?.battleAttemptId;
+    const mode = battle?.rewardMode;
     useFocusEffect(useCallback(() => {
         if (!enabled || !actors || outcome !== 'ongoing') return;
         const isCurrentSession = captureAuthSessionGuard();
@@ -28,14 +29,17 @@ export function useAutomaticBattle(battle: ActiveMobileBattle | null, enabled: b
             const current = store.activeBattle;
             // actors is the immutable per-attempt snapshot; each turn replaces only state/actions.
             return store.hasHydrated && current?.actors === actors && current.stage === stage
-                && current.battleAttemptId === attemptId && current.state.outcome === 'ongoing';
+                && current.battleAttemptId === attemptId && current.rewardMode === mode && current.state.outcome === 'ongoing';
         };
         const start = () => {
             stop();
+            if (AppState.currentState !== 'active') foreground = false;
             if (!focused || !foreground || !isCurrentSession() || !isCurrentBattle()) return;
             const generation = clockGeneration;
             timer = setInterval(() => {
                 if (generation !== clockGeneration) return;
+                // Check the current value as well as the last handled notification.
+                if (AppState.currentState !== 'active') { foreground = false; stop(); return; }
                 if (!focused || !foreground || !isCurrentSession() || !isCurrentBattle()) { stop(); return; }
                 useMobileGameStore.getState().performBattleAction({ type: 'attack' });
                 if (!isCurrentBattle()) stop();
@@ -47,8 +51,12 @@ export function useAutomaticBattle(battle: ActiveMobileBattle | null, enabled: b
             foreground = nextForeground;
             if (foreground) start(); else stop();
         });
-        const unsubscribe = subscribeAuthSessionScope(stop);
+        const unsubscribe = subscribeAuthSessionScope(() => {
+            stop();
+            // Initial login may retain anonymous migration data; retire only this local runtime.
+            if (mode === 'local' && isCurrentBattle()) useMobileGameStore.getState().clearActiveBattle();
+        });
         start();
         return () => { focused = false; stop(); subscription.remove(); unsubscribe(); };
-    }, [actors, attemptId, enabled, outcome, stage]));
+    }, [actors, attemptId, enabled, mode, outcome, stage]));
 }

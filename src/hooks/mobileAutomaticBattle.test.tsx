@@ -3,18 +3,24 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BATTLE_CONFIG, createBattleEngineState, type BattleActors } from '@life-quest/core/battle';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
-import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, notifyLogout, resetAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { useMobileGameStore } from '../../apps/mobile/src/stores/useMobileGameStore';
 import { useAutomaticBattle } from '../../apps/mobile/src/hooks/useAutomaticBattle';
 import { useGameStore } from '../stores/useGameStore';
+import { registerMobileAuthStoreHooks, resetCloudSessionSeeded } from '../../apps/mobile/src/platform/authStores';
+import { createEquipmentFromTemplate } from '@life-quest/core/equipment';
+import { EQUIPMENT_POOL } from '@life-quest/core/rewards';
 
 const native = vi.hoisted(() => ({
-    focused: true, appState: 'active', listeners: new Set<(state: string) => void>(),
+    focused: true, appState: 'active' as string | null, listeners: new Set<(state: string) => void>(),
 }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
 } }));
+vi.mock('../../apps/mobile/src/stores/useMobileLoginBonusStore', () => ({
+    beginMobileLoginBonusCloudSession: vi.fn(), clearMobileLoginBonusCloudSession: vi.fn(),
+}));
 vi.mock('expo-router', () => ({ useFocusEffect: (callback: () => void | (() => void)) => {
     const focused = native.focused;
     useEffect(() => focused ? callback() : undefined, [callback, focused]);
@@ -55,7 +61,7 @@ function appState(state: string) {
 const battle = () => useMobileGameStore.getState().activeBattle!;
 
 beforeEach(async () => {
-    resetAuthLifecycleHooks(); await notifyLogin('a');
+    resetAuthLifecycleHooks(); resetCloudSessionSeeded(); await notifyLogin('a');
     vi.useFakeTimers(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     native.focused = true; native.appState = 'active'; native.listeners.clear(); vi.clearAllMocks();
     setGameRewardAuthorityState('anonymous');
@@ -177,4 +183,64 @@ describe('Mobileの自動通常攻撃とWebの操作パリティ', () => {
         expect(native.listeners.size).toBe(0); expect(vi.getTimerCount()).toBe(0);
         act(() => oldCallback()); await advance(5000); expect(battle().actions).toHaveLength(0);
     });
+    it.each(['background', 'inactive', null])('observes AppState %s before its event and resumes on a fresh interval', async (state) => {
+        start(); render(); native.appState = state;
+        await advance(); expect(battle().actions).toEqual([]);
+        appState('active'); await advance(interval - 1); expect(battle().actions).toEqual([]);
+        await advance(1); expect(battle().actions).toHaveLength(1);
+    });
+    it('rejects a queued tick after an undelivered background transition and later resumption', async () => {
+        const timer = vi.spyOn(globalThis, 'setInterval'); start(); render();
+        const stale = timer.mock.calls.at(-1)![0] as () => void;
+        native.appState = 'background'; await advance(); appState('active'); act(() => stale());
+        expect(battle().actions).toEqual([]); await advance(); expect(battle().actions).toHaveLength(1);
+    });
+    it('returns a retained anonymous fight to the map on first login and keeps saved progress and items', async () => {
+        await notifyLogout(); const unregister = registerMobileAuthStoreHooks();
+        try {
+            const item = createEquipmentFromTemplate('kept-item', EQUIPMENT_POOL.find((t) => t.id === 'wooden_sword')!);
+            useMobileGameStore.setState({ character: { ...useMobileGameStore.getState().character, totalXp: 20 }, equipment: [item],
+                gachaCount: 7, chestQueue: [{ id: 'kept-chest', label: 'Kept', chestType: 'wood', opened: false, equipment: null }],
+                rewardLedger: { rewardedTaskIds: ['kept-task'], rewardedSubtaskIds: [], habitBonusDates: [] } });
+            expect(useMobileGameStore.getState().startBattle(1)).toBe(true); render();
+            const before = useMobileGameStore.getState();
+            await act(async () => notifyLogin('new-owner'));
+            expect(useMobileGameStore.getState().activeBattle).toBeNull(); expect(native.listeners.size).toBe(0);
+            expect(useMobileGameStore.getState()).toMatchObject({ character: before.character, equipment: [item], gachaCount: 7,
+                chestQueue: before.chestQueue, rewardLedger: before.rewardLedger, battleProgress: before.battleProgress });
+            act(() => start()); await advance(); expect(battle().actions).toHaveLength(1);
+        } finally { unregister(); }
+    });
+    it.each(['switch', 'logout-login'])('clears only the retained local runtime on %s without adding rewards', async (transition) => {
+        const unregister = registerMobileAuthStoreHooks();
+        try {
+            const timer = vi.spyOn(globalThis, 'setInterval');
+            await notifyLogin('a'); expect(useMobileGameStore.getState().startBattle(1)).toBe(true); render();
+            const stale = timer.mock.calls.at(-1)![0] as () => void;
+            const before = useMobileGameStore.getState();
+            await act(async () => { if (transition === 'logout-login') { await notifyLogout(); await notifyLogin('a'); } else await notifyLogin('b'); });
+            expect(useMobileGameStore.getState().activeBattle).toBeNull();
+            act(() => stale()); appState('background'); appState('active'); await advance(5000);
+            expect(useMobileGameStore.getState().activeBattle).toBeNull();
+            expect(useMobileGameStore.getState().character).toEqual(before.character);
+            expect(useMobileGameStore.getState().battleProgress).toEqual(before.battleProgress);
+        } finally { unregister(); }
+    });
+    it('does not clear a newer local battle installed before the old scope listener runs', async () => {
+        const unsubscribe = subscribeAuthSessionScope(() => useMobileGameStore.getState().startBattle(1));
+        try {
+            expect(useMobileGameStore.getState().startBattle(1)).toBe(true); render(); const previous = battle().actors;
+            await act(async () => notifyLogin('b'));
+            expect(battle().actors).not.toBe(previous); await advance(); expect(battle().actions).toHaveLength(1);
+        } finally { unsubscribe(); }
+    });
+    it('preserves the local clock on same-owner notifications with real auth store hooks', async () => {
+        const unregister = registerMobileAuthStoreHooks();
+        try {
+            await notifyLogin('a'); expect(useMobileGameStore.getState().startBattle(1)).toBe(true); render(); await advance(500);
+            await act(async () => notifyLogin('a')); await advance(500);
+            expect(battle().actions).toHaveLength(1);
+        } finally { unregister(); }
+    });
+
 });
