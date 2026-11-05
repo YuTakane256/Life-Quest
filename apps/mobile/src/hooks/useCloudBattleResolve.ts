@@ -87,7 +87,8 @@ export function shouldResolveBattle(
     return true;
 }
 
-export function useCloudBattleResolve(): UseCloudBattleResolveResult {
+/** Gate new automatic sends only; an initiated send/retry survives screen changes. */
+export function useCloudBattleResolve(allowAutoResolve = true): UseCloudBattleResolveResult {
     const activeBattle = useMobileGameStore((state) => state.activeBattle);
     const applyResolvedCloudBattle = useMobileGameStore((state) => state.applyResolvedCloudBattle);
     const [resolveState, setResolveState] = useState<CloudBattleResolveState>('idle');
@@ -153,12 +154,12 @@ export function useCloudBattleResolve(): UseCloudBattleResolveResult {
             operationScope.cancel(); resolvedAttemptIdRef.current = null; pendingRef.current = null; appliedAttemptRef.current = null; bindingRef.current = null;
             setResolveState('idle'); setGranted(null); return;
         }
-        if (!shouldResolveBattle(activeBattle, resolvedAttemptIdRef.current)) return;
+        if (!allowAutoResolve || !shouldResolveBattle(activeBattle, resolvedAttemptIdRef.current)) return;
         const attemptId = activeBattle!.battleAttemptId!;
         operationScope.cancel(); appliedAttemptRef.current = null;
         void runResolve(attemptId, activeBattle!.actions);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeBattle?.state.outcome, activeBattle?.rewardMode, activeBattle?.battleAttemptId, activeBattle?.stage, operationScope.revision]);
+    }, [activeBattle?.state.outcome, activeBattle?.rewardMode, activeBattle?.battleAttemptId, activeBattle?.stage, operationScope.revision, allowAutoResolve]);
 
     const retry = (): void => {
         const pending = pendingRef.current;
