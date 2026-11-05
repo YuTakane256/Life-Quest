@@ -67,6 +67,10 @@ vi.mock('../../apps/mobile/src/platform/cloudSeed', () => ({
         return true;
     },
 }));
+// This suite isolates transport/session ordering; battle projection has real-store regressions separately.
+vi.mock('../stores/useGameStore', () => ({ useGameStore: { getState: () => ({
+    battle: { status: 'idle', rewardMode: 'local', battleAttemptId: null, playerSnapshot: null, enemy: null },
+}) } }));
 vi.mock('../stores/useStatsStore', () => ({ useStatsStore: { getState: () => ({ mergeFromCloud: vi.fn() }) } }));
 vi.mock('../stores/useThemeStore', () => ({ useThemeStore: { setState: vi.fn() }, sanitizeThemeMode: vi.fn() }));
 vi.mock('../stores/useMotionStore', () => ({ useMotionStore: { setState: vi.fn() }, sanitizeMotionMode: vi.fn() }));
@@ -92,7 +96,9 @@ vi.mock('../../apps/mobile/src/platform/cloudOutbox', () => {
     };
 });
 
-vi.mock('./completionRewards', () => ({ flushCompletionRewardWrites: async () => {} }));
+vi.mock('./completionRewards', () => ({ flushCompletionRewardWrites: async () => {},
+    seedCloudCompletionRewardStorage: <T>(work: () => T): T => work(),
+}));
 vi.mock('./edgeFunctions', () => ({ getWebEdgeFunctionInvoker: () => null }));
 vi.mock('../../apps/mobile/src/platform/edgeFunctions', () => ({ getMobileEdgeFunctionInvoker: () => null }));
 vi.mock('./accountDeletion', () => ({ cleanupDeletedWebAccount: async () => {} }));

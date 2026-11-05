@@ -13,7 +13,7 @@
  * セクション単位で「クラウドが正か」を判定し（getSeedableSections）、
  * 初期行しか無いクラウド状態で既存ローカルデータを消さない。
  */
-import { captureAuthSessionGuard, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, captureAuthSessionScope, registerAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import {
     applyPullBatchToCache,
     buildCanonicalGameSnapshot,
@@ -51,6 +51,8 @@ import {
     subscribeWebCloudOutboxState,
 } from './cloudOutbox';
 import { resolveHabitReminderHour } from '../core/notifications';
+import { seedCloudCompletionRewardStorage } from './completionRewards';
+import { useGameStore } from '../stores/useGameStore';
 import { useStatsStore } from '../stores/useStatsStore';
 import { useThemeStore, sanitizeThemeMode } from '../stores/useThemeStore';
 import { useMotionStore, sanitizeMotionMode } from '../stores/useMotionStore';
@@ -108,7 +110,31 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
     if (seedable.game) {
         const game = buildCanonicalGameSnapshot(cache);
         if (game) {
+            const scope = captureAuthSessionScope();
+            const battle = useGameStore.getState().battle;
+            const outcome = battle.status === 'victory' || battle.status === 'defeat' ? battle.status : null;
+            const attemptId = battle.battleAttemptId;
+            const attempt = attemptId ? cache.battle_attempts[attemptId] : undefined;
+            // Match the exact character row used by buildCanonicalGameSnapshot.
+            // The resolve RPC commits victory XP and its attempt at the same version.
+            const character = Object.values(cache.characters)[0];
+            const confirmed = battle.rewardMode === 'cloud' && outcome !== null && battle.playerSnapshot !== null && battle.enemy !== null
+                && attempt?.id === attemptId && attempt.status === 'resolved'
+                && attempt.stage === battle.currentStage && attempt.outcome === outcome
+                && scope.userId !== null && attempt.user_id === scope.userId && character?.user_id === scope.userId
+                && Number.isSafeInteger(attempt.version) && attempt.version > 0
+                && Number.isSafeInteger(character.version) && character.version >= attempt.version;
             seedGame(game, 'cloud');
+            const current = useGameStore.getState().battle;
+            if (confirmed && outcome !== null && scope.isCurrent() && attemptId !== null
+                && current.playerSnapshot === battle.playerSnapshot && current.enemy === battle.enemy
+                && current.battleAttemptId === attemptId && current.currentStage === battle.currentStage
+                && current.rewardMode === 'cloud' && current.status === outcome) {
+                // Adopt authoritative XP without adding it again; retain the normal
+                // result/history path so this displayed attempt is recorded once.
+                seedCloudCompletionRewardStorage(() =>
+                    useGameStore.getState().applyResolvedCloudBattle(attemptId, outcome, false));
+            }
             seeded = true;
         }
     }
