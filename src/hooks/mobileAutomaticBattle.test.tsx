@@ -226,6 +226,17 @@ describe('Mobileの自動通常攻撃とWebの操作パリティ', () => {
             expect(useMobileGameStore.getState().battleProgress).toEqual(before.battleProgress);
         } finally { unregister(); }
     });
+    it.each(['blurred', 'disabled'])('does not revive an old local fight after auth changes while %s', async (state) => {
+        await notifyLogout(); const unregister = registerMobileAuthStoreHooks();
+        try {
+            start({}, 'local'); render();
+            if (state === 'blurred') { native.focused = false; render(); } else render(false);
+            expect(native.listeners.size).toBe(0);
+            await act(async () => notifyLogin('new-owner'));
+            native.focused = true; render(); await advance(5000);
+            expect(useMobileGameStore.getState().activeBattle).toBeNull();
+        } finally { unregister(); }
+    });
     it('does not clear a newer local battle installed before the old scope listener runs', async () => {
         const unsubscribe = subscribeAuthSessionScope(() => useMobileGameStore.getState().startBattle(1));
         try {

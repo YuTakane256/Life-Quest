@@ -12,7 +12,7 @@
  * 消してしまう。#504 が pull_sync_batch でストアをシードした時点で
  * markCloudSessionSeeded() を呼び、それ以降のログアウトでクリアが働く。
  */
-import { captureAuthSessionScope, registerAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, captureAuthSessionScope, registerAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { sanitizeGameStoreState, useGameStore } from '../stores/useGameStore';
 import { invalidatePendingHabitEffects, sanitizeHabitStoreState, useHabitStore } from '../stores/useHabitStore';
 import { discardWebPendingTaskCompletions, sanitizeTaskStoreState, useTaskStore } from '../stores/useTaskStore';
@@ -104,8 +104,23 @@ export function clearWebCloudStores(): void {
  * 戻り値で解除できる（テスト用）。
  */
 export function registerWebAuthStoreHooks(): () => void {
+    // Track the runtime's creation scope even while the map/timer is unmounted.
+    const localBattleIdentity = () => {
+        const battle = useGameStore.getState().battle;
+        return battle.rewardMode === 'local' && battle.status === 'fighting' ? battle.playerSnapshot : null;
+    };
+    let localBattle = localBattleIdentity();
+    let isCurrentLocalBattleSession = captureAuthSessionGuard();
+    const unsubscribeBattle = useGameStore.subscribe(() => {
+        const next = localBattleIdentity();
+        if (next === localBattle) return; // Turns and unrelated writes keep the original scope.
+        localBattle = next;
+        isCurrentLocalBattleSession = captureAuthSessionGuard();
+    });
     let pendingOwner = captureAuthSessionScope().userId;
     const unsubscribeScope = subscribeAuthSessionScope(({ userId }) => {
+        // A preceding subscriber may already have started a battle in the new scope.
+        if (localBattle && !isCurrentLocalBattleSession()) useGameStore.getState().resetBattle();
         const previous = pendingOwner;
         pendingOwner = userId;
         // Initial anonymous migration and same-user refresh keep their pending work.
@@ -151,5 +166,5 @@ export function registerWebAuthStoreHooks(): () => void {
             return flushCompletionRewardWrites();
         },
     });
-    return () => { unsubscribeScope(); unregisterHooks(); };
+    return () => { unsubscribeBattle(); unsubscribeScope(); unregisterHooks(); };
 }
