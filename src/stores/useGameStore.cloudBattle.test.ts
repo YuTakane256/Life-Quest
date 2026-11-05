@@ -209,6 +209,8 @@ describe('離脱時のクラウド属性リセット', () => {
             },
         });
 
+        expect(sanitized.battle.status).toBe('idle');
+        expect(sanitized.battle.enemy).toBeNull();
         expect(sanitized.battle.battleAttemptId).toBeNull();
         expect(sanitized.battle.rewardMode).toBe('local');
         expect(sanitized.battle.actions).toEqual([]);

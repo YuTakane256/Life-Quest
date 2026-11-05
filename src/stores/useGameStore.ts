@@ -347,26 +347,32 @@ function sanitizeBattle(raw: unknown, character: CharacterStats): BattleState {
         ? raw.status as BattleState['status']
         : 'idle';
     const enemy = sanitizeEnemy(raw.enemy);
-    const safeStatus = status === 'idle' || enemy ? status : 'idle';
+    // A reload does not restore the authenticated attempt or fixed player snapshot.
+    // Do not leave an unplayable fight, or reinterpret cloud results as local wins.
+    // Legacy local terminal screens remain available for their existing next/retry flow.
+    const hasCloudRuntime = (raw.rewardMode !== undefined && raw.rewardMode !== 'local')
+        || (raw.battleAttemptId !== undefined && raw.battleAttemptId !== null);
+    const safeStatus = status === 'fighting' || hasCloudRuntime ? 'idle'
+        : status === 'idle' || enemy ? status : 'idle';
 
     return {
         status: safeStatus,
         currentStage: toBoundedInteger(raw.currentStage, initialBattle.currentStage, 1, MAX_STAGE),
         maxClearedStage: toBoundedInteger(raw.maxClearedStage, initialBattle.maxClearedStage, 0, MAX_STAGE),
         enemy: safeStatus === 'idle' ? null : enemy,
-        playerHp: toBoundedInteger(raw.playerHp, character.baseMaxHp, 0, character.baseMaxHp),
-        logs: Array.isArray(raw.logs)
+        playerHp: safeStatus === 'idle' ? character.baseMaxHp
+            : toBoundedInteger(raw.playerHp, character.baseMaxHp, 0, character.baseMaxHp),
+        logs: safeStatus !== 'idle' && Array.isArray(raw.logs)
             ? raw.logs.map(sanitizeBattleLog).filter((log): log is BattleLog => log !== null).slice(-100)
             : [],
         battleUnlocked: typeof raw.battleUnlocked === 'boolean' ? raw.battleUnlocked : false,
-        skillCooldowns: sanitizeSkillCooldowns(raw.skillCooldowns),
-        guardTurnsRemaining: toNonNegativeInteger(raw.guardTurnsRemaining, 0),
-        guardDamageReduction: Math.max(0, Math.min(
+        skillCooldowns: safeStatus === 'idle' ? {} : sanitizeSkillCooldowns(raw.skillCooldowns),
+        guardTurnsRemaining: safeStatus === 'idle' ? 0 : toNonNegativeInteger(raw.guardTurnsRemaining, 0),
+        guardDamageReduction: safeStatus === 'idle' ? 0 : Math.max(0, Math.min(
             BATTLE_SKILL_CONFIG.MAX_DAMAGE_REDUCTION,
             isFiniteNumber(raw.guardDamageReduction) ? raw.guardDamageReduction : 0,
         )),
-        // クラウド属性は復元しない。古いbattleAttemptIdでの誤ったresolve送信を防ぐため
-        // （リロード後は常にローカル扱いへフォールバックする）。
+        // Cloud attempts/snapshots are not resumed across reloads without owner-bound recovery.
         actions: [],
         battleAttemptId: null,
         rewardMode: 'local',
