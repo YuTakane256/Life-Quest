@@ -164,7 +164,7 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         }
     }
 
-    it.each(cases)('$platform：$deliveryでも報酬は1回、再送・反復pullでも結果を維持する', async ({ platform, delivery }: { platform: Platform; delivery: Delivery }) => {
+    it.each(cases)('$platform：$delivery / 報酬は1回、再送・反復pullでも結果を維持する', async ({ platform, delivery }: { platform: Platform; delivery: Delivery }) => {
         seed(platform, await pull());
         const attempt = await game.startBattleAttempt(1, crypto.randomUUID(), createdUserId!);
         expect(attempt).not.toBeNull();
@@ -172,7 +172,7 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         expect((platform === 'Web' ? useGameStore.getState() : useMobileGameStore.getState()).character.totalXp).toBe(initialXp);
         const key = crypto.randomUUID();
         const resolve = (idempotencyKey: string) => game.resolveBattleAttempt(attempt!.battleAttemptId, actions,
-            { expectedUserId: createdUserId!, idempotencyKey });
+            { expectedUserId: createdUserId!, idempotencyKey, isActive: () => true });
         let response: ResolveBattleAttemptResponse | undefined;
         if (delivery === '確定後に応答喪失') {
             loseResponse = true;
