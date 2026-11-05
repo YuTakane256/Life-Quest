@@ -154,7 +154,7 @@ describe('sanitizeGameStoreState', () => {
                 { id: 'chest-bad', chestType: 'admin', label: 'bad' },
             ],
             battle: {
-                status: 'fighting',
+                status: 'victory',
                 currentStage: 999,
                 maxClearedStage: 999,
                 enemy: {
@@ -178,7 +178,7 @@ describe('sanitizeGameStoreState', () => {
         expect(sanitized.chestQueue[0].label).toHaveLength(120);
         expect(sanitized.chestQueue[0].equipment?.attackBonus).toBe(template.attackBonus);
         expect(sanitized.battle).toMatchObject({
-            status: 'fighting',
+            status: 'victory',
             currentStage: BATTLE_CONFIG.STAGES[BATTLE_CONFIG.STAGES.length - 1].stage,
             maxClearedStage: BATTLE_CONFIG.STAGES[BATTLE_CONFIG.STAGES.length - 1].stage,
             playerHp: CHARACTER_CONFIG.INITIAL_STATS.maxHp,
