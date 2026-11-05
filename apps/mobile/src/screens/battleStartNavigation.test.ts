@@ -31,6 +31,7 @@ vi.mock('../components/CloudSessionRecoveryGate', () => ({ CloudSessionRecoveryG
 vi.mock('../components/InventoryOperationsProvider', () => ({ InventoryOperationsProvider: ({ children }: { children: ReactNode }) => children }));
 vi.mock('expo-status-bar', () => ({ StatusBar: () => null }));
 vi.mock('expo-router', () => ({
+    usePathname: () => mocks.route === 'map' ? '/map' : '/tasks',
     Stack: Object.assign(() => mocks.route === 'map' ? createElement(MapScreen) : createElement('div', {}, 'tasks-route'), { Screen: () => null }),
     useFocusEffect: (callback: () => void | (() => void)) => useEffect(callback, [callback]),
 }));

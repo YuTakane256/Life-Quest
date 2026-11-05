@@ -15,7 +15,7 @@ import {
 import { useBattleStart } from '../hooks/useBattleStart';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { usePalette } from '../theme/usePalette';
-import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
+import { useBattleResult } from '../hooks/useBattleResult';
 import { MapOverview, MapStageCard } from '../components/MapOverview';
 import { getBattleImage, getMapImage } from '../assets/mapImages';
 import { BattleOverview } from '../components/BattleOverview';
@@ -28,7 +28,7 @@ export default function MapScreen() {
     const hasHydrated = useMobileGameStore((state) => state.hasHydrated);
     const performBattleAction = useMobileGameStore((state) => state.performBattleAction);
     const clearActiveBattle = useMobileGameStore((state) => state.clearActiveBattle);
-    const { resolveState, granted, retry: retryResolve } = useCloudBattleResolve();
+    const { resolveState, granted, retry: retryResolve } = useBattleResult();
 
     const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);

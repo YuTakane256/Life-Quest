@@ -15,6 +15,7 @@ import { startStatsLogSeed } from '../src/stores/statsLogSeed';
 import { usePalette } from '../src/theme/usePalette';
 import { LoginBonusOverlay } from '../src/components/LoginBonusOverlay';
 import { ChestOpeningOverlay } from '../src/components/ChestOpeningOverlay';
+import { BattleResultProvider } from '../src/components/BattleResultProvider';
 import { BattleStartProvider } from '../src/components/BattleStartProvider';
 import { InventoryOperationsProvider } from '../src/components/InventoryOperationsProvider';
 import { CloudSessionRecoveryGate } from '../src/components/CloudSessionRecoveryGate';
@@ -54,6 +55,7 @@ export default function RootLayout() {
         <>
             <StatusBar style={resolvedTheme === 'light' ? 'dark' : 'light'} />
             <InventoryOperationsProvider>
+            <BattleResultProvider>
             <BattleStartProvider>
             <Stack screenOptions={{ contentStyle: { backgroundColor: palette.bg.primary } }}>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -61,6 +63,7 @@ export default function RootLayout() {
                 <Stack.Screen name="inventory" options={{ headerShown: false }} />
             </Stack>
             </BattleStartProvider>
+            </BattleResultProvider>
             </InventoryOperationsProvider>
             <LoginBonusOverlay />
             <ChestOpeningOverlay />
