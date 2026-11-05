@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { useNavigate } from 'react-router-dom';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
-import { useGameStore } from '../stores/useGameStore';
+import { sanitizeGameStoreState, useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import App from '../App';
 
@@ -105,6 +105,17 @@ describe('Web battle starts across actual routes', () => {
         expect(mocks.start.mock.calls[0][0]).toBe(40);
         expect(useGameStore.getState().battle).toMatchObject({ status: 'fighting', currentStage: 40, maxClearedStage: 40 });
         expect(useGameStore.getState().character.totalXp).toBe(0); expect(useBattleHistoryStore.getState().history).toEqual([]);
+    });
+    it('starts the next stage from a supported legacy local victory with unrecorded progress', async () => {
+        await notifyLogout(); mocks.auth.mockResolvedValue({ kind: 'anonymous' });
+        const restored = sanitizeGameStoreState({ battle: { ...terminal(), rewardMode: 'local', battleAttemptId: null, maxClearedStage: 0 },
+            character: { ...initial.character, totalXp: 5 } });
+        expect(restored.battle).toMatchObject({ status: 'victory', currentStage: 1, maxClearedStage: 0, rewardMode: 'local' });
+        useGameStore.setState(restored);
+        await render(); await click('次へ');
+        expect(useGameStore.getState().battle).toMatchObject({ status: 'fighting', currentStage: 2, maxClearedStage: 1, rewardMode: 'local' });
+        expect(useGameStore.getState().character.totalXp).toBe(5); expect(useBattleHistoryStore.getState().history).toEqual([]);
+        expect(mocks.start).not.toHaveBeenCalled();
     });
     it('does not apply a delayed A start or release B starting state after switching accounts while away', async () => {
         const old = deferred<unknown>(); const current = deferred<unknown>(); mocks.start.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);

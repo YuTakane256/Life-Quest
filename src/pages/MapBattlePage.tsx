@@ -33,7 +33,7 @@ function getSkillTone(skill: BattleSkillDefinition): { icon: string; color: stri
 }
 
 export function MapBattlePage() {
-    const { battle, character, getEffectiveStats, processBattleTurn, resetBattle, activateBattleSkill } = useGameStore();
+    const { battle, character, getEffectiveStats, processBattleTurn, resetBattle, advanceStage, activateBattleSkill } = useGameStore();
     const history = useBattleHistoryStore((s) => s.history);
     const [showVictoryDialog, setShowVictoryDialog] = useState(false);
     const [selectedMapId, setSelectedMapId] = useState(() => {
@@ -53,9 +53,8 @@ export function MapBattlePage() {
 
     const handleNextStage = async () => {
         const nextStage = Math.min(battle.currentStage + 1, BATTLE_CONFIG.STAGES.length);
-        // Both local and confirmed cloud victories already record progress. Starting the next
-        // stage resets battle state without retaining a route-local callback during retries.
-        await startStage(nextStage);
+        // Keep legacy victory progress compatible, without retaining a route-local state setter.
+        await startStage(nextStage, advanceStage);
     };
 
     const requestedMap = MAP_CONFIG.find(m => m.id === selectedMapId) || MAP_CONFIG[0];
