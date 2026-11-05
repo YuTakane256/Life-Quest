@@ -12,7 +12,7 @@ import {
     type BattleAction,
     type StageDefinition,
 } from '@life-quest/core/battle';
-import { useCloudBattleStart } from '../hooks/useCloudBattleStart';
+import { useBattleStart } from '../hooks/useBattleStart';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { usePalette } from '../theme/usePalette';
 import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
@@ -35,7 +35,7 @@ export default function MapScreen() {
 
     const [selectedMapId, setSelectedMapId] = useState(() => getMapForStage(battleProgress.currentStage).id);
     const [notice, setNotice] = useState<string | null>(null);
-    const { isStarting: busy, startError, startStage, retry: retryStart, clearError: clearStartError } = useCloudBattleStart();
+    const { isStarting: busy, startError, startStage, retry: retryStart, clearError: clearStartError } = useBattleStart();
     useAutomaticBattle(activeBattle, hasHydrated && !busy);
     const listRef = useRef<FlatList<StageDefinition>>(null);
     const requestedMap = MAP_CONFIG.find((map) => map.id === selectedMapId) ?? MAP_CONFIG[0];
@@ -50,7 +50,7 @@ export default function MapScreen() {
             setNotice('青色の宝箱を開封するとマップバトルが解放されます');
             return;
         }
-        void startStage(stage, () => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
+        void startStage(stage);
     };
 
     const handleAction = (action: BattleAction) => {
