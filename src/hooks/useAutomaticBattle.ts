@@ -49,7 +49,12 @@ export function useAutomaticBattle(battle: BattleState) {
             if (visible) start(); else stop();
         };
         document.addEventListener('visibilitychange', onVisibilityChange);
-        const unsubscribe = subscribeAuthSessionScope(stop);
+        const unsubscribe = subscribeAuthSessionScope(() => {
+            stop();
+            // Initial login can preserve anonymous migration data. Retire only this old
+            // local runtime, so a retained map is usable without advancing it as the new owner.
+            if (mode === 'local' && isCurrentBattle()) useGameStore.getState().resetBattle();
+        });
         start();
         return () => { active = false; stop(); document.removeEventListener('visibilitychange', onVisibilityChange); unsubscribe(); };
     }, [snapshot, stage, attemptId, mode, status]);

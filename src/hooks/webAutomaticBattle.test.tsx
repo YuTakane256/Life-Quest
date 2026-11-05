@@ -1,13 +1,14 @@
 import { act, createElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, notifyLogout, resetAuthLifecycleHooks, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { flushCompletionRewardWrites, withoutCompletionRewardPersistence } from '../platform/completionRewards';
 import { BATTLE_CONFIG } from '../config/gameConfig';
 import { useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import { MapBattlePage } from '../pages/MapBattlePage';
+import { registerWebAuthStoreHooks } from '../platform/authStores';
 
 vi.mock('../hooks/useBattleStart', () => ({ useBattleStart: () => ({ isStarting: false, startError: null, startStage: vi.fn(), retry: vi.fn() }) }));
 vi.mock('../hooks/useBattleResult', () => ({ useBattleResult: () => ({ resolveState: 'idle', granted: null, retry: vi.fn() }) }));
@@ -80,6 +81,30 @@ describe('Web automatic battle lifecycle through the real map', () => {
     it('does not resume an old A battle after logout and A login', async () => {
         start(); await render(); const stale = queuedTick(); await act(async () => { await notifyLogout(); await notifyLogin('a'); });
         act(() => stale()); visible('hidden'); visible('visible'); await advance(5000); expect(battle().actions).toEqual([]);
+    });
+    it('returns an anonymous local fight to the map on first login without discarding saved progress', async () => {
+        await notifyLogout(); setGameRewardAuthorityState('anonymous');
+        const unregister = registerWebAuthStoreHooks();
+        try {
+            useGameStore.setState({ character: { ...initial.character, totalXp: 20 }, gachaCount: 7 });
+            useGameStore.getState().startBattle(1); await render(); const stale = queuedTick();
+            await act(async () => { setGameRewardAuthorityState('authenticated'); await notifyLogin('new-owner'); });
+            expect(battle().status).toBe('idle'); expect(host.textContent).toContain('最高到達');
+            expect(useGameStore.getState().character.totalXp).toBe(20); expect(useGameStore.getState().gachaCount).toBe(7);
+            act(() => stale()); visible('hidden'); visible('visible'); await advance(5000); expect(battle().actions).toEqual([]);
+            await act(async () => start('new-owner-attempt')); await advance(); expect(battle().actions).toHaveLength(1);
+            expect(useBattleHistoryStore.getState().history).toEqual([]);
+        } finally { unregister(); }
+    });
+    it('does not clear a newer local battle installed before the old auth listener runs', async () => {
+        await notifyLogout(); setGameRewardAuthorityState('anonymous');
+        const unsubscribe = subscribeAuthSessionScope(() => useGameStore.getState().startBattle(1));
+        try {
+            useGameStore.getState().startBattle(1); await render(); const old = battle().playerSnapshot;
+            await act(async () => notifyLogin('new-owner'));
+            expect(battle().status).toBe('fighting'); expect(battle().playerSnapshot).not.toBe(old);
+            await advance(); expect(battle().actions).toHaveLength(1);
+        } finally { unsubscribe(); }
     });
     it('keeps the clock through same-owner auth notifications', async () => {
         start(); await render(); await advance(500); await act(async () => notifyLogin('a')); await advance(500); expect(battle().actions).toHaveLength(1);
