@@ -2,6 +2,10 @@ import { act, createElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useNavigate } from 'react-router-dom';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
+import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
+import { applyCloudCacheToWebStores } from '../platform/cloudSync';
+import { flushCompletionRewardWrites } from '../platform/completionRewards';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
@@ -13,7 +17,7 @@ vi.mock('../platform/gameCloud', () => ({ resolveCloudBattleAttempt: mocks.resol
     openCloudChest: vi.fn(), synthesizeCloudItems: vi.fn() }));
 vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: vi.fn(), isWebCloudOutboxActive: () => false }));
 vi.mock('../utils/notifications', () => ({ runNotificationChecks: vi.fn(), cancelNotificationChecks: vi.fn() }));
-vi.mock('../stores/useLoginBonusStore', () => ({ useLoginBonusStore: { getState: () => ({ checkDailyLogin() {} }) } }));
+vi.mock('../stores/useLoginBonusStore', () => ({ requestLoginBonusRecheck: vi.fn(), useLoginBonusStore: { getState: () => ({ checkDailyLogin() {} }) } }));
 vi.mock('../pages/TasksPage', () => ({ TasksPage: () => createElement('div', {}, 'tasks-route') }));
 vi.mock('../components/layout/BottomNav', () => ({ BottomNav: () => {
     const navigate = useNavigate();
@@ -37,12 +41,19 @@ const terminal = (id = 'attempt-a', status: 'victory' | 'defeat' = 'victory') =>
 function button(text: string) { return [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!; }
 async function click(text: string) { const target = button(text); expect(target).toBeTruthy(); await act(async () => target.click()); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { resolve, promise }; }
+function resolvedCache(outcome: 'victory' | 'defeat' = 'victory') {
+    return applyPullBatchToCache(createEmptyCloudCache(), { next_cursor: 10, has_more: false,
+        characters: [{ user_id: 'a', total_xp: outcome === 'victory' ? 5 : 0, current_stage: 4, max_cleared_stage: 3, battle_unlocked: true, version: 10 }],
+        battle_attempts: [{ id: 'attempt-a', user_id: 'a', stage: 1, status: 'resolved', outcome, version: 10 }],
+    });
+}
 const response = (outcome: 'victory' | 'defeat' = 'victory') => ({ outcome, granted: outcome === 'victory' });
 async function render(path = '/map', strict = false) {
     history.replaceState({}, '', path); mounted = true;
     await act(async () => root.render(strict ? createElement(StrictMode, null, createElement(App)) : createElement(App)));
 }
 beforeEach(async () => {
+    await flushCompletionRewardWrites(); setGameRewardAuthorityState('authenticated');
     await import('../pages/MapBattlePage');
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); resetAuthLifecycleHooks(); await notifyLogin('a'); localStorage.clear();
     vi.clearAllMocks(); mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' }); mocks.resolve.mockResolvedValue(response());
@@ -53,7 +64,8 @@ beforeEach(async () => {
 });
 afterEach(async () => {
     if (mounted) await act(async () => root.unmount()); host.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals();
-    useGameStore.setState(initial); useBattleHistoryStore.setState({ history: [] }); history.replaceState({}, '', '/');
+    useGameStore.setState(initial); useBattleHistoryStore.setState({ history: [] }); await flushCompletionRewardWrites(); localStorage.clear();
+    setGameRewardAuthorityState('anonymous'); history.replaceState({}, '', '/');
 });
 
 describe('Web battle results across actual routes', () => {
@@ -117,12 +129,31 @@ describe('Web battle results across actual routes', () => {
         expect(mocks.resolve.mock.calls[0][2].isActive()).toBe(false);
         expect(useGameStore.getState().character.totalXp).toBe(0); expect(useBattleHistoryStore.getState().history).toEqual([]);
     });
-    it('does not reapply a result already confirmed by canonical sync before the response arrives', async () => {
-        const pending = deferred<unknown>(); mocks.resolve.mockReturnValueOnce(pending.promise); await render(); await click('go-tasks');
-        await act(async () => { useGameStore.getState().applyResolvedCloudBattle('attempt-a', 'victory', true); });
-        await act(async () => pending.resolve(response())); await click('go-map');
-        expect(useGameStore.getState().character.totalXp).toBe(5); expect(useBattleHistoryStore.getState().history).toHaveLength(1);
+    it.each([false, true])('does not duplicate XP or history when real cloud seed precedes the response (away: %s)', async (away) => {
+        const pending = deferred<unknown>(); mocks.resolve.mockReturnValueOnce(pending.promise); await render(); if (away) await click('go-tasks');
+        await act(async () => { expect(applyCloudCacheToWebStores(resolvedCache())).toBe(true); });
+        await act(async () => pending.resolve(response())); if (away) await click('go-map');
+        expect(useGameStore.getState().character.totalXp).toBe(5); expect(useGameStore.getState().battle.currentStage).toBe(1);
+        expect(useBattleHistoryStore.getState().history).toHaveLength(1); expect(useBattleHistoryStore.getState().history[0]).toMatchObject({ stage: 1, outcome: 'victory', xpEarned: 5 });
         expect(mocks.resolve).toHaveBeenCalledTimes(1); expect(button('次へ').disabled).toBe(false);
+    });
+    it('settles a failed request from confirmed cloud seed without requiring another RPC', async () => {
+        mocks.resolve.mockRejectedValueOnce(new TypeError('lost')); await render(); await click('go-tasks');
+        await act(async () => { applyCloudCacheToWebStores(resolvedCache()); }); await click('go-map');
+        expect(button('再送')).toBeUndefined(); expect(button('次へ').disabled).toBe(false); expect(mocks.resolve).toHaveBeenCalledTimes(1);
+        expect(useGameStore.getState().character.totalXp).toBe(5); expect(useBattleHistoryStore.getState().history).toHaveLength(1);
+    });
+    it('does not duplicate history if the RPC arrives first and the same cloud result is pulled repeatedly', async () => {
+        await render(); await act(async () => { applyCloudCacheToWebStores(resolvedCache()); applyCloudCacheToWebStores(resolvedCache()); });
+        expect(useGameStore.getState().character.totalXp).toBe(5); expect(useBattleHistoryStore.getState().history).toHaveLength(1);
+        expect(useGameStore.getState().battle.currentStage).toBe(1); expect(mocks.resolve).toHaveBeenCalledTimes(1);
+    });
+    it('settles a confirmed defeat before a delayed response and keeps one zero-XP history entry', async () => {
+        const pending = deferred<unknown>(); mocks.resolve.mockReturnValueOnce(pending.promise);
+        useGameStore.setState({ battle: terminal('attempt-a', 'defeat') }); await render(); await click('go-tasks');
+        await act(async () => { applyCloudCacheToWebStores(resolvedCache('defeat')); pending.resolve(response('defeat')); }); await click('go-map');
+        expect(useGameStore.getState().character.totalXp).toBe(0); expect(useBattleHistoryStore.getState().history).toHaveLength(1);
+        expect(useBattleHistoryStore.getState().history[0]).toMatchObject({ stage: 1, outcome: 'defeat', xpEarned: 0 }); expect(button('リトライ').disabled).toBe(false);
     });
     it.each(['/map/', '/MAP'])('resolves restored results on router-equivalent map URL %s', async (path) => {
         await render(path);

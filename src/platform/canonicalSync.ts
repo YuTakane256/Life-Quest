@@ -68,7 +68,7 @@ export function seedHabits(snapshot: CanonicalHabitSnapshot): void {
 
 /**
  * canonical のゲームスナップショットをストアへ反映する。
- * バトルは進行度（unlocked / currentStage / maxClearedStage）のみ上書きし、
+ * バトルは進行度を反映するが、表示中のruntimeのステージは保持し、
  * 戦闘中の一時状態（敵HP・ログ・クールダウン）は canonical 契約に無いため保持する。
  */
 export function seedGame(snapshot: CanonicalGameSnapshot, source: 'local' | 'cloud' = 'local'): void {
@@ -88,7 +88,8 @@ export function seedGame(snapshot: CanonicalGameSnapshot, source: 'local' | 'clo
         battle: {
             ...state.battle,
             battleUnlocked: snapshot.battleProgress.battleUnlocked,
-            currentStage: snapshot.battleProgress.currentStage,
+            currentStage: state.battle.status !== 'idle' && state.battle.playerSnapshot !== null && state.battle.enemy !== null
+                ? state.battle.currentStage : snapshot.battleProgress.currentStage,
             maxClearedStage: snapshot.battleProgress.maxClearedStage,
         },
     }));
