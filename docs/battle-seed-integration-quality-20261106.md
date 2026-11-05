@@ -12,7 +12,7 @@
 
 認証は一時アカウントの実JWT、開始・決着は共有のgameCloud/Edge invoker、戦闘は実Web/Mobileストアと返された固定スナップショットを使用する。pull_sync_batchのページを実cacheへ取り込み、実canonical/seed経由で反映する。character/attemptの所有者・確定状態・版は架空データに置き換えず、そのままの受信データを使う。DBでも勝利時のcharacter/attemptが同じ正のversionになり、XPが報酬1回分だけ増えることを確認する。
 
-同一キーの再送は、元のgranted=trueが返ることを明示的に確認する。別キーではgranted=false/already_resolvedとなり、いずれをストアへ渡しても二重加算しない。反復pull後も報酬台帳は1件、サーバー/端末XPは一致する。Webの履歴は1件、ステージ1の結果表示・履歴は、サーバーの選択ステージ4に差し替わらない。Mobileの結果表示もステージ1を維持する。
+初回の応答はgranted=trueであり、同期後に遅れて適用してもXPを重ねない。確定済みattemptへの再送は、実EdgeがSQLのキー再生より先に処理するため、同一キー・別キーともgranted=false/already_resolvedとなる。この公開契約も明示的に確認する。いずれをストアへ渡しても二重加算しない。反復pull後も報酬台帳は1件、サーバー/端末XPは一致する。Webの履歴は1件、ステージ1の結果表示・履歴は、サーバーの選択ステージ4に差し替わらない。Mobileの結果表示もステージ1を維持する。
 
 ## 実行と安全な範囲
 

@@ -200,9 +200,9 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         seed(platform, cache);
         assertSettled(platform, expectedXp); // No response has reached the seed-first/lost-response store yet.
         if (response && delivery === '同期が先') deliver(platform, attempt!.battleAttemptId, response);
-        // Same key intentionally returns the original granted=true, not a safer granted=false.
+        // The public Edge short-circuits a resolved attempt before SQL key replay.
         const replay = await resolve(key);
-        expect(replay).toMatchObject({ outcome: 'victory', granted: true });
+        expect(replay).toMatchObject({ outcome: 'victory', granted: false, already_resolved: true });
         deliver(platform, attempt!.battleAttemptId, replay);
         const otherKey = await resolve(crypto.randomUUID());
         expect(otherKey).toMatchObject({ outcome: 'victory', granted: false, already_resolved: true });
