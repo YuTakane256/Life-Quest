@@ -72,6 +72,21 @@ describe('Mobile称号：実persistの保存値と読込競合', () => {
         read.resolve(envelope({ activeTitle: '本人の称号' })); await pending;
         expect(useMobileTitleStore.getState().activeTitle).toBe('本人の称号'); expectActionSafe();
     });
+    it('認証だけが変わり表示値がまだ変わっていなくても、旧所有者の読込を拒否する', async () => {
+        const read = deferred<string | null>(); storage.getItem.mockReturnValueOnce(read.promise);
+        const pending = useMobileTitleStore.persist.rehydrate(); await notifyLogin('b');
+        read.resolve(envelope({ activeTitle: 'Aの古い称号' })); await pending;
+        expect(useMobileTitleStore.getState().activeTitle).toBe('現在の称号'); expectActionSafe();
+        expect(enqueueCloudOperation).not.toHaveBeenCalled();
+    });
+    it('認証を変えず外部のsetStateで届いた新しい称号も、旧保存で戻さない', async () => {
+        const read = deferred<string | null>(); storage.getItem.mockReturnValueOnce(read.promise);
+        const pending = useMobileTitleStore.persist.rehydrate();
+        useMobileTitleStore.setState({ activeTitle: '新しい反映値' });
+        read.resolve(envelope({ activeTitle: '遅い保存の称号' })); await pending;
+        expect(useMobileTitleStore.getState().activeTitle).toBe('新しい反映値'); expectActionSafe();
+        expect(enqueueCloudOperation).not.toHaveBeenCalled();
+    });
     it.each(['変更', '同値の明示解除', '変更して元の値へ戻す'])('読込開始後の%sを古い保存で上書きしない', async (kind) => {
         if (kind === '同値の明示解除') useMobileTitleStore.setState({ activeTitle: null });
         const read = deferred<string | null>(); storage.getItem.mockReturnValueOnce(read.promise);
