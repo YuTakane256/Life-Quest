@@ -1,5 +1,7 @@
 # 計画④：実Web↔Mobile同期の受け入れ確認
 
+2026-11-06追記: [宝箱の実DB/Edge統合検証](chest-replay-integration-quality-20261106.md)を追加。Web/Mobileの木・青の開封応答先行/同期先行・応答喪失後再送を通し、装備状態・売却墓標・獲得履歴・演出イベント・戦闘解放とXPを照合する。実staging・端末UI・OS終了後の永続復旧とは区別する。
+
 2026-11-06追記: [合成の実DB/Edge統合](synthesis-replay-integration-quality-20261106.md)を追加。Web/Mobileで応答先行・同期先行・応答喪失後の売却・次合成後の旧応答を検証し、実台帳/墓標/XPと所持品を照合する。実staging・端末UI・OS終了後の永続復旧とは区別する。
 
 2026-11-06追記: [合成結果の遅延再生](synthesis-result-replay-quality-20261106.md)で、素材も結果も残らない古い応答から売却・消費済み装備を作り直さない。既存結果の装備状態、通常適用・素材除去を維持し、曖昧な欠落は通常のpullへ任せる。実staging/実機・OS終了後の永続復旧とは区別する。
