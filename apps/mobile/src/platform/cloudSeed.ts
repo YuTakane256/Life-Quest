@@ -12,6 +12,7 @@ import {
     buildCanonicalTaskSnapshot,
     buildStatsLogSnapshot,
     extractSyncedSettings,
+    extractSyncedTitle,
     getSeedableSections,
     type CloudCache,
 } from '@life-quest/core/cloudCache';
@@ -20,6 +21,7 @@ import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { resolveHabitReminderHour } from '@life-quest/core/notifications';
 import { seedSectionData } from './canonicalSync';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
+import { sanitizeActiveTitle, useMobileTitleStore } from '../stores/useMobileTitleStore';
 import {
     sanitizeMobileMotionMode,
     sanitizeMobileThemeMode,
@@ -28,6 +30,7 @@ import {
 
 /** クラウドが正と言えるセクションだけをストアへ反映する。1つ以上シードしたらtrue。 */
 export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
+    const titleScope = captureAuthSessionScope();
     const seedable = getSeedableSections(cache);
     let seeded = false;
     if (seedable.tasks) {
@@ -89,6 +92,12 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
             });
             seeded = true;
         }
+    }
+    const title = titleScope.userId === null ? null : extractSyncedTitle(cache, titleScope.userId);
+    if (title && titleScope.isCurrent() && useMobileTitleStore.persist.hasHydrated()) {
+        const activeTitle = sanitizeActiveTitle(title.activeTitle);
+        if (useMobileTitleStore.getState().activeTitle !== activeTitle) useMobileTitleStore.setState({ activeTitle });
+        seeded = true;
     }
     return seeded;
 }

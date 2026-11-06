@@ -122,6 +122,8 @@ export interface CloudSectionSeedability {
     tasks: boolean;
     habits: boolean;
     game: boolean;
+    /** 初期行ではないプロフィールに、明示的な称号または解除が届いているか */
+    title: boolean;
     /** user_settingsの4同期項目（themeMode等）を一度でも書き込んだことがあるか */
     settings: boolean;
 }
@@ -141,6 +143,7 @@ export interface CloudSectionSeedability {
  * - settings: user_settings.settingsが初期値の空jsonb（'{}'）のままなら
  *   シードしない（誰も一度もupsert_user_settingsを呼んでいない＝
  *   ローカルの既定値を消さない）
+ * - title: 明示された称号/解除だけをゲームの初期値と切り離して反映する
  */
 export function getSeedableSections(cache: CloudCache): CloudSectionSeedability {
     const character = Object.values(cache.characters)[0];
@@ -160,8 +163,18 @@ export function getSeedableSections(cache: CloudCache): CloudSectionSeedability 
             || Object.keys(cache.inventory_items).length > 0
             || Object.keys(cache.chests).length > 0
             || Object.keys(cache.battle_attempts).length > 0,
+        title: Object.keys(cache.profiles).some((userId) => extractSyncedTitle(cache, userId) !== null),
         settings: settingsTouched,
     };
+}
+
+/** Missing/invalid/default profile rows are not an instruction to clear a title. */
+export function extractSyncedTitle(cache: CloudCache, userId: string): { activeTitle: string | null } | null {
+    const row = cache.profiles[userId];
+    if (!row || row.user_id !== userId || row.deleted_at != null
+        || !Number.isSafeInteger(row.version) || Number(row.version) <= 1) return null;
+    const value = row.active_title;
+    return value === null || typeof value === 'string' ? { activeTitle: value } : null;
 }
 
 /**

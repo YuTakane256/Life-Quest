@@ -31,6 +31,7 @@ import {
 } from '@life-quest/core/cloudSyncState';
 import { markCloudSessionSeeded } from './authStores';
 import { rememberMobileCloudDisplayOwner } from './cloudSessionRecovery';
+import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import {
     drainOutboxAndWait,
     getMobileCloudOutboxState,
@@ -111,6 +112,12 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
             markCloudSessionSeeded();
         }
     };
+
+    // The title store hydrates independently of the game/task stores. Reapply
+    // this handle's latest cache after disk restore, guarded against stop/auth changes.
+    const unsubscribeTitleHydration = useMobileTitleStore.persist.onFinishHydration(() => {
+        void seedStores().catch(() => { /* The next normal pull retries a failed seed. */ });
+    });
 
     const runner = createCloudPullRunner({
         isActive: isCurrent,
@@ -256,6 +263,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         },
         stop: () => {
             stopped = true;
+            unsubscribeTitleHydration();
             unsubscribeOutbox();
             scheduler.stop();
             appStateSubscription.remove();

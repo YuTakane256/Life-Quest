@@ -22,6 +22,7 @@ import {
     buildStatsLogSnapshot,
     createEmptyCloudCache,
     extractSyncedSettings,
+    extractSyncedTitle,
     getSeedableSections,
     loadCloudCache,
     persistCloudCache,
@@ -54,6 +55,7 @@ import { resolveHabitReminderHour } from '../core/notifications';
 import { seedCloudCompletionRewardStorage } from './completionRewards';
 import { useGameStore } from '../stores/useGameStore';
 import { useStatsStore } from '../stores/useStatsStore';
+import { sanitizeActiveTitle, useTitleStore } from '../stores/useTitleStore';
 import { useThemeStore, sanitizeThemeMode } from '../stores/useThemeStore';
 import { useMotionStore, sanitizeMotionMode } from '../stores/useMotionStore';
 import { useNotificationStore } from '../stores/useNotificationStore';
@@ -97,6 +99,7 @@ export function subscribeWebCloudSyncState(listener: (state: CloudSyncPublicStat
  * 1つ以上シードした場合のみtrueを返す。
  */
 export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
+    const titleScope = captureAuthSessionScope();
     const seedable = getSeedableSections(cache);
     let seeded = false;
     if (seedable.tasks) {
@@ -159,6 +162,12 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
             });
             seeded = true;
         }
+    }
+    const title = titleScope.userId === null ? null : extractSyncedTitle(cache, titleScope.userId);
+    if (title && titleScope.isCurrent()) {
+        const activeTitle = sanitizeActiveTitle(title.activeTitle);
+        if (useTitleStore.getState().activeTitle !== activeTitle) useTitleStore.setState({ activeTitle });
+        seeded = true;
     }
     return seeded;
 }

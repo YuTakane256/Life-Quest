@@ -330,7 +330,7 @@ describe('getSeedableSections（#506移行前のローカルデータ保護）',
             user_settings: [{ user_id: 'u1', version: 1 }],
             characters: [{ user_id: 'u1', total_xp: 0, version: 1 }],
         }));
-        expect(getSeedableSections(cache)).toEqual({ tasks: false, habits: false, game: false, settings: false });
+        expect(getSeedableSections(cache)).toEqual({ tasks: false, habits: false, game: false, title: false, settings: false });
     });
 
     it('tasksに1行届けばtasksのみseed可（habitsとgameとsettingsは対象外のまま）', () => {
@@ -338,7 +338,7 @@ describe('getSeedableSections（#506移行前のローカルデータ保護）',
             characters: [{ user_id: 'u1', version: 1 }],
             tasks: [{ id: 't1', version: 2 }],
         }));
-        expect(getSeedableSections(cache)).toEqual({ tasks: true, habits: false, game: false, settings: false });
+        expect(getSeedableSections(cache)).toEqual({ tasks: true, habits: false, game: false, title: false, settings: false });
     });
 
     it('墓標だけでもクラウドに履歴がある証拠としてseed可', () => {
