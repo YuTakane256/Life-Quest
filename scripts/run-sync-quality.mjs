@@ -56,6 +56,7 @@ const unitFiles = [
     'apps/mobile/src/screens/chestNavigation.test.ts',
     'apps/mobile/src/platform/battleResultSeed.test.ts',
     'src/platform/battleResultSeed.test.ts',
+    'src/platform/synthesisResultSeed.test.ts',
     'apps/mobile/src/platform/cloudOutbox.test.ts',
     'apps/mobile/src/platform/networkRecovery.test.ts',
     'apps/mobile/src/platform/cloudSessionRecovery.test.ts',
