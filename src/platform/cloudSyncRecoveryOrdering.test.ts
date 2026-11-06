@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyCloudCache, type CloudCache } from '@life-quest/core/cloudCache';
 import { cloudCursorKey, type PullBatch } from '@life-quest/core/cloudPull';
 import { createInactiveCloudSyncState } from '@life-quest/core/cloudSyncState';
-import { resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import type { CanonicalTaskSnapshot } from '@life-quest/core/syncSnapshots';
 
 const f = vi.hoisted(() => ({
     data: new Map<string, string>(),
     visibleTasks: [] as string[],
+    seeded: [] as CloudCache[],
     realtime: new Map<string, () => void>(),
     net: null as null | ((state: { isConnected: boolean; isInternetReachable: boolean }) => void),
     app: null as null | ((state: string) => void),
@@ -50,6 +51,7 @@ vi.mock('./canonicalSync', () => ({
     seedTasks: (snapshot: CanonicalTaskSnapshot) => { f.visibleTasks = snapshot.tasks.map((task) => task.id); },
 }));
 vi.mock('../../apps/mobile/src/platform/cloudSeed', () => ({ applyCloudCacheToMobileStores: (cache: CloudCache) => {
+    f.seeded.push(cache);
     f.visibleTasks = Object.keys(cache.tasks);
     return true;
 } }));
@@ -61,11 +63,12 @@ vi.mock('@react-native-community/netinfo', () => ({ default: { addEventListener:
 
 import { startWebCloudSync } from './cloudSync';
 import { startMobileCloudSync } from '../../apps/mobile/src/platform/cloudSync';
+import { useMobileTitleStore } from '../../apps/mobile/src/stores/useMobileTitleStore';
 const handles: { stop: () => void }[] = [];
 const settle = async () => { for (let n = 0; n < 40; n++) await Promise.resolve(); };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
 beforeEach(() => {
-    vi.useFakeTimers(); resetAuthLifecycleHooks(); f.data.clear(); f.realtime.clear(); f.visibleTasks = [];
+    vi.useFakeTimers(); resetAuthLifecycleHooks(); f.data.clear(); f.realtime.clear(); f.visibleTasks = []; f.seeded = [];
     f.load.mockReset().mockResolvedValue(createEmptyCloudCache());
     f.drain.mockReset().mockResolvedValue({ retryablePending: false });
     f.rpc.mockReset().mockResolvedValue({ data: {
@@ -75,7 +78,55 @@ beforeEach(() => {
             completed_at: null, created_at: '2026-10-30T00:00:00Z' }],
     }, error: null });
 });
-afterEach(() => { handles.splice(0).forEach((h) => h.stop()); vi.useRealTimers(); resetAuthLifecycleHooks(); });
+afterEach(() => { handles.splice(0).forEach((h) => h.stop()); vi.restoreAllMocks(); vi.useRealTimers(); resetAuthLifecycleHooks(); });
+
+describe('Mobile title hydration callback (transport/seed stubs)', () => {
+    it.each(['retryable', 'draining'])('%s outbox protects optimistic state from restored cache during title hydration', async (phase) => {
+        await notifyLogin('owner-a');
+        let finish: Parameters<typeof useMobileTitleStore.persist.onFinishHydration>[0] | undefined;
+        vi.spyOn(useMobileTitleStore.persist, 'onFinishHydration').mockImplementation((callback) => {
+            finish = callback; return () => {};
+        });
+        const cached = createEmptyCloudCache();
+        cached.tasks.old = { id: 'old', name: 'Old task', version: 2 };
+        cached.profiles['owner-a'] = { user_id: 'owner-a', active_title: '古い称号', version: 2 };
+        f.load.mockResolvedValue(cached);
+        const sent = deferred<{ retryablePending: boolean }>();
+        if (phase === 'draining') f.drain.mockReturnValue(sent.promise);
+        else f.drain.mockResolvedValue({ retryablePending: true });
+        const h = startMobileCloudSync('owner-a')!; handles.push(h); await settle();
+        f.visibleTasks = ['optimistic-task'];
+        finish!(useMobileTitleStore.getState()); await settle();
+        expect(f.seeded).toEqual([]); expect(f.rpc).not.toHaveBeenCalled();
+        expect(f.visibleTasks).toEqual(['optimistic-task']);
+        if (phase === 'draining') sent.resolve({ retryablePending: false });
+        else { f.drain.mockResolvedValue({ retryablePending: false }); f.realtime.get('mobile')!(); }
+        await settle(); expect(f.rpc).toHaveBeenCalled();
+        // The restored live task remains in the cache; the fresh pull adds the sent task.
+        expect(f.visibleTasks).toEqual(['old', 'new-task']);
+    });
+    it.each(['hydrate', 'stop', 'auth-change'])('%s uses only the active handle cache and detaches on stop', async (phase) => {
+        await notifyLogin('owner-a');
+        let finish: Parameters<typeof useMobileTitleStore.persist.onFinishHydration>[0] | undefined;
+        let detached = false;
+        vi.spyOn(useMobileTitleStore.persist, 'onFinishHydration').mockImplementation((callback) => {
+            finish = callback; return () => { detached = true; };
+        });
+        f.rpc.mockResolvedValue({ data: { next_cursor: 8, has_more: false,
+            profiles: [{ user_id: 'owner-a', active_title: '受信称号', version: 8 }],
+            characters: [{ user_id: 'owner-a', total_xp: 0, version: 1 }],
+        }, error: null });
+        const h = startMobileCloudSync('owner-a')!; handles.push(h); await settle();
+        expect(f.seeded.at(-1)?.profiles['owner-a']?.active_title).toBe('受信称号');
+        const before = f.seeded.length;
+        expect(finish).toBeTypeOf('function');
+        if (phase === 'stop') { h.stop(); expect(detached).toBe(true); }
+        if (phase === 'auth-change') await notifyLogin('owner-b');
+        finish!(useMobileTitleStore.getState()); await settle();
+        expect(f.seeded.length).toBe(phase === 'hydrate' ? before + 1 : before);
+        expect(f.rpc).toHaveBeenCalledTimes(phase === 'hydrate' ? 2 : 1);
+    });
+});
 
 describe.each([{ platform: 'web', start: startWebCloudSync }, { platform: 'mobile', start: startMobileCloudSync }])('$platform automatic sync ordering (event/transport stubs)', ({ platform, start }) => {
     function begin() { const h = start('owner-a')!; handles.push(h); return h; }

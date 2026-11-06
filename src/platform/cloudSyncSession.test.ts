@@ -68,6 +68,12 @@ vi.mock('../../apps/mobile/src/platform/cloudSeed', () => ({
     },
 }));
 // This suite isolates transport/session ordering; battle projection has real-store regressions separately.
+// Title projection/hydration likewise has real-store regressions in cloudTitleSeed.
+vi.mock('../stores/useTitleStore', () => ({ useTitleStore: { getState: () => ({ activeTitle: null }), setState: vi.fn() },
+    sanitizeActiveTitle: (value: unknown) => typeof value === 'string' ? value : null }));
+vi.mock('../../apps/mobile/src/stores/useMobileTitleStore', () => ({ useMobileTitleStore: {
+    persist: { onFinishHydration: () => () => {}, hasHydrated: () => true },
+} }));
 vi.mock('../stores/useGameStore', () => ({ useGameStore: { getState: () => ({
     battle: { status: 'idle', rewardMode: 'local', battleAttemptId: null, playerSnapshot: null, enemy: null },
 }) } }));

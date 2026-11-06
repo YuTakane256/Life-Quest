@@ -31,6 +31,7 @@ import {
 } from '@life-quest/core/cloudSyncState';
 import { markCloudSessionSeeded } from './authStores';
 import { rememberMobileCloudDisplayOwner } from './cloudSessionRecovery';
+import { useMobileTitleStore } from '../stores/useMobileTitleStore';
 import {
     drainOutboxAndWait,
     getMobileCloudOutboxState,
@@ -188,6 +189,12 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         return isCurrent();
     };
 
+    // Hydration must respect the same pending-write barrier as every other trigger.
+    // Pull fresh rows after sending, rather than reseeding an older restored cache.
+    const unsubscribeTitleHydration = useMobileTitleStore.persist.onFinishHydration(() => {
+        void recoverConnection().catch(() => undefined);
+    });
+
     const scheduler = createInsurancePullScheduler({
         requestPull: () => { void recoverConnection().catch(() => undefined); },
     });
@@ -256,6 +263,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         },
         stop: () => {
             stopped = true;
+            unsubscribeTitleHydration();
             unsubscribeOutbox();
             scheduler.stop();
             appStateSubscription.remove();

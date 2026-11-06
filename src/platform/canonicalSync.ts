@@ -95,7 +95,9 @@ export function seedGame(snapshot: CanonicalGameSnapshot, source: 'local' | 'clo
     }));
     if (source === 'cloud') seedCloudCompletionRewardStorage(seed);
     else seed();
-    useTitleStore.setState({ activeTitle: snapshot.activeTitle });
+    // Cloud profiles are seeded independently; a missing profile in a game batch
+    // must not clear the current title. Local canonical restore keeps its contract.
+    if (source === 'local') useTitleStore.setState({ activeTitle: snapshot.activeTitle });
 }
 
 /**
