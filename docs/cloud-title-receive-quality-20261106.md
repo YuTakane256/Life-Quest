@@ -14,12 +14,12 @@ Webのゲームseedは、cloudのときに称号を触らず、local canonical�
 
 ## Mobileの保存読込
 
-称号ストアのhydration前は受信称号を適用せず、遅い旧保存値が新しい受信値を上書きする競合を避ける。[実同期ハンドル](../apps/mobile/src/platform/cloudSync.ts)は読込完了通知で、そのハンドルが保持する最新cacheを再反映する。追加のRPCや送信は始めない。stop時に購読を解除し、認証/世代変更後や外部に残った古いcallbackでも反映しない。保存読込が完了しない障害では成功扱いにしない。
+称号ストアのhydration前は受信称号を適用せず、遅い旧保存値が新しい受信値を上書きする競合を避ける。[実同期ハンドル](../apps/mobile/src/platform/cloudSync.ts)は読込完了通知を通常の同期再開経路へ渡す。保留操作の送信完了を待ち、新しいpullから反映し、古い保存cacheを直接再seedしない。未送信操作が残る間は称号以外のタスク/ゲームも上書きしない。stop時に購読を解除し、認証/世代変更後や外部に残った古いcallbackでも反映しない。保存読込が完了しない障害では成功扱いにしない。
 
 ## 検証
 
 - [受信回帰21件](../src/platform/cloudTitleSeed.test.ts)は実cache・両受信関数・両ストアを使用。修正前9失敗/12成功、修正後21件成功。称号更新/解除・古い版・欠落/不正/別所有者・プロフィールなしのゲーム更新・seed中のA→B・Mobile hydration前後を確認し、ゲーム状態とenqueue呼出しを照合する。
-- [同期順序の回帰](../src/platform/cloudSyncRecoveryOrdering.test.ts)に、実Mobileハンドル/イベント・通信とseedスタブで保存読込完了・停止後・認証変更後の3件を追加。称号だけのcacheが通常のseed条件を通り、読込完了時も追加RPCなし、古いhandleでは反映しないことを確認する。
+- [同期順序の回帰](../src/platform/cloudSyncRecoveryOrdering.test.ts)に、実Mobileハンドル/イベント・通信とseedスタブで保存読込完了・停止後・認証変更後の3件と、保存cache＋未送信/送信待機中＋遅い読込完了の2件を追加。独立レビューで、最初の直接再seedが未送信操作の保護を迂回すると指摘されたため、通常の送信待ち→新しいpullへ修正した。追加2件は修正前に失敗し、修正後は未送信更新を保持する。
 - [実ローカルRPC/RLSの統合2件](../supabase/integration/title-seed.test.ts)で、独立した2つの本人JWT接続から称号更新・返信・解除を送信する。プロフィールだけの差分をcacheへ入れ、Web/Mobileの実ストアへ反映し、キャラクター版1・ゲーム状態が変わらないことを確認する。これはUIでの称号獲得/選択操作の実機検証ではない。
 - 既存の初期行保護・canonical復元・称号送信・認証/同期回帰を維持する。セクション判定の既存テストは新しい`title: false`期待だけを追加。通信/session専用suiteには新しい称号依存のstubを足し、既存assertionは維持する。同期品質unitコマンドに受信回帰を含める。
 

@@ -113,12 +113,6 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         }
     };
 
-    // The title store hydrates independently of the game/task stores. Reapply
-    // this handle's latest cache after disk restore, guarded against stop/auth changes.
-    const unsubscribeTitleHydration = useMobileTitleStore.persist.onFinishHydration(() => {
-        void seedStores().catch(() => { /* The next normal pull retries a failed seed. */ });
-    });
-
     const runner = createCloudPullRunner({
         isActive: isCurrent,
         fetchBatch: createAccountBoundCloudPullFetcher({
@@ -194,6 +188,12 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         if (pulled && isCurrent()) requestMobileLoginBonusRecheck();
         return isCurrent();
     };
+
+    // Hydration must respect the same pending-write barrier as every other trigger.
+    // Pull fresh rows after sending, rather than reseeding an older restored cache.
+    const unsubscribeTitleHydration = useMobileTitleStore.persist.onFinishHydration(() => {
+        void recoverConnection().catch(() => undefined);
+    });
 
     const scheduler = createInsurancePullScheduler({
         requestPull: () => { void recoverConnection().catch(() => undefined); },

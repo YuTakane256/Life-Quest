@@ -81,6 +81,30 @@ beforeEach(() => {
 afterEach(() => { handles.splice(0).forEach((h) => h.stop()); vi.restoreAllMocks(); vi.useRealTimers(); resetAuthLifecycleHooks(); });
 
 describe('Mobile title hydration callback (transport/seed stubs)', () => {
+    it.each(['retryable', 'draining'])('%s outbox protects optimistic state from restored cache during title hydration', async (phase) => {
+        await notifyLogin('owner-a');
+        let finish: Parameters<typeof useMobileTitleStore.persist.onFinishHydration>[0] | undefined;
+        vi.spyOn(useMobileTitleStore.persist, 'onFinishHydration').mockImplementation((callback) => {
+            finish = callback; return () => {};
+        });
+        const cached = createEmptyCloudCache();
+        cached.tasks.old = { id: 'old', name: 'Old task', version: 2 };
+        cached.profiles['owner-a'] = { user_id: 'owner-a', active_title: '古い称号', version: 2 };
+        f.load.mockResolvedValue(cached);
+        const sent = deferred<{ retryablePending: boolean }>();
+        if (phase === 'draining') f.drain.mockReturnValue(sent.promise);
+        else f.drain.mockResolvedValue({ retryablePending: true });
+        const h = startMobileCloudSync('owner-a')!; handles.push(h); await settle();
+        f.visibleTasks = ['optimistic-task'];
+        finish!(useMobileTitleStore.getState()); await settle();
+        expect(f.seeded).toEqual([]); expect(f.rpc).not.toHaveBeenCalled();
+        expect(f.visibleTasks).toEqual(['optimistic-task']);
+        if (phase === 'draining') sent.resolve({ retryablePending: false });
+        else { f.drain.mockResolvedValue({ retryablePending: false }); f.realtime.get('mobile')!(); }
+        await settle(); expect(f.rpc).toHaveBeenCalled();
+        // The restored live task remains in the cache; the fresh pull adds the sent task.
+        expect(f.visibleTasks).toEqual(['old', 'new-task']);
+    });
     it.each(['hydrate', 'stop', 'auth-change'])('%s uses only the active handle cache and detaches on stop', async (phase) => {
         await notifyLogin('owner-a');
         let finish: Parameters<typeof useMobileTitleStore.persist.onFinishHydration>[0] | undefined;
@@ -100,7 +124,7 @@ describe('Mobile title hydration callback (transport/seed stubs)', () => {
         if (phase === 'auth-change') await notifyLogin('owner-b');
         finish!(useMobileTitleStore.getState()); await settle();
         expect(f.seeded.length).toBe(phase === 'hydrate' ? before + 1 : before);
-        expect(f.rpc).toHaveBeenCalledTimes(1); // Hydration reapplies cache without sending/pulling again.
+        expect(f.rpc).toHaveBeenCalledTimes(phase === 'hydrate' ? 2 : 1);
     });
 });
 
