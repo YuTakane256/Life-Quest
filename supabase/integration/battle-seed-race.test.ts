@@ -196,7 +196,7 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         }
     }
 
-    it.each(cases)('$platform：$mode・$delivery / 正しい勝敗と報酬を再送・反復pullでも維持する', async ({ platform, mode, delivery }: { platform: Platform; mode: Mode; delivery: Delivery }) => {
+    it.each(cases)('$platform / $mode / $delivery / 正しい勝敗と報酬を再送・反復pullでも維持する', async ({ platform, mode, delivery }: { platform: Platform; mode: Mode; delivery: Delivery }) => {
         const defeat = mode === 'スキルで敗北'; const stage = defeat ? 20 : 1;
         const outcome = defeat ? 'defeat' : 'victory';
         if (defeat) {
