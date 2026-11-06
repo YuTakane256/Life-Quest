@@ -116,14 +116,16 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
             const attemptId = battle.battleAttemptId;
             const attempt = attemptId ? cache.battle_attempts[attemptId] : undefined;
             // Match the exact character row used by buildCanonicalGameSnapshot.
-            // The resolve RPC commits victory XP and its attempt at the same version.
+            // Victory commits XP and its attempt at one version. Defeat changes
+            // only the attempt, so its unchanged character can legitimately be older.
             const character = Object.values(cache.characters)[0];
             const confirmed = battle.rewardMode === 'cloud' && outcome !== null && battle.playerSnapshot !== null && battle.enemy !== null
                 && attempt?.id === attemptId && attempt.status === 'resolved'
                 && attempt.stage === battle.currentStage && attempt.outcome === outcome
                 && scope.userId !== null && attempt.user_id === scope.userId && character?.user_id === scope.userId
                 && Number.isSafeInteger(attempt.version) && attempt.version > 0
-                && Number.isSafeInteger(character.version) && character.version >= attempt.version;
+                && Number.isSafeInteger(character.version) && character.version > 0
+                && (outcome === 'defeat' || character.version >= attempt.version);
             seedGame(game, 'cloud');
             const current = useGameStore.getState().battle;
             if (confirmed && outcome !== null && scope.isCurrent() && attemptId !== null
