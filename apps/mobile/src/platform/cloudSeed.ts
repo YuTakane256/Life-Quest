@@ -46,6 +46,7 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
             const attempt = battle?.battleAttemptId ? cache.battle_attempts[battle.battleAttemptId] : undefined;
             // Use the same character row as buildCanonicalGameSnapshot. The resolve RPC
             // commits a victory's character XP and resolved attempt at the same version.
+            // Defeat changes only the attempt; the character can remain older.
             const character = Object.values(cache.characters)[0];
             const confirmed = battle?.rewardMode === 'cloud'
                 && (battle.state.outcome === 'victory' || battle.state.outcome === 'defeat')
@@ -53,7 +54,8 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
                 && attempt.stage === battle.stage && attempt.outcome === battle.state.outcome
                 && scope.userId !== null && attempt.user_id === scope.userId && character?.user_id === scope.userId
                 && Number.isSafeInteger(attempt.version) && attempt.version > 0
-                && Number.isSafeInteger(character.version) && character.version >= attempt.version;
+                && Number.isSafeInteger(character.version) && character.version > 0
+                && (battle.state.outcome === 'defeat' || character.version >= attempt.version);
             seedSectionData('game', game);
             const current = useMobileGameStore.getState().activeBattle;
             if (confirmed && scope.isCurrent() && current?.actors === battle.actors

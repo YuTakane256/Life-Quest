@@ -37,6 +37,19 @@ describe('Mobile cloud result acknowledgement after authoritative game seed', ()
         applyCloudCacheToMobileStores(cache({ total_xp: 0, max_cleared_stage: 0 }, { outcome: 'defeat' }));
         expect(useMobileGameStore.getState().character.totalXp).toBe(0); expect(useMobileGameStore.getState().activeBattle?.battleAttemptId).toBeNull();
     });
+    it('settles defeat when SQL leaves the unchanged character older than the resolved attempt', () => {
+        useMobileGameStore.setState((game) => ({ activeBattle: { ...game.activeBattle!, state: { ...game.activeBattle!.state, outcome: 'defeat', playerHp: 0 } } }));
+        const before = useMobileGameStore.getState().activeBattle!;
+        const defeated = cache({ total_xp: 0, version: 9, max_cleared_stage: 0 }, { outcome: 'defeat' });
+        applyCloudCacheToMobileStores(defeated);
+        expect(useMobileGameStore.getState().activeBattle).toEqual({ ...before, battleAttemptId: null });
+        expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+        expect(useMobileGameStore.getState().battleProgress.maxClearedStage).toBe(0);
+        useMobileGameStore.getState().applyResolvedCloudBattle('attempt-a', 'defeat', false);
+        applyCloudCacheToMobileStores(defeated);
+        expect(useMobileGameStore.getState().activeBattle).toEqual({ ...before, battleAttemptId: null });
+        expect(useMobileGameStore.getState().character.totalXp).toBe(0);
+    });
     it.each([
         { label: 'older character', character: { version: 9 }, attempt: {} },
         { label: 'unresolved attempt', character: {}, attempt: { status: 'in_progress' } },

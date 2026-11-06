@@ -41,6 +41,22 @@ describe('Web confirmed battle result after authoritative game seed', () => {
         expect(useGameStore.getState().character.totalXp).toBe(0); expect(useGameStore.getState().battle.battleAttemptId).toBeNull();
         expect(useBattleHistoryStore.getState().history[0]).toMatchObject({ stage: 1, outcome: 'defeat', xpEarned: 0 });
     });
+    it('settles defeat when SQL leaves the unchanged character older than the resolved attempt', () => {
+        useGameStore.setState((game) => ({ battle: { ...game.battle, status: 'defeat', playerHp: 0 } }));
+        const before = useGameStore.getState().battle;
+        const defeated = cache({ total_xp: 0, version: 9 }, { outcome: 'defeat' });
+        applyCloudCacheToWebStores(defeated);
+        expect(useGameStore.getState().battle.battleAttemptId).toBeNull();
+        expect(useGameStore.getState().character.totalXp).toBe(0);
+        expect(useGameStore.getState().battle).toMatchObject({ status: 'defeat', currentStage: 1, playerHp: 0, logs: before.logs, actions: before.actions });
+        expect(useBattleHistoryStore.getState().history).toHaveLength(1);
+        const entry = useBattleHistoryStore.getState().history[0];
+        expect(entry).toMatchObject({ stage: 1, outcome: 'defeat', xpEarned: 0 });
+        useGameStore.getState().applyResolvedCloudBattle('attempt-a', 'defeat', false);
+        applyCloudCacheToWebStores(defeated);
+        expect(useBattleHistoryStore.getState().history).toEqual([entry]);
+        expect(useGameStore.getState().character.totalXp).toBe(0);
+    });
     it.each([
         { label: 'older character', character: { version: 9 }, attempt: {} },
         { label: 'unresolved attempt', character: {}, attempt: { status: 'in_progress' } },
