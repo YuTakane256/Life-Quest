@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { enqueueCloudOperation } from '../platform/cloudOutbox';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
 
 const MAX_TITLE_LENGTH = 40;
 
@@ -18,6 +19,11 @@ interface MobileTitleStore {
     activeTitle: string | null;
     setActiveTitle: (title: string | null) => void;
 }
+
+// Runtime only: disk restoration must not undo a later selection/cloud seed or
+// authentication boundary, even if the visible title returns to the same value.
+let titleMutationRevision = 0;
+let canRestoreTitle = () => true;
 
 export const useMobileTitleStore = create<MobileTitleStore>()(
     persist(
@@ -41,6 +47,20 @@ export const useMobileTitleStore = create<MobileTitleStore>()(
             name: 'quest-board-title',
             storage: createJSONStorage(() => AsyncStorage),
             version: 1,
+            partialize: (state) => ({ activeTitle: state.activeTitle }),
+            onRehydrateStorage: () => {
+                const isCurrent = captureAuthSessionGuard();
+                const revision = titleMutationRevision;
+                canRestoreTitle = () => isCurrent() && revision === titleMutationRevision;
+            },
+            merge: (persisted, current) => {
+                if (!canRestoreTitle() || typeof persisted !== 'object' || persisted === null || Array.isArray(persisted)) return current;
+                const field = Object.getOwnPropertyDescriptor(persisted, 'activeTitle');
+                if (!field || !Object.prototype.hasOwnProperty.call(field, 'value')) return current;
+                return { ...current, activeTitle: sanitizeActiveTitle(field.value) };
+            },
         }
     )
 );
+
+useMobileTitleStore.subscribe(() => { titleMutationRevision += 1; });
