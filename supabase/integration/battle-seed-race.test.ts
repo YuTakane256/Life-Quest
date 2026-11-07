@@ -21,8 +21,12 @@ import { useBattleHistoryStore } from '../../src/stores/useBattleHistoryStore';
 import { applyCloudCacheToMobileStores } from '../../apps/mobile/src/platform/cloudSeed';
 import { useMobileGameStore } from '../../apps/mobile/src/stores/useMobileGameStore';
 
+const nativeDisk = vi.hoisted(() => new Map<string, string>());
+
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
-    getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
+    getItem: vi.fn(async (key: string) => nativeDisk.get(key) ?? null),
+    setItem: vi.fn(async (key: string, value: string) => { nativeDisk.set(key, value); }),
+    removeItem: vi.fn(async (key: string) => { nativeDisk.delete(key); }),
 } }));
 
 const env = process.env;
@@ -45,6 +49,7 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
     let game: GameCloudClient;
     let loseResponse = false;
     let lostResponses = 0;
+    let resolveRequests = 0;
 
     beforeAll(async () => {
         // Validate every URL before admin.createUser, database connection or any mutation.
@@ -56,7 +61,7 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
     beforeEach(async () => {
         await flushCompletionRewardWrites();
         resetAuthLifecycleHooks(); localStorage.clear();
-        createdUserId = null; client = undefined; loseResponse = false; lostResponses = 0;
+        createdUserId = null; client = undefined; loseResponse = false; lostResponses = 0; resolveRequests = 0; nativeDisk.clear();
         withoutCompletionRewardPersistence(() => useGameStore.setState(initialWeb));
         useBattleHistoryStore.setState({ history: [] });
         useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), activeBattle: null, hasHydrated: true });
@@ -71,8 +76,9 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         if (signedIn.error || !signedIn.data.session) throw new Error('Disposable battle account sign in failed');
         const session = signedIn.data.session;
         const transport: typeof fetch = async (input, init) => {
-            const response = await fetch(input, init);
             const url = input instanceof Request ? input.url : String(input);
+            if (url.endsWith('/functions/v1/resolve_battle_attempt')) resolveRequests += 1;
+            const response = await fetch(input, init);
             if (loseResponse && response.ok && url.endsWith('/functions/v1/resolve_battle_attempt')) {
                 loseResponse = false; lostResponses += 1;
                 await response.arrayBuffer(); // The server committed; only delivery is lost.
@@ -141,7 +147,7 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         else if (action.type === 'skill') useGameStore.getState().activateBattleSkill(action.skillId);
         else useGameStore.getState().processBattleTurn();
     }
-    function startAndFinish(platform: Platform, attempt: CloudBattleAttempt, mode: Mode) {
+    function startRuntime(platform: Platform, attempt: CloudBattleAttempt) {
         const { actors, battleAttemptId } = attempt;
         const stage = actors.enemy.stage;
         if (platform === 'Web') {
@@ -149,6 +155,10 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
                 { ...actors.player, level: actors.playerLevel, name: actors.playerName },
                 { ...actors.enemy, hp: actors.enemy.maxHp });
         } else useMobileGameStore.getState().startCloudBattle(stage, battleAttemptId, actors);
+    }
+    function startAndFinish(platform: Platform, attempt: CloudBattleAttempt, mode: Mode) {
+        startRuntime(platform, attempt);
+        const { actors } = attempt;
         if (mode !== '通常攻撃で勝利') {
             expect(actors.playerLevel).toBeGreaterThanOrEqual(5);
             perform(platform, { type: 'skill', skillId: 'guard_stance' });
@@ -275,4 +285,94 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         const character = await pg.query('select total_xp from public.characters where user_id=$1', [createdUserId]);
         expect(Number(character.rows[0].total_xp)).toBe(expectedXp);
     }, 30000);
+
+    // Persist/rehydrate simulates discarded client memory, not an OS process exit.
+    async function restoreSavedGame(platform: Platform) {
+        await flushCompletionRewardWrites();
+        const key = 'quest-board-game';
+        const raw = platform === 'Web' ? localStorage.getItem(key) : nativeDisk.get(key);
+        expect(raw).toBeTruthy();
+        const saved = JSON.parse(raw!);
+        expect(saved.state.character.totalXp).toBe(initialXp);
+        if (platform === 'Web') {
+            expect(saved.state.battle.rewardMode).toBe('cloud');
+            expect(saved.state.battle.battleAttemptId).toBeTruthy();
+            withoutCompletionRewardPersistence(() => useGameStore.setState(initialWeb));
+            localStorage.setItem(key, raw!);
+            await useGameStore.persist.rehydrate();
+        } else {
+            // Native's existing format deliberately excludes the battle runtime.
+            expect(saved.state).not.toHaveProperty('activeBattle');
+            useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), activeBattle: null, hasHydrated: false });
+            nativeDisk.set(key, raw!);
+            await useMobileGameStore.persist.rehydrate();
+            expect(useMobileGameStore.getState().hasHydrated).toBe(true);
+        }
+    }
+    function assertRestoredIdle(platform: Platform, expectedXp: number) {
+        const state = platform === 'Web' ? useGameStore.getState() : useMobileGameStore.getState();
+        expect(state.character.totalXp).toBe(expectedXp);
+        if (platform === 'Web') {
+            expect(useGameStore.getState().battle).toMatchObject({ status: 'idle', battleAttemptId: null, playerSnapshot: null, actions: [], enemy: null });
+            expect(useGameStore.getState().levelUpEvent).toBeNull();
+            expect(useBattleHistoryStore.getState().history).toEqual([]);
+        } else {
+            expect(useMobileGameStore.getState().activeBattle).toBeNull();
+            expect(useMobileGameStore.getState().lastLevelUp).toBeNull();
+        }
+    }
+    const restartCases = (['Web', 'Mobile'] as const).flatMap((platform) =>
+        (['戦闘中', '未送信の勝利結果', 'サーバー確定後の応答喪失'] as const).map((point) => ({ platform, point })));
+    it.each(restartCases)('$platform / $point / 保存からの復元と実pullで未確定報酬を作らない', async ({ platform, point }) => {
+        seed(platform, await pull());
+        const attempt = await game.startBattleAttempt(1, crypto.randomUUID(), createdUserId!);
+        expect(attempt).not.toBeNull();
+        const actions = point === '戦闘中' ? (startRuntime(platform, attempt!), [])
+            : startAndFinish(platform, attempt!, '通常攻撃で勝利');
+        const key = crypto.randomUUID();
+        const resolve = () => game.resolveBattleAttempt(attempt!.battleAttemptId, actions,
+            { expectedUserId: createdUserId!, idempotencyKey: key, isActive: () => true });
+        const committed = point === 'サーバー確定後の応答喪失';
+        if (committed) {
+            loseResponse = true; await expect(resolve()).rejects.toThrow();
+            expect(lostResponses).toBe(1);
+        }
+        const sentBeforeRestore = resolveRequests;
+        await restoreSavedGame(platform);
+        assertRestoredIdle(platform, initialXp);
+        // Neither storage restoration nor a normal pull sends a battle result.
+        const expectedXp = initialXp + (committed ? attempt!.actors.enemy.xpReward : 0);
+        seed(platform, await pull()); seed(platform, await pull());
+        assertRestoredIdle(platform, expectedXp);
+        expect(platform === 'Web' ? useGameStore.getState().battle : useMobileGameStore.getState().battleProgress)
+            .toMatchObject({ maxClearedStage: 3, currentStage: 4 });
+        expect(resolveRequests).toBe(sentBeforeRestore);
+        const beforeReplay = await pg.query(`select c.total_xp, c.max_cleared_stage, c.current_stage, c.version as character_version,
+            a.status, a.outcome, a.version as attempt_version, a.resolved_at from public.characters c
+            join public.battle_attempts a on a.user_id=c.user_id where c.user_id=$1 and a.id=$2`,
+        [createdUserId, attempt!.battleAttemptId]);
+        expect(Number(beforeReplay.rows[0].total_xp)).toBe(expectedXp);
+        expect(Number(beforeReplay.rows[0].max_cleared_stage)).toBe(3);
+        expect(Number(beforeReplay.rows[0].current_stage)).toBe(4);
+        expect(beforeReplay.rows[0].status).toBe(committed ? 'resolved' : 'in_progress');
+        if (committed) {
+            // Only this test harness retains the lost key/actions. The app does not
+            // claim durable retry: exercise the server's replay contract separately.
+            const replay = await resolve();
+            expect(replay).toMatchObject({ outcome: 'victory', granted: false, already_resolved: true });
+            deliver(platform, attempt!.battleAttemptId, replay);
+            assertRestoredIdle(platform, expectedXp);
+            const afterReplay = await pg.query(`select c.total_xp, c.max_cleared_stage, c.current_stage, c.version as character_version,
+                a.status, a.outcome, a.version as attempt_version, a.resolved_at from public.characters c
+                join public.battle_attempts a on a.user_id=c.user_id where c.user_id=$1 and a.id=$2`,
+            [createdUserId, attempt!.battleAttemptId]);
+            expect(afterReplay.rows).toEqual(beforeReplay.rows);
+        }
+        const rewards = await pg.query(`select count(*) as count, coalesce(sum(xp_delta),0) as xp
+            from public.reward_transactions where user_id=$1 and kind='battle_reward' and source_id=$2`,
+        [createdUserId, attempt!.battleAttemptId]);
+        expect(Number(rewards.rows[0].count)).toBe(committed ? 1 : 0);
+        expect(Number(rewards.rows[0].xp)).toBe(expectedXp - initialXp);
+    }, 30000);
+
 });
