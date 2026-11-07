@@ -312,7 +312,7 @@ describe.skipIf(!enabled)('#507 2クライアント同期E2E（ローカルSupab
         await readerDevice.runner.flush();
         const seedable = getSeedableSections(readerDevice.cache);
         expect(seedable.settings).toBe(true);
-        expect(extractSyncedSettings(readerDevice.cache)).toEqual({
+        expect(extractSyncedSettings(readerDevice.cache, settingsUser.id)).toEqual({
             themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21,
         });
     });

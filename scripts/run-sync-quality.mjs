@@ -41,6 +41,7 @@ const unitFiles = [
     'src/platform/cloudSyncSession.test.ts',
     'src/platform/cloudSyncRecoveryOrdering.test.ts',
     'src/platform/cloudTitleSeed.test.ts',
+    'src/platform/cloudSettingsOwner.test.ts',
     'apps/mobile/src/stores/mobileTitleRestore.test.ts',
     'apps/mobile/src/stores/mobileStatsRestore.test.ts',
     'apps/mobile/src/stores/mobileLoginBonusRestore.test.ts',

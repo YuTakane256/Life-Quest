@@ -142,6 +142,7 @@ describe('applyCloudCacheToWebStores（データ消失パターンの回帰テ�
     });
 
     it('user_settings.settingsに何か書き込まれていれば同期対象4項目だけシードする（notifiedTaskIds等は保持）', async () => {
+        await notifyLogin('u1');
         const { applyPullBatchToCache, createEmptyCloudCache } = await import('@life-quest/core/cloudCache');
         const { applyCloudCacheToWebStores } = await import('./cloudSync');
         const { useThemeStore } = await import('../stores/useThemeStore');
