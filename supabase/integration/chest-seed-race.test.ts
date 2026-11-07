@@ -333,4 +333,25 @@ describe.skipIf(!enabled)('宝箱の実送信・受信・開封結果再送（�
         expect(localOpen).not.toHaveBeenCalled();
     }, 30000);
 
+    it('classifies the initial blue chest and the same-key SQL replay with no item ID', async () => {
+        const owner = createdUserId!;
+        const key = chestOpenRetryKey(owner, blueId);
+        const open = () => admin.rpc('open_chest_apply', {
+            p_user_id: owner, p_chest_id: blueId, p_item: null, p_key: key,
+        });
+        const results = await Promise.all([open(), open()]);
+        for (const result of results) expect(result.error).toBeNull();
+        const fresh = results.find(({ data }) => data.replayed === false)?.data;
+        const replay = results.find(({ data }) => data.replayed === true)?.data;
+        expect(fresh).toMatchObject({ item_id: null, template_id: null, starter_character: true });
+        expect(replay).toEqual({ ...fresh, replayed: true });
+        const receipts = await pg.query('select result from public.idempotency_keys where user_id=$1 and key=$2', [owner, key]);
+        expect(receipts.rows).toHaveLength(1);
+        expect(receipts.rows[0].result).not.toHaveProperty('replayed');
+        expect(receipts.rows[0].result).toMatchObject({ version: fresh.version, starter_character: true });
+        seed('Web', await pull());
+        await assertCanonical('Web', initialXp);
+        expect(useGameStore.getState().battle.battleUnlocked).toBe(true);
+    }, 30000);
+
 });

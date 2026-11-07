@@ -88,15 +88,12 @@ describe('chest HTTP handler idempotency', () => {
         expect(await response.json()).toEqual({ ...result, replayed: true });
         expect(committed.data.result).not.toHaveProperty('replayed');
     });
-    it.each([false, true])('marks a stable wood result returned by SQL after a race (replayed=%s)', async (replayed) => {
-        const { ctx } = context([miss], { id: 'chest', chest_type: 'wood', opened: false });
+    it('keeps the SQL replay marker for a blue chest with no item ID', async () => {
+        const { ctx } = context([miss], { id: 'chest', chest_type: 'blue', opened: false });
         ctx.body.idempotencyKey = chestOpenRetryKey('jwt-owner', 'chest');
-        vi.mocked(callApply).mockImplementationOnce(async (_service, _fn, args) => {
-            const item = args.p_item as { id: string; template_id: string };
-            return new Response(JSON.stringify({ ...result, item_id: replayed ? 'older-item' : item.id, template_id: item.template_id }));
-        });
-        const response = await openChest(ctx);
-        expect((await response.json()).replayed).toBe(replayed);
+        const replay = { item_id: null, template_id: null, starter_character: true, version: 42, replayed: true };
+        vi.mocked(callApply).mockResolvedValueOnce(new Response(JSON.stringify(replay)));
+        expect(await (await openChest(ctx)).json()).toEqual(replay);
     });
     it('applies a new unopened chest after a ledger miss', async () => {
         const { ctx } = context([miss], { id: 'chest', chest_type: 'blue', opened: false });

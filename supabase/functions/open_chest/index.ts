@@ -51,17 +51,12 @@ export async function openChest(ctx: HandlerContext): Promise<Response> {
     // blue（スターター）宝箱は装備を排出せずnullを返す（core共有ルール）
     const template = rollEquipmentTemplate(chest.chest_type);
 
-    const item = template ? { id: crypto.randomUUID(), template_id: template.id } : null;
-    const response = await callApply(ctx.service, 'open_chest_apply', {
+    return callApply(ctx.service, 'open_chest_apply', {
         p_user_id: ctx.userId,
         p_chest_id: chestId,
-        p_item: item,
+        p_item: template ? { id: crypto.randomUUID(), template_id: template.id } : null,
         p_key: idempotencyKey,
     });
-    if (!stableKey || !response.ok) return response;
-    const result = await response.json() as Record<string, unknown>;
-    // If SQL won a race with the same key, its equipment ID belongs to the earlier request.
-    return json(200, { ...result, replayed: result.item_id !== (item?.id ?? null) });
 }
 
 serveGameFunction(openChest);
