@@ -1,3 +1,4 @@
+import { battleResultRecovery } from '../platform/battleResultRecovery';
 import { useRef, useState } from 'react';
 import { getBattleStartMessage, requestBattleStart, type BattleStartResult } from '@life-quest/core/battleStartPolicy';
 import { hasPendingBattleResult } from '@life-quest/core/battle';
@@ -19,9 +20,13 @@ export function useCloudBattleStart() {
         const state = useMobileGameStore.getState();
         const battle = state.activeBattle;
         if (battle && hasPendingBattleResult(battle.state.outcome, battle.rewardMode, battle.battleAttemptId)) return { kind: 'rejected' };
+        if (battleResultRecovery.isBlocking()) {
+            setStartError('前回の戦闘結果の確認・同期を先に行ってください。'); return { kind: 'rejected' };
+        }
         const operation = operationScope.begin();
         if (!operation) return { kind: 'retryable-error' };
         const sourceIsCurrent = () => {
+            if (battleResultRecovery.isBlocking()) return false;
             const current = useMobileGameStore.getState();
             return current.activeBattle === state.activeBattle
                 && current.battleProgress?.battleUnlocked === state.battleProgress?.battleUnlocked

@@ -1,3 +1,4 @@
+import { battleResultRecovery } from './battleResultRecovery';
 /**
  * クラウドキャッシュのMobileストア反映（#504）。
  * cloudSync.tsから分離しているのは、react-native（AppState）を importする
@@ -99,5 +100,6 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
         if (useMobileTitleStore.getState().activeTitle !== activeTitle) useMobileTitleStore.setState({ activeTitle });
         seeded = true;
     }
+    if (seedScope.isCurrent()) void battleResultRecovery.reconcile(cache, seedScope).catch(() => {});
     return seeded;
 }

@@ -32,6 +32,7 @@ export function assertLocalSyncEnvironment(env) {
 
 const unitFiles = [
     'packages/core/src/cloudPull.test.ts',
+    'packages/core/src/battleResultRecovery.test.ts',
     'packages/core/src/cloudCache.test.ts',
     'packages/core/src/cloudCacheValidation.test.ts',
     'packages/core/src/cloudCacheRestore.test.ts',

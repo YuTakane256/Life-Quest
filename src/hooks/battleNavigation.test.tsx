@@ -5,7 +5,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { applyCloudCacheToWebStores } from '../platform/cloudSync';
-import { flushCompletionRewardWrites } from '../platform/completionRewards';
+import { battleResultRecoveryKey } from '@life-quest/core/battleResultRecovery';
+import { flushCompletionRewardWrites, withoutCompletionRewardPersistence } from '../platform/completionRewards';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
@@ -55,6 +56,8 @@ async function render(path = '/map', strict = false) {
 beforeEach(async () => {
     await flushCompletionRewardWrites(); setGameRewardAuthorityState('authenticated');
     await import('../pages/MapBattlePage');
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_: string, workOrOptions: (() => unknown) | LockOptions, callback?: (lock: object) => unknown) =>
+        Promise.resolve(typeof workOrOptions === 'function' ? workOrOptions() : callback?.({})) } });
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); resetAuthLifecycleHooks(); await notifyLogin('a'); localStorage.clear();
     vi.clearAllMocks(); mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' }); mocks.resolve.mockResolvedValue(response());
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { value: vi.fn(), configurable: true });
@@ -63,7 +66,7 @@ beforeEach(async () => {
     host = document.createElement('div'); document.body.append(host); root = createRoot(host); mounted = false;
 });
 afterEach(async () => {
-    if (mounted) await act(async () => root.unmount()); host.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals();
+    if (mounted) await act(async () => root.unmount()); Reflect.deleteProperty(navigator, 'locks'); host.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals();
     useGameStore.setState(initial); useBattleHistoryStore.setState({ history: [] }); await flushCompletionRewardWrites(); localStorage.clear();
     setGameRewardAuthorityState('anonymous'); history.replaceState({}, '', '/');
 });
@@ -84,6 +87,49 @@ describe('Web battle results across actual routes', () => {
         expect(mocks.resolve.mock.calls[0][2].idempotencyKey).toBe(mocks.resolve.mock.calls[1][2].idempotencyKey);
         expect(useGameStore.getState().character.totalXp).toBe(5); expect(useBattleHistoryStore.getState().history).toHaveLength(1);
         expect(button('次へ').disabled).toBe(false);
+    });
+    it('offers a saved result on the map after a full App remount and game rehydrate', async () => {
+        mocks.resolve.mockRejectedValueOnce(new TypeError('response lost'));
+        await render();
+        const resultKey = battleResultRecoveryKey('a');
+        expect(localStorage.getItem(resultKey)).toBeTruthy();
+        await act(async () => root.unmount());
+        mounted = false;
+        await flushCompletionRewardWrites();
+        const raw = localStorage.getItem('quest-board-game')!;
+        withoutCompletionRewardPersistence(() => useGameStore.setState(initial));
+        localStorage.setItem('quest-board-game', raw);
+        await useGameStore.persist.rehydrate();
+        expect(useGameStore.getState().battle.status).toBe('idle');
+        root = createRoot(host);
+        await render();
+        expect(mocks.resolve).toHaveBeenCalledTimes(1);
+        await click('保存した戦闘結果を再送する');
+        expect(mocks.resolve).toHaveBeenCalledTimes(2);
+        const [first, second] = mocks.resolve.mock.calls;
+        expect(second.slice(0, 2)).toEqual(first.slice(0, 2));
+        expect(second[2]).toMatchObject({ expectedUserId: 'a', idempotencyKey: first[2].idempotencyKey });
+        expect(localStorage.getItem(resultKey)).toBeNull();
+        expect(button('保存した戦闘結果を再送する')).toBeUndefined();
+        expect(useGameStore.getState().character.totalXp).toBe(0);
+        await act(async () => { applyCloudCacheToWebStores(resolvedCache()); });
+        expect(useGameStore.getState().character.totalXp).toBe(5);
+    });
+    it('does not send the result until durable storage succeeds', async () => {
+        const original = Storage.prototype.setItem;
+        const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+            if (key === battleResultRecoveryKey('a')) throw new Error('storage unavailable');
+            original.call(this, key, value);
+        });
+        try {
+            await render();
+            expect(button('再送')).toBeTruthy();
+            expect(mocks.resolve).not.toHaveBeenCalled();
+        } finally {
+            spy.mockRestore();
+        }
+        await click('再送');
+        expect(mocks.resolve).toHaveBeenCalledTimes(1);
     });
     it('retains the in-flight lock, applies the result once while away, and leaves the current route unchanged', async () => {
         const pending = deferred<unknown>(); mocks.resolve.mockReturnValueOnce(pending.promise); await render();

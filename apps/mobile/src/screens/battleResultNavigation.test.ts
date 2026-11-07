@@ -2,6 +2,7 @@ import { act, createElement, forwardRef, StrictMode, useEffect, useImperativeHan
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { battleResultRecoveryKey } from '@life-quest/core/battleResultRecovery';
 import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
 import { applyCloudCacheToMobileStores } from '../platform/cloudSeed';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
@@ -14,8 +15,11 @@ const mocks = vi.hoisted(() => ({ route: 'map', retainMap: false, auth: vi.fn(),
 vi.mock('../platform/auth', () => ({ getBattleAuthState: mocks.auth, getGameAuthState: mocks.auth,
     startAuthSessionListener: () => () => {}, startMobileAuthLinkListener: () => () => {} }));
 vi.mock('../platform/battleCloud', () => ({ startCloudBattleAttempt: mocks.start, resolveCloudBattleAttempt: mocks.resolve }));
+const nativeDisk = vi.hoisted(() => new Map<string, string>());
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
-    getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
+    getItem: vi.fn(async (key: string) => nativeDisk.get(key) ?? null),
+    setItem: vi.fn(async (key: string, value: string) => { nativeDisk.set(key, value); }),
+    removeItem: vi.fn(async (key: string) => { nativeDisk.delete(key); }),
 } }));
 vi.mock('../stores/useMobileLoginBonusStore', () => ({ beginMobileLoginBonusCloudSession: vi.fn(), clearMobileLoginBonusCloudSession: vi.fn() }));
 vi.mock('../platform/cloudMigration', () => ({ registerMobileCloudMigrationHooks: () => () => {} }));
@@ -80,7 +84,7 @@ async function render(route = 'map') { const first = !mounted; mocks.route = rou
 }
 const retryLabel = 'バトル結果の同期を再送する';
 beforeEach(async () => {
-    resetAuthLifecycleHooks(); await notifyLogin('a'); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.useFakeTimers(); vi.clearAllMocks(); mocks.retainMap = false;
+    nativeDisk.clear(); resetAuthLifecycleHooks(); await notifyLogin('a'); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.useFakeTimers(); vi.clearAllMocks(); mocks.retainMap = false;
     mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' }); mocks.resolve.mockResolvedValue(response()); mocks.start.mockResolvedValue(null);
     useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, activeBattle: terminal(),
         lastLevelUp: null, battleProgress: { battleUnlocked: true, currentStage: 1, maxClearedStage: 0 } });
@@ -98,6 +102,30 @@ describe('Mobile battle results through real root/map and navigation/native stub
         expect(mocks.resolve.mock.calls[0][2].idempotencyKey).toBe(mocks.resolve.mock.calls[1][2].idempotencyKey);
         expect(mocks.resolve.mock.calls[1][1]).toEqual(sent); expect(useMobileGameStore.getState().character.totalXp).toBe(5);
         expect(useMobileGameStore.getState().activeBattle?.battleAttemptId).toBeNull(); expect(button('次へ')?.disabled).toBe(false);
+    });
+    it('offers a saved result after a full root remount and native disk rehydrate', async () => {
+        mocks.resolve.mockRejectedValueOnce(new TypeError('response lost'));
+        await render();
+        const resultKey = battleResultRecoveryKey('a');
+        expect(nativeDisk.has(resultKey)).toBe(true);
+        await act(async () => root.unmount());
+        mounted = false;
+        const raw = nativeDisk.get('quest-board-game')!;
+        useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), activeBattle: null, hasHydrated: false });
+        nativeDisk.set('quest-board-game', raw);
+        await useMobileGameStore.persist.rehydrate();
+        expect(useMobileGameStore.getState().activeBattle).toBeNull();
+        root = createRoot(host);
+        await render();
+        expect(mocks.resolve).toHaveBeenCalledTimes(1);
+        await click('保存した戦闘結果を再送する');
+        expect(mocks.resolve).toHaveBeenCalledTimes(2);
+        const [first, second] = mocks.resolve.mock.calls;
+        expect(second.slice(0, 2)).toEqual(first.slice(0, 2));
+        expect(second[2]).toMatchObject({ expectedUserId: 'a', idempotencyKey: first[2].idempotencyKey });
+        expect(nativeDisk.has(resultKey)).toBe(false);
+        expect(button('保存した戦闘結果を再送する')).toBeUndefined();
+        expect(useMobileGameStore.getState().character.totalXp).toBe(0);
     });
     it('retries the original action snapshot even if the same terminal attempt changes while away', async () => {
         mocks.resolve.mockRejectedValueOnce(new TypeError('lost')); await render(); await render('tasks');

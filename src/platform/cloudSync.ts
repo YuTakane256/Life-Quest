@@ -1,3 +1,4 @@
+import { battleResultRecovery } from './battleResultRecovery';
 /**
  * Webのクラウド同期v1（#504、ADR-008/009）。
  *
@@ -169,6 +170,7 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
         if (useTitleStore.getState().activeTitle !== activeTitle) useTitleStore.setState({ activeTitle });
         seeded = true;
     }
+    if (seedScope.isCurrent()) void battleResultRecovery.reconcile(cache, seedScope).catch(() => {});
     return seeded;
 }
 

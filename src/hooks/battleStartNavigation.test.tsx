@@ -6,6 +6,7 @@ import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/
 import { sanitizeGameStoreState, useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import App from '../App';
+import { tryAcquireWebBattleSession } from '../platform/battleResultRecovery';
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), resolve: vi.fn(), start: vi.fn() }));
 vi.mock('../platform/auth', () => ({ getGameAuthState: mocks.auth, getBattleAuthState: mocks.auth }));
@@ -49,6 +50,8 @@ async function render(path = '/map', strict = false) {
 }
 beforeEach(async () => {
     await import('../pages/MapBattlePage');
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_: string, workOrOptions: (() => unknown) | LockOptions, callback?: (lock: object) => unknown) =>
+        Promise.resolve(typeof workOrOptions === 'function' ? workOrOptions() : callback?.({})) } });
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); resetAuthLifecycleHooks(); await notifyLogin('a'); localStorage.clear();
     vi.clearAllMocks(); mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' }); mocks.resolve.mockResolvedValue(response()); mocks.start.mockResolvedValue(attempt());
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { value: vi.fn(), configurable: true });
@@ -57,11 +60,40 @@ beforeEach(async () => {
     host = document.createElement('div'); document.body.append(host); root = createRoot(host); mounted = false;
 });
 afterEach(async () => {
-    if (mounted) await act(async () => root.unmount()); host.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals();
+    if (mounted) await act(async () => root.unmount()); Reflect.deleteProperty(navigator, 'locks'); host.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals();
     useGameStore.setState(initial); useBattleHistoryStore.setState({ history: [] }); history.replaceState({}, '', '/');
 });
 
 describe('Web battle starts across actual routes', () => {
+    it('holds the browser battle lease until the live battle ends or the App closes', async () => {
+        const locked = new Set<string>();
+        Object.defineProperty(navigator, 'locks', { configurable: true, value: {
+            async request(name: string, workOrOptions: (() => unknown) | LockOptions, callback?: (lock: object | null) => unknown) {
+                if (typeof workOrOptions === 'function') return workOrOptions();
+                if (locked.has(name)) return callback?.(null);
+                locked.add(name);
+                try { return await callback?.({}); } finally { locked.delete(name); }
+            },
+        } });
+        const external = await tryAcquireWebBattleSession('a');
+        await render();
+        await click('スタート');
+        expect(mocks.start).not.toHaveBeenCalled();
+        expect(host.textContent).toContain('別のタブで戦闘中');
+        await act(async () => external?.());
+        await click('スタート');
+        expect(mocks.start).toHaveBeenCalledTimes(1);
+        await expect(tryAcquireWebBattleSession('a')).resolves.toBeNull();
+        await act(async () => useGameStore.getState().resetBattle());
+        await click('スタート');
+        expect(mocks.start).toHaveBeenCalledTimes(2);
+        await expect(tryAcquireWebBattleSession('a')).resolves.toBeNull();
+        await act(async () => root.unmount());
+        mounted = false;
+        const reopened = await tryAcquireWebBattleSession('a');
+        expect(reopened).toBeTypeOf('function');
+        reopened?.();
+    });
     it('retains the failed stage/key after route changes and retries only on explicit request', async () => {
         mocks.start.mockRejectedValueOnce(new TypeError('response lost')); await render();
         await click('スタート'); expect(button('再試行')).toBeTruthy();

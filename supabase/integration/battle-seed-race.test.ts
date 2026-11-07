@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { Client as PgClient } from 'pg';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { battleResultRecoveryKey, createBattleResultRecovery, type SavedBattleResult } from '@life-quest/core/battleResultRecovery';
 import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
 import type { PullBatch } from '@life-quest/core/cloudPull';
 import { createEdgeFunctionInvoker } from '@life-quest/core/edgeFunctions';
@@ -356,8 +357,8 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
         expect(Number(beforeReplay.rows[0].current_stage)).toBe(4);
         expect(beforeReplay.rows[0].status).toBe(committed ? 'resolved' : 'in_progress');
         if (committed) {
-            // Only this test harness retains the lost key/actions. The app does not
-            // claim durable retry: exercise the server's replay contract separately.
+            // This case tests rehydration of the original game save alone.
+            // The separate recovery record is exercised below.
             const replay = await resolve();
             expect(replay).toMatchObject({ outcome: 'victory', granted: false, already_resolved: true });
             deliver(platform, attempt!.battleAttemptId, replay);
@@ -372,6 +373,56 @@ describe.skipIf(!enabled)('戦闘結果と実pullの競合（ローカルDB/Edge
             from public.reward_transactions where user_id=$1 and kind='battle_reward' and source_id=$2`,
         [createdUserId, attempt!.battleAttemptId]);
         expect(Number(rewards.rows[0].count)).toBe(committed ? 1 : 0);
+        expect(Number(rewards.rows[0].xp)).toBe(expectedXp - initialXp);
+    }, 30000);
+
+    const durableCases = (['Web', 'Mobile'] as const).flatMap((platform) =>
+        [false, true].map((committed) => ({ platform, committed })));
+    it.each(durableCases)('$platform / 確定済み=$committed / 復元した操作を実Edgeで再送して一度だけ報酬を受け取る', async ({ platform, committed }) => {
+        seed(platform, await pull());
+        const userId = createdUserId!;
+        const attempt = (await game.startBattleAttempt(1, crypto.randomUUID(), userId))!;
+        expect(attempt).toBeTruthy();
+        const actions = startAndFinish(platform, attempt, '通常攻撃で勝利');
+        const key = crypto.randomUUID();
+        const storage = platform === 'Web' ? localStorage : {
+            getItem: (name: string) => nativeDisk.get(name) ?? null,
+            setItem: (name: string, value: string) => { nativeDisk.set(name, value); },
+            removeItem: (name: string) => { nativeDisk.delete(name); },
+        };
+        const send = (record: SavedBattleResult, isActive: () => boolean) => game.resolveBattleAttempt(record.attemptId, record.actions,
+            { expectedUserId: record.userId, idempotencyKey: record.key, isActive });
+        const first = createBattleResultRecovery({ storage, send });
+        const original = await first.prepare(userId, { attemptId: attempt.battleAttemptId, key, actions });
+        if (committed) {
+            loseResponse = true;
+            await expect(send(original, () => true)).rejects.toThrow();
+            expect(lostResponses).toBe(1);
+        }
+
+        await restoreSavedGame(platform);
+        assertRestoredIdle(platform, initialXp);
+        const retrySend = vi.fn(send);
+        const restored = createBattleResultRecovery({ storage, send: retrySend, onResolved: async () => seed(platform, await pull()) });
+        await restored.load();
+        expect(restored.getState().pending).toEqual(original);
+        expect(resolveRequests).toBe(committed ? 1 : 0);
+        expect(retrySend).not.toHaveBeenCalled();
+        await restored.retry(restored.getState().pending!);
+        expect(retrySend).toHaveBeenCalledExactlyOnceWith(original, expect.any(Function));
+        expect(await retrySend.mock.results[0].value).toMatchObject(committed
+            ? { outcome: 'victory', granted: false, already_resolved: true }
+            : { outcome: 'victory', granted: true });
+        expect(storage.getItem(battleResultRecoveryKey(userId))).toBeNull();
+        expect(resolveRequests).toBe(committed ? 2 : 1);
+        const expectedXp = initialXp + attempt.actors.enemy.xpReward;
+        assertRestoredIdle(platform, expectedXp);
+        seed(platform, await pull());
+        assertRestoredIdle(platform, expectedXp);
+        const rewards = await pg.query(`select count(*) as count, coalesce(sum(xp_delta),0) as xp
+            from public.reward_transactions where user_id=$1 and kind='battle_reward' and source_id=$2`,
+        [userId, attempt.battleAttemptId]);
+        expect(Number(rewards.rows[0].count)).toBe(1);
         expect(Number(rewards.rows[0].xp)).toBe(expectedXp - initialXp);
     }, 30000);
 

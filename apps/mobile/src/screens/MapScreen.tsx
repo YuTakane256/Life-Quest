@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
-import { FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { blocksBattleStart } from '@life-quest/core/battleResultRecovery';
+import { battleResultRecovery } from '../platform/battleResultRecovery';
+import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { TAB_SCREEN_EDGES } from '../theme/layout';
@@ -29,6 +31,10 @@ export default function MapScreen() {
     const performBattleAction = useMobileGameStore((state) => state.performBattleAction);
     const clearActiveBattle = useMobileGameStore((state) => state.clearActiveBattle);
     const { resolveState, granted, retry: retryResolve } = useBattleResult();
+    const recovery = useSyncExternalStore(battleResultRecovery.subscribe, battleResultRecovery.getState);
+    const recoveryBlocksStart = blocksBattleStart(recovery);
+    const recoveryBlocked = recovery.phase === 'blocked';
+    const recoverySending = recovery.phase === 'sending';
 
     const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);
@@ -44,6 +50,7 @@ export default function MapScreen() {
         ? requestedMap : MAP_CONFIG[0];
 
     const handleStart = (stage: number) => {
+        if (recoveryBlocksStart) return;
         if (activeBattle && hasPendingBattleResult(activeBattle.state.outcome, activeBattle.rewardMode, activeBattle.battleAttemptId)) return;
         setNotice(null);
         if (!battleProgress.battleUnlocked) {
@@ -89,6 +96,30 @@ export default function MapScreen() {
                     keyExtractor={(stage) => String(stage.stage)}
                     ListHeaderComponent={(
                         <View style={styles.headerContent}>
+                            {(recoveryBlocked || (recovery.pending && recovery.pending.attemptId !== activeBattle?.battleAttemptId)) && (
+                                <View style={styles.notice} accessibilityRole="alert">
+                                    <Text style={styles.noticeText}>{recoveryBlocked ? '保存した戦闘結果を読み込めませんでした。' : recoverySending ? '保存した戦闘結果を送信中…' : recovery.phase === 'failed' ? '戦闘結果の送信に失敗しました。同じ結果を再送できます。' : '保存した戦闘結果を再送できます。'}</Text>
+                                    <Pressable accessibilityRole="button" disabled={recoverySending} accessibilityState={{ disabled: recoverySending }}
+                                        accessibilityLabel={recoveryBlocked ? '保存データを再確認する' : '保存した戦闘結果を再送する'}
+                                        style={({ pressed }) => [styles.noticeRetryButton, (pressed || recoverySending) && styles.muted]}
+                                        onPress={() => { if (recoveryBlocked) void battleResultRecovery.load(); else if (recovery.pending) void battleResultRecovery.retry(recovery.pending); }}>
+                                        <Text style={styles.noticeText}>{recoveryBlocked ? '保存データを再確認する' : '保存した戦闘結果を再送する'}</Text>
+                                    </Pressable>
+                                    {battleResultRecovery.canDiscard(recovery) && (
+                                        <Pressable accessibilityRole="button" style={styles.noticeRetryButton}
+                                            onPress={() => Alert.alert('端末に残った戦闘結果を破棄しますか？', '未送信の報酬は受け取れなくなります。', [
+                                                { text: 'キャンセル', style: 'cancel' },
+                                                { text: '破棄する', style: 'destructive', onPress: () => {
+                                                    void battleResultRecovery.discard(recovery).then((discarded) => {
+                                                        if (!discarded) void battleResultRecovery.load();
+                                                    });
+                                                } },
+                                            ])}>
+                                            <Text style={styles.noticeText}>保存した結果を破棄する</Text>
+                                        </Pressable>
+                                    )}
+                                </View>
+                            )}
                             {!activeBattle && (battleProgress.battleUnlocked ? (
                                 <MapOverview selectedMap={selectedArea} maxClearedStage={battleProgress.maxClearedStage}
                                     battleUnlocked={battleProgress.battleUnlocked} onSelect={setSelectedMapId} />
@@ -133,7 +164,7 @@ export default function MapScreen() {
                             currentStage={battleProgress.currentStage}
                             maxClearedStage={battleProgress.maxClearedStage}
                             battleUnlocked={battleProgress.battleUnlocked}
-                            busy={busy}
+                            busy={busy || recoveryBlocksStart}
                             onStart={() => void handleStart(item.stage)}
                         />
                     )}
