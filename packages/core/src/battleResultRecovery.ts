@@ -86,6 +86,10 @@ export function createBattleResultRecovery(deps: {
             await serial(userId, async () => {
                 assert(scope, userId); const pending = await read(userId);
                 if (allowed(scope, userId) && generation === readGeneration) {
+                    const operation = sending.get(userId);
+                    if (operation && (operation.record.key !== pending?.key || operation.record.attemptId !== pending?.attemptId)) {
+                        sending.delete(userId);
+                    }
                     if (state.phase === 'sending' && pending?.key === state.pending?.key
                         && pending?.attemptId === state.pending?.attemptId) return;
                     publish({ userId, phase: 'ready', pending });

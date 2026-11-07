@@ -152,6 +152,25 @@ describe('所有者付きの戦闘結果保存と再送', () => {
         expect(f.controller.getState()).toMatchObject({ phase: 'ready', pending: null });
         expect(f.controller.isBlocking()).toBe(false);
     });
+    it.each([false, true])('別タブから確定と次の保存が届いても古い通信を待たない（同時読込: %s）', async (combined) => {
+        const first = fixture();
+        const other = fixture(first.disk);
+        const oldResponse = deferred<ResolveBattleAttemptResponse>();
+        first.send.mockReturnValueOnce(oldResponse.promise);
+        const pending = await first.controller.prepare('a', packet);
+        const oldRetry = first.controller.retry(pending);
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalledTimes(1));
+        await other.controller.reconcile(receipt(), captureAuthSessionScope());
+        if (!combined) await first.controller.load();
+        const next = await other.controller.prepare('a', { ...packet, attemptId: 'next', key: 'next-key' });
+        await first.controller.load();
+        await first.controller.retry(first.controller.getState().pending!);
+        expect(first.send.mock.calls[1][0]).toEqual(next);
+        expect(first.send.mock.calls[0][1]()).toBe(false);
+        oldResponse.resolve(accepted);
+        await oldRetry;
+        expect(first.controller.isBlocking()).toBe(false);
+    });
     it('確定応答の後に同期が遅れても次の結果を再送できる', async () => {
         const f = fixture();
         const slowPull = deferred<void>();

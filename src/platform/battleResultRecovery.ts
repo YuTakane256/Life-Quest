@@ -84,7 +84,9 @@ export async function withWebBattleRecoverySession(snapshot: BattleResultRecover
     const offAuth = subscribeAuthSessionScope(stop);
     const offRecovery = battleResultRecovery.subscribe(() => {
         const state = battleResultRecovery.getState();
-        if (state.userId === scope.userId && state.phase === 'ready' && !state.pending) stop();
+        if (state.userId !== scope.userId || state.phase !== 'ready') return;
+        const original = snapshot.pending;
+        if (!state.pending || (original && (state.pending.attemptId !== original.attemptId || state.pending.key !== original.key))) stop();
     });
     try {
         await work();

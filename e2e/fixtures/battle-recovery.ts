@@ -3,6 +3,7 @@ export { captureAuthSessionScope, notifyLogin } from '@life-quest/core/authLifec
 export { battleResultRecoveryKey } from '@life-quest/core/battleResultRecovery';
 export {
     battleResultRecovery,
+    registerWebBattleResultRecovery,
     retireWebBattleResultRecovery,
     tryAcquireWebBattleSession,
     withWebBattleRecoverySession,
