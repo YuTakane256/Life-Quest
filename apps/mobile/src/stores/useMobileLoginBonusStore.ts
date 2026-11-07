@@ -303,7 +303,11 @@ export const useMobileLoginBonusStore = create<MobileLoginBonusStore>()(
                     ? (persisted as Record<string, unknown>)
                     : {});
                 const anonymousState = sanitizeLocalState(raw.anonymousState ?? raw);
-                return { ...current, ...anonymousState, anonymousState };
+                // Anonymous disk history is kept for logout, but must not mark the
+                // signed-in account as already claimed or replace its server result.
+                return current.activeCloudUserId === null
+                    ? { ...current, ...anonymousState, anonymousState }
+                    : { ...current, anonymousState };
             },
         }
     )
