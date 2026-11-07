@@ -28,6 +28,10 @@
       "types": "./src/edgeFunctions.ts",
       "import": "./src/edgeFunctions.ts"
     },
+    "./battleResultRecovery": {
+      "types": "./src/battleResultRecovery.ts",
+      "import": "./src/battleResultRecovery.ts"
+    },
     "./battle": {
       "types": "./src/battle.ts",
       "import": "./src/battle.ts"

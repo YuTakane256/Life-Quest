@@ -49,6 +49,7 @@ async function render(path = '/map', strict = false) {
 }
 beforeEach(async () => {
     await import('../pages/MapBattlePage');
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_: string, work: () => unknown) => Promise.resolve(work()) } });
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); resetAuthLifecycleHooks(); await notifyLogin('a'); localStorage.clear();
     vi.clearAllMocks(); mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' }); mocks.resolve.mockResolvedValue(response()); mocks.start.mockResolvedValue(attempt());
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { value: vi.fn(), configurable: true });
@@ -57,7 +58,7 @@ beforeEach(async () => {
     host = document.createElement('div'); document.body.append(host); root = createRoot(host); mounted = false;
 });
 afterEach(async () => {
-    if (mounted) await act(async () => root.unmount()); host.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals();
+    if (mounted) await act(async () => root.unmount()); Reflect.deleteProperty(navigator, 'locks'); host.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals();
     useGameStore.setState(initial); useBattleHistoryStore.setState({ history: [] }); history.replaceState({}, '', '/');
 });
 

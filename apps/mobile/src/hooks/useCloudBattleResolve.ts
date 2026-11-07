@@ -1,3 +1,4 @@
+import { isBattleResultAcknowledgement } from '@life-quest/core/battleResultRecovery';
 /**
  * クラウド権威バトルの決着（victory/defeat）をサーバーへ同期する。Web
  * `src/hooks/useCloudBattleResolve.ts`の移植（Webは`battle.status`を監視する
@@ -24,6 +25,7 @@ import { captureAuthSessionGuard, captureAuthSessionScope, type AuthSessionScope
 import { getGameAuthState } from '../platform/auth';
 import { createMobileId } from '../utils/createMobileId';
 import { useGameOperationScope } from './useGameOperationScope';
+import { battleResultRecovery } from '../platform/battleResultRecovery';
 
 export type CloudBattleResolveState = 'idle' | 'syncing' | 'done' | 'error';
 
@@ -95,7 +97,7 @@ export function useCloudBattleResolve(allowAutoResolve = true): UseCloudBattleRe
     const [granted, setGranted] = useState<boolean | null>(null);
     const resolvedAttemptIdRef = useRef<string | null>(null);
     const appliedAttemptRef = useRef<string | null>(null);
-    const pendingRef = useRef<{ attemptId: string; actions: BattleAction[]; key: string } | null>(null);
+    const pendingRef = useRef<{ attemptId: string; actions: readonly BattleAction[]; key: string } | null>(null);
     const bindingRef = useRef<{ attemptId: string; scope: AuthSessionScope } | null>(null);
     const operationScope = useGameOperationScope(() => {
         resolvedAttemptIdRef.current = null; appliedAttemptRef.current = null; pendingRef.current = null;
@@ -126,10 +128,21 @@ export function useCloudBattleResolve(allowAutoResolve = true): UseCloudBattleRe
             const auth = await getGameAuthState();
             if (!operation.isActive() || !isTarget(attemptId)) return;
             if (auth.kind !== 'authenticated' || auth.userId !== operation.userId) { setResolveState('error'); return; }
-            const outcome = await runCloudBattleResolve(attemptId, pending.actions, {
-                resolveCloudBattleAttempt: (id, snapshot) => resolveCloudBattleAttempt(id, snapshot, {
-                    isActive: () => operation.isActive() && isTarget(attemptId), expectedUserId: auth.userId, idempotencyKey: pending.key,
-                }),
+            const saved = await battleResultRecovery.prepare(auth.userId, pending);
+            const isActive = () => operation.isActive() && isTarget(attemptId);
+            if (!isActive()) return;
+            pendingRef.current = saved;
+            const outcome = await runCloudBattleResolve(attemptId, saved.actions, {
+                resolveCloudBattleAttempt: async (id, snapshot) => {
+                    const response = await resolveCloudBattleAttempt(id, snapshot, {
+                        isActive, expectedUserId: auth.userId, idempotencyKey: saved.key,
+                    });
+                    if (operation.isActive()) {
+                        if (!isBattleResultAcknowledgement(response)) throw new Error('戦闘結果を確認できません。');
+                        await battleResultRecovery.acknowledge(saved);
+                    }
+                    return response;
+                },
                 applyResolvedCloudBattle: (id, result, granted) => {
                     appliedAttemptRef.current = id;
                     applyResolvedCloudBattle(id, result, granted);

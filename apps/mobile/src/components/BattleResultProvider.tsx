@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { battleResultRecovery } from '../platform/battleResultRecovery';
+import { useEffect, type ReactNode } from 'react';
 import { usePathname } from 'expo-router';
 import { useCloudBattleResolve } from '../hooks/useCloudBattleResolve';
 import { BattleResultContext } from '../hooks/useBattleResult';
@@ -7,5 +8,6 @@ import { BattleResultContext } from '../hooks/useBattleResult';
 export function BattleResultProvider({ children }: { children: ReactNode }) {
     const isMapRoute = usePathname() === '/map';
     const result = useCloudBattleResolve(isMapRoute);
+    useEffect(() => battleResultRecovery.register(), []);
     return <BattleResultContext.Provider value={result}>{children}</BattleResultContext.Provider>;
 }

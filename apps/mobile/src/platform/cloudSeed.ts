@@ -1,3 +1,4 @@
+import { battleResultRecovery } from './battleResultRecovery';
 /**
  * クラウドキャッシュのMobileストア反映（#504）。
  * cloudSync.tsから分離しているのは、react-native（AppState）を importする
@@ -33,6 +34,7 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
     const seedScope = captureAuthSessionScope();
     const seedable = getSeedableSections(cache);
     let seeded = false;
+    let confirmedBattleAttempt: string | undefined;
     if (seedable.tasks) {
         seedSectionData('tasks', buildCanonicalTaskSnapshot(cache));
         seeded = true;
@@ -66,6 +68,7 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
                 && current.rewardMode === 'cloud' && current.state.outcome === battle.state.outcome) {
                 // XP/progress came from the authoritative snapshot; never add them again
                 // when the original granted:true response arrives later.
+                confirmedBattleAttempt = battle.battleAttemptId ?? undefined;
                 useMobileGameStore.setState({ activeBattle: { ...current, battleAttemptId: null } });
             }
             seeded = true;
@@ -99,5 +102,6 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
         if (useMobileTitleStore.getState().activeTitle !== activeTitle) useMobileTitleStore.setState({ activeTitle });
         seeded = true;
     }
+    if (seedScope.isCurrent()) void battleResultRecovery.reconcile(cache, seedScope, confirmedBattleAttempt).catch(() => {});
     return seeded;
 }

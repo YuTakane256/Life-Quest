@@ -19,7 +19,8 @@ function createStorage(failKey?: string) {
 describe('account deletion local cleanup', () => {
     it('指定ユーザーのクラウド名前空間だけを削除対象にする', () => {
         const keys = accountDeletionKeys('user-a');
-        expect(keys.length).toBe(8);
+        expect(keys.length).toBe(9);
+        expect(keys).toContain('life-quest:cloud:user-a:battle-result:v1');
         expect(keys).toContain('life-quest:cloud:user-a:pending-reward-operations:v1');
         expect(keys.every((key) => key.includes('life-quest:cloud:user-a:'))).toBe(true);
         expect(keys.some((key) => key.includes('user-b'))).toBe(false);

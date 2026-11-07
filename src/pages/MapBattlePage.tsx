@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { blocksBattleStart } from '@life-quest/core/battleResultRecovery';
+import { battleResultRecovery } from '../platform/battleResultRecovery';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
 import { BATTLE_CONFIG, MAP_CONFIG, ENEMY_IMAGE_KEYS } from '../config/gameConfig';
@@ -47,6 +49,32 @@ export function MapBattlePage() {
     const logEndRef = useRef<HTMLDivElement>(null);
     const effectiveStats = getEffectiveStats();
     const { resolveState, granted, retry } = useBattleResult();
+    const recovery = useSyncExternalStore(battleResultRecovery.subscribe, battleResultRecovery.getState);
+    const recoveryBlocksStart = blocksBattleStart(recovery);
+    const recoveryBlocked = recovery.phase === 'blocked';
+    const recoverySending = recovery.phase === 'sending';
+    const recoveryNotice = (recoveryBlocked || (recovery.pending && recovery.pending.attemptId !== battle.battleAttemptId)) && (
+        <div className="mb-4 rounded-xl p-4" role="status" style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-primary)' }}>
+            <p className="text-sm">{recoveryBlocked ? '保存した戦闘結果を読み込めませんでした。' : recoverySending ? '保存した戦闘結果を送信中…' : recovery.phase === 'failed' ? '戦闘結果の送信に失敗しました。同じ結果を再送できます。' : '保存した戦闘結果を再送できます。'}</p>
+            <button type="button" className="mt-2 text-sm font-semibold underline disabled:opacity-50" disabled={recoverySending}
+                style={{ color: 'var(--color-accent-primary)' }}
+                onClick={() => { if (recoveryBlocked) void battleResultRecovery.load(); else if (recovery.pending) void battleResultRecovery.retry(recovery.pending); }}>
+                {recoveryBlocked ? '保存データを再確認する' : '保存した戦闘結果を再送する'}
+            </button>
+            {battleResultRecovery.canDiscard(recovery) && (
+                <button type="button" className="ml-4 mt-2 text-sm underline"
+                    onClick={() => {
+                        if (window.confirm('端末に残った戦闘結果を破棄しますか？未送信の報酬は受け取れなくなります。')) {
+                            void battleResultRecovery.discard(recovery).then((discarded) => {
+                                if (!discarded) void battleResultRecovery.load();
+                            });
+                        }
+                    }}>
+                    保存した結果を破棄する
+                </button>
+            )}
+        </div>
+    );
     const isSyncingResult = hasPendingBattleResult(battle.status === 'victory' || battle.status === 'defeat' ? battle.status : 'ongoing', battle.rewardMode, battle.battleAttemptId)
         || (battle.rewardMode === 'cloud' && resolveState === 'syncing');
     const { isStarting, startError, startStage, retry: retryStart } = useBattleStart();
@@ -74,6 +102,7 @@ export function MapBattlePage() {
     if (!battle.battleUnlocked) {
         return (
             <div className="app-page max-w-lg mx-auto px-4 pt-6">
+                {recoveryNotice}
                 <div className="text-center py-20">
                     <div className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: 'var(--color-bg-card)' }}>
                         <span className="text-4xl">🔒</span>
@@ -97,6 +126,7 @@ export function MapBattlePage() {
 
         return (
             <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-4 relative z-0">
+                {recoveryNotice}
                 {/* 背景画像オーバーレイ */}
                 <div className="fixed inset-0 -z-10 bg-cover bg-center"
                     style={{
@@ -188,7 +218,7 @@ export function MapBattlePage() {
                 {startError && battle.status !== 'victory' && (
                     <p role="alert" className="text-sm mb-4" style={{ color: 'var(--color-text-danger)' }}>
                         {startError}
-                        <button onClick={() => void retryStart()} disabled={isStarting} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
+                        <button onClick={() => void retryStart()} disabled={isStarting || recoveryBlocksStart} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
                     </p>
                 )}
 
@@ -216,7 +246,7 @@ export function MapBattlePage() {
                         )}
                         <div className="flex gap-2">
                             <button onClick={() => void handleNextStage()}
-                                disabled={isSyncingResult || isStarting}
+                                disabled={isSyncingResult || isStarting || recoveryBlocksStart}
                                 className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                                 <ChevronRight size={18} /> {battle.currentStage < BATTLE_CONFIG.STAGES.length ? '次へ' : '再挑戦'}
@@ -231,7 +261,7 @@ export function MapBattlePage() {
                         {startError && (
                             <p role="alert" className="text-sm mt-3" style={{ color: 'var(--color-text-danger)' }}>
                                 {startError}
-                                <button onClick={() => void retryStart()} disabled={isStarting} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
+                                <button onClick={() => void retryStart()} disabled={isStarting || recoveryBlocksStart} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
                             </p>
                         )}
                     </div>
@@ -252,7 +282,7 @@ export function MapBattlePage() {
                         </p>
                         <div className="flex gap-2">
                             <button onClick={() => void startStage(battle.currentStage)}
-                                disabled={isSyncingResult || isStarting}
+                                disabled={isSyncingResult || isStarting || recoveryBlocksStart}
                                 className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
                                 <RotateCcw size={18} /> リトライ
@@ -273,6 +303,7 @@ export function MapBattlePage() {
     // ─── マップ一覧 ───
     return (
         <div className="app-page max-w-lg mx-auto px-5 pt-6 pb-4 relative overflow-hidden z-0">
+            {recoveryNotice}
             {/* 背景画像 */}
             <div className="fixed inset-0 -z-10 bg-cover bg-center"
                 style={{ backgroundImage: `url(${getMapBackground(selectedMap.theme)})`, opacity: 0.35 }} />
@@ -282,7 +313,7 @@ export function MapBattlePage() {
             {startError && (
                 <p role="alert" className="text-sm mb-4" style={{ color: 'var(--color-text-danger)' }}>
                     {startError}
-                    <button onClick={() => void retryStart()} disabled={isStarting} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
+                    <button onClick={() => void retryStart()} disabled={isStarting || recoveryBlocksStart} className="underline ml-2 disabled:opacity-50" style={{ color: 'var(--color-accent-primary)' }}>再試行</button>
                 </p>
             )}
 
@@ -355,7 +386,7 @@ export function MapBattlePage() {
                             </div>
                             {!isLocked && (
                                 <button onClick={() => void startStage(stage.stage)}
-                                    disabled={isStarting}
+                                    disabled={isStarting || recoveryBlocksStart}
                                     className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     style={{
                                         backgroundColor: isCleared ? 'var(--color-bg-card)' : 'var(--color-accent-primary)',

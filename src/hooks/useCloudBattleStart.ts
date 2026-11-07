@@ -1,3 +1,5 @@
+import { captureAuthSessionScope } from '@life-quest/core/authLifecycle';
+import { battleResultRecovery, canSaveBattleResult } from '../platform/battleResultRecovery';
 /**
  * バトル開始をクラウド権威で行う（可能な場合）。
  *
@@ -101,10 +103,17 @@ export function useCloudBattleStart(): UseCloudBattleStartResult {
         beforeStart?: () => void,
         idempotencyKey: string = crypto.randomUUID(),
     ): Promise<BattleStartResult<CloudBattleAttempt>> => {
+        if (captureAuthSessionScope().userId && !canSaveBattleResult()) {
+            setStartError('このブラウザーでは戦闘結果を安全に保存できません。対応ブラウザーでお試しください。'); return { kind: 'rejected' };
+        }
+        if (battleResultRecovery.isBlocking()) {
+            setStartError('前回の戦闘結果の確認・同期を先に行ってください。'); return { kind: 'rejected' };
+        }
         const operation = operationScope.begin();
         if (!operation) return { kind: 'retryable-error' };
         const sourceBattle = useGameStore.getState().battle;
         const sourceIsCurrent = () => {
+            if (battleResultRecovery.isBlocking()) return false;
             const current = useGameStore.getState().battle;
             // 同じ進行の定期pullによるオブジェクト再生成は別戦闘とみなさない。
             return current.battleAttemptId === sourceBattle.battleAttemptId && current.status === sourceBattle.status
