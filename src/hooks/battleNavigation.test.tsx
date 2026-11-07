@@ -56,7 +56,8 @@ async function render(path = '/map', strict = false) {
 beforeEach(async () => {
     await flushCompletionRewardWrites(); setGameRewardAuthorityState('authenticated');
     await import('../pages/MapBattlePage');
-    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_: string, work: () => unknown) => Promise.resolve(work()) } });
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_: string, workOrOptions: (() => unknown) | LockOptions, callback?: (lock: object) => unknown) =>
+        Promise.resolve(typeof workOrOptions === 'function' ? workOrOptions() : callback?.({})) } });
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); resetAuthLifecycleHooks(); await notifyLogin('a'); localStorage.clear();
     vi.clearAllMocks(); mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' }); mocks.resolve.mockResolvedValue(response());
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { value: vi.fn(), configurable: true });

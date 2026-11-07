@@ -1,5 +1,5 @@
 import { captureAuthSessionScope } from '@life-quest/core/authLifecycle';
-import { battleResultRecovery, canSaveBattleResult } from '../platform/battleResultRecovery';
+import { battleResultRecovery, canSaveBattleResult, tryAcquireWebBattleSession } from '../platform/battleResultRecovery';
 /**
  * バトル開始をクラウド権威で行う（可能な場合）。
  *
@@ -8,7 +8,7 @@ import { battleResultRecovery, canSaveBattleResult } from '../platform/battleRes
  *
  * `isStarting`中の呼び出しは二重開始防止のため無視する。
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     getBattleStartMessage,
     requestBattleStart,
@@ -94,7 +94,10 @@ export function useCloudBattleStart(): UseCloudBattleStartResult {
     const [isStarting, setIsStarting] = useState(false);
     const [startError, setStartError] = useState<string | null>(null);
     const retryRef = useRef<{ stage: number; idempotencyKey: string; beforeStart?: () => void; isCurrent: () => boolean } | null>(null);
+    const releaseSession = useRef<(() => void) | null>(null);
+    useEffect(() => () => releaseSession.current?.(), []);
     const operationScope = useGameOperationScope(() => {
+        releaseSession.current?.();
         retryRef.current = null; setIsStarting(false); setStartError(null);
     });
 
@@ -122,7 +125,32 @@ export function useCloudBattleStart(): UseCloudBattleStartResult {
         retryRef.current = null;
         setIsStarting(true);
         setStartError(null);
+        let releaseAfterStart: (() => void) | undefined;
         try {
+            if (operation.userId) {
+                const release = await tryAcquireWebBattleSession(operation.userId);
+                if (!operation.isActive()) {
+                    release?.();
+                    return { kind: 'auth-changed' };
+                }
+                if (!release) {
+                    setStartError('このアカウントは別のタブで戦闘中か、結果を確認中です。');
+                    return { kind: 'rejected' };
+                }
+                const closeSession = () => {
+                    if (releaseSession.current === closeSession) releaseSession.current = null;
+                    release();
+                };
+                releaseAfterStart = closeSession;
+                releaseSession.current = closeSession;
+                // A tab can miss the event or finish loading before the prior tab saves.
+                await battleResultRecovery.load();
+                if (!operation.isActive()) return { kind: 'auth-changed' };
+                if (battleResultRecovery.isBlocking()) {
+                    setStartError('前回の戦闘結果の確認・同期を先に行ってください。');
+                    return { kind: 'rejected' };
+                }
+            }
             const result = await runCloudBattleStart(
                 stage,
                 idempotencyKey,
@@ -132,6 +160,21 @@ export function useCloudBattleStart(): UseCloudBattleStartResult {
                 beforeStart,
             );
             if (!operation.isActive()) return { kind: 'auth-changed' };
+            if (result.kind === 'cloud-started' && releaseAfterStart
+                && useGameStore.getState().battle.battleAttemptId === result.attempt.battleAttemptId) {
+                const attemptId = result.attempt.battleAttemptId;
+                const release = releaseAfterStart;
+                const unsubscribe = useGameStore.subscribe(({ battle }) => {
+                    if (battle.battleAttemptId !== attemptId) stopWatching();
+                });
+                const stopWatching = () => {
+                    unsubscribe();
+                    if (releaseSession.current === stopWatching) releaseSession.current = null;
+                    release();
+                };
+                releaseSession.current = stopWatching;
+                releaseAfterStart = undefined;
+            }
             if (result.kind === 'cloud-started' || result.kind === 'local-started') {
                 retryRef.current = null;
             } else {
@@ -146,6 +189,7 @@ export function useCloudBattleStart(): UseCloudBattleStartResult {
             setStartError(getBattleStartMessage({ kind: 'retryable-error' }));
             return { kind: 'retryable-error' };
         } finally {
+            releaseAfterStart?.();
             if (operation.isActive()) setIsStarting(false);
             operation.finish();
         }

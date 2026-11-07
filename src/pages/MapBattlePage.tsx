@@ -1,5 +1,5 @@
-import { blocksBattleStart } from '@life-quest/core/battleResultRecovery';
-import { battleResultRecovery } from '../platform/battleResultRecovery';
+import { blocksBattleStart, type BattleResultRecoveryState } from '@life-quest/core/battleResultRecovery';
+import { battleResultRecovery, withWebBattleRecoverySession } from '../platform/battleResultRecovery';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useGameStore } from '../stores/useGameStore';
 import { useBattleHistoryStore } from '../stores/useBattleHistoryStore';
@@ -51,22 +51,31 @@ export function MapBattlePage() {
     const { resolveState, granted, retry } = useBattleResult();
     const recovery = useSyncExternalStore(battleResultRecovery.subscribe, battleResultRecovery.getState);
     const recoveryBlocksStart = blocksBattleStart(recovery);
+    const [busyRecovery, setBusyRecovery] = useState<BattleResultRecoveryState | null>(null);
+    const runRecovery = (work: () => Promise<unknown>) => {
+        setBusyRecovery(null);
+        void withWebBattleRecoverySession(recovery, work).then((acquired) => {
+            if (!acquired) setBusyRecovery(recovery);
+        });
+    };
     const recoveryBlocked = recovery.phase === 'blocked';
     const recoverySending = recovery.phase === 'sending';
     const recoveryNotice = (recoveryBlocked || (recovery.pending && recovery.pending.attemptId !== battle.battleAttemptId)) && (
         <div className="mb-4 rounded-xl p-4" role="status" style={{ backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-primary)' }}>
             <p className="text-sm">{recoveryBlocked ? '保存した戦闘結果を読み込めませんでした。' : recoverySending ? '保存した戦闘結果を送信中…' : recovery.phase === 'failed' ? '戦闘結果の送信に失敗しました。同じ結果を再送できます。' : '保存した戦闘結果を再送できます。'}</p>
+            {busyRecovery === recovery && <p className="mt-2 text-sm">別のタブで戦闘中か、結果を確認中です。</p>}
             <button type="button" className="mt-2 text-sm font-semibold underline disabled:opacity-50" disabled={recoverySending}
                 style={{ color: 'var(--color-accent-primary)' }}
-                onClick={() => { if (recoveryBlocked) void battleResultRecovery.load(); else if (recovery.pending) void battleResultRecovery.retry(recovery.pending); }}>
+                onClick={() => { if (recoveryBlocked) void battleResultRecovery.load();
+                    else if (recovery.pending) runRecovery(() => battleResultRecovery.retry(recovery.pending!)); }}>
                 {recoveryBlocked ? '保存データを再確認する' : '保存した戦闘結果を再送する'}
             </button>
             {battleResultRecovery.canDiscard(recovery) && (
                 <button type="button" className="ml-4 mt-2 text-sm underline"
                     onClick={() => {
                         if (window.confirm('端末に残った戦闘結果を破棄しますか？未送信の報酬は受け取れなくなります。')) {
-                            void battleResultRecovery.discard(recovery).then((discarded) => {
-                                if (!discarded) void battleResultRecovery.load();
+                            runRecovery(async () => {
+                                if (!await battleResultRecovery.discard(recovery)) await battleResultRecovery.load();
                             });
                         }
                     }}>

@@ -1,4 +1,4 @@
-import { battleResultRecovery } from './battleResultRecovery';
+import { retireWebBattleResultRecovery } from './battleResultRecovery';
 import { deleteAccountCloudData, runAccountDeletionCleanup } from '@life-quest/core/accountDeletion';
 import { clearWebCloudStores, resetCloudSessionSeeded } from './authStores';
 import { stopWebOutboxForAccountDeletion } from './cloudOutbox';
@@ -14,7 +14,10 @@ export async function cleanupDeletedWebAccount(userId: string, isCurrent: () => 
     await runAccountDeletionCleanup({
         isCurrent,
         stopSync: stopWebCloudSyncForAccountDeletion,
-        stopOutbox: async () => { await battleResultRecovery.retire(userId); await stopWebOutboxForAccountDeletion(); },
+        stopOutbox: async () => {
+            try { await retireWebBattleResultRecovery(userId); }
+            finally { await stopWebOutboxForAccountDeletion(); }
+        },
         removeCloudData: () => deleteAccountCloudData(getPlatformStorageAdapter(), userId),
         resetMemory: () => {
             clearWebCloudStores();

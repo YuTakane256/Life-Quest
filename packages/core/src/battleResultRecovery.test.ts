@@ -122,6 +122,16 @@ describe('所有者付きの戦闘結果保存と再送', () => {
         await f.controller.reconcile(receipt(), captureAuthSessionScope());
         expect(f.disk.has(ownerKey)).toBe(false); expect(f.send).not.toHaveBeenCalled();
     });
+    it('保存読込より確定行が先に届いても、再送せずに保留を解除する', async () => {
+        const first = fixture();
+        await first.controller.prepare('a', packet);
+        const restored = fixture(first.disk);
+        await restored.controller.reconcile(receipt(), captureAuthSessionScope());
+        await restored.controller.load();
+        expect(restored.controller.getState().pending).toBeNull();
+        expect(restored.controller.isBlocking()).toBe(false);
+        expect(restored.send).not.toHaveBeenCalled();
+    });
     it('確定を同期した後の通信失敗では、再送や次の戦闘をブロックしない', async () => {
         const f = fixture();
         let reject!: (error: Error) => void;

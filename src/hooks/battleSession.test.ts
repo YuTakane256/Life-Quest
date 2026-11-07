@@ -2,6 +2,8 @@ import { act, createElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope } from '@life-quest/core/authLifecycle';
+import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
 import { hasPendingBattleResult } from '@life-quest/core/battle';
 import type { BattleAction } from '@life-quest/core/battle';
 
@@ -12,6 +14,12 @@ const mocks = vi.hoisted(() => ({
     mobileBattle: null as null | { stage: number; rewardMode: string; battleAttemptId: string | null;
         state: { outcome: string }; actions: BattleAction[] },
 }));
+const nativeDisk = vi.hoisted(() => new Map<string, string>());
+vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
+    getItem: async (key: string) => nativeDisk.get(key) ?? null,
+    setItem: async (key: string, value: string) => { nativeDisk.set(key, value); },
+    removeItem: async (key: string) => { nativeDisk.delete(key); },
+} }));
 vi.mock('../platform/auth', () => ({ getBattleAuthState: mocks.auth, getGameAuthState: mocks.auth }));
 vi.mock('../../apps/mobile/src/platform/auth', () => ({ getBattleAuthState: mocks.auth, getGameAuthState: mocks.auth }));
 vi.mock('../platform/gameCloud', () => ({ startCloudBattleAttempt: mocks.start, resolveCloudBattleAttempt: mocks.resolve }));
@@ -26,6 +34,8 @@ vi.mock('../../apps/mobile/src/stores/useMobileGameStore', () => {
         startCloudBattle: mocks.applyStart, applyResolvedCloudBattle: mocks.applyResolve });
     return { useMobileGameStore: Object.assign((select: (state: ReturnType<typeof getState>) => unknown) => select(getState()), { getState }) };
 });
+import { battleResultRecovery as webRecovery } from '../platform/battleResultRecovery';
+import { battleResultRecovery as mobileRecovery } from '../../apps/mobile/src/platform/battleResultRecovery';
 import { useCloudBattleStart as webStart } from './useCloudBattleStart';
 import { useCloudBattleResolve as webResolve } from './useCloudBattleResolve';
 import { useCloudBattleStart as mobileStart } from '../../apps/mobile/src/hooks/useCloudBattleStart';
@@ -55,6 +65,10 @@ function clearBattle() {
 }
 beforeEach(async () => {
     resetAuthLifecycleHooks(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    localStorage.clear();
+    nativeDisk.clear();
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_: string, workOrOptions: (() => unknown) | LockOptions, callback?: (lock: object) => unknown) =>
+        Promise.resolve(typeof workOrOptions === 'function' ? workOrOptions() : callback?.({})) } });
     for (const value of Object.values(mocks)) if (typeof value === 'function') vi.mocked(value).mockReset();
     mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' });
     mocks.start.mockResolvedValue(attempt); mocks.localStart.mockReturnValue(true);
@@ -64,14 +78,15 @@ beforeEach(async () => {
         if (mocks.mobileBattle) mocks.mobileBattle = { ...mocks.mobileBattle, battleAttemptId: null };
     });
     clearBattle(); await notifyLogin('a');
+    await Promise.all([webRecovery.load(), mobileRecovery.load()]);
     container = document.createElement('div'); document.body.append(container); root = createRoot(container); mounted = true;
 });
-afterEach(async () => { if (mounted) await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals(); });
+afterEach(async () => { if (mounted) await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); Reflect.deleteProperty(navigator, 'locks'); vi.unstubAllGlobals(); });
 
 describe.each([
-    { name: 'Web', useStart: webStart, useResolve: webResolve },
-    { name: 'Mobile', useStart: mobileStart, useResolve: mobileResolve },
-])('$nameのバトル開始・決着', ({ useStart, useResolve }) => {
+    { name: 'Web', useStart: webStart, useResolve: webResolve, recovery: webRecovery },
+    { name: 'Mobile', useStart: mobileStart, useResolve: mobileResolve, recovery: mobileRecovery },
+])('$nameのバトル開始・決着', ({ useStart, useResolve, recovery }) => {
     let start: ReturnType<typeof useStart>;
     let resolve: ReturnType<typeof useResolve>;
     function Harness() { start = useStart(); resolve = useResolve(); return null; }
@@ -186,12 +201,17 @@ describe.each([
         expect(mocks.resolve.mock.calls[0][2].idempotencyKey).toBe(mocks.resolve.mock.calls[1][2].idempotencyKey);
         expect(resolve.resolveState).toBe('done'); expect(mocks.applyResolve).toHaveBeenCalledTimes(1);
     });
-    it('別戦闘の決着中に旧応答を適用せず、旧finallyで新ゲートも解除しない', async () => {
+    it('古い保留の確定を待ってから、新しい戦闘結果を明示再送できる', async () => {
         const old = deferred<unknown>(); const current = deferred<unknown>();
         mocks.resolve.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
         setBattle('old'); await render(); setBattle('current'); await render();
         await act(async () => old.resolve({ outcome: 'victory', granted: true }));
-        expect(mocks.applyResolve).not.toHaveBeenCalled(); expect(resolve.resolveState).toBe('syncing');
+        expect(mocks.applyResolve).not.toHaveBeenCalled(); expect(resolve.resolveState).toBe('error');
+        expect(mocks.resolve).toHaveBeenCalledTimes(1);
+        await recovery.reconcile(applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 1, has_more: false,
+            battle_attempts: [{ id: 'old', user_id: 'a', status: 'resolved', outcome: 'victory', version: 1 }],
+        }), captureAuthSessionScope());
         await act(async () => resolve.retry()); expect(mocks.resolve).toHaveBeenCalledTimes(2);
         await act(async () => current.resolve({ outcome: 'victory', granted: false }));
         expect(mocks.applyResolve).toHaveBeenCalledExactlyOnceWith('current', 'victory', false);
@@ -215,8 +235,10 @@ describe.each([
         expect(hasPendingBattleResult('victory', 'cloud', mocks.webBattle.battleAttemptId)).toBe(false);
         expect(mocks.mobileBattle).toBeNull();
         await act(async () => resolve.retry()); expect(mocks.resolve).toHaveBeenCalledTimes(1);
+        await recovery.load();
+        expect(recovery.getState().pending?.attemptId).toBe('attempt');
         await act(async () => { await start.startStage(1); });
-        expect(mocks.applyStart).toHaveBeenCalledTimes(1);
+        expect(mocks.applyStart).not.toHaveBeenCalled();
     });
     it('Bの戦闘へ切り替えた後は旧Aの結果や受領表示を混入させない', async () => {
         const old = deferred<unknown>(); const current = deferred<unknown>();

@@ -155,17 +155,18 @@ export function createBattleResultRecovery(deps: {
         reconcile: async (cache: CloudCache, scope: AuthSessionScope, liveAttemptId?: string) => {
             const userId = scope.userId;
             if (!userId || !allowed(scope, userId)) return;
-            const ids = new Set([liveAttemptId, state.pending?.userId === userId ? state.pending.attemptId : undefined]);
-            ids.delete(undefined);
-            const confirmed = (id: string | undefined) => {
-                const row = id && cache.battle_attempts[id];
+            // A canonical pull may arrive before the account's saved result has loaded.
+            if (!liveAttemptId && state.userId === userId && state.phase === 'ready' && !state.pending) return;
+            const confirmed = (id: string) => {
+                const row = cache.battle_attempts[id];
                 return Boolean(row && row.id === id && row.user_id === userId && row.status === 'resolved' && row.deleted_at == null
                     && (row.outcome === 'victory' || row.outcome === 'defeat') && Number.isSafeInteger(row.version) && Number(row.version) > 0);
             };
-            if (![...ids].some(confirmed)) return;
             await transact(userId, async () => {
-                assert(scope, userId); const saved = await read(userId); assert(scope, userId);
-                if (!saved || !ids.has(saved.attemptId) || !confirmed(saved.attemptId)) return;
+                assert(scope, userId);
+                const saved = await read(userId);
+                assert(scope, userId);
+                if (!saved || !confirmed(saved.attemptId)) return;
                 await deps.storage.removeItem(battleResultRecoveryKey(userId));
                 if (allowed(scope, userId)) publish({ userId, phase: 'ready', pending: null });
             });
