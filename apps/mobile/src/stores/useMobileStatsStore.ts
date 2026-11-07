@@ -33,6 +33,7 @@ import {
 } from '@life-quest/core/statsLog';
 import type { Habit, HabitDailyRecord } from '@life-quest/core/habits';
 import type { Task } from '@life-quest/core/tasks';
+import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
 
 interface MobileStatsState {
     taskXpLog: TaskXpLog;
@@ -64,6 +65,10 @@ function sanitizePersisted(value: unknown): Partial<StatsPersisted> {
         seeded: raw.seeded === true,
     };
 }
+
+// Runtime only: a read started before an authentication boundary must not
+// repopulate cleared logs or overwrite the next account’s statistics.
+let canRestoreStats = () => true;
 
 export const useMobileStatsStore = create<MobileStatsState>()(
     persist(
@@ -105,8 +110,13 @@ export const useMobileStatsStore = create<MobileStatsState>()(
                 habitLog: state.habitLog,
                 seeded: state.seeded,
             }),
-            merge: (persisted, current) => ({ ...current, ...sanitizePersisted(persisted) }),
-            onRehydrateStorage: () => (state) => state?.setHasHydrated(true),
+            merge: (persisted, current) => canRestoreStats()
+                ? { ...current, ...sanitizePersisted(persisted) }
+                : current,
+            onRehydrateStorage: () => {
+                canRestoreStats = captureAuthSessionGuard();
+                return (state) => state?.setHasHydrated(true);
+            },
         },
     ),
 );
