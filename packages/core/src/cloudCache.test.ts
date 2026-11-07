@@ -381,7 +381,7 @@ describe('getSeedableSections（#506移行前のローカルデータ保護）',
 
 describe('extractSyncedSettings', () => {
     it('user_settings行が無ければnullを返す', () => {
-        expect(extractSyncedSettings(createEmptyCloudCache())).toBeNull();
+        expect(extractSyncedSettings(createEmptyCloudCache(), 'u1')).toBeNull();
     });
 
     it('settings jsonbから同期対象4項目の生値をそのまま取り出す', () => {
@@ -395,17 +395,15 @@ describe('extractSyncedSettings', () => {
                 version: 3,
             }],
         }));
-        expect(extractSyncedSettings(cache)).toEqual({
+        expect(extractSyncedSettings(cache, 'u1')).toEqual({
             themeMode: 'dark', motionMode: 'reduced', notificationsEnabled: true, habitReminderHour: 21,
         });
     });
 
-    it('settingsが空jsonbなら全項目undefinedを返す（呼び出し元のsanitizeでデフォルト値へ）', () => {
+    it('settingsが初期版/空jsonbなら現在設定への上書き指示としない', () => {
         const cache = applyPullBatchToCache(createEmptyCloudCache(), batchWith({
             user_settings: [{ user_id: 'u1', settings: {}, version: 1 }],
         }));
-        expect(extractSyncedSettings(cache)).toEqual({
-            themeMode: undefined, motionMode: undefined, notificationsEnabled: undefined, habitReminderHour: undefined,
-        });
+        expect(extractSyncedSettings(cache, 'u1')).toBeNull();
     });
 });

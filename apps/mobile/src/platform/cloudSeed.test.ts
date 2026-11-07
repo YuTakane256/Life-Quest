@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
@@ -15,6 +16,8 @@ import { useMobileHabitStore } from '../stores/useMobileHabitStore';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileStatsStore } from '../stores/useMobileStatsStore';
 import { useMobileSettingsStore } from '../stores/useMobileSettingsStore';
+
+afterEach(() => resetAuthLifecycleHooks());
 
 describe('applyCloudCacheToMobileStores（データ消失パターンの回帰テスト）', () => {
     it('初期行だけのクラウド状態では、既存ローカルのタスク・習慣・ゲーム状態を上書きしない', () => {
@@ -109,7 +112,8 @@ describe('applyCloudCacheToMobileStores（データ消失パターンの回帰�
         });
     });
 
-    it('user_settings.settingsに何か書き込まれていれば同期対象4項目だけシードする（notifiedTaskIds等は保持）', () => {
+    it('user_settings.settingsに何か書き込まれていれば同期対象4項目だけシードする（notifiedTaskIds等は保持）', async () => {
+        resetAuthLifecycleHooks(); await notifyLogin('u1');
         useMobileSettingsStore.setState({
             themeMode: 'system', motionMode: 'system', notificationsEnabled: false, habitReminderHour: 20,
             notifiedTaskIds: ['local-task-1'], lastHabitReminderDate: '2026-07-19',

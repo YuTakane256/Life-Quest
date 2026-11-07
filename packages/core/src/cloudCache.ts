@@ -141,18 +141,12 @@ export interface CloudSectionSeedability {
  *   バトル履歴も無い場合はシードしない。ゲーム系の実操作があれば
  *   charactersのversionが進むか行が生まれる
  * - settings: user_settings.settingsが初期値の空jsonb（'{}'）のままなら
- *   シードしない（誰も一度もupsert_user_settingsを呼んでいない＝
- *   ローカルの既定値を消さない）
+ *   シードしない。本人PK・所有者・更新版・非削除・既知項目も検証する
  * - title: 明示された称号/解除だけをゲームの初期値と切り離して反映する
  */
 export function getSeedableSections(cache: CloudCache): CloudSectionSeedability {
     const character = Object.values(cache.characters)[0];
     const characterTouched = character !== undefined && Number(character.version) > 1;
-    const userSettings = Object.values(cache.user_settings)[0];
-    const settingsTouched = userSettings !== undefined
-        && typeof userSettings.settings === 'object'
-        && userSettings.settings !== null
-        && Object.keys(userSettings.settings as Record<string, unknown>).length > 0;
     return {
         tasks: Object.keys(cache.tasks).length + Object.keys(cache.subtasks).length > 0,
         habits: Object.keys(cache.habits).length
@@ -164,7 +158,7 @@ export function getSeedableSections(cache: CloudCache): CloudSectionSeedability 
             || Object.keys(cache.chests).length > 0
             || Object.keys(cache.battle_attempts).length > 0,
         title: Object.keys(cache.profiles).some((userId) => extractSyncedTitle(cache, userId) !== null),
-        settings: settingsTouched,
+        settings: Object.keys(cache.user_settings).some((userId) => extractSyncedSettings(cache, userId) !== null),
     };
 }
 
@@ -180,7 +174,8 @@ export function extractSyncedTitle(cache: CloudCache, userId: string): { activeT
 /**
  * user_settings.settingsから同期対象4項目の生値を取り出す（未検証。値の
  * 妥当性チェック・既定値へのフォールバックは各プラットフォームの既存
- * sanitize関数（sanitizeThemeMode等）に委ねる設計）。行が無ければnull。
+ * sanitize関数（sanitizeThemeMode等）に委ねる設計）。本人の更新行だけを採用し、
+ * 空/未知項目だけの設定・不正な行/版・墓標はnull。
  */
 export interface RawSyncedSettings {
     themeMode: unknown;
@@ -189,12 +184,14 @@ export interface RawSyncedSettings {
     habitReminderHour: unknown;
 }
 
-export function extractSyncedSettings(cache: CloudCache): RawSyncedSettings | null {
-    const row = Object.values(cache.user_settings)[0];
-    if (!row) return null;
-    const settings = (typeof row.settings === 'object' && row.settings !== null)
-        ? row.settings as Record<string, unknown>
-        : {};
+export function extractSyncedSettings(cache: CloudCache, userId: string): RawSyncedSettings | null {
+    const row = cache.user_settings[userId];
+    if (!row || row.user_id !== userId || row.deleted_at != null
+        || !Number.isSafeInteger(row.version) || Number(row.version) <= 1) return null;
+    if (typeof row.settings !== 'object' || row.settings === null || Array.isArray(row.settings)) return null;
+    const settings = row.settings as Record<string, unknown>;
+    if (!['themeMode', 'motionMode', 'notificationsEnabled', 'habitReminderHour']
+        .some((key) => Object.prototype.hasOwnProperty.call(settings, key))) return null;
     return {
         themeMode: settings.themeMode,
         motionMode: settings.motionMode,

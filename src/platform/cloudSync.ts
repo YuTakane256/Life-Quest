@@ -99,7 +99,7 @@ export function subscribeWebCloudSyncState(listener: (state: CloudSyncPublicStat
  * 1つ以上シードした場合のみtrueを返す。
  */
 export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
-    const titleScope = captureAuthSessionScope();
+    const seedScope = captureAuthSessionScope();
     const seedable = getSeedableSections(cache);
     let seeded = false;
     if (seedable.tasks) {
@@ -149,22 +149,22 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
         useStatsStore.getState().mergeFromCloud(buildStatsLogSnapshot(cache));
     }
     if (seedable.settings) {
-        const settings = extractSyncedSettings(cache);
-        if (settings) {
+        const settings = seedScope.userId === null ? null : extractSyncedSettings(cache, seedScope.userId);
+        if (settings && seedScope.isCurrent()) {
             // setState直接呼び出し（set系アクション経由ではない）ため、
             // syncSettingsToCloudへの再送信は起きない（seedTasks等と同じ設計）。
             // notifiedTaskIds/lastHabitReminderDateはここで一切触れない。
             useThemeStore.setState({ mode: sanitizeThemeMode(settings.themeMode) });
-            useMotionStore.setState({ mode: sanitizeMotionMode(settings.motionMode) });
-            useNotificationStore.setState({
+            if (seedScope.isCurrent()) useMotionStore.setState({ mode: sanitizeMotionMode(settings.motionMode) });
+            if (seedScope.isCurrent()) useNotificationStore.setState({
                 enabled: settings.notificationsEnabled === true,
                 habitReminderHour: resolveHabitReminderHour(settings.habitReminderHour),
             });
             seeded = true;
         }
     }
-    const title = titleScope.userId === null ? null : extractSyncedTitle(cache, titleScope.userId);
-    if (title && titleScope.isCurrent()) {
+    const title = seedScope.userId === null ? null : extractSyncedTitle(cache, seedScope.userId);
+    if (title && seedScope.isCurrent()) {
         const activeTitle = sanitizeActiveTitle(title.activeTitle);
         if (useTitleStore.getState().activeTitle !== activeTitle) useTitleStore.setState({ activeTitle });
         seeded = true;

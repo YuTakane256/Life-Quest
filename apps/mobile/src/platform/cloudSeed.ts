@@ -30,7 +30,7 @@ import {
 
 /** クラウドが正と言えるセクションだけをストアへ反映する。1つ以上シードしたらtrue。 */
 export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
-    const titleScope = captureAuthSessionScope();
+    const seedScope = captureAuthSessionScope();
     const seedable = getSeedableSections(cache);
     let seeded = false;
     if (seedable.tasks) {
@@ -79,8 +79,8 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
         useMobileStatsStore.getState().mergeFromCloud(buildStatsLogSnapshot(cache));
     }
     if (seedable.settings) {
-        const settings = extractSyncedSettings(cache);
-        if (settings) {
+        const settings = seedScope.userId === null ? null : extractSyncedSettings(cache, seedScope.userId);
+        if (settings && seedScope.isCurrent()) {
             // setState直接呼び出し（set系アクション経由ではない）ため、
             // ストア内のsyncSettingsToCloudへの再送信は起きない。
             // notifiedTaskIds/lastHabitReminderDateはここで一切触れない。
@@ -93,8 +93,8 @@ export function applyCloudCacheToMobileStores(cache: CloudCache): boolean {
             seeded = true;
         }
     }
-    const title = titleScope.userId === null ? null : extractSyncedTitle(cache, titleScope.userId);
-    if (title && titleScope.isCurrent() && useMobileTitleStore.persist.hasHydrated()) {
+    const title = seedScope.userId === null ? null : extractSyncedTitle(cache, seedScope.userId);
+    if (title && seedScope.isCurrent() && useMobileTitleStore.persist.hasHydrated()) {
         const activeTitle = sanitizeActiveTitle(title.activeTitle);
         if (useMobileTitleStore.getState().activeTitle !== activeTitle) useMobileTitleStore.setState({ activeTitle });
         seeded = true;

@@ -89,7 +89,7 @@ async function createDevice(user: User, disk: Storage = storage(), initiallyOffl
         tasks: () => buildCanonicalTaskSnapshot(cache).tasks,
         habits: () => buildCanonicalHabitSnapshot(cache),
         game: () => buildCanonicalGameSnapshot(cache),
-        stats: () => buildStatsLogSnapshot(cache), settings: () => extractSyncedSettings(cache),
+        stats: () => buildStatsLogSnapshot(cache), settings: () => extractSyncedSettings(cache, user.id),
         close: async () => {
             active = false;
             const outbox = controller.getActiveOutbox();
