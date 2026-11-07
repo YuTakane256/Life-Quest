@@ -10,6 +10,13 @@ import type { Equipment, EquipmentTemplate, Rarity } from './equipment.ts';
 // ─── ガチャ (宝箱) 設定 ───────────────────────────────────────
 export type ChestType = 'blue' | 'wood' | 'silver' | 'gold' | 'red_gold' | 'rainbow';
 
+export const CHEST_OPEN_RETRY_KEY_PREFIX = 'open_chest:v1:';
+
+/** A cloud chest can be opened only once. The same owner/ID pair recreates its key after a restart. */
+export function chestOpenRetryKey(userId: string, chestId: string): string {
+    return `${CHEST_OPEN_RETRY_KEY_PREFIX}${userId.toLowerCase()}:${chestId.toLowerCase()}`;
+}
+
 export interface GachaMilestone {
     /** このマイルストーンに到達するタスク消化数 */
     count: number;

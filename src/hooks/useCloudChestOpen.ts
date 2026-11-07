@@ -17,11 +17,13 @@
  *   セットし、呼び出し元に再送ボタンを出させる（`useCloudBattleResolve`と
  *   同じretryパターン。サーバーのidempotency_keysが二重抽選を防ぐ）
  *
- * 冪等キーはchestIdごとに保持し、再送時も同じキーを使う。
+ * クラウドでは所有者と宝箱IDから再送キーを復元する。
+ * 以前の結果は通常同期で受け取り、古い装備や演出を再作成しない。
  */
 import { useRef, useState } from 'react';
 import { useGameStore } from '../stores/useGameStore';
 import { openCloudChest, type CloudChestResult } from '../platform/gameCloud';
+import { chestOpenRetryKey } from '@life-quest/core/rewards';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
 import { getGameAuthState } from '../platform/auth';
@@ -49,18 +51,12 @@ export interface CloudChestOpenDeps {
     localOpenChest: (chestId: string) => void;
     /** 匿名確定かつlocal originの場合だけtrue。省略時は許可しない。 */
     allowLocalFallback?: boolean;
+    syncConfirmedChest?: (chestId: string) => Promise<boolean>;
     isActive?: () => boolean;
 }
 
-/**
- * local originに限り、'unconfigured-fallback'（未接続=null）と
- * 'not-found-fallback'（404）はどちらもローカル開封へ落ちる。呼び出し元の冪等キー削除可否が
- * 異なる（未接続時はサーバーに何も送っていないため、そのchestIdへ最初に
- * 割り当てたキーを温存し、後で接続できたときに同じキーで送れるようにする。
- * 404はサーバーに実際に送って拒否されたことが確定しているため削除してよい）。
- */
 export type CloudChestOpenOutcome =
-    | 'applied' | 'unconfigured-fallback' | 'not-found-fallback' | 'discarded' | 'error';
+    | 'applied' | 'unconfigured-fallback' | 'not-found-fallback' | 'discarded' | 'confirmed' | 'error';
 
 /**
  * 宝箱開封の判断ロジック本体（ヘッダーコメントのエラー分岐方針を実装する）。
@@ -81,6 +77,10 @@ export async function runCloudChestOpen(
             if (deps.allowLocalFallback !== true) return 'error';
             deps.localOpenChest(chestId);
             return 'unconfigured-fallback';
+        }
+        if (result.requiresCanonicalSync) {
+            const confirmed = await deps.syncConfirmedChest?.(chestId);
+            return confirmed && isActive() ? 'confirmed' : 'error';
         }
         deps.applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
         return 'applied';
@@ -116,10 +116,9 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
     const discardSyncedChest = useGameStore((state) => state.discardSyncedChest);
     const [openingChestId, setOpeningChestId] = useState<string | null>(null);
     const [errorChestId, setErrorChestId] = useState<string | null>(null);
-    const idempotencyKeysRef = useRef(new Map<string, string>());
     const errorRef = useRef<string | null>(null);
     const operationScope = useGameOperationScope(() => {
-        idempotencyKeysRef.current.clear(); errorRef.current = null;
+        errorRef.current = null;
         setOpeningChestId(null); setErrorChestId(null);
     });
 
@@ -131,20 +130,23 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
         setOpeningChestId(chestId);
         setErrorChestId(null);
         errorRef.current = null;
-        let key = idempotencyKeysRef.current.get(chestId);
-        if (!key) {
-            key = crypto.randomUUID();
-            idempotencyKeysRef.current.set(chestId, key);
-        }
         try {
             const auth = await getGameAuthState();
             if (!operation.isActive()) return;
             if (auth.kind === 'unavailable' || operation.userId !== (auth.kind === 'authenticated' ? auth.userId : null)) {
                 errorRef.current = chestId; setErrorChestId(chestId); return;
             }
+            if (!useGameStore.getState().chestQueue.some((candidate) => candidate.id === chestId && !candidate.opened)) return;
+            const key = auth.kind === 'authenticated' ? chestOpenRetryKey(auth.userId, chestId) : chestId;
             const outcome = await runCloudChestOpen(chestId, key, {
                 openCloudChest: auth.kind === 'anonymous' ? async () => null
                     : (id, retryKey) => openCloudChest(id, retryKey, { isActive: operation.isActive, expectedUserId: auth.userId }),
+                syncConfirmedChest: async (id) => {
+                    const { syncWebNow } = await import('../platform/cloudSync');
+                    if (!operation.isActive()) return false;
+                    await syncWebNow();
+                    return !useGameStore.getState().chestQueue.some((candidate) => candidate.id === id && !candidate.opened);
+                },
                 applyCloudChestResult,
                 discardSyncedChest,
                 localOpenChest,
@@ -155,11 +157,6 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
             if (outcome === 'error') {
                 errorRef.current = chestId;
                 setErrorChestId(chestId);
-            } else if (outcome !== 'unconfigured-fallback') {
-                // 未接続時はサーバーに何も送っていないため、そのchestId用の
-                // 冪等キーを温存する（後で接続できたときに同じキーで送れる
-                // ようにする。applied/404/409は削除して良い）
-                idempotencyKeysRef.current.delete(chestId);
             }
         } catch {
             if (operation.isActive()) { errorRef.current = chestId; setErrorChestId(chestId); }

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { chestOpenRetryKey } from '../../packages/core/src/rewards.ts';
 import type { HandlerContext } from '../functions/_shared/handler.ts';
 
 vi.mock('../functions/_shared/handler.ts', () => ({
@@ -67,6 +68,35 @@ describe('chest HTTP handler idempotency', () => {
         const { ctx } = context([{ data, error: null }, { data, error: null }]);
         expect((await openChest(ctx)).status).toBe(409);
         expect(callApply).not.toHaveBeenCalled();
+    });
+    it.each([
+        chestOpenRetryKey('different-owner', 'chest'),
+        chestOpenRetryKey('jwt-owner', 'different-chest'),
+    ])('rejects a stable key for a different owner or chest before reading a receipt', async (key) => {
+        const { ctx, from } = context([committed]);
+        ctx.body.idempotencyKey = key;
+        const response = await openChest(ctx);
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: 'idempotency_key_chest_mismatch' });
+        expect(from).not.toHaveBeenCalled();
+        expect(callApply).not.toHaveBeenCalled();
+    });
+    it('marks stable ledger replays without modifying their receipt', async () => {
+        const { ctx } = context([committed]);
+        ctx.body.idempotencyKey = chestOpenRetryKey('jwt-owner', 'chest');
+        const response = await openChest(ctx);
+        expect(await response.json()).toEqual({ ...result, replayed: true });
+        expect(committed.data.result).not.toHaveProperty('replayed');
+    });
+    it.each([false, true])('marks a stable wood result returned by SQL after a race (replayed=%s)', async (replayed) => {
+        const { ctx } = context([miss], { id: 'chest', chest_type: 'wood', opened: false });
+        ctx.body.idempotencyKey = chestOpenRetryKey('jwt-owner', 'chest');
+        vi.mocked(callApply).mockImplementationOnce(async (_service, _fn, args) => {
+            const item = args.p_item as { id: string; template_id: string };
+            return new Response(JSON.stringify({ ...result, item_id: replayed ? 'older-item' : item.id, template_id: item.template_id }));
+        });
+        const response = await openChest(ctx);
+        expect((await response.json()).replayed).toBe(replayed);
     });
     it('applies a new unopened chest after a ledger miss', async () => {
         const { ctx } = context([miss], { id: 'chest', chest_type: 'blue', opened: false });

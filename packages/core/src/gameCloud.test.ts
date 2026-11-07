@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { chestOpenRetryKey } from './rewards.ts';
 import { createGameCloudClient } from './gameCloud.ts';
 import { EdgeFunctionError, type EdgeFunctionInvoker } from './edgeFunctions.ts';
 
@@ -108,6 +109,14 @@ describe('createGameCloudClient', () => {
             const result = await client.openChest('chest-1', 'key-1');
             expect(result).toEqual({ itemId: 'item-1', templateId: 'sword-1', starterCharacter: true });
             expect(calls[0]).toEqual({ name: 'open_chest', body: { chestId: 'chest-1', idempotencyKey: 'key-1' } });
+        });
+
+        it.each([true, false, undefined])('安定キーの応答は鮮度が明示されない限り同期へ委ねる（replayed=%s）', async (replayed) => {
+            const invoker = makeInvoker(() => ({ item_id: 'item', template_id: 'wooden_ring', version: 4, replayed }));
+            const client = createGameCloudClient({ getInvoker: () => invoker });
+            const key = chestOpenRetryKey('owner', 'chest');
+            const result = await client.openChest('chest', key);
+            expect(result?.requiresCanonicalSync).toBe(replayed === false ? undefined : true);
         });
 
         it('blue宝箱（装備なし）はitemId/templateIdがnullのまま返る', async () => {

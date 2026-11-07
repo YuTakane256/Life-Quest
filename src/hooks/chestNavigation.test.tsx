@@ -3,14 +3,21 @@ import { createRoot, type Root } from 'react-dom/client';
 import { useNavigate } from 'react-router-dom';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
+import { applyCloudCacheToWebStores } from '../platform/cloudSync';
+import { flushCompletionRewardWrites, withoutCompletionRewardPersistence } from '../platform/completionRewards';
 import { createEquipmentFromTemplate } from '@life-quest/core/equipment';
 import { EQUIPMENT_POOL, type ChestReward } from '@life-quest/core/rewards';
 import { useGameStore } from '../stores/useGameStore';
 import App from '../App';
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), open: vi.fn(), synth: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), open: vi.fn(), sync: vi.fn(), synth: vi.fn() }));
 vi.mock('../platform/auth', () => ({ getGameAuthState: mocks.auth }));
 vi.mock('../platform/gameCloud', () => ({ startCloudBattleAttempt: vi.fn(), resolveCloudBattleAttempt: vi.fn(), openCloudChest: mocks.open, synthesizeCloudItems: mocks.synth }));
+vi.mock('../platform/cloudSync', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../platform/cloudSync')>(),
+    syncWebNow: mocks.sync,
+}));
 vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: vi.fn(), isWebCloudOutboxActive: () => false }));
 vi.mock('../utils/notifications', () => ({ runNotificationChecks: vi.fn(), cancelNotificationChecks: vi.fn() }));
 vi.mock('../stores/useLoginBonusStore', () => ({ useLoginBonusStore: { getState: () => ({ checkDailyLogin() {} }) } }));
@@ -59,6 +66,41 @@ describe('Web chest operations across actual routes', () => {
         expect(useGameStore.getState().equipment.map((x) => x.id)).toEqual(['item']);
         expect(useGameStore.getState().chestQueue.filter((c) => c.opened)).toHaveLength(1);
         expect(useGameStore.getState().pendingChestReveal?.chestId).toBe('chest-1'); expect(button('再送')).toBeUndefined();
+    });
+    it.each([false, true])('reopens the same chest after full restore (already committed: %s)', async (committed) => {
+        mocks.open.mockRejectedValueOnce(new TypeError('response lost'));
+        await click('試験の木箱1');
+        await act(async () => root.unmount());
+        mounted = false;
+        await flushCompletionRewardWrites();
+        const raw = localStorage.getItem('quest-board-game')!;
+        expect(JSON.parse(raw).state.chestQueue[0]).toMatchObject({ id: 'chest-1', opened: false });
+        withoutCompletionRewardPersistence(() => useGameStore.setState(initial));
+        localStorage.setItem('quest-board-game', raw);
+        await useGameStore.persist.rehydrate();
+        root = createRoot(host);
+        mounted = true;
+        await act(async () => root.render(createElement(App)));
+        expect(mocks.open).toHaveBeenCalledTimes(1);
+        expect(button('再送')).toBeUndefined();
+        if (committed) {
+            mocks.open.mockResolvedValueOnce({ ...result('sold'), requiresCanonicalSync: true });
+            mocks.sync.mockImplementationOnce(async () => {
+                applyCloudCacheToWebStores(applyPullBatchToCache(createEmptyCloudCache(), {
+                    next_cursor: 10, has_more: false,
+                    characters: [{ user_id: 'a', total_xp: 0, version: 10 }],
+                    chests: [{ id: 'chest-1', user_id: 'a', opened: true, opened_item_id: 'sold', chest_type: 'wood', label: '試験の木箱1', version: 9 }],
+                    inventory_items: [{ id: 'sold', user_id: 'a', template_id: 'wooden_sword', version: 10, deleted_at: '2026-11-07' }],
+                }));
+            });
+        }
+        await click('試験の木箱1');
+        expect(mocks.open).toHaveBeenCalledTimes(2);
+        expect(mocks.open.mock.calls[1].slice(0, 2)).toEqual(mocks.open.mock.calls[0].slice(0, 2));
+        expect(useGameStore.getState().chestQueue.find((item) => item.id === 'chest-1')?.opened).toBe(true);
+        expect(useGameStore.getState().equipment.map((item) => item.id)).toEqual(committed ? [] : ['item']);
+        expect(useGameStore.getState().pendingChestReveal?.chestId ?? null).toBe(committed ? null : 'chest-1');
+        expect(mocks.sync).toHaveBeenCalledTimes(committed ? 1 : 0);
     });
     it('retains the opening lock after remount and completes once through the global reveal without changing routes', async () => {
         const pending = deferred<unknown>(); mocks.open.mockReturnValueOnce(pending.promise);

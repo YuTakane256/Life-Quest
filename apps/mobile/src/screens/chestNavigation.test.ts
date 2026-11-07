@@ -2,27 +2,35 @@ import { act, createElement, StrictMode, useEffect, type ReactNode } from 'react
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
+import { applyCloudCacheToMobileStores } from '../platform/cloudSeed';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import type { ChestReward } from '@life-quest/core/rewards';
 import RootLayout from '../../app/_layout';
 import CharacterScreen from './CharacterScreen';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 
-const mocks = vi.hoisted(() => ({ route: 'character', auth: vi.fn(), open: vi.fn(), push: vi.fn() }));
+const mocks = vi.hoisted(() => ({ route: 'character', auth: vi.fn(), open: vi.fn(), sync: vi.fn(), push: vi.fn() }));
 vi.mock('../platform/auth', () => ({ getGameAuthState: mocks.auth,
     startAuthSessionListener: () => () => {}, startMobileAuthLinkListener: () => () => {} }));
 vi.mock('../platform/battleCloud', () => ({ openCloudChest: mocks.open }));
+const nativeDisk = vi.hoisted(() => new Map<string, string>());
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
-    getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
+    getItem: vi.fn(async (key: string) => nativeDisk.get(key) ?? null),
+    setItem: vi.fn(async (key: string, value: string) => { nativeDisk.set(key, value); }),
+    removeItem: vi.fn(async (key: string) => { nativeDisk.delete(key); }),
 } }));
 vi.mock('../stores/useMobileLoginBonusStore', () => ({ beginMobileLoginBonusCloudSession: vi.fn(), clearMobileLoginBonusCloudSession: vi.fn() }));
 vi.mock('../platform/cloudMigration', () => ({ registerMobileCloudMigrationHooks: () => () => {} }));
 vi.mock('../platform/pendingCompletionFlush', () => ({ registerPendingCompletionFlush: () => () => {} }));
 vi.mock('../platform/notifications', () => ({ registerNotificationChecks: () => () => {} }));
 vi.mock('../platform/loginBonusCheck', () => ({ registerLoginBonusCheck: () => () => {} }));
-vi.mock('../platform/cloudSync', () => ({ registerMobileCloudSyncHooks: () => () => {} }));
+vi.mock('../platform/cloudSync', () => ({ registerMobileCloudSyncHooks: () => () => {}, syncMobileNow: mocks.sync }));
 vi.mock('../platform/cloudOutbox', () => ({ registerMobileOutboxHooks: () => () => {} }));
-vi.mock('../platform/canonicalSync', () => ({ startMobileCanonicalSync: () => ({ stop() {} }) }));
+vi.mock('../platform/canonicalSync', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../platform/canonicalSync')>(),
+    startMobileCanonicalSync: () => ({ stop() {} }),
+}));
 vi.mock('../stores/rewardSync', () => ({ startRewardSync: () => () => {} }));
 vi.mock('../stores/statsLogSeed', () => ({ startStatsLogSeed: () => () => {} }));
 vi.mock('../components/LoginBonusOverlay', () => ({ LoginBonusOverlay: () => null }));
@@ -73,7 +81,7 @@ async function render(route = 'character') { mocks.route = route; mounted = true
 function resetGame() { useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, activeBattle: null,
     chestQueue: chests(), equipment: [], pendingChestReveal: null, lastLevelUp: null }); }
 beforeEach(async () => {
-    resetAuthLifecycleHooks(); await notifyLogin('a'); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks();
+    nativeDisk.clear(); resetAuthLifecycleHooks(); await notifyLogin('a'); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks();
     mocks.open.mockReset(); mocks.open.mockResolvedValue(result()); mocks.auth.mockReset(); mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' });
     resetGame(); host = document.createElement('div'); document.body.append(host); root = createRoot(host); mounted = false;
 });
@@ -92,6 +100,40 @@ describe('Mobile宝箱：実Root・キャラUI・ストアと画面再作成（n
         expect(useMobileGameStore.getState().chestQueue.filter((chest) => chest.opened).map((chest) => chest.id)).toEqual(['chest-1']);
         expect(useMobileGameStore.getState().pendingChestReveal?.chestId).toBe('chest-1'); expect(button(retryLabel)).toBeNull();
         expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    });
+    it.each([false, true])('保存から起動し直して同じ宝箱を再送する（確定済み: %s）', async (committed) => {
+        mocks.open.mockRejectedValueOnce(new TypeError('response lost'));
+        await render();
+        await click(openLabel());
+        await act(async () => root.unmount());
+        mounted = false;
+        const raw = nativeDisk.get('quest-board-game')!;
+        expect(JSON.parse(raw).state.chestQueue[0]).toMatchObject({ id: 'chest-1', opened: false });
+        useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: false, pendingChestReveal: null });
+        nativeDisk.set('quest-board-game', raw);
+        await useMobileGameStore.persist.rehydrate();
+        root = createRoot(host);
+        await render();
+        expect(mocks.open).toHaveBeenCalledTimes(1);
+        expect(button(retryLabel)).toBeNull();
+        if (committed) {
+            mocks.open.mockResolvedValueOnce({ ...result('sold'), requiresCanonicalSync: true });
+            mocks.sync.mockImplementationOnce(async () => {
+                applyCloudCacheToMobileStores(applyPullBatchToCache(createEmptyCloudCache(), {
+                    next_cursor: 10, has_more: false,
+                    characters: [{ user_id: 'a', total_xp: 0, version: 10 }],
+                    chests: [{ id: 'chest-1', user_id: 'a', opened: true, opened_item_id: 'sold', chest_type: 'wood', label: '試験の木箱1', version: 9 }],
+                    inventory_items: [{ id: 'sold', user_id: 'a', template_id: 'wooden_sword', version: 10, deleted_at: '2026-11-07' }],
+                }));
+            });
+        }
+        await click(openLabel());
+        expect(mocks.open).toHaveBeenCalledTimes(2);
+        expect(mocks.open.mock.calls[1].slice(0, 2)).toEqual(mocks.open.mock.calls[0].slice(0, 2));
+        expect(useMobileGameStore.getState().chestQueue.find((item) => item.id === 'chest-1')?.opened).toBe(true);
+        expect(useMobileGameStore.getState().equipment.map((item) => item.id)).toEqual(committed ? [] : ['item']);
+        expect(useMobileGameStore.getState().pendingChestReveal?.chestId ?? null).toBe(committed ? null : 'chest-1');
+        expect(mocks.sync).toHaveBeenCalledTimes(committed ? 1 : 0);
     });
     it('送信中の再作成で全宝箱を無効化し、離脱中の本人結果を一度反映して共通演出を表示する', async () => {
         const pending = deferred<ReturnType<typeof result>>(); mocks.open.mockReturnValueOnce(pending.promise);
@@ -117,7 +159,8 @@ describe('Mobile宝箱：実Root・キャラUI・ストアと画面再作成（n
         const userId = transition === '別ユーザー' ? 'b' : 'a';
         await act(async () => { if (userId === 'a') await notifyLogout(); mocks.auth.mockResolvedValue({ kind: 'authenticated', userId }); await notifyLogin(userId); resetGame(); });
         await render(); expect(button(retryLabel)).toBeNull(); await click(openLabel());
-        expect(mocks.open.mock.calls[0][1]).not.toBe(mocks.open.mock.calls[1][1]);
+        const sameKey = mocks.open.mock.calls[0][1] === mocks.open.mock.calls[1][1];
+        expect(sameKey).toBe(userId === 'a');
         expect(mocks.open.mock.calls[1][2].expectedUserId).toBe(userId);
     });
     it('遅いAの応答/finallyがBの装備・演出・処理中表示を変更しない', async () => {
