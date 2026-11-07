@@ -12,7 +12,7 @@ import { createEdgeFunctionInvoker, type EdgeFunctionInvoker } from '@life-quest
 import { createGameCloudClient, type CloudChestResult, type GameCloudClient } from '@life-quest/core/gameCloud';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
-import { EQUIPMENT_POOL, SELL_XP_BY_RARITY } from '@life-quest/core/rewards';
+import { chestOpenRetryKey, EQUIPMENT_POOL, SELL_XP_BY_RARITY } from '@life-quest/core/rewards';
 import { assertLocalSyncEnvironment, syncEnvironmentKeys } from '../../scripts/run-sync-quality.mjs';
 import { applyCloudCacheToWebStores } from '../../src/platform/cloudSync';
 import { flushCompletionRewardWrites, withoutCompletionRewardPersistence } from '../../src/platform/completionRewards';
@@ -22,8 +22,11 @@ import { applyCloudCacheToMobileStores } from '../../apps/mobile/src/platform/cl
 import { useMobileGameStore } from '../../apps/mobile/src/stores/useMobileGameStore';
 import { runCloudChestOpen as runMobile } from '../../apps/mobile/src/hooks/useCloudChestOpen';
 
+const nativeDisk = vi.hoisted(() => new Map<string, string>());
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
-    getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
+    getItem: vi.fn(async (key: string) => nativeDisk.get(key) ?? null),
+    setItem: vi.fn(async (key: string, value: string) => { nativeDisk.set(key, value); }),
+    removeItem: vi.fn(async (key: string) => { nativeDisk.delete(key); }),
 } }));
 // These are unused hook imports. Both decision runners receive the real local transport below.
 vi.mock('../../apps/mobile/src/platform/battleCloud', () => ({ openCloudChest: vi.fn() }));
@@ -77,7 +80,7 @@ describe.skipIf(!enabled)('宝箱の実送信・受信・開封結果再送（�
         pg = new PgClient({ connectionString: env.SUPABASE_DB_URL }); await pg.connect();
     }, 30000);
     beforeEach(async () => {
-        await flushCompletionRewardWrites(); resetAuthLifecycleHooks(); localStorage.clear();
+        await flushCompletionRewardWrites(); resetAuthLifecycleHooks(); localStorage.clear(); nativeDisk.clear();
         createdUserId = null; client = undefined; holdResponse = true; loseResponse = false; lostResponses = 0;
         committed = signal(); release = signal(); requestInFlight = undefined; received.length = 0; localOpen.mockClear();
         withoutCompletionRewardPersistence(() => useGameStore.setState(initialWeb));
@@ -164,6 +167,10 @@ describe.skipIf(!enabled)('宝箱の実送信・受信・開封結果再送（�
                 return result;
             },
             localOpenChest: localOpen, allowLocalFallback: false,
+            syncConfirmedChest: async (id: string) => {
+                seed(platform, await pull());
+                return store(platform).chestQueue.find((chest) => chest.id === id)?.opened === true;
+            },
             discardSyncedChest: (id: string) => store(platform).discardSyncedChest(id),
         };
         if (platform === 'Web') return runWeb(chestId, key, { ...deps,
@@ -262,4 +269,89 @@ describe.skipIf(!enabled)('宝箱の実送信・受信・開封結果再送（�
         expect(store(platform).chestQueue.find((chest) => chest.id === chestId)?.equipment?.id ?? null).toBe(recorded.item_id);
         expect(store(platform).pendingChestReveal).toBe(reveal); expect(localOpen).not.toHaveBeenCalled();
     }, 30000);
+    const restartCases = (['Web', 'Mobile'] as const).flatMap((platform) =>
+        (['送信前', '青箱の確定後に応答喪失', '木箱の確定後に売却'] as const).map((point) => ({ platform, point })));
+    it.each(restartCases)('$platform / $point / 起動し直しても一つの確定結果を受け取る', async ({ platform, point }) => {
+        seed(platform, await pull());
+        const chestId = point === '青箱の確定後に応答喪失' ? blueId : woodId;
+        const owner = createdUserId!;
+        const key = chestOpenRetryKey(owner, chestId);
+        let soldId: string | null = null;
+        let expectedXp = initialXp;
+        if (point === '送信前') {
+            holdResponse = false;
+        } else {
+            loseResponse = true;
+            const pending = requestInFlight = run(platform, chestId, key);
+            await Promise.race([committed.promise, pending.then(() => { throw new Error('Expected a committed chest'); })]);
+            release.resolve();
+            expect(await pending).toBe('error');
+            expect(lostResponses).toBe(1);
+            if (point === '木箱の確定後に売却') {
+                const { rows } = await pg.query('select opened_item_id from public.chests where id=$1', [chestId]);
+                soldId = rows[0].opened_item_id;
+                expect(soldId).toBeTruthy();
+                const sold = await edge<{ granted: boolean; xp: number }>('sell_item', {
+                    itemId: soldId, idempotencyKey: crypto.randomUUID(),
+                }, requestOptions());
+                expect(sold.granted).toBe(true);
+                expectedXp += sold.xp;
+            }
+        }
+
+        await flushCompletionRewardWrites();
+        const saveKey = 'quest-board-game';
+        const snapshot = platform === 'Web' ? localStorage.getItem(saveKey) : nativeDisk.get(saveKey);
+        expect(snapshot).toBeTruthy();
+        if (platform === 'Web') {
+            withoutCompletionRewardPersistence(() => useGameStore.setState(initialWeb));
+            localStorage.setItem(saveKey, snapshot!);
+            await useGameStore.persist.rehydrate();
+        } else {
+            useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: false });
+            nativeDisk.set(saveKey, snapshot!);
+            await useMobileGameStore.persist.rehydrate();
+        }
+        const restored = store(platform).chestQueue.find((chest) => chest.id === chestId)!;
+        expect(restored).toMatchObject({ opened: false, origin: 'cloud' });
+        expect(store(platform).pendingChestReveal).toBeNull();
+        expect(store(platform).equipment.map((item) => item.id)).toEqual([keptId]);
+        const retryKey = chestOpenRetryKey(owner, restored.id);
+        expect(retryKey).toBe(key);
+        const fresh = point === '送信前';
+        expect(await run(platform, restored.id, retryKey)).toBe(fresh ? 'applied' : 'confirmed');
+        expect(received).toHaveLength(1);
+        expect(received[0].requiresCanonicalSync).toBe(fresh ? undefined : true);
+        expect(store(platform).pendingChestReveal?.chestId ?? null).toBe(fresh ? chestId : null);
+        await assertCanonical(platform, expectedXp);
+        if (soldId) {
+            expect(store(platform).equipment.some((item) => item.id === soldId)).toBe(false);
+            expect(store(platform).chestQueue.find((chest) => chest.id === chestId)?.equipment?.id).toBe(soldId);
+        }
+        const receipts = await pg.query("select key from public.idempotency_keys where user_id=$1 and operation='open_chest'", [owner]);
+        expect(receipts.rows).toEqual([{ key }]);
+        expect(localOpen).not.toHaveBeenCalled();
+    }, 30000);
+
+    it('classifies the initial blue chest and the same-key SQL replay with no item ID', async () => {
+        const owner = createdUserId!;
+        const key = chestOpenRetryKey(owner, blueId);
+        const open = () => admin.rpc('open_chest_apply', {
+            p_user_id: owner, p_chest_id: blueId, p_item: null, p_key: key,
+        });
+        const results = await Promise.all([open(), open()]);
+        for (const result of results) expect(result.error).toBeNull();
+        const fresh = results.find(({ data }) => data.replayed === false)?.data;
+        const replay = results.find(({ data }) => data.replayed === true)?.data;
+        expect(fresh).toMatchObject({ item_id: null, template_id: null, starter_character: true });
+        expect(replay).toEqual({ ...fresh, replayed: true });
+        const receipts = await pg.query('select result from public.idempotency_keys where user_id=$1 and key=$2', [owner, key]);
+        expect(receipts.rows).toHaveLength(1);
+        expect(receipts.rows[0].result).not.toHaveProperty('replayed');
+        expect(receipts.rows[0].result).toMatchObject({ version: fresh.version, starter_character: true });
+        seed('Web', await pull());
+        await assertCanonical('Web', initialXp);
+        expect(useGameStore.getState().battle.battleUnlocked).toBe(true);
+    }, 30000);
+
 });

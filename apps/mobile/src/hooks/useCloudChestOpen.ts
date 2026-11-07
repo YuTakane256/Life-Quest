@@ -11,13 +11,13 @@
  * - それ以外（ネットワーク断・5xx等）→ フォールバックせず`errorChestId`を
  *   セットし、呼び出し元に再送させる
  *
- * 冪等キーはchestIdごとに保持し、再送時も同じキーを使う。Web版と異なり
- * `crypto.randomUUID`がHermesで保証されないため`createMobileId`を使う。
+ * クラウドでは所有者と宝箱IDから再送キーを復元する。
+ * 以前の結果は通常同期で受け取り、古い装備や演出を再作成しない。
  */
 import { useRef, useState } from 'react';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { openCloudChest, type CloudChestResult } from '../platform/battleCloud';
-import { createMobileId } from '../utils/createMobileId';
+import { chestOpenRetryKey } from '@life-quest/core/rewards';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import type { Equipment } from '@life-quest/core/equipment';
 import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
@@ -54,16 +54,11 @@ export interface CloudChestOpenDeps {
     localOpenChest: (chestId: string) => Equipment | null;
     /** 匿名確定かつlocal originの場合だけtrue。省略時は許可しない。 */
     allowLocalFallback?: boolean;
+    syncConfirmedChest?: (chestId: string) => Promise<boolean>;
     isActive?: () => boolean;
 }
 
-/**
- * 'unconfigured-fallback'（未接続=null）は冪等キーを温存（サーバーに何も
- * 送っていないため）、それ以外（applied/404/409/error）は削除対象。
- * ただしerrorは呼び出し元がsetErrorChestIdする関係で削除しない
- * （Web版と異なりMobileの元実装は5xx/network時に削除しないため踏襲する）。
- */
-export type CloudChestOpenTag = 'applied' | 'unconfigured-fallback' | 'not-found-fallback' | 'discarded' | 'error';
+export type CloudChestOpenTag = 'applied' | 'unconfigured-fallback' | 'not-found-fallback' | 'discarded' | 'confirmed' | 'error';
 
 /**
  * 宝箱開封の判断ロジック本体（ヘッダーコメントのエラー分岐方針を実装する）。
@@ -83,6 +78,10 @@ export async function runCloudChestOpen(
         if (!result) {
             if (deps.allowLocalFallback !== true) return { tag: 'error', equipment: null };
             return { tag: 'unconfigured-fallback', equipment: deps.localOpenChest(chestId) };
+        }
+        if (result.requiresCanonicalSync) {
+            const confirmed = await deps.syncConfirmedChest?.(chestId);
+            return { tag: confirmed && isActive() ? 'confirmed' : 'error', equipment: null };
         }
         const equipment = deps.applyCloudChestResult(chestId, result.itemId, result.templateId, result.starterCharacter);
         return { tag: 'applied', equipment };
@@ -117,10 +116,9 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
     const discardSyncedChest = useMobileGameStore((state) => state.discardSyncedChest);
     const [openingChestId, setOpeningChestId] = useState<string | null>(null);
     const [errorChestId, setErrorChestId] = useState<string | null>(null);
-    const idempotencyKeysRef = useRef(new Map<string, string>());
     const errorRef = useRef<string | null>(null);
     const operationScope = useGameOperationScope(() => {
-        idempotencyKeysRef.current.clear(); errorRef.current = null;
+        errorRef.current = null;
         setOpeningChestId(null); setErrorChestId(null);
     });
 
@@ -132,20 +130,23 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
         setOpeningChestId(chestId);
         setErrorChestId(null);
         errorRef.current = null;
-        let key = idempotencyKeysRef.current.get(chestId);
-        if (!key) {
-            key = createMobileId();
-            idempotencyKeysRef.current.set(chestId, key);
-        }
         try {
             const auth = await getGameAuthState();
             if (!operation.isActive()) return PENDING;
             if (auth.kind === 'unavailable' || operation.userId !== (auth.kind === 'authenticated' ? auth.userId : null)) {
                 errorRef.current = chestId; setErrorChestId(chestId); return PENDING;
             }
+            if (!useMobileGameStore.getState().chestQueue.some((candidate) => candidate.id === chestId && !candidate.opened)) return PENDING;
+            const key = auth.kind === 'authenticated' ? chestOpenRetryKey(auth.userId, chestId) : chestId;
             const { tag, equipment } = await runCloudChestOpen(chestId, key, {
                 openCloudChest: auth.kind === 'anonymous' ? async () => null
                     : (id, retryKey) => openCloudChest(id, retryKey, { isActive: operation.isActive, expectedUserId: auth.userId }),
+                syncConfirmedChest: async (id) => {
+                    const { syncMobileNow } = await import('../platform/cloudSync');
+                    if (!operation.isActive()) return false;
+                    await syncMobileNow();
+                    return !useMobileGameStore.getState().chestQueue.some((candidate) => candidate.id === id && !candidate.opened);
+                },
                 applyCloudChestResult,
                 discardSyncedChest,
                 localOpenChest,
@@ -158,10 +159,7 @@ export function useCloudChestOpen(): UseCloudChestOpenResult {
                 setErrorChestId(chestId);
                 return PENDING;
             }
-            if (tag !== 'unconfigured-fallback') {
-                idempotencyKeysRef.current.delete(chestId);
-            }
-            if (tag === 'discarded') return PENDING;
+            if (tag === 'discarded' || tag === 'confirmed') return PENDING;
             return { status: 'opened', equipment };
         } catch {
             if (operation.isActive()) { errorRef.current = chestId; setErrorChestId(chestId); }

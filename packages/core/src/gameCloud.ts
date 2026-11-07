@@ -25,6 +25,7 @@ import { EdgeFunctionError, type EdgeFunctionInvoker, type EdgeFunctionCallOptio
 import { captureAuthSessionScope } from './authLifecycle.ts';
 import { createEntityId } from './entityId.ts';
 import type { BattleAction, BattleActors } from './battle.ts';
+import { CHEST_OPEN_RETRY_KEY_PREFIX } from './rewards.ts';
 
 interface StartBattleAttemptResponse {
     battle_attempt_id: string;
@@ -61,6 +62,7 @@ interface OpenChestResponse {
     template_id: string | null;
     version: number;
     starter_character?: boolean;
+    replayed?: boolean;
 }
 
 export interface CloudChestResult {
@@ -68,6 +70,8 @@ export interface CloudChestResult {
     /** 排出装備のテンプレートID。blue（スターター）宝箱等、装備を排出しない場合はnull */
     templateId: string | null;
     starterCharacter: boolean;
+    /** A historical or unclassified response must be reconciled through canonical sync. */
+    requiresCanonicalSync?: true;
 }
 
 interface SynthesizeItemsResponse {
@@ -203,6 +207,9 @@ export function createGameCloudClient(deps: GameCloudClientDeps): GameCloudClien
                 itemId: response.item_id,
                 templateId: response.template_id,
                 starterCharacter: response.starter_character === true,
+                // During a rollout, older Edge versions do not attest that a stable-key result is fresh.
+                ...(idempotencyKey.startsWith(CHEST_OPEN_RETRY_KEY_PREFIX) && response.replayed !== false
+                    ? { requiresCanonicalSync: true as const } : {}),
             };
         },
 
