@@ -43,6 +43,7 @@ const unitFiles = [
     'src/platform/cloudTitleSeed.test.ts',
     'apps/mobile/src/stores/mobileTitleRestore.test.ts',
     'apps/mobile/src/stores/mobileStatsRestore.test.ts',
+    'apps/mobile/src/stores/mobileLoginBonusRestore.test.ts',
     'src/components/ui/CloudSyncSettings.test.tsx',
     'src/platform/cloudOutboxTransport.test.ts',
     'src/platform/taskCompletionSession.test.ts',
