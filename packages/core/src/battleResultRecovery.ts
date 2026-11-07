@@ -54,7 +54,7 @@ export function createBattleResultRecovery(deps: {
     const listeners = new Set<() => void>();
     const queues = new Map<string, Promise<unknown>>();
     const retired = new Set<string>();
-    const sending = new Map<string, object>();
+    const sending = new Map<string, { record: SavedBattleResult }>();
     const unreadable = new WeakMap<BattleResultRecoveryState, string>();
     let readGeneration = 0;
     const publish = (next: BattleResultRecoveryState) => { state = next; listeners.forEach((fn) => fn()); };
@@ -152,11 +152,10 @@ export function createBattleResultRecovery(deps: {
             });
         },
         acknowledge,
-        reconcile: async (cache: CloudCache, scope: AuthSessionScope, liveAttemptId?: string) => {
+        reconcile: async (cache: CloudCache, scope: AuthSessionScope) => {
             const userId = scope.userId;
             if (!userId || !allowed(scope, userId)) return;
             // A canonical pull may arrive before the account's saved result has loaded.
-            if (!liveAttemptId && state.userId === userId && state.phase === 'ready' && !state.pending) return;
             const confirmed = (id: string) => {
                 const row = cache.battle_attempts[id];
                 return Boolean(row && row.id === id && row.user_id === userId && row.status === 'resolved' && row.deleted_at == null
@@ -168,13 +167,18 @@ export function createBattleResultRecovery(deps: {
                 assert(scope, userId);
                 if (!saved || !confirmed(saved.attemptId)) return;
                 await deps.storage.removeItem(battleResultRecoveryKey(userId));
-                if (allowed(scope, userId)) publish({ userId, phase: 'ready', pending: null });
+                if (allowed(scope, userId)) {
+                    const operation = sending.get(userId);
+                    if (operation?.record.key === saved.key && operation.record.attemptId === saved.attemptId) sending.delete(userId);
+                    publish({ userId, phase: 'ready', pending: null });
+                }
             });
         },
         retry: async (requested: SavedBattleResult) => {
             const scope = captureAuthSessionScope(); const userId = scope.userId;
             if (!userId || userId !== requested.userId || state.pending !== requested || sending.has(userId) || !allowed(scope, userId)) return;
-            const operation = {}; sending.set(userId, operation);
+            const operation = { record: requested };
+            sending.set(userId, operation);
             const active = () => allowed(scope, userId) && sending.get(userId) === operation;
             let sent: SavedBattleResult | null = null;
             try {
@@ -187,7 +191,10 @@ export function createBattleResultRecovery(deps: {
                 if (!active()) return;
                 if (!isBattleResultAcknowledgement(response)) throw failure();
                 await acknowledge(record, scope);
-                if (active()) { try { await deps.onResolved?.(); } catch { /* Normal sync will retry receipt delivery. */ } }
+                if (active()) {
+                    sending.delete(userId);
+                    try { await deps.onResolved?.(); } catch { /* Normal sync will retry receipt delivery. */ }
+                }
             } catch (error) {
                 if (!active()) return;
                 if (!sent) {

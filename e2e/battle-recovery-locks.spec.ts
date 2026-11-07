@@ -53,11 +53,25 @@ test('battle start, result recovery and account retirement coordinate across bro
         const snapshot = battleResultRecovery.getState();
         return withWebBattleRecoverySession(snapshot, () => battleResultRecovery.discard(snapshot));
     }, modulePath)).toBe(false);
+    await second.evaluate(async ({ modulePath, owner }) => {
+        const { battleResultRecovery, captureAuthSessionScope, applyPullBatchToCache, createEmptyCloudCache }: Fixture = await import(modulePath);
+        await battleResultRecovery.reconcile(applyPullBatchToCache(createEmptyCloudCache(), {
+            next_cursor: 7, has_more: false,
+            battle_attempts: [{ id: 'attempt', user_id: owner, status: 'resolved', outcome: 'victory', version: 7 }],
+        }), captureAuthSessionScope());
+    }, { modulePath, owner });
+    expect(await third.evaluate(async ({ modulePath, owner }) => {
+        const { tryAcquireWebBattleSession }: Fixture = await import(modulePath);
+        const lease = await tryAcquireWebBattleSession(owner);
+        lease?.();
+        return Boolean(lease);
+    }, { modulePath, owner })).toBe(true);
     await second.evaluate(() => (window as ReleaseSlot).releaseBattleRecoveryTest?.());
     await expect(recovery).resolves.toBe(true);
 
     await third.evaluate(async ({ modulePath, owner }) => {
-        const { retireWebBattleResultRecovery }: Fixture = await import(modulePath);
+        const { battleResultRecovery, retireWebBattleResultRecovery }: Fixture = await import(modulePath);
+        await battleResultRecovery.prepare(owner, { attemptId: 'next', key: 'next-key', actions: [{ type: 'attack' }] });
         await retireWebBattleResultRecovery(owner);
     }, { modulePath, owner });
     expect(await second.evaluate(async ({ modulePath, owner }) => {

@@ -103,7 +103,6 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
     const seedScope = captureAuthSessionScope();
     const seedable = getSeedableSections(cache);
     let seeded = false;
-    let confirmedBattleAttempt: string | undefined;
     if (seedable.tasks) {
         seedTasks(buildCanonicalTaskSnapshot(cache));
         seeded = true;
@@ -139,7 +138,6 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
                 && current.rewardMode === 'cloud' && current.status === outcome) {
                 // Adopt authoritative XP without adding it again; retain the normal
                 // result/history path so this displayed attempt is recorded once.
-                confirmedBattleAttempt = attemptId;
                 seedCloudCompletionRewardStorage(() =>
                     useGameStore.getState().applyResolvedCloudBattle(attemptId, outcome, false));
             }
@@ -172,7 +170,7 @@ export function applyCloudCacheToWebStores(cache: CloudCache): boolean {
         if (useTitleStore.getState().activeTitle !== activeTitle) useTitleStore.setState({ activeTitle });
         seeded = true;
     }
-    if (seedScope.isCurrent()) void battleResultRecovery.reconcile(cache, seedScope, confirmedBattleAttempt).catch(() => {});
+    if (seedScope.isCurrent()) void battleResultRecovery.reconcile(cache, seedScope).catch(() => {});
     return seeded;
 }
 

@@ -1,4 +1,4 @@
-import { captureAuthSessionScope } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, subscribeAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { battleResultRecoveryKey, createBattleResultRecovery, type BattleResultRecoveryState } from '@life-quest/core/battleResultRecovery';
 import { getWebLocalStorage } from './storage';
 const storage = () => { const value = getWebLocalStorage(); if (!value) throw new Error('保存領域を利用できません。'); return value; };
@@ -72,10 +72,24 @@ export async function withWebBattleRecoverySession(snapshot: BattleResultRecover
     if (!scope.userId || scope.userId !== snapshot.userId) return false;
     const release = await tryAcquireWebBattleSession(scope.userId);
     if (!release) return false;
+    if (!scope.isCurrent() || battleResultRecovery.getState() !== snapshot) {
+        release();
+        return true;
+    }
+    const stop = () => {
+        offAuth();
+        offRecovery();
+        release();
+    };
+    const offAuth = subscribeAuthSessionScope(stop);
+    const offRecovery = battleResultRecovery.subscribe(() => {
+        const state = battleResultRecovery.getState();
+        if (state.userId === scope.userId && state.phase === 'ready' && !state.pending) stop();
+    });
     try {
-        if (scope.isCurrent() && battleResultRecovery.getState() === snapshot) await work();
+        await work();
         return true;
     } finally {
-        release();
+        stop();
     }
 }

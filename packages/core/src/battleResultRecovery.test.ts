@@ -122,10 +122,11 @@ describe('所有者付きの戦闘結果保存と再送', () => {
         await f.controller.reconcile(receipt(), captureAuthSessionScope());
         expect(f.disk.has(ownerKey)).toBe(false); expect(f.send).not.toHaveBeenCalled();
     });
-    it('保存読込より確定行が先に届いても、再送せずに保留を解除する', async () => {
+    it.each([false, true])('読込または別タブの通知より確定行が先に届いても保留を解除する（読込済み: %s）', async (alreadyLoaded) => {
         const first = fixture();
-        await first.controller.prepare('a', packet);
         const restored = fixture(first.disk);
+        if (alreadyLoaded) await restored.controller.load();
+        await first.controller.prepare('a', packet);
         await restored.controller.reconcile(receipt(), captureAuthSessionScope());
         await restored.controller.load();
         expect(restored.controller.getState().pending).toBeNull();
@@ -142,9 +143,27 @@ describe('所有者付きの戦闘結果保存と再送', () => {
         await f.controller.load();
         expect(f.controller.getState().phase).toBe('sending');
         await f.controller.reconcile(receipt(), captureAuthSessionScope());
+        expect(f.controller.isBlocking()).toBe(false);
+        const next = await f.controller.prepare('a', { ...packet, attemptId: 'next-attempt', key: 'next-key' });
+        await f.controller.retry(next);
+        expect(f.send.mock.calls[1][0]).toEqual(next);
         reject(new Error('response lost after sync'));
         await retry;
         expect(f.controller.getState()).toMatchObject({ phase: 'ready', pending: null });
+        expect(f.controller.isBlocking()).toBe(false);
+    });
+    it('確定応答の後に同期が遅れても次の結果を再送できる', async () => {
+        const f = fixture();
+        const slowPull = deferred<void>();
+        f.onResolved.mockReturnValueOnce(slowPull.promise);
+        const old = await f.controller.prepare('a', packet);
+        const resolving = f.controller.retry(old);
+        await vi.waitFor(() => expect(f.onResolved).toHaveBeenCalledTimes(1));
+        const next = await f.controller.prepare('a', { ...packet, attemptId: 'next-attempt', key: 'next-key' });
+        await f.controller.retry(next);
+        expect(f.send.mock.calls[1][0]).toEqual(next);
+        slowPull.resolve();
+        await resolving;
         expect(f.controller.isBlocking()).toBe(false);
     });
     it('別タブの保存を準備時に見つけたら、その結果を提示する', async () => {
