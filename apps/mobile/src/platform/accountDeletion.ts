@@ -1,3 +1,4 @@
+import { synthesisRecovery } from './synthesisRecovery';
 import { battleResultRecovery } from './battleResultRecovery';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deleteAccountCloudData, runAccountDeletionCleanup } from '@life-quest/core/accountDeletion';
@@ -12,7 +13,10 @@ export async function cleanupDeletedMobileAccount(userId: string, isCurrent: () 
     await runAccountDeletionCleanup({
         isCurrent,
         stopSync: stopMobileCloudSyncForAccountDeletion,
-        stopOutbox: async () => { await battleResultRecovery.retire(userId); await stopMobileOutboxForAccountDeletion(); },
+        stopOutbox: async () => {
+            await Promise.all([battleResultRecovery.retire(userId), synthesisRecovery.retire(userId)]);
+            await stopMobileOutboxForAccountDeletion();
+        },
         removeCloudData: () => deleteAccountCloudData(AsyncStorage, userId),
         resetMemory: async () => {
             clearMobileCloudStores();

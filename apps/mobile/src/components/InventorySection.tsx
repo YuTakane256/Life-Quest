@@ -45,7 +45,10 @@ export function InventorySection({ embedded = false }: { embedded?: boolean }) {
     const equipment = useMobileGameStore((state) => state.equipment);
     const hasHydrated = useMobileGameStore((state) => state.hasHydrated);
     const sellItem = useMobileGameStore((state) => state.sellItem);
-    const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useInventorySynthesis();
+    const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize,
+        recovery, recoveryMessage, reloadRecovery, discardRecovery } = useInventorySynthesis();
+    const recoveryNeedsRead = recovery === 'unreadable' || recovery === 'unavailable';
+    const recoveryCanDiscard = recovery === 'unreadable' || recovery === 'pending';
 
     const { palette } = usePalette();
     const { fontScale } = useWindowDimensions();
@@ -168,7 +171,7 @@ export function InventorySection({ embedded = false }: { embedded?: boolean }) {
     };
 
     const handleSynthesize = () => {
-        if (mode !== 'synthesize' || !canSynthesize) return;
+        if (mode !== 'synthesize' || !canSynthesize || recovery) return;
         const isCurrent = isCurrentSelection;
         if (!isCurrent()) return;
         const token = {};
@@ -260,17 +263,28 @@ export function InventorySection({ embedded = false }: { embedded?: boolean }) {
             {mode === 'sell' && <Text style={styles.hint}>タップでアイテムを売却しXPに変換</Text>}
             {selectedItems.length > 0 && <Pressable accessibilityRole="button" accessibilityLabel="素材の選択を解除" onPress={() => changeView(() => {})} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>素材の選択を解除</Text></Pressable>}
             {selectionNotice ? <Text accessibilityRole="alert" style={styles.hint}>{selectionNotice}</Text> : null}
-            {synthHasError && (
+            {recoveryMessage ? <Text accessibilityRole="alert" style={styles.hint}>{recoveryMessage}</Text> : null}
+            {isSynthesizing && recovery === 'pending' && <Text style={styles.hint}>合成結果を確認しています。</Text>}
+            {recovery === 'loading' && <Text style={styles.hint}>保留中の合成を確認しています。</Text>}
+            {!isSynthesizing && (synthHasError || recovery === 'pending' || recoveryNeedsRead) && (
                 <View style={styles.sectionHeader}>
-                    <Text style={styles.dangerButtonText}>合成の同期に失敗しました。</Text>
-                    <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="装備合成を再送する"
-                        onPress={() => runSynthesis(retrySynthesize)}
-                        style={({ pressed }) => [styles.dangerButton, pressed && styles.muted]}
-                    >
-                        <Text style={styles.dangerButtonText}>再送</Text>
+                    <Text style={styles.dangerButtonText}>{recoveryNeedsRead ? '保存した合成を読み込めませんでした。' : recovery === 'pending'
+                        ? '保留中の合成があります。素材を選び直さずに再送できます。' : '合成の同期に失敗しました。'}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={recoveryNeedsRead ? '保存を再確認' : '装備合成を再送する'}
+                        onPress={() => recoveryNeedsRead ? void reloadRecovery?.() : runSynthesis(retrySynthesize)}
+                        style={({ pressed }) => [styles.dangerButton, pressed && styles.muted]}>
+                        <Text style={styles.dangerButtonText}>{recoveryNeedsRead ? '保存を再確認' : '再送'}</Text>
                     </Pressable>
+                    {recoveryCanDiscard && <Pressable accessibilityRole="button" style={styles.dangerButton}
+                        onPress={() => {
+                            const current = isCurrentView;
+                            Alert.alert('この端末の再送を解除しますか？', 'サーバーに届いた合成は取り消されません。', [
+                                { text: 'キャンセル', style: 'cancel' },
+                                { text: '保留を解除', style: 'destructive', onPress: () => { if (current()) void discardRecovery?.(); } },
+                            ]);
+                        }}>
+                        <Text style={styles.dangerButtonText}>保留を解除</Text>
+                    </Pressable>}
                 </View>
             )}
         </View>
@@ -278,10 +292,10 @@ export function InventorySection({ embedded = false }: { embedded?: boolean }) {
 
     const empty = <Text style={styles.emptyText}>{unequipped.length ? '条件に合う装備がありません。表示条件をリセットしてください。' : '未装備の装備がありません。タスクを達成して宝箱を集めましょう。'}</Text>;
     const footer = mode === 'synthesize' ? <Pressable accessibilityRole="button"
-        accessibilityState={{ disabled: !canSynthesize || isSynthesizing }}
+        accessibilityState={{ disabled: !canSynthesize || isSynthesizing || Boolean(recovery) }}
         accessibilityLabel={`選択した${SYNTHESIS_CONFIG.REQUIRED_COUNT}個の装備を合成する`}
-        disabled={!canSynthesize || isSynthesizing} onPress={handleSynthesize}
-        style={[styles.primaryButton, styles.synthesizeButton, (!canSynthesize || isSynthesizing) && styles.muted]}>
+        disabled={!canSynthesize || isSynthesizing || Boolean(recovery)} onPress={handleSynthesize}
+        style={[styles.primaryButton, styles.synthesizeButton, (!canSynthesize || isSynthesizing || Boolean(recovery)) && styles.muted]}>
         <Text style={styles.activeText}>{isSynthesizing ? '合成中…' : `合成する（${selectedItems.length}/${SYNTHESIS_CONFIG.REQUIRED_COUNT}）`}</Text>
     </Pressable> : null;
     const row = (item: Equipment) => <InventoryRow key={item.id}

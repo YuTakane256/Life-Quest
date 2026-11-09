@@ -1,3 +1,4 @@
+import { retireWebSynthesisRecovery } from './synthesisRecovery';
 import { retireWebBattleResultRecovery } from './battleResultRecovery';
 import { deleteAccountCloudData, runAccountDeletionCleanup } from '@life-quest/core/accountDeletion';
 import { clearWebCloudStores, resetCloudSessionSeeded } from './authStores';
@@ -15,8 +16,10 @@ export async function cleanupDeletedWebAccount(userId: string, isCurrent: () => 
         isCurrent,
         stopSync: stopWebCloudSyncForAccountDeletion,
         stopOutbox: async () => {
-            try { await retireWebBattleResultRecovery(userId); }
-            finally { await stopWebOutboxForAccountDeletion(); }
+            const results = await Promise.allSettled([retireWebBattleResultRecovery(userId), retireWebSynthesisRecovery(userId)]);
+            await stopWebOutboxForAccountDeletion();
+            const rejected = results.find((result) => result.status === 'rejected');
+            if (rejected) throw rejected.reason;
         },
         removeCloudData: () => deleteAccountCloudData(getPlatformStorageAdapter(), userId),
         resetMemory: () => {
