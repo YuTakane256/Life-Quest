@@ -10,9 +10,10 @@ import { useGameStore } from '../stores/useGameStore';
 import { InventoryPage, InventorySection } from '../components/character/InventorySection';
 import App from '../App';
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), synth: vi.fn(), apply: vi.fn(), local: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), synth: vi.fn(), apply: vi.fn(), local: vi.fn(), sync: vi.fn(async () => {}) }));
 vi.mock('../platform/auth', () => ({ getGameAuthState: mocks.auth }));
 vi.mock('../platform/gameCloud', () => ({ startCloudBattleAttempt: vi.fn(), resolveCloudBattleAttempt: vi.fn(), synthesizeCloudItems: mocks.synth, openCloudChest: vi.fn() }));
+vi.mock('../platform/cloudSync', () => ({ syncWebNow: mocks.sync }));
 vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: vi.fn(), isWebCloudOutboxActive: () => false }));
 vi.mock('../utils/notifications', () => ({ runNotificationChecks: vi.fn(), cancelNotificationChecks: vi.fn() }));
 vi.mock('../stores/useLoginBonusStore', () => ({ useLoginBonusStore: { getState: () => ({ checkDailyLogin() {} }) } }));
@@ -89,6 +90,7 @@ describe('Web app synthesis across actual routes', () => {
         await click('再送');
         expect(mocks.synth.mock.calls[1].slice(0, 2)).toEqual(mocks.synth.mock.calls[0].slice(0, 2));
         expect(mocks.apply).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(mocks.sync).toHaveBeenCalledOnce());
         expect(button('再送')).toBeUndefined();
     });
     it('does not send until the journal write succeeds', async () => {

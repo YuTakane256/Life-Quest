@@ -17,7 +17,7 @@ export async function cleanupDeletedWebAccount(userId: string, isCurrent: () => 
         stopSync: stopWebCloudSyncForAccountDeletion,
         stopOutbox: async () => {
             const results = await Promise.allSettled([retireWebBattleResultRecovery(userId), retireWebSynthesisRecovery(userId)]);
-            await stopWebOutboxForAccountDeletion();
+            if (isCurrent()) await stopWebOutboxForAccountDeletion();
             const rejected = results.find((result) => result.status === 'rejected');
             if (rejected) throw rejected.reason;
         },

@@ -2,6 +2,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { syncMobileNow } from '../../apps/mobile/src/platform/cloudSync';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), chest: vi.fn(), synth: vi.fn(),
@@ -48,11 +49,17 @@ let container: HTMLDivElement;
 let mounted: boolean;
 beforeEach(async () => {
     resetAuthLifecycleHooks(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.mocked(syncMobileNow).mockClear();
     nativeDisk.clear();
     localStorage.clear();
+    const held = new Set<string>();
     Object.defineProperty(navigator, 'locks', { configurable: true, value: {
-        request: (_: string, work: (() => unknown) | LockOptions, callback?: (lock: object) => unknown) =>
-            Promise.resolve(typeof work === 'function' ? work() : callback?.({})),
+        async request(name: string, work: (() => unknown) | LockOptions, callback?: (lock: object | null) => unknown) {
+            if (typeof work === 'function') return work();
+            if (held.has(name)) return callback?.(null);
+            held.add(name);
+            try { return await callback?.({}); } finally { held.delete(name); }
+        },
     } });
     for (const value of Object.values(mocks)) if (typeof value === 'function') vi.mocked(value).mockReset();
     mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' });
@@ -91,6 +98,7 @@ describe('Mobile inventory screen lifetime', () => {
         await act(async () => { await operations.retry(); });
         expect(mocks.synth.mock.calls[1].slice(0, 2)).toEqual(mocks.synth.mock.calls[0].slice(0, 2));
         expect(mocks.applySynth).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(syncMobileNow).toHaveBeenCalledOnce());
         expect(operations.recovery).toBeUndefined();
     });
     it('画面離脱中の送信は二重起動せず、同じ本人の確定結果だけを一度反映する', async () => {
@@ -201,6 +209,9 @@ describe.each([
         let sending!: Promise<unknown>;
         await act(async () => { sending = synth.synthesize(['one', 'two', 'three']); });
         await act(async () => { await notifyLogout(); await notifyLogin('a'); });
+        await act(async () => { await synth.discardRecovery?.(); await synth.retry(); });
+        expect(synth.recovery).toBe('pending');
+        expect(mocks.synth).toHaveBeenCalledTimes(1);
         await act(async () => { old.resolve({ resultId: 'old', templateId: 'wooden_sword' }); await sending; });
         expect(synth.recovery).toBe('pending');
         expect(mocks.synth).toHaveBeenCalledTimes(1);

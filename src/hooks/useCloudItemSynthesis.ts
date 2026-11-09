@@ -38,10 +38,6 @@ export interface UseCloudItemSynthesisResult {
     discardRecovery?: () => Promise<void>;
 }
 
-export function synthKeyOf(itemIds: string[]): string {
-    return [...itemIds].sort().join(',');
-}
-
 export interface CloudItemSynthesisDeps {
     synthesizeCloudItems: (itemIds: readonly string[], idempotencyKey: string) => Promise<CloudSynthesisResult | null>;
     applyCloudSynthesisResult: (ingredientIds: string[], resultId: string, templateId: string) => Equipment | null;
@@ -52,13 +48,6 @@ export interface CloudItemSynthesisDeps {
     acceptCloudResult?: (result: { resultId: string; templateId: string }) => Promise<boolean>;
 }
 
-/**
- * 'unconfigured-fallback'（未接続=null）と'client-error-fallback'（4xx）は
- * どちらもローカル合成へ落ちる点は同じだが、呼び出し元の冪等キー削除可否が
- * 異なる（未接続時はサーバーに何も送っていないため、その素材集合へ最初に
- * 割り当てたキーを温存し、後で接続できたときに同じキーで送れるようにする。
- * 4xxはサーバーに実際に送って拒否されたことが確定しているため削除してよい）。
- */
 export type CloudItemSynthesisOutcome =
     | { status: 'applied' | 'unconfigured-fallback' | 'client-error-fallback'; equipment: Equipment | null }
     | { status: 'synced' | 'error'; equipment: null };
@@ -110,11 +99,7 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
     const [recoveryMessage, setRecoveryMessage] = useState('');
     useEffect(() => registerSynthesisRecovery(), []);
     const lastItemIdsRef = useRef<string[] | null>(null);
-    const releaseSend = useRef<(() => void) | null>(null);
-    useEffect(() => () => { releaseSend.current?.(); releaseSend.current = null; }, []);
     const operationScope = useGameOperationScope(() => {
-        releaseSend.current?.();
-        releaseSend.current = null;
         lastItemIdsRef.current = null;
         setIsSynthesizing(false);
         setHasError(false);
@@ -150,7 +135,6 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
                     setRecoveryMessage('別のタブで合成を処理しています。完了してからお試しください。');
                     return null;
                 }
-                releaseSend.current = release;
             }
             const saved = auth.kind === 'authenticated'
                 ? await synthesisRecovery.prepare(auth.userId, itemIds, () => crypto.randomUUID(), pending) : null;
@@ -189,8 +173,8 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
             if (operation.isActive()) setHasError(true);
             return null;
         } finally {
+            // Invalidation hides stale UI, but cannot cancel a request already sent.
             release?.();
-            if (releaseSend.current === release) releaseSend.current = null;
             if (operation.isActive()) setIsSynthesizing(false);
             operation.finish();
         }

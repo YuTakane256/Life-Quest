@@ -21,7 +21,7 @@ import { captureAuthSessionGuard, captureAuthSessionScope } from '@life-quest/co
 import { getGameAuthState } from '../platform/auth';
 import { useGameOperationScope } from './useGameOperationScope';
 import type { SavedSynthesis } from '@life-quest/core/synthesisRecovery';
-import { registerSynthesisRecovery, synthesisRecovery } from '../platform/synthesisRecovery';
+import { registerSynthesisRecovery, synthesisRecovery, tryAcquireSynthesisSend } from '../platform/synthesisRecovery';
 
 export interface UseCloudItemSynthesisResult {
     isSynthesizing: boolean;
@@ -46,11 +46,6 @@ export interface CloudSynthesisDeps {
     acceptCloudResult?: (result: { resultId: string; templateId: string }) => Promise<boolean>;
 }
 
-/**
- * 'unconfigured-fallback'（未接続=null）と'error'（5xx・ネットワーク断・
- * status=null等）は冪等キーを温存、'applied'と'client-error-fallback'（4xx）
- * は削除対象（元実装の分岐を踏襲）。
- */
 export type CloudSynthesisTag = 'applied' | 'unconfigured-fallback' | 'client-error-fallback' | 'synced' | 'error';
 
 /**
@@ -81,9 +76,6 @@ export async function runCloudSynthesis(
         return { tag: 'applied', equipment };
     } catch (error) {
         if (!isActive()) return { tag: 'error', equipment: null };
-        // status===nullを`<500`に含めないこと（null<500はtrueに評価されるため、
-        // 明示的な!==nullガードが無いとネットワーク断がclient-error扱いに
-        // 誤分類され、本来温存すべき冪等キーが誤って削除されてしまう）
         if (deps.allowLocalFallback === true && error instanceof EdgeFunctionError
             && [400, 404, 409].includes(error.status ?? 0)) {
             return { tag: 'client-error-fallback', equipment: deps.localSynthesizeItems(itemIds) };
@@ -117,6 +109,7 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
         setHasError(false);
         setRecoveryMessage('');
         lastItemIdsRef.current = itemIds;
+        let release: (() => void) | null = null;
         try {
             const auth = await getGameAuthState();
             if (!operation.isActive()) return null;
@@ -124,6 +117,13 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
                 || (pending && (auth.kind !== 'authenticated' || pending.userId !== auth.userId))) {
                 setHasError(true);
                 return null;
+            }
+            if (auth.kind === 'authenticated') {
+                release = tryAcquireSynthesisSend(auth.userId);
+                if (!release) {
+                    setRecoveryMessage('このアカウントの合成を処理しています。完了してからお試しください。');
+                    return null;
+                }
             }
             const saved = auth.kind === 'authenticated'
                 ? await synthesisRecovery.prepare(auth.userId, itemIds, createMobileId, pending) : null;
@@ -162,6 +162,8 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
             if (operation.isActive()) setHasError(true);
             return null;
         } finally {
+            // Invalidation hides stale UI, but cannot cancel a request already sent.
+            release?.();
             if (operation.isActive()) setIsSynthesizing(false);
             operation.finish();
         }
@@ -177,7 +179,12 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
         if (!scope.userId) return;
         const operation = operationScope.begin();
         if (!operation) return;
+        const release = tryAcquireSynthesisSend(scope.userId);
         try {
+            if (!release) {
+                setRecoveryMessage('このアカウントの合成を処理しています。完了してからお試しください。');
+                return;
+            }
             const removed = await synthesisRecovery.discard(recoveryState, scope);
             if (!removed || !operation.isActive()) return;
             lastItemIdsRef.current = null;
@@ -186,6 +193,7 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
         } catch {
             if (operation.isActive()) setRecoveryMessage('保留を解除できませんでした。もう一度お試しください。');
         } finally {
+            release?.();
             operation.finish();
         }
     };
