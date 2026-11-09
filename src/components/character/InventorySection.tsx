@@ -49,7 +49,10 @@ export function InventoryPage() {
 export function InventorySection({ visibleLimit, showViewAll = false }: { visibleLimit?: number; showViewAll?: boolean }) {
     const equipment = useGameStore((state) => state.equipment);
     const sellItem = useGameStore((state) => state.sellItem);
-    const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize } = useInventorySynthesis();
+    const { isSynthesizing, hasError: synthHasError, synthesize, retry: retrySynthesize,
+        recovery, recoveryMessage, reloadRecovery, discardRecovery } = useInventorySynthesis();
+    const recoveryNeedsRead = recovery === 'unreadable' || recovery === 'unavailable';
+    const recoveryCanDiscard = recovery === 'unreadable' || recovery === 'pending';
     const [inventoryMode, setInventoryMode] = useState<InventoryMode>('normal');
     const [selectedForSynth, setSelectedForSynth] = useState<readonly Equipment[]>([]);
     const [selectionNotice, setSelectionNotice] = useState('');
@@ -142,7 +145,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
         });
     };
     const handleSynthesize = loadoutAction(() => {
-        if (!isCurrentSelection() || validSelected.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return;
+        if (recovery || !isCurrentSelection() || validSelected.length !== SYNTHESIS_CONFIG.REQUIRED_COUNT) return;
         const ids = validSelected.map((item) => item.id);
         createInventoryConfirmation(validSelected, () => useGameStore.getState().equipment, isCurrentSelection,
             () => runSynthesis(() => synthesize(ids), selectedForSynth))();
@@ -268,7 +271,7 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
             {inventoryMode === 'synthesize' && validSelected.length === SYNTHESIS_CONFIG.REQUIRED_COUNT && (
                 <button
                     onClick={handleSynthesize}
-                    disabled={isSynthesizing}
+                    disabled={isSynthesizing || Boolean(recovery)}
                     className="w-full mt-3 py-3 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 animate-fade-in disabled:opacity-50"
                     style={{ background: 'linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary))', color: 'white' }}
                 >
@@ -276,10 +279,21 @@ export function InventorySection({ visibleLimit, showViewAll = false }: { visibl
                 </button>
             )}
 
-            {synthHasError && (
+            {recoveryMessage && <p role="status" className="mt-2 text-xs text-center">{recoveryMessage}</p>}
+            {isSynthesizing && recovery === 'pending' && <p role="status" className="mt-2 text-xs text-center">合成結果を確認しています。</p>}
+            {recovery === 'loading' && <p role="status" className="mt-2 text-xs text-center">保留中の合成を確認しています。</p>}
+            {!isSynthesizing && (synthHasError || recovery === 'pending' || recoveryNeedsRead) && (
                 <div className="mt-2 text-xs text-center" style={{ color: 'var(--color-text-danger)' }}>
-                    合成の同期に失敗しました。
-                    <button onClick={() => runSynthesis(retrySynthesize)} className="underline ml-1" style={{ color: 'var(--color-accent-primary)' }}>再送</button>
+                    {recoveryNeedsRead ? '保存した合成を読み込めませんでした。' : recovery === 'pending'
+                        ? '保留中の合成があります。素材を選び直さずに再送できます。' : '合成の同期に失敗しました。'}
+                    {recoveryNeedsRead
+                        ? <button type="button" onClick={() => void reloadRecovery?.()} className="underline ml-2">保存を再確認</button>
+                        : <button type="button" onClick={() => runSynthesis(retrySynthesize)} className="underline ml-2"
+                            style={{ color: 'var(--color-accent-primary)' }}>再送</button>}
+                    {recoveryCanDiscard && <button type="button" className="underline ml-2" onClick={() => {
+                        if (window.confirm('この端末の再送を解除しますか？サーバーに届いた合成は取り消されません。')
+                            && isCurrentView()) void discardRecovery?.();
+                    }}>保留を解除</button>}
                 </div>
             )}
         </div>

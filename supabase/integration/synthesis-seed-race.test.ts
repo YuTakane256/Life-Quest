@@ -5,11 +5,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client as PgClient } from 'pg';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionScope, notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { applyPullBatchToCache, createEmptyCloudCache } from '@life-quest/core/cloudCache';
 import type { PullBatch } from '@life-quest/core/cloudPull';
 import { createEdgeFunctionInvoker, type EdgeFunctionInvoker } from '@life-quest/core/edgeFunctions';
 import { createGameCloudClient, type CloudSynthesisResult, type GameCloudClient } from '@life-quest/core/gameCloud';
+import { createSynthesisRecovery, synthesisRecoveryKey } from '@life-quest/core/synthesisRecovery';
 import { createInitialGameStateSnapshot } from '@life-quest/core/gameState';
 import { setGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import { EQUIPMENT_POOL, SELL_XP_BY_RARITY } from '@life-quest/core/rewards';
@@ -20,9 +21,15 @@ import { useGameStore } from '../../src/stores/useGameStore';
 import { applyCloudCacheToMobileStores } from '../../apps/mobile/src/platform/cloudSeed';
 import { useMobileGameStore } from '../../apps/mobile/src/stores/useMobileGameStore';
 
-vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
-    getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
-} }));
+const { nativeDisk, nativeStorage } = vi.hoisted(() => {
+    const nativeDisk = new Map<string, string>();
+    return { nativeDisk, nativeStorage: {
+        getItem: async (key: string) => nativeDisk.get(key) ?? null,
+        setItem: async (key: string, value: string) => { nativeDisk.set(key, value); },
+        removeItem: async (key: string) => { nativeDisk.delete(key); },
+    } };
+});
+vi.mock('@react-native-async-storage/async-storage', () => ({ default: nativeStorage }));
 const env = process.env;
 const enabled = syncEnvironmentKeys.every((key) => Boolean(env[key]));
 const authOptions = { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false };
@@ -54,7 +61,7 @@ describe.skipIf(!enabled)('装備合成の実送信・受信・古い結果再�
         pg = new PgClient({ connectionString: env.SUPABASE_DB_URL }); await pg.connect();
     }, 30000);
     beforeEach(async () => {
-        await flushCompletionRewardWrites(); resetAuthLifecycleHooks(); localStorage.clear();
+        await flushCompletionRewardWrites(); resetAuthLifecycleHooks(); localStorage.clear(); nativeDisk.clear();
         createdUserId = null; client = undefined; loseResponse = false; lostResponses = 0;
         withoutCompletionRewardPersistence(() => useGameStore.setState(initialWeb));
         useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), activeBattle: null, hasHydrated: true, pendingChestReveal: null, lastLevelUp: null });
@@ -215,4 +222,65 @@ describe.skipIf(!enabled)('装備合成の実送信・受信・古い結果再�
         }
         seed(platform, await pull()); seed(platform, await pull()); await assertCanonical(platform, expectedXp);
     }, 30000);
+    const restartCases = (['Web', 'Mobile'] as const).flatMap((platform) =>
+        [false, true].map((alreadyCommitted) => ({ platform, alreadyCommitted })));
+    it.each(restartCases)('$platform / 再起動後の合成再送（確定して売却済み: $alreadyCommitted）', async ({ platform, alreadyCommitted }) => {
+        seed(platform, await pull());
+        const owner = createdUserId!;
+        const disk = platform === 'Web' ? localStorage : nativeStorage;
+        const initialJournal = createSynthesisRecovery({ storage: disk });
+        const { record } = await initialJournal.prepare(owner, ingredients, () => crypto.randomUUID());
+        let soldId: string | undefined;
+        let expectedXp = initialXp;
+        if (alreadyCommitted) {
+            loseResponse = true;
+            await expect(game.synthesizeItems(record.itemIds, record.key, requestOptions())).rejects.toThrow();
+            expect(lostResponses).toBe(1);
+            const receipt = await pg.query('select result from public.idempotency_keys where user_id=$1 and key=$2', [owner, record.key]);
+            soldId = receipt.rows[0].result.result_id;
+            const sold = await edge<{ granted: boolean; xp: number }>('sell_item', {
+                itemId: soldId, idempotencyKey: crypto.randomUUID(),
+            }, requestOptions());
+            expect(sold.granted).toBe(true);
+            expectedXp += sold.xp;
+        }
+
+        await flushCompletionRewardWrites();
+        const gameKey = 'quest-board-game';
+        const rawGame = await disk.getItem(gameKey);
+        expect(rawGame).toBeTruthy();
+        if (platform === 'Web') {
+            withoutCompletionRewardPersistence(() => useGameStore.setState(initialWeb));
+            localStorage.setItem(gameKey, rawGame!);
+            await useGameStore.persist.rehydrate();
+        } else {
+            useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: false });
+            await nativeStorage.setItem(gameKey, rawGame!);
+            await useMobileGameStore.persist.rehydrate();
+        }
+        const beforeSync = store(platform).equipment.map(({ id }) => id);
+        expect(beforeSync).toEqual(expect.arrayContaining(ingredients)); // Stale local inventory must not be used to apply a replay.
+        const reopened = createSynthesisRecovery({ storage: disk });
+        await reopened.load();
+        const pending = reopened.getState().pending!;
+        expect(pending).toEqual(record);
+        const restored = await reopened.prepare(owner, pending.itemIds, () => 'unexpected-new-key', pending);
+        expect(restored.fresh).toBe(false);
+        expect(restored.record).toEqual(record);
+        const confirmed = await game.synthesizeItems(restored.record.itemIds, restored.record.key, requestOptions());
+        expect(confirmed?.resultId).toBeTruthy();
+        if (soldId) expect(confirmed?.resultId).toBe(soldId);
+        expect(await reopened.acknowledge(restored.record, captureAuthSessionScope())).toBe(true);
+        expect(await disk.getItem(synthesisRecoveryKey(owner))).toBeNull();
+        expect(store(platform).equipment.map(({ id }) => id)).toEqual(beforeSync);
+        seed(platform, await pull());
+        await assertCanonical(platform, expectedXp);
+        expect(store(platform).equipment.some((item) => item.id === confirmed!.resultId)).toBe(!alreadyCommitted);
+
+        const consumed = await pg.query('select count(*) as count from public.inventory_items where user_id=$1 and id=any($2::uuid[]) and deleted_at is not null', [owner, ingredients]);
+        expect(Number(consumed.rows[0].count)).toBe(ingredients.length);
+        const receipts = await pg.query("select key from public.idempotency_keys where user_id=$1 and operation='synthesize_items'", [owner]);
+        expect(receipts.rows).toEqual([{ key: record.key }]);
+    }, 30000);
+
 });
