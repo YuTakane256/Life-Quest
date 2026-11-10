@@ -17,17 +17,17 @@ const characterScreenModule = '../../../apps/mobile/src/screens/CharacterScreen'
 const { default: CharacterScreen } = await import(characterScreenModule);
 
 const mocks = vi.hoisted(() => ({ alert: vi.fn(), synthesize: vi.fn(), retry: vi.fn(), enqueue: vi.fn(async () => true),
-    hasError: false, blur: () => {}, focus: () => {}, requestClose: () => {}, saleConfirm: () => {}, push: vi.fn(), dismissTo: vi.fn(), actions: new Map<string, () => void>() }));
+    hasError: false, recovery: undefined as 'pending' | undefined, blur: () => {}, focus: () => {}, requestClose: () => {}, saleConfirm: () => {}, push: vi.fn(), dismissTo: vi.fn(), actions: new Map<string, () => void>() }));
 vi.mock('../../platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isWebCloudOutboxActive: () => false }));
 vi.mock('../../../apps/mobile/src/platform/cloudOutbox', () => ({ enqueueCloudOperation: mocks.enqueue, isCloudOutboxActive: () => false }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: vi.fn(async () => null), setItem: vi.fn(async () => {}), removeItem: vi.fn(async () => {}),
 } }));
 vi.mock('../../hooks/useInventorySynthesis', () => ({ useInventorySynthesis: () => ({
-    synthesize: mocks.synthesize, retry: mocks.retry, isSynthesizing: false, hasError: mocks.hasError,
+    synthesize: mocks.synthesize, retry: mocks.retry, isSynthesizing: false, hasError: mocks.hasError, recovery: mocks.recovery,
 }) }));
 vi.mock('../../../apps/mobile/src/hooks/useInventorySynthesis', () => ({ useInventorySynthesis: () => ({
-    synthesize: mocks.synthesize, retry: mocks.retry, isSynthesizing: false, hasError: mocks.hasError,
+    synthesize: mocks.synthesize, retry: mocks.retry, isSynthesizing: false, hasError: mocks.hasError, recovery: mocks.recovery,
 }) }));
 vi.mock('../../../apps/mobile/src/hooks/useChestOperations', () => ({ useChestOperations: () => ({ openingChestId: null, errorChestId: null, openChest: vi.fn(), retry: vi.fn() }) }));
 vi.mock('../../../apps/mobile/src/components/CharacterOverview', () => ({ CharacterOverview: () => createElement('div', {}, 'プロフィールと成長') }));
@@ -84,7 +84,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 
 beforeEach(async () => {
     resetAuthLifecycleHooks(); await notifyLogin('a'); vi.useFakeTimers(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-    vi.clearAllMocks(); mocks.actions.clear(); localStorage.clear(); mocks.hasError = false;
+    vi.clearAllMocks(); mocks.actions.clear(); localStorage.clear(); mocks.hasError = false; mocks.recovery = undefined;
     mocks.synthesize.mockResolvedValue(null); mocks.retry.mockResolvedValue(null);
     useGameStore.setState({ equipment: items(), addXp: vi.fn() });
     useMobileGameStore.setState({ equipment: items(), chestQueue: [], hasHydrated: true, lastLevelUp: null, addXp: vi.fn() });
@@ -131,6 +131,15 @@ for (const platform of ['web', 'native', 'preview'] as const) {
     const openFilter = () => { if (platform !== 'web') click(host.querySelector('[data-testid="inventory-filter-slot"]')!); };
     const selectedCount = () => host.querySelectorAll(`[aria-label="${platform === 'web' ? '木の剣を合成対象に選択中' : '木の剣を合成素材に選択解除する'}"]`).length;
     describe(`${platform} inventory selection and filters`, () => {
+        it('shows restored synthesis even when no material can be selected', async () => {
+            mocks.recovery = 'pending';
+            setEquipment([]);
+            mount();
+            expect(host.textContent).toContain('素材を選び直さずに再送できます');
+            await act(async () => button(platform === 'web' ? '再送' : '装備合成を再送する').click());
+            expect(mocks.retry).toHaveBeenCalledOnce();
+            expect(mocks.synthesize).not.toHaveBeenCalled();
+        });
         it('shows only unequipped items and only the current mode actions', () => {
             setEquipment([...items(), { ...result(), id: 'equipped', name: '装備中の剣', equipped: true }]);
             mount(); expect(host.textContent).not.toContain('装備中の剣'); expect(button('木の剣を装備する')).toBeTruthy();
