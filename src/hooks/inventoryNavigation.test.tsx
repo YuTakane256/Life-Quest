@@ -4,14 +4,16 @@ import { useNavigate } from 'react-router-dom';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { createEquipmentFromTemplate } from '@life-quest/core/equipment';
+import { synthesisRecoveryKey } from '@life-quest/core/synthesisRecovery';
 import { EQUIPMENT_POOL } from '@life-quest/core/rewards';
 import { useGameStore } from '../stores/useGameStore';
 import { InventoryPage, InventorySection } from '../components/character/InventorySection';
 import App from '../App';
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), synth: vi.fn(), apply: vi.fn(), local: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), synth: vi.fn(), apply: vi.fn(), local: vi.fn(), sync: vi.fn(async () => {}) }));
 vi.mock('../platform/auth', () => ({ getGameAuthState: mocks.auth }));
 vi.mock('../platform/gameCloud', () => ({ startCloudBattleAttempt: vi.fn(), resolveCloudBattleAttempt: vi.fn(), synthesizeCloudItems: mocks.synth, openCloudChest: vi.fn() }));
+vi.mock('../platform/cloudSync', () => ({ syncWebNow: mocks.sync }));
 vi.mock('../platform/cloudOutbox', () => ({ enqueueCloudOperation: vi.fn(), isWebCloudOutboxActive: () => false }));
 vi.mock('../utils/notifications', () => ({ runNotificationChecks: vi.fn(), cancelNotificationChecks: vi.fn() }));
 vi.mock('../stores/useLoginBonusStore', () => ({ useLoginBonusStore: { getState: () => ({ checkDailyLogin() {} }) } }));
@@ -41,6 +43,10 @@ async function select(actionLabel = '合成する') {
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { resolve, promise }; }
 beforeEach(async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); resetAuthLifecycleHooks(); await notifyLogin('a'); localStorage.clear();
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: {
+        request: (_: string, work: (() => unknown) | LockOptions, callback?: (lock: object) => unknown) =>
+            Promise.resolve(typeof work === 'function' ? work() : callback?.({})),
+    } });
     vi.clearAllMocks(); mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' });
     mocks.synth.mockResolvedValue({ resultId: 'result', templateId: 'iron_sword' });
     mocks.apply.mockReturnValue(createEquipmentFromTemplate('result', EQUIPMENT_POOL.find((t) => t.id === 'iron_sword')!));
@@ -51,7 +57,7 @@ beforeEach(async () => {
     await act(async () => root.render(createElement(App)));
 });
 afterEach(async () => {
-    if (mounted) await act(async () => root.unmount()); host.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals();
+    if (mounted) await act(async () => root.unmount()); host.remove(); resetAuthLifecycleHooks(); Reflect.deleteProperty(navigator, 'locks'); vi.unstubAllGlobals();
     useGameStore.setState({ applyCloudSynthesisResult: original.apply, synthesizeItems: original.local });
     history.replaceState({}, '', '/');
 });
@@ -65,8 +71,55 @@ describe('Web app synthesis across actual routes', () => {
         expect(mocks.synth).toHaveBeenCalledTimes(2);
         expect(mocks.synth.mock.calls.map(([items]) => items)).toEqual([ids, ids]);
         expect(mocks.synth.mock.calls[0][1]).toBe(mocks.synth.mock.calls[1][1]);
-        expect(mocks.apply).toHaveBeenCalledExactlyOnceWith(ids, 'result', 'iron_sword');
+        expect(mocks.apply).not.toHaveBeenCalled();
+        expect(host.textContent).toContain('合成結果を確認しました');
         expect(mocks.local).not.toHaveBeenCalled(); expect(button('再送')).toBeUndefined();
+    });
+    it('retries the saved operation after the whole App reopens with no ingredients left', async () => {
+        mocks.synth.mockRejectedValueOnce(new TypeError('response lost'));
+        await select();
+        await click('合成する');
+        await act(async () => root.unmount());
+        mounted = false;
+        useGameStore.setState({ equipment: [] });
+        root = createRoot(host);
+        mounted = true;
+        await act(async () => root.render(createElement(App)));
+        expect(mocks.synth).toHaveBeenCalledTimes(1);
+        expect(host.textContent).toContain('素材を選び直さずに再送できます');
+        await click('再送');
+        expect(mocks.synth.mock.calls[1].slice(0, 2)).toEqual(mocks.synth.mock.calls[0].slice(0, 2));
+        expect(mocks.apply).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(mocks.sync).toHaveBeenCalledOnce());
+        expect(button('再送')).toBeUndefined();
+    });
+    it('does not send until the journal write succeeds', async () => {
+        const originalSet = Storage.prototype.setItem;
+        const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+            if (key === synthesisRecoveryKey('a')) throw new Error('storage unavailable');
+            originalSet.call(this, key, value);
+        });
+        try {
+            await select();
+            await click('合成する');
+            expect(mocks.synth).not.toHaveBeenCalled();
+            expect(button('再送')).toBeTruthy();
+        } finally { spy.mockRestore(); }
+        await click('再送');
+        expect(mocks.synth).toHaveBeenCalledTimes(1);
+    });
+    it('removes a stale retry button after another tab has cleared that exact record', async () => {
+        mocks.synth.mockRejectedValueOnce(new TypeError('response lost'));
+        await select();
+        await click('合成する');
+        expect(button('再送')).toBeTruthy();
+        await act(async () => {
+            const key = synthesisRecoveryKey('a');
+            localStorage.removeItem(key);
+            window.dispatchEvent(new StorageEvent('storage', { key }));
+        });
+        expect(button('再送')).toBeUndefined();
+        expect(mocks.synth).toHaveBeenCalledTimes(1);
     });
     it('keeps an in-flight operation exclusive after route remount and applies it once', async () => {
         const pending = deferred<unknown>(); mocks.synth.mockReturnValueOnce(pending.promise);

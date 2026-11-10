@@ -4,7 +4,9 @@ const modulePath = '/e2e/fixtures/battle-recovery.ts';
 const harnessPath = '/battle-recovery-test-harness';
 const owner = 'disposable-owner-for-battle-recovery';
 type Fixture = typeof import('./fixtures/battle-recovery');
-type ReleaseSlot = Window & { releaseBattleRecoveryTest?: () => void };
+type RecoverySlot = Window & {
+    battleRecoveryTest?: { release: () => void; result: Promise<boolean> };
+};
 
 async function loadOwner(page: Page) {
     await page.goto(harnessPath);
@@ -41,12 +43,18 @@ test('battle start, result recovery and account retirement coordinate across bro
     }, { modulePath, owner })).toEqual({ pending: 'attempt', startAllowed: false, recovery: false, otherOwner: true });
 
     await page.close();
-    const recovery = second.evaluate(async (modulePath) => {
+    // Closing the tab can finish before Chromium releases its Web Lock.
+    await expect.poll(() => second.evaluate(async (modulePath) => {
         const { battleResultRecovery, withWebBattleRecoverySession }: Fixture = await import(modulePath);
-        return withWebBattleRecoverySession(battleResultRecovery.getState(), () =>
-            new Promise<void>((release) => { (window as ReleaseSlot).releaseBattleRecoveryTest = release; }));
-    }, modulePath);
-    await second.waitForFunction(() => Boolean((window as ReleaseSlot).releaseBattleRecoveryTest));
+        return new Promise<boolean>((started, reject) => {
+            const result = withWebBattleRecoverySession(battleResultRecovery.getState(), () =>
+                new Promise<void>((release) => {
+                    (window as RecoverySlot).battleRecoveryTest = { release, result };
+                    started(true);
+                }));
+            void result.then(() => started(false), reject);
+        });
+    }, modulePath)).toBe(true);
     const third = await context.newPage();
     await loadOwner(third);
     expect(await third.evaluate(async (modulePath) => {
@@ -67,8 +75,11 @@ test('battle start, result recovery and account retirement coordinate across bro
         lease?.();
         return Boolean(lease);
     }, { modulePath, owner })).toBe(true);
-    await second.evaluate(() => (window as ReleaseSlot).releaseBattleRecoveryTest?.());
-    await expect(recovery).resolves.toBe(true);
+    expect(await second.evaluate(() => {
+        const recovery = (window as RecoverySlot).battleRecoveryTest;
+        recovery?.release();
+        return recovery?.result;
+    })).toBe(true);
 
     await third.evaluate(async ({ modulePath, owner }) => {
         const { battleResultRecovery, retireWebBattleResultRecovery }: Fixture = await import(modulePath);
