@@ -2,12 +2,21 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { syncMobileNow } from '../../apps/mobile/src/platform/cloudSync';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), chest: vi.fn(), synth: vi.fn(),
     applyChest: vi.fn(), discard: vi.fn(), localChest: vi.fn(), applySynth: vi.fn(), localSynth: vi.fn(),
     state: { chestQueue: [{ id: 'chest', opened: false, origin: 'local' }], equipment: [] },
 }));
+const nativeDisk = vi.hoisted(() => new Map<string, string>());
+vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
+    getItem: async (key: string) => nativeDisk.get(key) ?? null,
+    setItem: async (key: string, value: string) => { nativeDisk.set(key, value); },
+    removeItem: async (key: string) => { nativeDisk.delete(key); },
+} }));
+vi.mock('../platform/cloudSync', () => ({ syncWebNow: vi.fn(async () => {}) }));
+vi.mock('../../apps/mobile/src/platform/cloudSync', () => ({ syncMobileNow: vi.fn(async () => {}) }));
 vi.mock('../platform/auth', () => ({ getGameAuthState: mocks.auth }));
 vi.mock('../../apps/mobile/src/platform/auth', () => ({ getGameAuthState: mocks.auth }));
 vi.mock('../platform/gameCloud', () => ({ openCloudChest: mocks.chest, synthesizeCloudItems: mocks.synth }));
@@ -40,6 +49,18 @@ let container: HTMLDivElement;
 let mounted: boolean;
 beforeEach(async () => {
     resetAuthLifecycleHooks(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.mocked(syncMobileNow).mockClear();
+    nativeDisk.clear();
+    localStorage.clear();
+    const held = new Set<string>();
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: {
+        async request(name: string, work: (() => unknown) | LockOptions, callback?: (lock: object | null) => unknown) {
+            if (typeof work === 'function') return work();
+            if (held.has(name)) return callback?.(null);
+            held.add(name);
+            try { return await callback?.({}); } finally { held.delete(name); }
+        },
+    } });
     for (const value of Object.values(mocks)) if (typeof value === 'function') vi.mocked(value).mockReset();
     mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' });
     mocks.chest.mockResolvedValue({ itemId: 'item', templateId: 'wooden_sword', starterCharacter: false });
@@ -50,7 +71,7 @@ beforeEach(async () => {
     await notifyLogin('a');
     container = document.createElement('div'); document.body.append(container); root = createRoot(container); mounted = true;
 });
-afterEach(async () => { if (mounted) await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals(); });
+afterEach(async () => { if (mounted) await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); Reflect.deleteProperty(navigator, 'locks'); vi.unstubAllGlobals(); });
 
 describe('Mobile inventory screen lifetime', () => {
     let operations: ReturnType<typeof useInventorySynthesis>;
@@ -63,7 +84,22 @@ describe('Mobile inventory screen lifetime', () => {
         expect(operations.hasError).toBe(true); await act(async () => { await operations.retry(); });
         expect(mocks.synth.mock.calls[0][1]).toBe(mocks.synth.mock.calls[1][1]);
         expect(mocks.synth.mock.calls.map(([ids]) => ids)).toEqual([['one', 'two', 'three'], ['one', 'two', 'three']]);
-        expect(mocks.applySynth).toHaveBeenCalledOnce(); expect(operations.hasError).toBe(false);
+        expect(mocks.applySynth).not.toHaveBeenCalled(); expect(operations.recovery).toBeUndefined(); expect(operations.hasError).toBe(false);
+    });
+    it('MobileのProviderを作り直しても素材の再選択なしで同じ合成を再送できる', async () => {
+        mocks.synth.mockRejectedValueOnce(new TypeError('response lost'));
+        await renderScreen(true);
+        await act(async () => { await operations.synthesize(['one', 'two', 'three']); });
+        await act(async () => root.unmount());
+        root = createRoot(container);
+        await renderScreen(true);
+        expect(operations.recovery).toBe('pending');
+        expect(mocks.synth).toHaveBeenCalledTimes(1);
+        await act(async () => { await operations.retry(); });
+        expect(mocks.synth.mock.calls[1].slice(0, 2)).toEqual(mocks.synth.mock.calls[0].slice(0, 2));
+        expect(mocks.applySynth).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(syncMobileNow).toHaveBeenCalledOnce());
+        expect(operations.recovery).toBeUndefined();
     });
     it('画面離脱中の送信は二重起動せず、同じ本人の確定結果だけを一度反映する', async () => {
         const pending = deferred<unknown>(); mocks.synth.mockReturnValueOnce(pending.promise);
@@ -140,7 +176,7 @@ describe.each([
         await act(async () => { await notifyLogin('a'); await synth.retry(); });
         expect(mocks.synth.mock.calls.map(([items]) => items)).toEqual([['one', 'two', 'three'], ['one', 'two', 'three']]);
         expect(mocks.synth.mock.calls[0][1]).toBe(mocks.synth.mock.calls[1][1]);
-        expect(mocks.applySynth).toHaveBeenCalledTimes(1); expect(synth.hasError).toBe(false);
+        expect(mocks.applySynth).not.toHaveBeenCalled(); expect(synth.recovery).toBeUndefined(); expect(synth.hasError).toBe(false);
         await act(async () => { await synth.retry(); });
         expect(mocks.synth).toHaveBeenCalledTimes(2);
     });
@@ -168,14 +204,22 @@ describe.each([
         expect(mocks.localChest).not.toHaveBeenCalled(); expect(mocks.localSynth).not.toHaveBeenCalled();
         expect(mocks.chest).not.toHaveBeenCalled(); expect(mocks.synth).not.toHaveBeenCalled();
     });
-    it('合成応答待ちのA→logout→Aで旧結果とretry状態を復活させない', async () => {
+    it('合成応答待ちのA→logout→Aでは古い応答を適用せず、保存済み操作だけを明示再送できる', async () => {
         const old = deferred<unknown>(); mocks.synth.mockReturnValueOnce(old.promise); await mount();
         let sending!: Promise<unknown>;
         await act(async () => { sending = synth.synthesize(['one', 'two', 'three']); });
         await act(async () => { await notifyLogout(); await notifyLogin('a'); });
-        await act(async () => { old.resolve({ resultId: 'old', templateId: 'wooden_sword' }); await sending; await synth.retry(); });
-        expect(mocks.applySynth).not.toHaveBeenCalled(); expect(synth.hasError).toBe(false);
+        await act(async () => { await synth.discardRecovery?.(); await synth.retry(); });
+        expect(synth.recovery).toBe('pending');
         expect(mocks.synth).toHaveBeenCalledTimes(1);
+        await act(async () => { old.resolve({ resultId: 'old', templateId: 'wooden_sword' }); await sending; });
+        expect(synth.recovery).toBe('pending');
+        expect(mocks.synth).toHaveBeenCalledTimes(1);
+        await act(async () => { await synth.retry(); });
+        expect(mocks.applySynth).not.toHaveBeenCalled();
+        expect(synth.recovery).toBeUndefined();
+        expect(mocks.synth).toHaveBeenCalledTimes(2);
+        expect(mocks.synth.mock.calls[0][1]).toBe(mocks.synth.mock.calls[1][1]);
     });
     it('アンマウント後の応答をストアへ適用しない', async () => {
         const old = deferred<unknown>(); mocks.chest.mockReturnValueOnce(old.promise); await mount();

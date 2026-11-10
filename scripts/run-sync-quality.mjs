@@ -50,6 +50,8 @@ const unitFiles = [
     'src/platform/cloudOutboxTransport.test.ts',
     'src/platform/taskCompletionSession.test.ts',
     'src/hooks/inventoryNavigation.test.tsx',
+    'src/hooks/gameOperationSession.test.ts',
+    'packages/core/src/synthesisRecovery.test.ts',
     'src/hooks/chestNavigation.test.tsx',
     'src/hooks/battleNavigation.test.tsx',
     'src/hooks/battleStartNavigation.test.tsx',

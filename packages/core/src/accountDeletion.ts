@@ -1,3 +1,4 @@
+import { synthesisRecoveryKey } from './synthesisRecovery.ts';
 import { battleResultRecoveryKey } from './battleResultRecovery.ts';
 /**
  * 退会成功後にだけ削除する、認証ユーザー固有の端末データ。
@@ -169,6 +170,7 @@ export function createAccountDeletionConfirmation(
 /** 追加の認証ユーザー固有キュー。#613由来の保留報酬操作も退会時に破棄する。 */
 export const ACCOUNT_DELETION_EXTRA_KEYS: readonly ((userId: string) => string)[] = [
     battleResultRecoveryKey,
+    synthesisRecoveryKey,
     (userId) => `life-quest:cloud:${userId}:pending-reward-operations:v1`,
 ];
 
