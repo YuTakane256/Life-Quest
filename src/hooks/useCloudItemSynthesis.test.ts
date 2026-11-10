@@ -5,7 +5,7 @@
  * 5xx等→error）を実際のEdgeFunctionErrorインスタンスを投げて検証する。
  */
 import { describe, expect, it, vi } from 'vitest';
-import { runCloudItemSynthesis, synthKeyOf } from './useCloudItemSynthesis';
+import { runCloudItemSynthesis } from './useCloudItemSynthesis';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import type { Equipment } from '../types';
 
@@ -24,13 +24,6 @@ function makeDeps(overrides: Partial<Parameters<typeof runCloudItemSynthesis>[2]
     };
 }
 
-describe('synthKeyOf', () => {
-    it('素材IDをソートして結合する（順序が違っても同じキーになる）', () => {
-        expect(synthKeyOf(['b', 'a', 'c'])).toBe('a,b,c');
-        expect(synthKeyOf(['c', 'a', 'b'])).toBe(synthKeyOf(['a', 'b', 'c']));
-    });
-});
-
 describe('runCloudItemSynthesis', () => {
     it('クラウドが結果を返せばapplyCloudSynthesisResultへ適用し、appliedを返す', async () => {
         const deps = makeDeps({
@@ -45,7 +38,7 @@ describe('runCloudItemSynthesis', () => {
         expect(outcome).toEqual({ status: 'applied', equipment: dummyEquipment });
     });
 
-    it('nullが返る（未接続）ならローカル合成へフォールバックする（冪等キーは温存対象）', async () => {
+    it('nullが返る（未接続）ならローカル合成へフォールバックする', async () => {
         const deps = makeDeps();
 
         const outcome = await runCloudItemSynthesis(['a', 'b', 'c'], 'key-1', deps);

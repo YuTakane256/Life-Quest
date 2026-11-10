@@ -8,18 +8,20 @@
  * - それ以外（ネットワーク断・5xx等）→ フォールバックせずエラー状態にし、
  *   呼び出し元に再送させる（サーバーのidempotency_keysが二重消費を防ぐ）
  *
- * 冪等キーは素材ID集合（ソート済み）ごとに保持し、再送時も同じキーを使う。
- * Web版と異なり`crypto.randomUUID`がHermesで保証されないため`createMobileId`を使う。
+ * クラウド合成の素材IDと再送キーは、送信前に本人の端末へ保存する。
+ * 復元した操作は、古い応答から装備を作り直さず通常の同期で結果を受け取る。
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { synthesizeCloudItems } from '../platform/battleCloud';
 import { createMobileId } from '../utils/createMobileId';
 import { EdgeFunctionError } from '@life-quest/core/edgeFunctions';
 import type { Equipment } from '@life-quest/core/equipment';
-import { captureAuthSessionGuard } from '@life-quest/core/authLifecycle';
+import { captureAuthSessionGuard, captureAuthSessionScope } from '@life-quest/core/authLifecycle';
 import { getGameAuthState } from '../platform/auth';
 import { useGameOperationScope } from './useGameOperationScope';
+import type { SavedSynthesis } from '@life-quest/core/synthesisRecovery';
+import { registerSynthesisRecovery, synthesisRecovery, tryAcquireSynthesisSend } from '../platform/synthesisRecovery';
 
 export interface UseCloudItemSynthesisResult {
     isSynthesizing: boolean;
@@ -28,10 +30,10 @@ export interface UseCloudItemSynthesisResult {
     synthesize: (itemIds: string[]) => Promise<Equipment | null>;
     /** 直前に失敗した合成を同一キーで再送する。失敗が無ければ何もしない。 */
     retry: () => Promise<Equipment | null>;
-}
-
-function synthKeyOf(itemIds: string[]): string {
-    return [...itemIds].sort().join(',');
+    recovery?: 'pending' | 'unreadable' | 'unavailable' | 'loading';
+    recoveryMessage?: string;
+    reloadRecovery?: () => Promise<void>;
+    discardRecovery?: () => Promise<void>;
 }
 
 export interface CloudSynthesisDeps {
@@ -41,14 +43,10 @@ export interface CloudSynthesisDeps {
     /** 匿名確定時だけtrue。省略時は許可しない。 */
     allowLocalFallback?: boolean;
     isActive?: () => boolean;
+    acceptCloudResult?: (result: { resultId: string; templateId: string }) => Promise<boolean>;
 }
 
-/**
- * 'unconfigured-fallback'（未接続=null）と'error'（5xx・ネットワーク断・
- * status=null等）は冪等キーを温存、'applied'と'client-error-fallback'（4xx）
- * は削除対象（元実装の分岐を踏襲）。
- */
-export type CloudSynthesisTag = 'applied' | 'unconfigured-fallback' | 'client-error-fallback' | 'error';
+export type CloudSynthesisTag = 'applied' | 'unconfigured-fallback' | 'client-error-fallback' | 'synced' | 'error';
 
 /**
  * 装備合成の判断ロジック本体（ヘッダーコメントのエラー分岐方針を実装する）。
@@ -69,13 +67,15 @@ export async function runCloudSynthesis(
             if (deps.allowLocalFallback !== true) return { tag: 'error', equipment: null };
             return { tag: 'unconfigured-fallback', equipment: deps.localSynthesizeItems(itemIds) };
         }
+        if (deps.acceptCloudResult) {
+            const apply = await deps.acceptCloudResult(result);
+            if (!isActive()) return { tag: 'error', equipment: null };
+            if (!apply) return { tag: 'synced', equipment: null };
+        }
         const equipment = deps.applyCloudSynthesisResult(itemIds, result.resultId, result.templateId);
         return { tag: 'applied', equipment };
     } catch (error) {
         if (!isActive()) return { tag: 'error', equipment: null };
-        // status===nullを`<500`に含めないこと（null<500はtrueに評価されるため、
-        // 明示的な!==nullガードが無いとネットワーク断がclient-error扱いに
-        // 誤分類され、本来温存すべき冪等キーが誤って削除されてしまう）
         if (deps.allowLocalFallback === true && error instanceof EdgeFunctionError
             && [400, 404, 409].includes(error.status ?? 0)) {
             return { tag: 'client-error-fallback', equipment: deps.localSynthesizeItems(itemIds) };
@@ -89,65 +89,119 @@ export function useCloudItemSynthesis(): UseCloudItemSynthesisResult {
     const applyCloudSynthesisResult = useMobileGameStore((state) => state.applyCloudSynthesisResult);
     const [isSynthesizing, setIsSynthesizing] = useState(false);
     const [hasError, setHasError] = useState(false);
-    const idempotencyKeysRef = useRef(new Map<string, string>());
+    const recoveryState = useSyncExternalStore(synthesisRecovery.subscribe, synthesisRecovery.getState, synthesisRecovery.getState);
+    const [recoveryMessage, setRecoveryMessage] = useState('');
+    useEffect(() => registerSynthesisRecovery(), []);
     const lastItemIdsRef = useRef<string[] | null>(null);
     const operationScope = useGameOperationScope(() => {
-        idempotencyKeysRef.current.clear(); lastItemIdsRef.current = null;
-        setIsSynthesizing(false); setHasError(false);
+        lastItemIdsRef.current = null;
+        setIsSynthesizing(false);
+        setHasError(false);
+        setRecoveryMessage('');
     });
 
-    const runSynthesize = async (itemIds: string[]): Promise<Equipment | null> => {
+    const runSynthesize = async (requestedIds: readonly string[], pending?: SavedSynthesis): Promise<Equipment | null> => {
         const operation = operationScope.begin();
         if (!operation) return null;
-        itemIds = [...itemIds];
+        const scope = captureAuthSessionScope();
+        const itemIds = [...requestedIds];
         setIsSynthesizing(true);
         setHasError(false);
+        setRecoveryMessage('');
         lastItemIdsRef.current = itemIds;
-        const synthKey = synthKeyOf(itemIds);
-        let key = idempotencyKeysRef.current.get(synthKey);
-        if (!key) {
-            key = createMobileId();
-            idempotencyKeysRef.current.set(synthKey, key);
-        }
+        let release: (() => void) | null = null;
         try {
             const auth = await getGameAuthState();
             if (!operation.isActive()) return null;
-            if (auth.kind === 'unavailable' || operation.userId !== (auth.kind === 'authenticated' ? auth.userId : null)) {
-                setHasError(true); return null;
-            }
-            const { tag, equipment } = await runCloudSynthesis(itemIds, key, {
-                synthesizeCloudItems: auth.kind === 'anonymous' ? async () => null
-                    : (ids, retryKey) => synthesizeCloudItems(ids, retryKey, { isActive: operation.isActive, expectedUserId: auth.userId }),
-                applyCloudSynthesisResult, localSynthesizeItems,
-                allowLocalFallback: auth.kind === 'anonymous', isActive: operation.isActive,
-            });
-            if (!operation.isActive()) return null;
-            if (tag === 'error') {
+            if (auth.kind === 'unavailable' || operation.userId !== (auth.kind === 'authenticated' ? auth.userId : null)
+                || (pending && (auth.kind !== 'authenticated' || pending.userId !== auth.userId))) {
                 setHasError(true);
                 return null;
             }
-            if (tag !== 'unconfigured-fallback') {
-                idempotencyKeysRef.current.delete(synthKey);
+            if (auth.kind === 'authenticated') {
+                release = tryAcquireSynthesisSend(auth.userId);
+                if (!release) {
+                    setRecoveryMessage('このアカウントの合成を処理しています。完了してからお試しください。');
+                    return null;
+                }
+            }
+            const saved = auth.kind === 'authenticated'
+                ? await synthesisRecovery.prepare(auth.userId, itemIds, createMobileId, pending) : null;
+            if (!operation.isActive()) return null;
+            if (saved) lastItemIdsRef.current = null;
+            const { tag: status, equipment } = await runCloudSynthesis(
+                saved ? [...saved.record.itemIds] : itemIds, saved?.record.key ?? '', {
+                    synthesizeCloudItems: auth.kind === 'anonymous' ? async () => null
+                        : (ids, key) => synthesizeCloudItems(ids, key, { isActive: operation.isActive, expectedUserId: auth.userId }),
+                    applyCloudSynthesisResult,
+                    localSynthesizeItems,
+                    allowLocalFallback: auth.kind === 'anonymous',
+                    isActive: operation.isActive,
+                    acceptCloudResult: saved ? async (result) => {
+                        if (typeof result.resultId !== 'string' || !result.resultId
+                            || typeof result.templateId !== 'string' || !result.templateId) throw new Error('合成結果を確認できません。');
+                        const removed = await synthesisRecovery.acknowledge(saved.record, scope);
+                        return saved.fresh && removed;
+                    } : undefined,
+                },
+            );
+            if (!operation.isActive()) return null;
+            if (status === 'error') {
+                setHasError(true);
+                return null;
             }
             lastItemIdsRef.current = null;
+            if (status === 'synced') {
+                setRecoveryMessage('合成結果を確認しました。同期後に持ち物へ反映されます。');
+                void import('../platform/cloudSync').then(({ syncMobileNow }) => {
+                    if (scope.isCurrent()) return syncMobileNow();
+                }).catch(() => undefined);
+            }
             return equipment;
         } catch {
             if (operation.isActive()) setHasError(true);
             return null;
         } finally {
+            // Invalidation hides stale UI, but cannot cancel a request already sent.
+            release?.();
             if (operation.isActive()) setIsSynthesizing(false);
             operation.finish();
         }
     };
 
-    const synthesize = async (itemIds: string[]): Promise<Equipment | null> => {
-        return runSynthesize(itemIds);
+    const retry = () => {
+        if (recoveryState.pending) return runSynthesize(recoveryState.pending.itemIds, recoveryState.pending);
+        if (lastItemIdsRef.current) return runSynthesize(lastItemIdsRef.current);
+        return Promise.resolve(null);
     };
-
-    const retry = async (): Promise<Equipment | null> => {
-        if (!lastItemIdsRef.current) return null;
-        return runSynthesize(lastItemIdsRef.current);
+    const discardRecovery = async () => {
+        const scope = captureAuthSessionScope();
+        if (!scope.userId) return;
+        const operation = operationScope.begin();
+        if (!operation) return;
+        const release = tryAcquireSynthesisSend(scope.userId);
+        try {
+            if (!release) {
+                setRecoveryMessage('このアカウントの合成を処理しています。完了してからお試しください。');
+                return;
+            }
+            const removed = await synthesisRecovery.discard(recoveryState, scope);
+            if (!removed || !operation.isActive()) return;
+            lastItemIdsRef.current = null;
+            setHasError(false);
+            setRecoveryMessage('');
+        } catch {
+            if (operation.isActive()) setRecoveryMessage('保留を解除できませんでした。もう一度お試しください。');
+        } finally {
+            release?.();
+            operation.finish();
+        }
     };
+    const recovery = recoveryState.pending ? 'pending'
+        : recoveryState.status === 'ready' || recoveryState.status === 'inactive' ? undefined : recoveryState.status;
 
-    return { isSynthesizing, hasError, synthesize, retry };
+    return {
+        isSynthesizing, hasError: hasError && Boolean(recoveryState.pending || lastItemIdsRef.current), synthesize: (ids) => runSynthesize(ids), retry, recovery, recoveryMessage,
+        reloadRecovery: synthesisRecovery.load, discardRecovery,
+    };
 }
