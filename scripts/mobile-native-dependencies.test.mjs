@@ -48,10 +48,10 @@ describe('mobile dependency compatibility', () => {
     it('resolves the same Expo Router from the CLI typed-routes generator and the mobile app', () => {
         const expoRequire = createRequire(mobileRequire.resolve('expo/package.json'));
         const cliRequire = createRequire(expoRequire.resolve('@expo/cli/package.json'));
-        const routerServerRequire = createRequire(cliRequire.resolve('@expo/router-server/package.json'));
+        const typedRoutesRequire = createRequire(cliRequire.resolve('@expo/router-server/build/typed-routes'));
         const entry = 'expo-router/internal/testing';
         expect(root.devDependencies['expo-router']).toBe(mobile.dependencies['expo-router']);
-        expect(routerServerRequire.resolve(entry)).toBe(mobileRequire.resolve(entry));
+        expect(typedRoutesRequire.resolve(entry)).toBe(mobileRequire.resolve(entry));
     });
 
     it('uses one React instance across workspaces and the matching DOM renderer patch', () => {
