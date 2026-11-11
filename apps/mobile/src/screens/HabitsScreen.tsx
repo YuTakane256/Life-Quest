@@ -10,6 +10,7 @@ import {
     SectionList,
     Text,
     View,
+    type ScrollViewInstance,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -686,7 +687,7 @@ function HabitHistory({
     const { palette: p } = usePalette();
     const category = getHabitCategoryByIdOrDefault(habit.categoryId);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
-    const historyScroll = useRef<ScrollView>(null);
+    const historyScroll = useRef<ScrollViewInstance>(null);
     const data = useMemo(
         () =>
             buildHabitHeatmapData(

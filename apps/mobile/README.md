@@ -1,6 +1,6 @@
 # Life Quest Mobile
 
-Expo SDK 57 / React Native 0.86 と Expo Router を使うモバイルアプリです。Webと同じnpm workspaceに置き、`@life-quest/core`のタスク・習慣・成長・装備・バトル・同期ロジックを共有します。未ログイン時は端末内保存、設定済みのログイン環境ではSupabaseと同期します。
+Expo SDK 58 / React Native 0.88 と Expo Router を使うモバイルアプリです。Webと同じnpm workspaceに置き、`@life-quest/core`のタスク・習慣・成長・装備・バトル・同期ロジックを共有します。未ログイン時は端末内保存、設定済みのログイン環境ではSupabaseと同期します。
 
 ## iOS Simulatorでの初回起動
 
@@ -11,7 +11,7 @@ npm ci
 npm run mobile:ios
 ```
 
-`mobile:ios`はparity variant（`com.yutakane.lifequest.parity`）のネイティブdevelopment buildを作成・起動します。初回はビルドに時間がかかります。ネイティブ設定・依存を変更した場合も再ビルドが必要です。
+`mobile:ios`はparity variant（`com.yutakane.lifequest.parity`）のネイティブdevelopment buildを作成・起動します。初回はビルドに時間がかかります。ネイティブ設定・依存を変更した場合も再ビルドが必要です。SDK 57から更新する場合は、以前のSDKで生成した `apps/mobile/ios`・`apps/mobile/android` を必要なローカル差分とともに退避し、SDK 58でネイティブプロジェクトと開発ビルドを作り直してください。
 
 導入済みのparityアプリをクラウド未設定で使う場合は、前のMetroを停止してから`npm run mobile:start:anonymous`を起動し、その案内から同じアプリを開きます。これは保存データを初期化しません。通常版の開発ビルド（`com.yutakane.lifequest`）向けMetroは`npm run mobile:start`です。ネイティブモジュールを使用するため、ここではExpo Goを前提にしません。
 

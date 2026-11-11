@@ -56,8 +56,8 @@
     "@life-quest/core": "file:packages/core",
     "@supabase/supabase-js": "^2.119.0",
     "lucide-react": "^1.69.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "react-router-dom": "^7.18.5",
     "zustand": "^5.0.16"
   },
@@ -88,19 +88,11 @@
   },
   "overrides": {
     "@babel/core": "7.29.7",
-    "@react-native/community-cli-plugin@0.86.3": {
-      "metro": "0.84.6",
-      "metro-config": "0.84.6",
-      "metro-core": "0.84.6"
-    },
-    "@react-native/metro-config@0.86.3": {
-      "metro-config": "0.84.6",
-      "metro-runtime": "0.84.6"
-    },
     "js-yaml": "4.3.2",
-    "react-native-gesture-handler": "3.0.2",
-    "react-native-reanimated": "4.5.1",
-    "react-native-svg": "15.15.4",
+    "react-native-gesture-handler": "3.3.0",
+    "react-native-reanimated": "4.7.1",
+    "react-native-svg": "15.16.0",
+    "react-native-worklets": "0.13.0",
     "undici": "7.30.1"
   }
 }

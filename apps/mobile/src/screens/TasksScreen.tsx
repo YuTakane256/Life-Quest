@@ -723,7 +723,7 @@ export default function TasksScreen() {
                                     </View>
                                 )}
                             </View>
-                        ) : null
+                        ) : undefined
                     }
                 />
                 <TaskBottomActions

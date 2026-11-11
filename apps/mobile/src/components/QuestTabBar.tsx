@@ -21,7 +21,7 @@ const ITEMS = {
 } as const;
 const metrics = LAYOUT_TOKENS.navigation;
 
-export function QuestTabBar({ state, navigation, insets }: TabBarProps) {
+export function QuestTabBar({ state, emitter, navigateToTab, insets }: TabBarProps) {
     const { palette } = usePalette();
     const reportHeight = useContext(BottomTabBarHeightCallbackContext);
     const { width, fontScale } = useWindowDimensions();
@@ -48,10 +48,10 @@ export function QuestTabBar({ state, navigation, insets }: TabBarProps) {
                             accessibilityState={{ selected: focused, disabled: locked }}
                             disabled={locked}
                             onPress={() => {
-                                const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-                                if (shouldNavigateTab(locked, focused, event.defaultPrevented)) navigation.navigate(route.name, route.params);
+                                const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+                                if (shouldNavigateTab(locked, focused, event.defaultPrevented)) navigateToTab(route.key);
                             }}
-                            onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
+                            onLongPress={() => emitter.emit({ type: 'tabLongPress', target: route.key })}
                             style={[styles.item, { opacity: locked ? 0.4 : 1 }]}
                         >
                             {focused && <View style={[styles.indicator, { backgroundColor: palette.accent.primary }]} />}
