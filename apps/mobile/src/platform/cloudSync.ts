@@ -208,10 +208,17 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         )
         .subscribe();
 
+    let refreshingNetwork = false;
     const onAppStateChange = (state: AppStateStatus): void => {
         if (!isCurrent()) return;
         if (state === 'active') {
             scheduler.start();
+            // iOS can miss connectivity changes in the background. Refresh notifies
+            // our existing NetInfo listener without delaying foreground recovery.
+            if (!refreshingNetwork) {
+                refreshingNetwork = true;
+                void NetInfo.refresh().catch(() => undefined).finally(() => { refreshingNetwork = false; });
+            }
             void recoverConnection().catch(() => undefined);
         } else {
             scheduler.stop(); // バックグラウンドでは定期プルを止める
