@@ -37,10 +37,21 @@ describe('mobile dependency compatibility', () => {
         }
     });
 
-    it('keeps the existing gesture-handler native baseline when router peers are resolved', () => {
-        expect(root.overrides['react-native-gesture-handler']).toBe('3.0.2');
-        expect(mobileRequire('react-native-gesture-handler/package.json').version).toBe('3.0.2');
-        expect(mobileRequire.resolve('react-native-gesture-handler')).toBe(require.resolve('react-native-gesture-handler'));
+    it('keeps Gesture Handler on the Expo SDK recommendation when Router peers are resolved', () => {
+        const name = 'react-native-gesture-handler';
+        expect(mobile.dependencies[name]).toBe(bundled[name].replace(/^~/, ''));
+        expect(root.overrides[name]).toBe(mobile.dependencies[name]);
+        expect(mobileRequire(`${name}/package.json`).version).toBe(mobile.dependencies[name]);
+        expect(mobileRequire.resolve(name)).toBe(require.resolve(name));
+    });
+
+    it('resolves the same Expo Router from the CLI typed-routes generator and the mobile app', () => {
+        const expoRequire = createRequire(mobileRequire.resolve('expo/package.json'));
+        const cliRequire = createRequire(expoRequire.resolve('@expo/cli/package.json'));
+        const typedRoutesRequire = createRequire(cliRequire.resolve('@expo/router-server/build/typed-routes'));
+        const entry = 'expo-router/internal/testing';
+        expect(root.devDependencies['expo-router']).toBe(mobile.dependencies['expo-router']);
+        expect(typedRoutesRequire.resolve(entry)).toBe(mobileRequire.resolve(entry));
     });
 
     it('uses one React instance across workspaces and the matching DOM renderer patch', () => {

@@ -325,7 +325,7 @@ export function InventorySection({ embedded = false }: { embedded?: boolean }) {
                 keyExtractor={(item) => item.id}
                 ListHeaderComponent={listHeader}
                 ListEmptyComponent={empty}
-                ListFooterComponent={footer}
+                ListFooterComponent={footer ?? undefined}
                 renderItem={({ item }) => row(item)}
                 contentContainerStyle={styles.listContent}
                 keyboardShouldPersistTaps="handled"

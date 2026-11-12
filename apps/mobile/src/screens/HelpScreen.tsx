@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
     Keyboard,
     Pressable,
@@ -8,6 +8,7 @@ import {
     TextInput,
     View,
     useWindowDimensions,
+    type ScrollViewInstance,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -18,10 +19,10 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 
 export default function HelpScreen() {
     const [searchQuery, setSearchQuery] = useState('');
-    const scrollRef = useRef<ScrollView>(null);
-    const contentRef = useRef<View>(null);
-    const searchRef = useRef<TextInput>(null);
-    const sections = useRef(new Map<string, View>());
+    const scrollRef = useRef<ScrollViewInstance>(null);
+    const contentRef = useRef<ComponentRef<typeof View>>(null);
+    const searchRef = useRef<ComponentRef<typeof TextInput>>(null);
+    const sections = useRef(new Map<string, ComponentRef<typeof View>>());
     const navigation = useRef({ active: false, generation: 0, layout: '' });
     const { width, height, fontScale } = useWindowDimensions();
     const layout = `${width}:${height}:${fontScale}`;

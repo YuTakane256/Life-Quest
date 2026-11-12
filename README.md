@@ -193,7 +193,7 @@ RLSに加えて、service roleを利用するEdge FunctionでもJWT由来のユ�
 | 領域 | 採用技術 |
 | --- | --- |
 | Web | React 19.3, React Router 7, Vite 8.3, Tailwind CSS 4 |
-| Mobile | Expo SDK 57, React Native 0.86.3, Expo Router / development build |
+| Mobile | Expo SDK 58, React Native 0.88.1, Expo Router / development build |
 | 言語・状態管理 | TypeScript 6.0, Zustand 5 |
 | Backend | Supabase JS 2.118 / Auth, PostgreSQL 17, RLS, Realtime, Edge Functions |
 | Test | Vitest 5, Playwright 1.64, pgTAP, Maestro（ローカルiOS操作・画面比較） |

@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
 import { ChevronRight, RotateCcw, Skull, Trophy } from 'lucide-react-native';
 import { ENEMY_IMAGE_KEYS, getMapForStage, type BattleAction } from '@life-quest/core/battle';
 import { getUnlockedBattleSkills } from '@life-quest/core/battleSkills';
@@ -27,7 +27,7 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
 }) {
     const { palette: p } = usePalette();
     const s = createStyles(p);
-    const logRef = useRef<ScrollView>(null);
+    const logRef = useRef<ScrollViewInstance>(null);
     const { actors, state } = battle;
     const ongoing = state.outcome === 'ongoing';
     const victory = state.outcome === 'victory';
