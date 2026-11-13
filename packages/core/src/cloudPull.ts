@@ -84,29 +84,34 @@ export function createAccountBoundCloudPullFetcher(deps: AccountBoundCloudPullDe
     return async (afterVersion, maxVersions) => {
         assertActive();
         assertCloudCursor(afterVersion);
-        const session = await readOwnerSession();
-        assertActive();
-        // Capture before the SDK can switch its default Authorization to another account.
-        const token = session.accessToken;
-        let batch: unknown;
-        try {
-            batch = await deps.call(afterVersion, maxVersions, token);
-        } catch (error) {
+        let { accessToken } = await readOwnerSession();
+        for (let attempt = 0; ; attempt += 1) {
             assertActive();
-            if (error instanceof CloudPullAuthError) {
-                // A refresh may have completed while the old-token request was in flight.
-                // Do not latch authentication wait for credentials the SDK already replaced.
-                const current = await readOwnerSession();
-                if (current.accessToken === token) throw error;
+            let batch: unknown;
+            try {
+                // Bind Authorization before the SDK can switch its default session.
+                batch = await deps.call(afterVersion, maxVersions, accessToken);
+            } catch (error) {
+                assertActive();
+                if (error instanceof CloudPullAuthError) {
+                    const current = await readOwnerSession();
+                    if (current.accessToken === accessToken) throw error;
+                    // A refresh completed while this page was in flight. Retry it
+                    // once with the replacement credential for the same owner.
+                    if (attempt === 0) {
+                        accessToken = current.accessToken;
+                        continue;
+                    }
+                }
+                // eslint-disable-next-line preserve-caught-error -- Raw SDK/storage diagnostics must not survive as error.cause.
+                throw new Error('cloud pull request failed');
             }
-            // eslint-disable-next-line preserve-caught-error -- Raw SDK/storage diagnostics must not survive as error.cause.
-            throw new Error('cloud pull request failed');
+            assertActive();
+            // A same-owner token refresh is valid; a different owner must never seed this cache.
+            await readOwnerSession();
+            assertActive();
+            return inspectPullEnvelope(batch, afterVersion).batch;
         }
-        assertActive();
-        // A same-owner token refresh is valid; a different owner must never seed this cache.
-        await readOwnerSession();
-        assertActive();
-        return inspectPullEnvelope(batch, afterVersion).batch;
     };
 }
 
