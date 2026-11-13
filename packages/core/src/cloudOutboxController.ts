@@ -114,10 +114,27 @@ export function createAccountBoundOutboxRpcClient(deps: {
         const { session, error } = await deps.getSession();
         if (error || !session || (options && (!options.isActive()
             || (options.expectedUserId !== undefined && session.userId !== options.expectedUserId)))) return authError;
-        const result = await deps.call(name, params, session.accessToken);
-        if (options && !options.isActive()) return authError;
-        return { error: result.error && result.status && result.status >= 400
-            ? { ...result.error, code: String(result.status) } : result.error };
+        let { accessToken } = session;
+        for (let attempt = 0; ; attempt += 1) {
+            const result = await deps.call(name, params, accessToken);
+            if (options && !options.isActive()) return authError;
+            if (result.error && result.status === 401 && session.userId) {
+                const { session: current, error: sessionError } = await deps.getSession();
+                if (options && !options.isActive()) return authError;
+                if (sessionError || !current?.accessToken || current.userId !== session.userId) return authError;
+                if (current.accessToken !== accessToken) {
+                    // Keep the original payload and idempotency key when retrying a stale 401.
+                    if (attempt === 0) {
+                        accessToken = current.accessToken;
+                        continue;
+                    }
+                    // The next drain can use the latest token without waiting for a new login.
+                    return { error: { message: 'outbox credentials changed during retry' } };
+                }
+            }
+            return { error: result.error && result.status && result.status >= 400
+                ? { ...result.error, code: String(result.status) } : result.error };
+        }
     } };
 }
 

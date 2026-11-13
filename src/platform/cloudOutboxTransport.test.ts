@@ -76,6 +76,37 @@ it('実際のSupabase SDKが後からBのtokenを取得しても、明示したA
 
 });
 
+it('実際のSDKで古いJWTへの401後も同じRPCの本文と操作IDを送る', async () => {
+    let token = 'old-a';
+    const fetchFn = vi.fn<typeof fetch>()
+        .mockImplementationOnce(async () => {
+            token = 'new-a';
+            return new Response(JSON.stringify({ code: 'PGRST301', message: 'expired' }), { status: 401 });
+        })
+        .mockResolvedValueOnce(new Response('null', { status: 200 }));
+    const sdk = createClient('https://example.supabase.co', 'anon', {
+        accessToken: async () => 'b-sdk-token', global: { fetch: fetchFn },
+    });
+    const client = createAccountBoundOutboxRpcClient({
+        getSession: async () => ({ session: { accessToken: token, userId: 'a' } }),
+        call: async (name, params, accessToken) => {
+            const { error, status } = await sdk.rpc(name, params).setHeader('Authorization', `Bearer ${accessToken}`);
+            return { error, status };
+        },
+    }, { expectedUserId: 'a', isActive: () => true });
+    const params = { p_id: 'task-a', p_name: 'original title', p_key: 'same-id' };
+
+    await expect(client.rpc('upsert_task', params)).resolves.toEqual({ error: null });
+
+    expect(fetchFn.mock.calls.map(([, options]) => ({
+        authorization: new Headers(options?.headers).get('Authorization'),
+        body: JSON.parse(String(options?.body)),
+    }))).toEqual([
+        { authorization: 'Bearer old-a', body: params },
+        { authorization: 'Bearer new-a', body: params },
+    ]);
+});
+
     it('恒久失敗の診断へ操作IDを出さず、キューのIDとpayloadを保持する', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const unregister = registerWebOutboxHooks();

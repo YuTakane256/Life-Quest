@@ -172,6 +172,55 @@ describe('outbox account boundary', () => {
         unregister();
     });
 
+    it('古いJWTへの401後、親を同じ操作IDで送り直してから子を送る', async () => {
+        const entered = deferred();
+        const respond = deferred();
+        let token = 'old-a';
+        const call = vi.fn(async (name: string, _params: Record<string, unknown>, accessToken: string) => {
+            if (name === 'upsert_task' && accessToken === 'old-a') {
+                entered.resolve();
+                await respond.promise;
+                return { error: { message: 'expired' }, status: 401 };
+            }
+            return { error: null, status: 200 };
+        });
+        const storage = memory();
+        const controller = createCloudOutboxController({
+            storage,
+            getRpcClient: (scope) => createAccountBoundOutboxRpcClient({
+                getSession: async () => ({ session: { accessToken: token, userId: 'a' } }),
+                call,
+            }, scope),
+            getEdgeInvoker: () => null,
+        });
+        const unregister = controller.registerHooks();
+        try {
+            await notifyLogin('a');
+            await controller.enqueue('upsert_task', { p_id: 'task' }, { trackEntityId: 'task' });
+            await entered.promise;
+            await controller.enqueue('upsert_subtask', { p_id: 'child' }, { dependsOnEntityIds: ['task'] });
+            const outbox = controller.getActiveOutbox()!;
+            const [parent, child] = outbox.snapshot();
+            expect(child.dependsOn).toEqual([parent.opId]);
+
+            token = 'new-a';
+            respond.resolve();
+            await outbox.flush();
+
+            expect(call.mock.calls).toEqual([
+                ['upsert_task', { p_id: 'task', p_key: parent.opId }, 'old-a'],
+                ['upsert_task', { p_id: 'task', p_key: parent.opId }, 'new-a'],
+                ['upsert_subtask', { p_id: 'child', p_key: child.opId }, 'new-a'],
+            ]);
+            expect(outbox.snapshot()).toEqual([]);
+            expect(JSON.parse(storage.map.get(cloudOutboxKey('a'))!).ops).toEqual([]);
+        } finally {
+            respond.resolve();
+            await notifyLogout();
+            unregister();
+        }
+    });
+
     it('Edgeが取得したJWTが別ユーザーなら送らず、同じopIdで認証回復を待つ', async () => {
         const fetchFn = vi.fn<typeof fetch>();
         const controller = createCloudOutboxController({ storage: memory(), getRpcClient: () => null,
@@ -220,4 +269,42 @@ describe('account-bound RPC transport', () => {
         expect((await client.rpc('upsert_task', { p_key: 'original' })).error?.code).toBe('401');
         expect(call).toHaveBeenCalledExactlyOnceWith('upsert_task', { p_key: 'original' }, 'a-token');
     });
+
+    it.each(['other-account', 'stopped', 'missing-session'] as const)('401の再確認中に%sなら送信を止める', async (reason) => {
+        let active = true;
+        const getSession = vi.fn()
+            .mockResolvedValueOnce({ session: { accessToken: 'old-a', userId: 'a' } })
+            .mockImplementationOnce(async () => {
+                if (reason === 'stopped') active = false;
+                return { session: reason === 'missing-session' ? null : {
+                    accessToken: 'replacement',
+                    userId: reason === 'other-account' ? 'b' : 'a',
+                } };
+            });
+        const call = vi.fn(async () => ({ error: { message: 'expired' }, status: 401 }));
+        const client = createAccountBoundOutboxRpcClient({ getSession, call }, { expectedUserId: 'a', isActive: () => active });
+
+        expect((await client.rpc('upsert_task', { p_key: 'original' })).error?.code).toBe('401');
+        expect(getSession).toHaveBeenCalledTimes(2);
+        expect(call).toHaveBeenCalledExactlyOnceWith('upsert_task', { p_key: 'original' }, 'old-a');
+    });
+
+    it.each([false, true])('2回目の401で止まり、最後に送信したトークンを基準に認証待ちを判定する (再更新: %s)', async (rotatedAgain) => {
+        const getSession = vi.fn()
+            .mockResolvedValueOnce({ session: { accessToken: 'old-a', userId: 'a' } })
+            .mockResolvedValueOnce({ session: { accessToken: 'new-a', userId: 'a' } })
+            .mockResolvedValue({ session: { accessToken: rotatedAgain ? 'third-a' : 'new-a', userId: 'a' } });
+        const call = vi.fn(async () => ({ error: { message: 'expired' }, status: 401 }));
+        const client = createAccountBoundOutboxRpcClient({ getSession, call }, { expectedUserId: 'a', isActive: () => true });
+
+        const { error } = await client.rpc('upsert_task', { p_key: 'original' });
+
+        expect(error).not.toBeNull();
+        expect(error?.code).toBe(rotatedAgain ? undefined : '401');
+        expect(call.mock.calls).toEqual([
+            ['upsert_task', { p_key: 'original' }, 'old-a'],
+            ['upsert_task', { p_key: 'original' }, 'new-a'],
+        ]);
+    });
+
 });
