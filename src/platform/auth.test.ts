@@ -19,7 +19,9 @@ const state = vi.hoisted(() => ({
     exchangeCodeForSession: vi.fn(async () => ({ error: null })),
     signInWithOAuth: vi.fn(async () => ({ data: { url: 'https://accounts.google.com/example' }, error: null })),
     signUp: vi.fn(async () => ({ data: { user: { id: 'user-1' }, session: null }, error: null })),
-    getSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } } })),
+    getSession: vi.fn(async (): Promise<{ data: { session: { user: { id: string } } | null }; error?: Error | null }> => ({
+        data: { session: { user: { id: 'user-1' } } }, error: null,
+    })),
     refreshSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } }, error: null })),
     signInWithPassword: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
     signOut: vi.fn(async () => ({ error: null })),
@@ -89,6 +91,7 @@ describe('Web auth pending reward ownership', () => {
         clearAppleOAuthState();
         window.history.replaceState(null, '', '/settings');
         vi.clearAllMocks();
+        state.getSession.mockReset();
     });
 
     it('SIGNED_OUTは保留メモリを切り離し、同じuser namespaceの保存キーは残す', () => {
@@ -131,6 +134,98 @@ describe('Web auth pending reward ownership', () => {
             expect(useGameStore.getState().character.totalXp).toBe(110);
             expect(Object.keys(localStorage).filter((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX))).toHaveLength(0);
         } finally { stop(); vi.unstubAllGlobals(); }
+    });
+
+    it('初期セッションなしから更新に成功すると、退避を済ませて本人の保留操作を復元する', async () => {
+        vi.stubGlobal('navigator', { locks: { request: async (_name: string, work: () => unknown) => work() } });
+        seedCloudCompletionRewardStorage(() => useGameStore.setState(sanitizeGameStoreState({ character: { totalXp: 110 } })));
+        await flushCompletionRewardWrites();
+        const operation = { key: 'task-a', priority: 'medium' as const, completedAt: '2026-07-29T00:00:00.000Z', xpReward: 20 };
+        localStorage.setItem(pendingWebRewardOperationsKey('user-1'), JSON.stringify([operation]));
+        let atLogin: { xp: number; archived: boolean; operations: ReturnType<typeof getPendingWebRewardOperations> } | undefined;
+        state.notifyLogin.mockImplementationOnce(async () => {
+            atLogin = {
+                xp: useGameStore.getState().character.totalXp,
+                archived: Object.keys(localStorage).some((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX)),
+                operations: getPendingWebRewardOperations(),
+            };
+        });
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+            expect(state.notifyLogin).toHaveBeenCalledExactlyOnceWith('user-1');
+            expect(atLogin).toEqual({ xp: 0, archived: true, operations: [operation] });
+        } finally { stop(); vi.unstubAllGlobals(); }
+    });
+
+    it('クラウドデータの退避に失敗したときは更新通知を受けても初回移行を始めない', async () => {
+        vi.stubGlobal('navigator', { locks: { request: async (_name: string, work: () => unknown) => work() } });
+        seedCloudCompletionRewardStorage(() => useGameStore.setState(sanitizeGameStoreState({ character: { totalXp: 110 } })));
+        await flushCompletionRewardWrites();
+        const setItem = Storage.prototype.setItem;
+        const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+            if (key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX)) throw new Error('fixture storage is full');
+            setItem.call(this, key, value);
+        });
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+            expect(state.getSession).not.toHaveBeenCalled();
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+            expect(useGameStore.getState().character.totalXp).toBe(110);
+        } finally { stop(); warn.mockRestore(); write.mockRestore(); vi.unstubAllGlobals(); }
+    });
+
+    it('匿名で起動した後も、更新通知と現在のSDKセッションが一致した場合にだけ同期を始める', async () => {
+        state.getSession.mockResolvedValueOnce({ data: { session: { user: { id: 'other-user' } } } });
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('anonymous'));
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(state.getSession).toHaveBeenCalledOnce());
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(state.notifyLogin).toHaveBeenCalledExactlyOnceWith('user-1'));
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+        } finally { stop(); }
+    });
+
+    it('更新後のSDK確認中にログアウトすると遅い結果から同期を始めない', async () => {
+        let complete!: (value: Awaited<ReturnType<typeof state.getSession>>) => void;
+        state.getSession.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(state.getSession).toHaveBeenCalledOnce());
+            state.listener?.('SIGNED_OUT', null);
+            complete({ data: { session: { user: { id: 'user-1' } } } });
+            await Promise.resolve();
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+            expect(state.notifyLogout).toHaveBeenCalledOnce();
+            expect(getGameRewardAuthorityState()).toBe('anonymous');
+        } finally { complete?.({ data: { session: null } }); stop(); }
+    });
+
+    it('パスワード復旧の保存ゲートがある場合は更新通知から通常同期へ進まない', async () => {
+        localStorage.setItem('life-quest:auth:recovery-pending:v1', '1');
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await Promise.resolve();
+            expect(getPasswordRecoveryState()).toBe('invalid');
+            expect(state.getSession).not.toHaveBeenCalled();
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+        } finally { stop(); }
     });
 
     it('TOKEN_REFRESHED does not strand an in-progress login in resolving', async () => {

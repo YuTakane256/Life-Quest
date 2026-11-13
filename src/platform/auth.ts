@@ -495,23 +495,32 @@ export function startAuthSessionListener(): () => void {
     recoveryGeneration += 1;
     setPasswordRecoveryState('idle');
     let sessionGeneration = 0;
-    const finishAnonymous = () => {
+    let active = true;
+    let startupIsolation: Promise<boolean> | null = null;
+    let refreshAttempt = 0;
+    const canUseTokenRefresh = () => !recoveryCallbackInProgress && !hasWebRecoveryGate() && passwordRecoveryState !== 'ready';
+    const finishAnonymous = (): Promise<boolean> => {
         const generation = ++sessionGeneration;
         const current = () => generation === sessionGeneration;
         // Even a local canonical seed may still be waiting for the game lock.
         // Settle it before changing reward generation or deciding the saved scope.
-        void flushCompletionRewardWrites().then(async () => {
-            if (!current()) return;
+        return flushCompletionRewardWrites().then(async () => {
+            if (!current()) return false;
             if (hasPersistedCloudGame()) {
                 setGameRewardAuthorityState('resolving');
                 await prepareWebAnonymousSession(current);
             }
-            if (current()) setGameRewardAuthorityState('anonymous');
-        }).catch((error) => console.warn(...createClientDiagnosticLogArgs('anonymous_session_prepare_failed', error)));
+            if (!current()) return false;
+            setGameRewardAuthorityState('anonymous');
+            return true;
+        }).catch((error) => {
+            if (current()) console.warn(...createClientDiagnosticLogArgs('anonymous_session_prepare_failed', error));
+            return false;
+        });
     };
     const client = getWebSupabaseClient();
     if (!client) {
-        finishAnonymous();
+        void finishAnonymous();
         return () => { sessionGeneration += 1; };
     }
     recoveryCallbackInProgress = isRecoveryCallbackUrl() || hasWebRecoveryGate();
@@ -525,10 +534,21 @@ export function startAuthSessionListener(): () => void {
         setPasswordRecoveryState('invalid');
         scrubRecoveryUrl();
     }
+    const activateSession = (userId: string): Promise<void> => {
+        const generation = sessionGeneration;
+        setGameRewardAuthorityState('resolving');
+        try { restorePendingWebRewardOperations(userId); } catch { /* メモリ保留は維持する */ }
+        return notifyLogin(userId).then(async () => {
+            await flushCompletionRewardWrites();
+            if (generation === sessionGeneration) setGameRewardAuthorityState('authenticated');
+        });
+    };
     setGameRewardAuthorityState('resolving');
     const { data } = client.auth.onAuthStateChange((event, session) => {
+        if (!active) return;
         // Invalidate an older no-session recovery before a new login can seed stores.
         if (session && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
+            startupIsolation = null;
             sessionGeneration += 1;
             recoveryGeneration += 1;
         }
@@ -545,9 +565,26 @@ export function startAuthSessionListener(): () => void {
             return;
         }
         if (event === 'TOKEN_REFRESHED' && session) {
-            if (!recoveryCallbackInProgress && !hasWebRecoveryGate() && passwordRecoveryState !== 'ready') {
+            if (!canUseTokenRefresh()) return;
+            const isolation = startupIsolation;
+            if (!isolation || captureAuthSessionScope().userId !== null) {
                 void notifyTokenRefreshed(session.user.id);
+                return;
             }
+            const attempt = ++refreshAttempt;
+            const generation = recoveryGeneration;
+            const canRestore = () => active && startupIsolation === isolation && attempt === refreshAttempt
+                && generation === recoveryGeneration && captureAuthSessionScope().userId === null && canUseTokenRefresh();
+            // Finish isolating the previous display before any login hook can read it for migration.
+            void isolation.then(async (isolated) => {
+                if (!isolated || !canRestore()) return;
+                const { data, error } = await client.auth.getSession();
+                if (!canRestore() || error || data.session?.user.id !== session.user.id) return;
+                startupIsolation = null;
+                sessionGeneration += 1;
+                recoveryGeneration += 1;
+                await activateSession(session.user.id);
+            }).catch(() => undefined);
             return;
         }
         if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
@@ -565,13 +602,8 @@ export function startAuthSessionListener(): () => void {
                 if (invalid) setPasswordRecoveryState('invalid');
                 return;
             }
-            setGameRewardAuthorityState('resolving');
-            try { restorePendingWebRewardOperations(session.user.id); } catch { /* メモリ保留は維持する */ }
-            const generation = sessionGeneration;
-            void notifyLogin(session.user.id).then(async () => {
-                await flushCompletionRewardWrites();
-                if (generation === sessionGeneration) setGameRewardAuthorityState('authenticated');
-            });
+            void activateSession(session.user.id);
+            return;
         }
         if (event === 'INITIAL_SESSION' && !session) {
             if (hasWebRecoveryGate()) {
@@ -579,10 +611,11 @@ export function startAuthSessionListener(): () => void {
                 return;
             }
             detachPendingWebRewardOperations();
-            finishAnonymous();
+            startupIsolation = finishAnonymous();
         }
         if (event === 'SIGNED_OUT') {
             if (suppressRecoverySignOut) return;
+            startupIsolation = null;
             recoveryGeneration += 1;
             if (hasWebRecoveryGate() || passwordRecoveryState === 'ready') setPasswordRecoveryState('invalid');
             sessionGeneration += 1;
@@ -593,7 +626,7 @@ export function startAuthSessionListener(): () => void {
                 setGameRewardAuthorityState('resolving');
                 const generation = sessionGeneration;
                 void notifyLogout().then(() => {
-                    if (generation === sessionGeneration) finishAnonymous();
+                    if (generation === sessionGeneration) void finishAnonymous();
                 });
             } else {
                 setGameRewardAuthorityState('anonymous');
@@ -603,5 +636,10 @@ export function startAuthSessionListener(): () => void {
     });
     void handleWebGoogleOAuthCallback();
     void handleWebAppleOAuthCallback();
-    return () => { sessionGeneration += 1; recoveryGeneration += 1; data.subscription.unsubscribe(); };
+    return () => {
+        active = false;
+        sessionGeneration += 1;
+        recoveryGeneration += 1;
+        data.subscription.unsubscribe();
+    };
 }
