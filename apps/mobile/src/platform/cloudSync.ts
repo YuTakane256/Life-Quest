@@ -53,6 +53,8 @@ export interface CloudSyncHandle {
 let cloudSyncState: CloudSyncPublicState = createInactiveCloudSyncState();
 const cloudSyncListeners = new Set<(state: CloudSyncPublicState) => void>();
 let cloudSyncGeneration = 0;
+// NetInfo is shared across sync handles, including during an account switch.
+let refreshingNetwork = false;
 
 function publishCloudSyncState(next: CloudSyncPublicState): void {
     cloudSyncState = next;
@@ -208,7 +210,6 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         )
         .subscribe();
 
-    let refreshingNetwork = false;
     const onAppStateChange = (state: AppStateStatus): void => {
         if (!isCurrent()) return;
         if (state === 'active') {

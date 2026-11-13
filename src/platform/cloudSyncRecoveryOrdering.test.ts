@@ -67,7 +67,15 @@ import { getMobileCloudSyncState, startMobileCloudSync } from '../../apps/mobile
 import { useMobileTitleStore } from '../../apps/mobile/src/stores/useMobileTitleStore';
 const handles: { stop: () => void }[] = [];
 const settle = async () => { for (let n = 0; n < 40; n++) await Promise.resolve(); };
-function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<T>((done, fail) => {
+        resolve = done;
+        reject = fail;
+    });
+    return { promise, resolve, reject };
+}
 beforeEach(() => {
     vi.useFakeTimers(); resetAuthLifecycleHooks(); f.data.clear(); f.realtime.clear(); f.visibleTasks = []; f.seeded = [];
     f.load.mockReset().mockResolvedValue(createEmptyCloudCache());
@@ -184,6 +192,27 @@ describe('Mobile connection state on foreground return', () => {
 
         expect(f.refreshNetwork).toHaveBeenCalledTimes(2);
         expect(f.rpc).toHaveBeenCalledTimes(3);
+    });
+
+    it('allows a new handle to refresh after an old handle’s in-flight refresh rejects', async () => {
+        await begin();
+        const refresh = deferred<void>();
+        f.refreshNetwork.mockReturnValueOnce(refresh.promise);
+        f.app!('active');
+        expect(f.refreshNetwork).toHaveBeenCalledOnce();
+
+        handles.at(-1)!.stop();
+        await notifyLogin('owner-b');
+        handles.push(startMobileCloudSync('owner-b')!);
+        f.app!('active');
+        expect(f.refreshNetwork).toHaveBeenCalledOnce();
+
+        refresh.reject(new Error('temporary native read failure'));
+        await settle();
+        f.app!('background');
+        f.app!('active');
+        await settle();
+        expect(f.refreshNetwork).toHaveBeenCalledTimes(2);
     });
 });
 
