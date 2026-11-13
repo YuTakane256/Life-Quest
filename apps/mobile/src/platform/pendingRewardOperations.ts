@@ -6,6 +6,7 @@ export type PendingRewardOperation =
     | { kind: 'complete_subtask'; taskId: string; subtaskId: string };
 
 let activeUserId: string | null = null;
+let queueGeneration = 0;
 let suppressNextAnonymousRecovery = false;
 const operations = new Map<string, PendingRewardOperation>();
 
@@ -43,10 +44,16 @@ async function persist(): Promise<void> {
 }
 
 /** ログイン/復元で呼ぶ。端末に残った操作を既存メモリとマージして復元する。 */
-export async function restorePendingRewardOperations(userId: string): Promise<void> {
-    if (activeUserId && activeUserId !== userId) operations.clear();
-    activeUserId = userId;
+export async function restorePendingRewardOperations(userId: string, isCurrent = () => true): Promise<void> {
+    if (!isCurrent()) return;
+    if (activeUserId !== userId) {
+        if (activeUserId !== null) operations.clear();
+        activeUserId = userId;
+        queueGeneration += 1;
+    }
+    const generation = queueGeneration;
     const stored = deserialize(await AsyncStorage.getItem(pendingRewardOperationsKey(userId)));
+    if (generation !== queueGeneration || !isCurrent()) return;
     for (const operation of stored) operations.set(operationKey(operation), operation);
     // userId判明前にメモリへ保留された操作もここで同じnamespaceへ永続化する。
     await persist();
@@ -71,11 +78,12 @@ export async function removePendingRewardOperation(operation: PendingRewardOpera
     const key = operationKey(operation);
     const current = operations.get(key);
     if (!current) return;
+    const generation = queueGeneration;
     operations.delete(key);
     try {
         await persist();
     } catch (error) {
-        operations.set(key, current);
+        if (generation === queueGeneration && !operations.has(key)) operations.set(key, current);
         throw error;
     }
 }
@@ -90,6 +98,7 @@ export function getPendingRewardOperations(): PendingRewardOperation[] {
  */
 export function detachPendingRewardOperations(options: { suppressAnonymousRecovery?: boolean } = {}): void {
     if (options.suppressAnonymousRecovery) suppressNextAnonymousRecovery = true;
+    queueGeneration += 1;
     operations.clear();
     activeUserId = null;
 }

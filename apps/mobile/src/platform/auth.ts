@@ -166,7 +166,7 @@ async function activateMobileSession(userId: string): Promise<boolean> {
         if (!current()) return false;
     }
     if (!await checkMobileCloudSessionOwner(userId, current) || !current()) return false;
-    await restorePendingRewardOperations(userId).catch(() => undefined);
+    await restorePendingRewardOperations(userId, current).catch(() => undefined);
     if (!current()) return false;
     await notifyLogin(userId);
     if (!current()) return false;
@@ -579,6 +579,11 @@ export async function getBattleAuthState(): Promise<BattleAuthState> {
 /** バトル以外のクラウド権威ゲーム操作でも使う操作時点の認証判定。 */
 export const getGameAuthState = getBattleAuthState;
 
+function canUseMobileTokenRefresh(): boolean {
+    return !recoveryGateHydrationFailed && !recoveryCallbackInProgress && !mobileRecoveryGate
+        && passwordRecoveryState !== 'ready';
+}
+
 function applyMobileAuthEvent(event: string, session: { user: { id: string } } | null): void {
     if (recoveryGateHydrationFailed) {
         if (session) void pauseMobileCloudForRecovery();
@@ -591,7 +596,7 @@ function applyMobileAuthEvent(event: string, session: { user: { id: string } } |
         return;
     }
     if (event === 'TOKEN_REFRESHED' && session) {
-        if (!recoveryCallbackInProgress && !mobileRecoveryGate && passwordRecoveryState !== 'ready') {
+        if (canUseMobileTokenRefresh()) {
             void notifyTokenRefreshed(session.user.id);
         }
         return;
@@ -651,6 +656,34 @@ export function startAuthSessionListener(): () => void {
     }
     let hydrated = false;
     let deferredAuthEvent: { event: string; session: { user: { id: string } } | null } | null = null;
+    let deferredStartupRefreshUserId: string | null = null;
+    let mayRestoreStartupSession = false;
+    let refreshAttempt = 0;
+    const handleAuthEvent = (event: string, session: { user: { id: string } } | null): void => {
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY' || event === 'SIGNED_OUT') {
+            mayRestoreStartupSession = event === 'INITIAL_SESSION' && !session;
+        }
+        if (event !== 'TOKEN_REFRESHED' || !session || !mayRestoreStartupSession || captureAuthSessionScope().userId !== null
+            || !canUseMobileTokenRefresh()) {
+            applyMobileAuthEvent(event, session);
+            return;
+        }
+
+        // An offline refresh at cold start can produce INITIAL_SESSION(null).
+        // A later successful refresh must first establish a scope for the restored owner.
+        const generation = sessionGeneration;
+        const attempt = ++refreshAttempt;
+        const canRestore = () => current() && mayRestoreStartupSession && generation === sessionGeneration
+            && attempt === refreshAttempt && captureAuthSessionScope().userId === null
+            && canUseMobileTokenRefresh();
+        void Promise.resolve().then(async () => {
+            if (!canRestore()) return;
+            const { data, error } = await client.auth.getSession();
+            if (!canRestore() || error || data.session?.user.id !== session.user.id) return;
+            mayRestoreStartupSession = false;
+            await activateMobileSession(session.user.id);
+        }).catch(() => undefined);
+    };
     recoveryGateHydrationFailed = false;
     setGameRewardAuthorityState('resolving');
     const { data } = client.auth.onAuthStateChange((event, session) => {
@@ -661,17 +694,21 @@ export function startAuthSessionListener(): () => void {
             if (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT'
                 || ((event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') && session)) {
                 deferredAuthEvent = { event, session: identity };
+                deferredStartupRefreshUserId = null;
                 if (event === 'PASSWORD_RECOVERY') {
                     mobileRecoveryIntent = true;
                     mobileRecoveryGate = true;
                 }
-            } else if (event === 'TOKEN_REFRESHED' && session
-                && (!deferredAuthEvent || deferredAuthEvent.event === 'TOKEN_REFRESHED')) {
-                deferredAuthEvent = { event, session: identity };
+            } else if (event === 'TOKEN_REFRESHED' && session) {
+                if (deferredAuthEvent?.event === 'INITIAL_SESSION' && !deferredAuthEvent.session) {
+                    deferredStartupRefreshUserId = session.user.id;
+                } else if (!deferredAuthEvent || deferredAuthEvent.event === 'TOKEN_REFRESHED') {
+                    deferredAuthEvent = { event, session: identity };
+                }
             }
             return;
         }
-        applyMobileAuthEvent(event, session);
+        handleAuthEvent(event, session);
     });
     void hydrateMobileRecoveryGate(current).then(async (restored) => {
         if (!current()) return;
@@ -696,8 +733,11 @@ export function startAuthSessionListener(): () => void {
         }
         hydrated = true;
         const pending = deferredAuthEvent;
+        const startupRefreshUserId = deferredStartupRefreshUserId;
         deferredAuthEvent = null;
-        if (pending) applyMobileAuthEvent(pending.event, pending.session);
+        deferredStartupRefreshUserId = null;
+        if (pending) handleAuthEvent(pending.event, pending.session);
+        if (startupRefreshUserId) handleAuthEvent('TOKEN_REFRESHED', { user: { id: startupRefreshUserId } });
     });
     return () => {
         stopCurrent();
