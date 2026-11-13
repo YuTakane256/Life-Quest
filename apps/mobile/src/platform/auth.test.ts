@@ -12,7 +12,9 @@ const state = vi.hoisted(() => ({
     signInWithOAuth: vi.fn(async () => ({ data: { url: 'https://accounts.google.com/example' }, error: null })),
     openAuthSessionAsync: vi.fn(async () => ({ type: 'success', url: 'lifequest://auth/callback?code=google-code' })),
     signUp: vi.fn(async () => ({ data: { user: { id: 'user-1' }, session: null }, error: null })),
-    getSession: vi.fn(async () => ({ data: { session: { user: { id: 'user-1' } } } })),
+    getSession: vi.fn(async (): Promise<{ data: { session: { user: { id: string } } | null }; error?: Error | null }> => ({
+        data: { session: { user: { id: 'user-1' } } }, error: null,
+    })),
     signInWithPassword: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
     signOut: vi.fn(async () => ({ error: null })),
     recoveryGate: null as string | null,
@@ -126,6 +128,7 @@ describe('Mobile auth reward authority', () => {
     afterEach(async () => {
         // Clear the retained recovery intent through the normal cancellation contract.
         state.storageReadError = false; state.storageWriteError = false;
+        state.getSession.mockReset();
         await cancelPasswordRecovery(); consumeAnonymousRecoverySuppression();
         state.listener = null;
         state.scopeOwner = null;
@@ -315,6 +318,88 @@ describe('Mobile auth reward authority', () => {
         expect(getGameRewardAuthorityState()).toBe('resolving');
         expect(state.notifyLogin).not.toHaveBeenCalled();
         stop();
+    });
+
+    it('回線が戻った後のTOKEN_REFRESHEDで起動時に保護した本人データの同期を開始する', async () => {
+        state.checkCloudOwner.mockImplementation(async (userId) => userId === 'user-1');
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            await vi.waitFor(() => expect(state.checkCloudOwner).toHaveBeenCalledWith(null, expect.any(Function)));
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getGameRewardAuthorityState()).toBe('authenticated'));
+            expect(state.getSession).toHaveBeenCalledOnce();
+            expect(state.checkCloudOwner).toHaveBeenLastCalledWith('user-1', expect.any(Function));
+            expect(state.notifyLogin).toHaveBeenCalledExactlyOnceWith('user-1');
+        } finally { stop(); }
+    });
+
+    it('起動時の保存ゲート読込中に届いた更新でも本人確認後に同期を開始する', async () => {
+        const gate = delayedGate();
+        const stop = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('INITIAL_SESSION', null);
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            expect(state.getSession).not.toHaveBeenCalled();
+            gate.resolve(null);
+            await vi.waitFor(() => expect(state.notifyLogin).toHaveBeenCalledExactlyOnceWith('user-1'));
+        } finally { gate.resolve(null); stop(); }
+    });
+
+    it('更新通知と現在のSDKセッションが一致しない間は起動時の同期を始めない', async () => {
+        state.checkCloudOwner.mockResolvedValue(false);
+        state.getSession.mockResolvedValueOnce({ data: { session: { user: { id: 'user-b' } } }, error: null });
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            await vi.waitFor(() => expect(state.checkCloudOwner).toHaveBeenCalledWith(null, expect.any(Function)));
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(state.getSession).toHaveBeenCalledOnce());
+            await settle();
+            expect(state.checkCloudOwner).toHaveBeenCalledOnce();
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(state.checkCloudOwner).toHaveBeenLastCalledWith('user-1', expect.any(Function)));
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+            expect(getGameRewardAuthorityState()).toBe('resolving');
+        } finally { stop(); }
+    });
+
+    it('起動時の更新でSDK本人を確認中にログアウトしたら古い結果を適用しない', async () => {
+        state.checkCloudOwner.mockResolvedValue(false);
+        let finishRead!: (value: Awaited<ReturnType<typeof state.getSession>>) => void;
+        state.getSession.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('INITIAL_SESSION', null);
+            await vi.waitFor(() => expect(state.checkCloudOwner).toHaveBeenCalledWith(null, expect.any(Function)));
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(state.getSession).toHaveBeenCalledOnce());
+            state.listener?.('SIGNED_OUT', null);
+            finishRead({ data: { session: { user: { id: 'user-1' } } }, error: null });
+            await settle();
+            expect(state.notifyLogout).toHaveBeenCalledOnce();
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+            expect(state.checkCloudOwner.mock.calls.every(([userId]) => userId === null)).toBe(true);
+        } finally { finishRead?.({ data: { session: null } }); stop(); }
+    });
+
+    it('保存済みパスワード復旧ゲートがあれば起動時のトークン更新を通常同期に使わない', async () => {
+        const gate = delayedGate();
+        const stop = startAuthSessionListener();
+        try {
+            await vi.waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+            state.listener?.('INITIAL_SESSION', null);
+            state.listener?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+            gate.resolve('1');
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('invalid'));
+            expect(state.getSession).not.toHaveBeenCalled();
+            expect(state.notifyLogin).not.toHaveBeenCalled();
+        } finally { gate.resolve('1'); stop(); }
     });
 
     it('別アカウントでは直接ログインAPIからも移行・同期を開始しない', async () => {
