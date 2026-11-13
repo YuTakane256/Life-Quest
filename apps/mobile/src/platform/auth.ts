@@ -166,7 +166,7 @@ async function activateMobileSession(userId: string): Promise<boolean> {
         if (!current()) return false;
     }
     if (!await checkMobileCloudSessionOwner(userId, current) || !current()) return false;
-    await restorePendingRewardOperations(userId).catch(() => undefined);
+    await restorePendingRewardOperations(userId, current).catch(() => undefined);
     if (!current()) return false;
     await notifyLogin(userId);
     if (!current()) return false;
