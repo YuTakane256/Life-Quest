@@ -78,7 +78,7 @@ export interface CloudOutboxPublicState extends OutboxPublicState {
 /** HTTP / Supabaseエラーを、UIへ安全に渡せる再送方針へ正規化する。 */
 export function classifySyncFailure(status?: number): { permanent: boolean; kind: SyncFailureKind } {
     if (status === undefined) return { permanent: false, kind: 'network' };
-    // 401は操作自体が無効とは限らない。同じopIdを再ログイン後にだけ再送する。
+    // 401は操作自体が無効とは限らない。同じopIdを認証回復後に再送する。
     if (status === 401) return { permanent: false, kind: 'auth-required' };
     if (status === 408 || status === 425 || status === 429 || status >= 500) return { permanent: false, kind: 'server' };
     if (status === 403) return { permanent: true, kind: 'forbidden' };
@@ -403,6 +403,9 @@ export function createCloudOutboxController(deps: CloudOutboxControllerDeps): Cl
                     notify();
                     await outbox.resumeAfterAuth(); // 前回の401で止まった同一opIdを再開
                     outbox.requestDrain(); // 前回セッションの残りを再送
+                },
+                onTokenRefreshed: async (userId) => {
+                    if (activeUserId === userId) await liveOutbox()?.resumeAfterAuth();
                 },
                 onLogout: async () => {
                     // drain中の操作はpendingへ戻して中断（キューはディスクに残す）
