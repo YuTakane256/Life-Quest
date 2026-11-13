@@ -4,10 +4,10 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { notifyLogin, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin, notifyTokenRefreshed, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { createAccountBoundOutboxRpcClient, createCloudOutboxController } from '@life-quest/core/cloudOutboxController';
 import { createEdgeFunctionInvoker } from '@life-quest/core/edgeFunctions';
-import { cloudCursorKey, createCloudPullRunner, type PullBatch } from '@life-quest/core/cloudPull';
+import { CloudPullAuthError, cloudCursorKey, createAccountBoundCloudPullFetcher, createCloudPullRunner } from '@life-quest/core/cloudPull';
 import { applyPullBatchToCache, buildCanonicalGameSnapshot, buildCanonicalHabitSnapshot, buildCanonicalTaskSnapshot,
     buildStatsLogSnapshot, extractSyncedSettings, loadCloudCache, persistCloudCache } from '@life-quest/core/cloudCache';
 import { getTodayJst } from '@life-quest/core/dates';
@@ -28,12 +28,20 @@ type Storage = ReturnType<typeof storage>;
 type User = { id: string; session: { access_token: string; refresh_token: string } };
 
 async function createDevice(user: User, disk: Storage = storage(), initiallyOffline = false) {
-    const network = { offline: false, loseNextCompletionResponse: false, lost: 0, completionKeys: [] as string[] };
+    const network = {
+        offline: false, loseNextCompletionResponse: false, lost: 0, completionKeys: [] as string[],
+        rejectSyncCredentials: false, taskWriteKeys: [] as unknown[],
+    };
     const transport: typeof fetch = async (input, init) => {
         if (network.offline) throw new TypeError('simulated offline');
         const url = input instanceof Request ? input.url : String(input);
         const completion = url.endsWith('/functions/v1/complete_task');
         if (completion) network.completionKeys.push(JSON.parse(String(init?.body)).idempotencyKey);
+        const taskWrite = url.endsWith('/rest/v1/rpc/upsert_task');
+        if (taskWrite) network.taskWriteKeys.push(JSON.parse(String(init?.body)).p_key);
+        if (network.rejectSyncCredentials && (taskWrite || url.endsWith('/rest/v1/rpc/pull_sync_batch'))) {
+            return Response.json({ code: 'PGRST301', message: 'simulated expired credentials' }, { status: 401 });
+        }
         const response = await fetch(input, init);
         if (completion && response.ok && network.loseNextCompletionResponse) {
             network.loseNextCompletionResponse = false;
@@ -72,12 +80,20 @@ async function createDevice(user: User, disk: Storage = storage(), initiallyOffl
     let cache = await loadCloudCache(disk, user.id);
     const afterVersions: number[] = [];
     const pull = createCloudPullRunner({ isActive: () => active,
-        fetchBatch: async (cursor, limit) => {
-            afterVersions.push(cursor);
-            const { data, error } = await client.rpc('pull_sync_batch', { p_after_version: cursor, p_max_versions: limit });
-            if (error) throw new Error('Test device pull failed');
-            return data as PullBatch;
-        },
+        fetchBatch: createAccountBoundCloudPullFetcher({
+            expectedUserId: user.id,
+            isActive: () => active,
+            getSession: session,
+            call: async (cursor, limit, token) => {
+                afterVersions.push(cursor);
+                const { data, error, status } = await client.rpc('pull_sync_batch', {
+                    p_after_version: cursor, p_max_versions: limit,
+                }).setHeader('Authorization', `Bearer ${token}`);
+                if (status === 401) throw new CloudPullAuthError('request');
+                if (error) throw new Error('Test device pull failed');
+                return data;
+            },
+        }),
         applyBatch: async (batch) => {
             cache = applyPullBatchToCache(cache, batch);
             await persistCloudCache(disk, user.id, cache, () => active);
@@ -85,7 +101,7 @@ async function createDevice(user: User, disk: Storage = storage(), initiallyOffl
         readCursor: async () => Number(disk.getItem(cloudCursorKey(user.id)) ?? 0),
         writeCursor: async (cursor) => { disk.setItem(cloudCursorKey(user.id), String(cursor)); },
     });
-    return { controller, network, disk, pull, afterVersions,
+    return { client, controller, network, disk, pull, afterVersions,
         tasks: () => buildCanonicalTaskSnapshot(cache).tasks,
         habits: () => buildCanonicalHabitSnapshot(cache),
         game: () => buildCanonicalGameSnapshot(cache),
@@ -208,6 +224,68 @@ describe.skipIf(!enabled)('同期復帰：実送信アダプタとローカルDB
         expect(restored.afterVersions[0]).toBe(savedCursor);
         expect(restored.tasks()).toEqual([]); expect(web.tasks()).toEqual([]);
         expect(restored.controller.getActiveOutbox()!.snapshot()).toEqual([]);
+    }, 30000);
+
+    it('SDKのトークン更新通知で認証待ちの再送と差分プルが復帰する', async () => {
+        const recovering = await device();
+        const peer = await device();
+        await start();
+        const baseline = crypto.randomUUID();
+        await enqueue(peer, 'upsert_task', { p_id: baseline, p_name: '復帰前に取得済み' });
+        await peer.controller.drainAndWait();
+        await converge(recovering);
+        const cursorKey = cloudCursorKey(user.id);
+        const cursor = Number(recovering.disk.getItem(cursorKey));
+        expect(cursor).toBeGreaterThan(0);
+
+        const outgoing = crypto.randomUUID();
+        const incoming = crypto.randomUUID();
+        recovering.network.rejectSyncCredentials = true;
+        await enqueue(recovering, 'upsert_task', { p_id: outgoing, p_name: '認証待ちの送信' });
+        const outbox = recovering.controller.getActiveOutbox()!;
+        await outbox.flush();
+        const [blocked] = outbox.snapshot();
+        expect(blocked).toMatchObject({ status: 'pending', failure: { kind: 'auth-required' } });
+        await recovering.controller.retryPending();
+        expect(recovering.network.taskWriteKeys).toEqual([blocked.opId]);
+
+        await enqueue(peer, 'upsert_task', { p_id: incoming, p_name: '別端末からの変更' });
+        await peer.controller.drainAndWait();
+        await converge(peer);
+        expect(peer.tasks().map((task) => task.id).sort()).toEqual([baseline, incoming].sort());
+        await expect(recovering.pull.flush()).rejects.toThrow(CloudPullAuthError);
+        expect(recovering.tasks().map((task) => task.id)).toEqual([baseline]);
+        expect(Number(recovering.disk.getItem(cursorKey))).toBe(cursor);
+
+        // The fixture connects the SDK event to the shared lifecycle and runs the
+        // blocked pull after the production outbox hook. App listeners are tested separately.
+        const unregisterPull = registerAuthLifecycleHooks({
+            onTokenRefreshed: async () => { await recovering.pull.flush(); },
+        });
+        let recovery: Promise<void> | undefined;
+        const { data: { subscription } } = recovering.client.auth.onAuthStateChange((event, session) => {
+            if (event !== 'TOKEN_REFRESHED' || !session) return;
+            recovering.network.rejectSyncCredentials = false;
+            recovery = notifyTokenRefreshed(session.user.id);
+        });
+        try {
+            const { data, error } = await recovering.client.auth.refreshSession();
+            expect(error).toBeNull();
+            expect(data.session?.user.id).toBe(user.id);
+            expect(recovery).toBeDefined();
+            await recovery;
+
+            expect(outbox.snapshot()).toEqual([]);
+            expect(recovering.network.taskWriteKeys).toEqual([blocked.opId, blocked.opId]);
+            expect(recovering.afterVersions.slice(-2)).toEqual([cursor, cursor]);
+            expect(Number(recovering.disk.getItem(cursorKey))).toBeGreaterThan(cursor);
+            expect(recovering.tasks().map((task) => task.id).sort()).toEqual([baseline, incoming, outgoing].sort());
+            await converge(peer);
+            expect(peer.tasks()).toEqual(recovering.tasks());
+        } finally {
+            subscription.unsubscribe();
+            unregisterPull();
+        }
     }, 30000);
 
     it('サーバー確定後の応答喪失→復元再送でも同じopIdでXP/回数/宝箱/統計を重複させない', async () => {
