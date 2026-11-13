@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin, notifyLogout, resetAuthLifecycleHooks } from './authLifecycle.ts';
+import { notifyLogin, notifyLogout, notifyTokenRefreshed, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from './authLifecycle.ts';
 import {
     classifySyncFailure,
     createCloudOutboxController,
@@ -411,6 +411,72 @@ describe('registerHooks（認証ライフサイクル配線）', () => {
         expect(opIds).toHaveLength(2);
         expect(opIds[0]).toBe(opIds[1]);
         unregister();
+    });
+
+    it('本人のトークン更新で認証待ちだけを同じ操作IDで再開する', async () => {
+        let currentStatus = 401;
+        const rpc = vi.fn(async (_name: string, params: Record<string, unknown>) => {
+            const status = params.p_id === 'conflicted-task' ? 409 : currentStatus;
+            return { error: status === 200 ? null : { code: String(status), message: 'rejected' } };
+        });
+        const controller = createCloudOutboxController({
+            storage: createMemoryStorage(), getRpcClient: () => ({ rpc }), getEdgeInvoker: () => null,
+        });
+        const login = vi.fn();
+        const unregisterLogin = registerAuthLifecycleHooks({ onLogin: login });
+        const unregister = controller.registerHooks();
+        try {
+            await notifyLogin('user-a');
+            const outbox = controller.getActiveOutbox()!;
+            await controller.enqueue('upsert_task', { p_id: 'conflicted-task' });
+            await outbox.flush();
+            await controller.enqueue('upsert_task', { p_id: 'waiting-task' });
+            await outbox.flush();
+            const [conflict, waiting] = outbox.snapshot();
+            expect(conflict.status).toBe('conflict');
+            expect(waiting.failure?.kind).toBe('auth-required');
+
+            await notifyTokenRefreshed('user-b');
+            expect(rpc).toHaveBeenCalledTimes(2);
+            currentStatus = 200;
+            await Promise.all([notifyTokenRefreshed('user-a'), notifyTokenRefreshed('user-a')]);
+
+            expect(controller.getActiveOutbox()).toBe(outbox);
+            expect(login).toHaveBeenCalledExactlyOnceWith('user-a');
+            expect(rpc).toHaveBeenCalledTimes(3);
+            expect(rpc).toHaveBeenLastCalledWith('upsert_task', { p_id: 'waiting-task', p_key: waiting.opId });
+            expect(outbox.snapshot()).toEqual([conflict]);
+        } finally {
+            await notifyLogout();
+            unregister();
+            unregisterLogin();
+        }
+    });
+
+    it('更新後も401なら次の認証回復までキューを止める', async () => {
+        const rpc = vi.fn(async () => ({ error: { code: '401', message: 'expired' } }));
+        const controller = createCloudOutboxController({
+            storage: createMemoryStorage(), getRpcClient: () => ({ rpc }), getEdgeInvoker: () => null,
+        });
+        const unregister = controller.registerHooks();
+        try {
+            await notifyLogin('user-a');
+            const outbox = controller.getActiveOutbox()!;
+            await controller.enqueue('upsert_task', { p_id: 'waiting-task' });
+            await outbox.flush();
+            const [waiting] = outbox.snapshot();
+
+            await notifyTokenRefreshed('user-a');
+            await controller.retryPending();
+
+            expect(rpc).toHaveBeenCalledTimes(2);
+            expect(outbox.snapshot()[0]).toMatchObject({
+                opId: waiting.opId, status: 'pending', failure: { kind: 'auth-required' },
+            });
+        } finally {
+            await notifyLogout();
+            unregister();
+        }
     });
 
     it('outbox読込中にログアウトしても、古いログイン処理がoutboxを復活させない', async () => {

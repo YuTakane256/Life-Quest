@@ -184,7 +184,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
         const queuedIds = new Set(ops.map((op) => op.opId));
         for (const op of ops) {
             if (op.status !== 'pending') continue;
-            // 401後の操作は、再ログインが成功するまで同じopIdのまま停止する。
+            // 401後の操作は、認証が回復するまで同じopIdのまま停止する。
             if (op.failure?.kind === 'auth-required') continue;
             const blocked = op.dependsOn.some((dependency) => queuedIds.has(dependency));
             if (!blocked) return op;
@@ -252,7 +252,7 @@ export function createSyncOutbox(deps: OutboxDeps): SyncOutbox {
                 continue; // 依存しない後続は送り続ける
             }
 
-            // 一時エラー: pendingへ戻して中断。401だけは再ログインまで送らない。
+            // 一時エラー: pendingへ戻して中断。401だけは認証が回復するまで送らない。
             setStatus(op.opId, 'pending', result.failureKind
                 ? { kind: result.failureKind, occurredAt: now() }
                 : undefined);
