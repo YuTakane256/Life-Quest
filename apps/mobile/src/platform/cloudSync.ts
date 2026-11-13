@@ -53,6 +53,8 @@ export interface CloudSyncHandle {
 let cloudSyncState: CloudSyncPublicState = createInactiveCloudSyncState();
 const cloudSyncListeners = new Set<(state: CloudSyncPublicState) => void>();
 let cloudSyncGeneration = 0;
+// NetInfo is shared across sync handles, including during an account switch.
+let refreshingNetwork = false;
 
 function publishCloudSyncState(next: CloudSyncPublicState): void {
     cloudSyncState = next;
@@ -212,6 +214,12 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         if (!isCurrent()) return;
         if (state === 'active') {
             scheduler.start();
+            // iOS can miss connectivity changes in the background. Refresh notifies
+            // our existing NetInfo listener without delaying foreground recovery.
+            if (!refreshingNetwork) {
+                refreshingNetwork = true;
+                void NetInfo.refresh().catch(() => undefined).finally(() => { refreshingNetwork = false; });
+            }
             void recoverConnection().catch(() => undefined);
         } else {
             scheduler.stop(); // バックグラウンドでは定期プルを止める

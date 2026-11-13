@@ -12,6 +12,7 @@ const f = vi.hoisted(() => ({
     realtime: new Map<string, () => void>(),
     net: null as null | ((state: { isConnected: boolean; isInternetReachable: boolean }) => void),
     app: null as null | ((state: string) => void),
+    refreshNetwork: vi.fn<() => Promise<void>>(),
     load: vi.fn<() => Promise<CloudCache>>(),
     drain: vi.fn(async () => ({ retryablePending: false })),
     rpc: vi.fn(async (_platform: string, _params: Record<string, unknown>): Promise<{ data: PullBatch; error: null }> => ({ data: { next_cursor: 8, has_more: false }, error: null })),
@@ -59,17 +60,26 @@ vi.mock('../../apps/mobile/src/platform/cloudSessionRecovery', () => ({ remember
 vi.mock('../stores/useLoginBonusStore', () => ({ requestLoginBonusRecheck: vi.fn() }));
 vi.mock('../../apps/mobile/src/stores/useMobileLoginBonusStore', () => ({ requestMobileLoginBonusRecheck: vi.fn() }));
 vi.mock('react-native', () => ({ AppState: { addEventListener: (_event: string, cb: (state: string) => void) => { f.app = cb; return { remove() { f.app = null; } }; } } }));
-vi.mock('@react-native-community/netinfo', () => ({ default: { addEventListener: (cb: typeof f.net) => { f.net = cb; return () => { f.net = null; }; } } }));
+vi.mock('@react-native-community/netinfo', () => ({ default: { refresh: () => f.refreshNetwork(), addEventListener: (cb: typeof f.net) => { f.net = cb; return () => { f.net = null; }; } } }));
 
 import { startWebCloudSync } from './cloudSync';
-import { startMobileCloudSync } from '../../apps/mobile/src/platform/cloudSync';
+import { getMobileCloudSyncState, startMobileCloudSync } from '../../apps/mobile/src/platform/cloudSync';
 import { useMobileTitleStore } from '../../apps/mobile/src/stores/useMobileTitleStore';
 const handles: { stop: () => void }[] = [];
 const settle = async () => { for (let n = 0; n < 40; n++) await Promise.resolve(); };
-function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<T>((done, fail) => {
+        resolve = done;
+        reject = fail;
+    });
+    return { promise, resolve, reject };
+}
 beforeEach(() => {
     vi.useFakeTimers(); resetAuthLifecycleHooks(); f.data.clear(); f.realtime.clear(); f.visibleTasks = []; f.seeded = [];
     f.load.mockReset().mockResolvedValue(createEmptyCloudCache());
+    f.refreshNetwork.mockReset().mockResolvedValue(undefined);
     f.drain.mockReset().mockResolvedValue({ retryablePending: false });
     f.rpc.mockReset().mockResolvedValue({ data: {
         next_cursor: 8, has_more: false,
@@ -125,6 +135,84 @@ describe('Mobile title hydration callback (transport/seed stubs)', () => {
         finish!(useMobileTitleStore.getState()); await settle();
         expect(f.seeded.length).toBe(phase === 'hydrate' ? before + 1 : before);
         expect(f.rpc).toHaveBeenCalledTimes(phase === 'hydrate' ? 2 : 1);
+    });
+});
+
+describe('Mobile connection state on foreground return', () => {
+    async function begin() {
+        await notifyLogin('owner-a');
+        handles.push(startMobileCloudSync('owner-a')!);
+        await settle();
+        f.drain.mockClear();
+        f.rpc.mockClear();
+    }
+
+    it.each([
+        { before: false, after: true, availability: 'ready' },
+        { before: true, after: false, availability: 'offline' },
+    ])('refreshes $before → $after when no event was delivered in the background', async ({ before, after, availability }) => {
+        await begin();
+        f.net!({ isConnected: before, isInternetReachable: before });
+        f.app!('background');
+        expect(f.refreshNetwork).not.toHaveBeenCalled();
+        f.refreshNetwork.mockImplementation(async () => {
+            // NetInfo.refresh publishes the latest native snapshot to subscribers.
+            f.net!({ isConnected: after, isInternetReachable: after });
+        });
+
+        f.app!('active');
+        await settle();
+
+        expect(f.refreshNetwork).toHaveBeenCalledOnce();
+        expect(getMobileCloudSyncState().availability).toBe(availability);
+        expect(f.drain).toHaveBeenCalled();
+    });
+
+    it('still attempts foreground sync while a refresh is pending or fails', async () => {
+        await begin();
+        const refresh = deferred<void>();
+        f.refreshNetwork.mockReturnValueOnce(refresh.promise);
+        f.app!('active');
+        await settle();
+
+        expect(f.refreshNetwork).toHaveBeenCalledOnce();
+        expect(f.rpc).toHaveBeenCalledOnce();
+        f.app!('background');
+        f.app!('active');
+        await settle();
+        expect(f.refreshNetwork).toHaveBeenCalledOnce();
+        expect(f.rpc).toHaveBeenCalledTimes(2);
+        refresh.resolve();
+        await settle();
+
+        f.refreshNetwork.mockRejectedValueOnce(new Error('temporary native read failure'));
+        f.app!('background');
+        f.app!('active');
+        await settle();
+
+        expect(f.refreshNetwork).toHaveBeenCalledTimes(2);
+        expect(f.rpc).toHaveBeenCalledTimes(3);
+    });
+
+    it('allows a new handle to refresh after an old handle’s in-flight refresh rejects', async () => {
+        await begin();
+        const refresh = deferred<void>();
+        f.refreshNetwork.mockReturnValueOnce(refresh.promise);
+        f.app!('active');
+        expect(f.refreshNetwork).toHaveBeenCalledOnce();
+
+        handles.at(-1)!.stop();
+        await notifyLogin('owner-b');
+        handles.push(startMobileCloudSync('owner-b')!);
+        f.app!('active');
+        expect(f.refreshNetwork).toHaveBeenCalledOnce();
+
+        refresh.reject(new Error('temporary native read failure'));
+        await settle();
+        f.app!('background');
+        f.app!('active');
+        await settle();
+        expect(f.refreshNetwork).toHaveBeenCalledTimes(2);
     });
 });
 
