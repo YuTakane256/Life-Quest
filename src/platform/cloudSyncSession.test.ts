@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
     const realtime: Array<() => void> = [];
     const storage = { getItem: vi.fn(), setItem: vi.fn(), removeItem: vi.fn() };
     return {
-        values, rpc, realtime, storage, sdkUser: 'a' as string | null, sdkError: false, authListeners: [] as Array<(event: string, session: { user: { id: string } } | null) => void>, headers: [] as string[],
+        values, rpc, realtime, storage, sdkUser: 'a' as string | null, sdkAccessToken: null as string | null, sdkError: false, authListeners: [] as Array<(event: string, session: { user: { id: string } } | null) => void>, headers: [] as string[],
         visibleTasks: [] as string[],
         seeded: vi.fn(), bonus: vi.fn(), drain: vi.fn(), retry: vi.fn(),
         push: { availability: 'ready', pending: 0, inflight: 0, failed: 0, conflict: 0,
@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => {
             auth: { onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => {
                 mocks.authListeners.push(listener); return { data: { subscription: { unsubscribe() {} } } };
             }, getSession: async () => ({ data: { session: mocks.sdkUser === null ? null : {
-                user: { id: mocks.sdkUser }, access_token: `token-${mocks.sdkUser}`,
+                user: { id: mocks.sdkUser }, access_token: mocks.sdkAccessToken ?? `token-${mocks.sdkUser}`,
             } }, error: mocks.sdkError ? { message: 'private-sdk-error' } : null }) },
             rpc: (name: string, params: Record<string, unknown>) => {
                 const request = rpc(name, params);
@@ -205,7 +205,7 @@ beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     mocks.values.clear();
-    mocks.visibleTasks = []; mocks.sdkUser = 'a'; mocks.sdkError = false; mocks.headers.length = 0; mocks.authListeners.length = 0;
+    mocks.visibleTasks = []; mocks.sdkUser = 'a'; mocks.sdkAccessToken = null; mocks.sdkError = false; mocks.headers.length = 0; mocks.authListeners.length = 0;
     localStorage.clear(); window.history.replaceState(null, '', '/settings');
     webAuth.clearPasswordRecoveryState(); mobileAuth.clearPasswordRecoveryState();
     mocks.realtime.length = 0;
@@ -402,6 +402,27 @@ for (const platform of [
             expect(JSON.stringify(platform.state())).not.toContain('private');
             mocks.sdkError = false; mocks.rpc.mockResolvedValue({ data: batch('a'), error: null });
             await platform.active()!.syncNow(); expect(platform.state().pull.phase).toBe('idle');
+        });
+
+        it('finishes the same sync when a late 401 arrives after the same owner refreshed', async () => {
+            await start();
+            const handle = platform.active()!;
+            const response = deferred<{ data: null; error: { message: string }; status: number }>();
+            mocks.rpc.mockReturnValueOnce(response.promise).mockResolvedValue({ data: batch('a'), error: null });
+            const sync = handle.syncNow();
+            await settle();
+            expect(mocks.rpc).toHaveBeenCalledOnce();
+            mocks.sdkAccessToken = 'refreshed-a';
+            response.resolve({ data: null, error: { message: 'private diagnostic' }, status: 401 });
+
+            await sync;
+
+            expect(platform.active()).toBe(handle);
+            expect(mocks.headers).toEqual(['Bearer token-a', 'Bearer refreshed-a']);
+            expect(mocks.rpc.mock.calls.map(([, params]) => params.p_after_version)).toEqual([0, 0]);
+            expect(mocks.visibleTasks).toEqual(['a-task']);
+            expect(mocks.values.get(cloudCursorKey('a'))).toBe('2');
+            expect(platform.state().pull.phase).toBe('idle');
         });
 
         it('the real SDK TOKEN_REFRESHED listener resumes only the same-owner blocked pull without login initialization', async () => {

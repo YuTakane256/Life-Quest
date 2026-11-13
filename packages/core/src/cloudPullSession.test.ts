@@ -31,13 +31,45 @@ describe('account-bound cloud pull', () => {
         await expect(f.fetchBatch(3, 20)).rejects.not.toBeInstanceOf(CloudPullAuthError);
         expect(await f.fetchBatch(3, 20)).toBe(batch);
     });
-    it('a late401 for an old token stays retryable when the same owner already refreshed', async () => {
+    it('retries the same page immediately when an old token receives 401 after a refresh', async () => {
         const f = fixture();
         f.getSession.mockResolvedValueOnce(owner).mockResolvedValue({ ...owner, accessToken: 'a-refreshed-token' });
         f.call.mockRejectedValueOnce(new CloudPullAuthError('request'));
-        await expect(f.fetchBatch(3, 20)).rejects.toThrow(/^cloud pull request failed$/);
-        expect(await f.fetchBatch(3, 20)).toBe(batch);
-        expect(f.call.mock.calls.map(([, , token]) => token)).toEqual([owner.accessToken, 'a-refreshed-token']);
+        const applyBatch = vi.fn(); const writeCursor = vi.fn();
+        const runner = createCloudPullRunner({ fetchBatch: f.fetchBatch, readCursor: async () => 3, applyBatch, writeCursor });
+
+        await runner.flush();
+
+        expect(f.call.mock.calls).toEqual([[3, 200, owner.accessToken], [3, 200, 'a-refreshed-token']]);
+        expect(applyBatch).toHaveBeenCalledExactlyOnceWith(batch);
+        expect(writeCursor).toHaveBeenCalledExactlyOnceWith(8);
+    });
+    it.each([false, true])('caps retries at one when the second request receives 401 (refreshed again: %s)', async (refreshedAgain) => {
+        const f = fixture();
+        const refreshed = { ...owner, accessToken: 'a-refreshed-token' };
+        f.getSession.mockResolvedValueOnce(owner).mockResolvedValueOnce(refreshed)
+            .mockResolvedValue(refreshedAgain ? { ...refreshed, accessToken: 'a-third-token' } : refreshed);
+        f.call.mockRejectedValue(new CloudPullAuthError('request'));
+
+        await expect(f.fetchBatch(3, 20)).rejects.toThrow(refreshedAgain ? 'cloud pull request failed' : 'cloud pull authentication required');
+        expect(f.call.mock.calls).toEqual([[3, 20, owner.accessToken], [3, 20, refreshed.accessToken]]);
+    });
+    it('does not retry a rejected page with another account’s token', async () => {
+        const f = fixture();
+        f.getSession.mockResolvedValueOnce(owner).mockResolvedValue({ userId: 'b', accessToken: 'b-token' });
+        f.call.mockRejectedValueOnce(new CloudPullAuthError('request'));
+
+        await expect(f.fetchBatch(3, 20)).rejects.toThrow('cloud pull account changed');
+        expect(f.call).toHaveBeenCalledExactlyOnceWith(3, 20, owner.accessToken);
+    });
+    it('discards a retried response when the SDK changes owner during the retry', async () => {
+        const f = fixture();
+        f.getSession.mockResolvedValueOnce(owner).mockResolvedValueOnce({ ...owner, accessToken: 'a-refreshed-token' })
+            .mockResolvedValue({ userId: 'b', accessToken: 'b-token' });
+        f.call.mockRejectedValueOnce(new CloudPullAuthError('request'));
+
+        await expect(f.fetchBatch(3, 20)).rejects.toThrow('cloud pull account changed');
+        expect(f.call.mock.calls).toEqual([[3, 20, owner.accessToken], [3, 20, 'a-refreshed-token']]);
     });
     it('does not echo SDK authentication diagnostics', async () => {
         const f = fixture(); f.getSession.mockRejectedValue(new Error('private token and user details'));
