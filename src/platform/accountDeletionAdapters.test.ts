@@ -96,8 +96,15 @@ it('実Mobile auth listenerの旧A停止・報酬復元待機中でも、SDK B�
     const pending = deleteMobile({ userId: 'a', isActive: captureAuthSessionScope().isCurrent });
     await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledOnce());
     mocks.identities.forEach((event) => event('SIGNED_IN', { user: { id: 'b' } }));
-    await vi.waitFor(() => expect(mocks.restoreMobile).toHaveBeenCalledWith('b')); expect(captureAuthSessionScope().userId).toBeNull();
+    await vi.waitFor(() => expect(mocks.restoreMobile).toHaveBeenCalledWith('b', expect.any(Function)));
+    const isRestoreCurrent = mocks.restoreMobile.mock.calls[0][1];
+    expect(isRestoreCurrent()).toBe(true);
+    expect(captureAuthSessionScope().userId).toBeNull();
     rpc.resolve({ apple_revocation: 'manual_required' }); expect(await pending).toMatchObject({ ok: false });
     expect(mocks.cleanup).not.toHaveBeenCalled(); expect(mocks.signOut).not.toHaveBeenCalled();
-    restore.resolve(); await vi.waitFor(() => expect(captureAuthSessionScope().userId).toBe('b')); stop(); expect(mocks.identities.size).toBe(0);
+    restore.resolve();
+    await vi.waitFor(() => expect(captureAuthSessionScope().userId).toBe('b'));
+    stop();
+    expect(isRestoreCurrent()).toBe(false);
+    expect(mocks.identities.size).toBe(0);
 });
