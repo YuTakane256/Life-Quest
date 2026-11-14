@@ -8,6 +8,7 @@ import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 import { getTabBarHeight, getTaskBadge, shouldNavigateTab } from '../theme/layout';
 import { usePalette } from '../theme/usePalette';
+import { LoginBonusNotice } from './LoginBonusNotice';
 
 type TabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>>[0];
 // Same Lucide glyphs and order as Web BottomNav; no emoji/font glyph substitution.
@@ -31,6 +32,7 @@ export function QuestTabBar({ state, emitter, navigateToTab, insets }: TabBarPro
 
     return (
         <View onLayout={(event) => reportHeight?.(event.nativeEvent.layout.height)} style={{ backgroundColor: palette.bg.secondary, borderTopColor: palette.border.default, borderTopWidth: 1, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }}>
+            <LoginBonusNotice />
             <View style={[styles.row, { height }]}>
                 {state.routes.map((route, index) => {
                     const item = ITEMS[route.name as keyof typeof ITEMS];
