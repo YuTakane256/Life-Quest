@@ -75,7 +75,8 @@ it('モバイル起動時に認証通信が失敗しても、SDKの自動更新�
         payload: { p_id: taskId, p_name: '保留中のタスク' } } satisfies OutboxOp;
     const child = { ...operation, opId: childOpId, operation: 'upsert_subtask', dependsOn: [parentOpId],
         payload: { p_id: subtaskId, p_task_id: taskId, p_name: '保留中のサブタスク' } } satisfies OutboxOp;
-    device.appStorage.set(cloudOutboxKey(owner), JSON.stringify({ ops: [parent, child] }));
+    // Put the child first so FIFO alone cannot satisfy the dependency.
+    device.appStorage.set(cloudOutboxKey(owner), JSON.stringify({ ops: [child, parent] }));
     const otherQueue = JSON.stringify({ ops: [{ ...parent, opId: 'bbfeee89-6215-453c-b2aa-f95000eecaae' }] });
     device.appStorage.set(cloudOutboxKey(otherOwner), otherQueue);
 
@@ -144,13 +145,13 @@ it('モバイル起動時に認証通信が失敗しても、SDKの自動更新�
         expect(successfulRefreshes).toBe(0);
         expect(captureAuthSessionScope().userId).toBeNull();
         expect(getGameRewardAuthorityState()).toBe('resolving');
-        expect(savedOperations()).toEqual([parent, child]);
+        expect(savedOperations()).toEqual([child, parent]);
         expect(calls).toEqual([]);
 
         connected = true;
         await vi.advanceTimersByTimeAsync(90_000);
         await vi.waitFor(() => expect(calls.map(({ name }) => name)).toEqual(['upsert_task']));
-        expect(savedOperations()).toEqual([{ ...parent, status: 'inflight' }, child]);
+        expect(savedOperations()).toEqual([child, { ...parent, status: 'inflight' }]);
         expect(useMobileTaskStore.getState().tasks.some(({ id }) => id === taskId)).toBe(false);
 
         releaseParent();
