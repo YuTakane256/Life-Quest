@@ -35,6 +35,9 @@ test('Web cold start resumes its saved task after the SDK reconnects', async ({ 
     let connected = false;
     let refreshFailures = 0;
     let refreshSuccesses = 0;
+    let upsertAcknowledged = false;
+    let releaseUpsert!: () => void;
+    const holdUpsert = new Promise<void>((resolve) => { releaseUpsert = resolve; });
     const calls: { method: string; bearer: string | undefined; payload: unknown }[] = [];
     const unexpected: string[] = [];
     await page.route((url) => url.pathname.startsWith('/__startup_sync/'), async (route) => {
@@ -66,6 +69,8 @@ test('Web cold start resumes its saved task after the SDK reconnects', async ({ 
                 await route.fulfill({ json: { imported_at: now.toISOString() } });
                 return;
             case 'upsert_task':
+                await holdUpsert;
+                upsertAcknowledged = true;
                 await route.fulfill({ json: { id: taskId, version: 7 } });
                 return;
             case 'claim_login_bonus':
@@ -75,6 +80,11 @@ test('Web cold start resumes its saved task after the SDK reconnects', async ({ 
                 } });
                 return;
             case 'pull_sync_batch':
+                if (!upsertAcknowledged) {
+                    unexpected.push('pull before upsert acknowledgment');
+                    await route.fulfill({ json: { next_cursor: 0, has_more: false, tasks: [] } });
+                    return;
+                }
                 await route.fulfill({ json: {
                     next_cursor: 7, has_more: false,
                     tasks: [{ id: taskId, name: taskName, version: 7, created_at: now.toISOString(),
@@ -97,13 +107,21 @@ test('Web cold start resumes its saved task after the SDK reconnects', async ({ 
     expect(refreshFailures).toBeGreaterThan(0);
     expect(refreshSuccesses).toBe(0);
     expect(calls).toEqual([]);
-    expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).ops[0].opId, outboxKey(owner))).toBe(opId);
+    const savedOperations = () => page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).ops, outboxKey(owner));
+    expect(await savedOperations()).toMatchObject([{ opId, status: 'pending' }]);
 
-    connected = true;
-    // Advance the SDK ticker after its retry cooldown. No auth callback is injected.
-    await page.clock.fastForward(120_000);
+    const receivedTask = page.getByText(taskName, { exact: true });
+    try {
+        connected = true;
+        // Advance the SDK ticker after its retry cooldown. No auth callback is injected.
+        await page.clock.fastForward(120_000);
+        await expect.poll(() => calls.filter(({ method }) => method === 'upsert_task').length).toBe(1);
+        expect(await savedOperations()).toMatchObject([{ opId, status: 'inflight' }]);
+        await expect(receivedTask).toHaveCount(0);
+        expect(calls.some(({ method }) => method === 'pull_sync_batch')).toBe(false);
+    } finally { releaseUpsert(); }
 
-    await expect(page.getByText(taskName, { exact: true })).toBeVisible();
+    await expect(receivedTask).toBeVisible();
     await expect.poll(rewardState).toBe('authenticated');
     expect(refreshSuccesses).toBe(1);
     const relevantCalls = calls.filter(({ method }) => method === 'upsert_task' || method === 'pull_sync_batch');
@@ -112,7 +130,7 @@ test('Web cold start resumes its saved task after the SDK reconnects', async ({ 
     expect(relevantCalls.filter(({ method }) => method === 'upsert_task')).toHaveLength(1);
     expect(relevantCalls[1]).toMatchObject({ method: 'pull_sync_batch', bearer: 'Bearer fixture-renewed-access',
         payload: { p_after_version: 0 } });
-    expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).ops, outboxKey(owner))).toEqual([]);
+    expect(await savedOperations()).toEqual([]);
     expect(await page.evaluate((key) => localStorage.getItem(key), outboxKey(otherOwner))).toBe(otherQueue);
     expect(unexpected).toEqual([]);
 });
