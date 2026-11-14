@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({ user: vi.fn(), pending: vi.fn(), approve: vi.f
     toggle: (_enabled: boolean) => {}, blur: () => {}, focus: () => {},
     blurs: new Set<() => void>(), focuses: new Set<() => void>(), remove: vi.fn(),
     deleteText: (_value: string) => {}, deletePress: () => {},
-    identities: new Set<(userId: string | null) => void>(),
+    identities: new Set<(userId: string | null) => void>(), signIn: vi.fn(),
 }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: vi.fn(async () => null), setItem: vi.fn(async () => undefined), getAllKeys: vi.fn(async () => []),
@@ -16,9 +16,13 @@ vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
 vi.mock('react-native', async () => {
     const { createElement: element } = await import('react');
     type Props = { children?: ReactNode; accessibilityLabel?: string; accessibilityRole?: string;
-        onPress?: () => void; disabled?: boolean; value?: string; onChangeText?: (text: string) => void };
+        onPress?: () => void; disabled?: boolean; value?: string; onChangeText?: (text: string) => void;
+        automaticallyAdjustKeyboardInsets?: boolean; keyboardShouldPersistTaps?: string };
     const box = ({ children }: Props) => element('div', null, children);
-    return { View: box, ScrollView: box, Text: ({ children }: Props) => element('span', null, children),
+    return { View: box, ScrollView: (props: Props) => element('div', {
+        'data-keyboard-insets': props.automaticallyAdjustKeyboardInsets,
+        'data-keyboard-taps': props.keyboardShouldPersistTaps,
+    }, props.children), Text: ({ children }: Props) => element('span', null, children),
         Pressable: ({ children, onPress, disabled, accessibilityLabel }: Props) => {
             if (accessibilityLabel === 'アカウントを完全に削除する') mocks.deletePress = onPress!;
             return element('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children);
@@ -49,7 +53,7 @@ vi.mock('../platform/auth', () => ({ getCurrentUser: mocks.user, getPasswordReco
     subscribeAccountDeletionIdentity: (listener: (userId: string | null) => void) => { mocks.identities.add(listener); return () => { mocks.identities.delete(listener); }; },
     subscribePasswordRecoveryState: () => () => undefined,
     deleteCurrentAccount: mocks.remove, cancelPasswordRecovery: vi.fn(), requestPasswordReset: vi.fn(),
-    resendEmailVerification: vi.fn(), signInWithEmail: vi.fn(), signInWithApple: vi.fn(), signInWithGoogle: vi.fn(),
+    resendEmailVerification: vi.fn(), signInWithEmail: mocks.signIn, signInWithApple: vi.fn(), signInWithGoogle: vi.fn(),
     signOutUser: vi.fn(), signUpWithEmail: vi.fn(), updatePasswordFromRecovery: vi.fn() }));
 vi.mock('../platform/cloudMigration', () => ({ getPendingMobileContent: mocks.pending, approveMobileContentImport: mocks.approve }));
 vi.mock('../platform/supabase', () => ({ readMobileSupabaseEnv: () => ({ url: 'https://example.invalid', anonKey: 'test' }) }));
@@ -72,6 +76,7 @@ beforeEach(async () => {
     mocks.pending.mockReset().mockResolvedValue({ tasks: [{ id: 'local' }], habits: [], dailyRecords: [] });
     mocks.approve.mockReset().mockResolvedValue({ status: 'imported' });
     mocks.permission.mockReset().mockResolvedValue(true); mocks.enqueue.mockClear();
+    mocks.signIn.mockReset().mockResolvedValue({ ok: false, message: '入力をご確認ください。' });
     mocks.remove.mockReset().mockResolvedValue({ ok: false, message: 'fixture: 未送信' });
     useMobileSettingsStore.setState({ hasHydrated: true, notificationsEnabled: false });
     await notifyLogin('a');
@@ -120,7 +125,29 @@ describe('Mobile退会UIの確認対象と画面寿命', () => {
     });
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); resetAuthLifecycleHooks(); vi.unstubAllGlobals(); });
-const render = () => act(async () => root.render(createElement(SettingsScreen)));
+const render = (recoveryOnly = false) => act(async () => root.render(createElement<{ recoveryOnly?: boolean }>(SettingsScreen, { recoveryOnly })));
+
+describe('Mobileの認証フォーム', () => {
+    it.each([false, true])('設定画面と再ログイン画面でキーボードを避け、入力後のタップで送信する (recoveryOnly=%s)', async (recoveryOnly) => {
+        mocks.user.mockResolvedValue(null);
+        await render(recoveryOnly);
+        expect(container.querySelector('[data-keyboard-insets="true"][data-keyboard-taps="handled"]')).not.toBeNull();
+
+        const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+        await act(async () => {
+            for (const [label, value] of [['メールアドレス', 'test@example.invalid'], ['パスワード', 'fixture-password']]) {
+                const input = container.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+                input.focus();
+                setInput.call(input, value);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+        expect(button('ログインする').disabled).toBe(false);
+        await act(async () => button('ログインする').click());
+        expect(mocks.signIn).toHaveBeenCalledExactlyOnceWith('test@example.invalid', 'fixture-password');
+        expect(container.textContent).toContain('入力をご確認ください。');
+    });
+});
 
 function deferred() { let resolve!: (granted: boolean) => void; let reject!: () => void; const promise = new Promise<boolean>((yes, no) => { resolve = yes; reject = () => no(new Error('fixture')); }); return { promise, resolve, reject }; }
 const notificationSwitch = () => container.querySelector<HTMLInputElement>('[aria-label="習慣リマインダー通知"]')!;

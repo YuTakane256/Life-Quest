@@ -315,7 +315,11 @@ export default function SettingsScreen({ recoveryOnly = false }: { recoveryOnly?
 
     return (
         <SafeAreaView edges={recoveryOnly ? ['top', 'bottom', 'left', 'right'] : TAB_SCREEN_EDGES} style={styles.safeArea}>
-            <ScrollView contentContainerStyle={styles.scroll}>
+            <ScrollView
+                contentContainerStyle={styles.scroll}
+                automaticallyAdjustKeyboardInsets
+                keyboardShouldPersistTaps="handled"
+            >
                 <View style={styles.header}>
                     <Text style={styles.title}>{recoveryOnly ? '保存データを保護しています' : '設定'}</Text>
                 </View>
@@ -687,16 +691,16 @@ function createStyles(palette: ThemePalette) {
         bodyText: { color: palette.text.secondary, fontSize: 14 },
         loggedIn: { gap: 10 },
         form: { gap: 8 },
-        input: { height: 44, borderRadius: 8, paddingHorizontal: 12, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 14 },
+        input: { minHeight: 44, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, color: palette.text.primary, backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default, fontSize: 14 },
         formActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 14 },
-        primaryButton: { height: 40, paddingHorizontal: 18, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.primary },
+        primaryButton: { maxWidth: '100%', minHeight: 44, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.accent.primary },
         primaryButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
-        secondaryButton: { alignSelf: 'flex-start', height: 38, paddingHorizontal: 14, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
+        secondaryButton: { alignSelf: 'flex-start', maxWidth: '100%', minHeight: 44, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
         secondaryButtonText: { color: palette.text.primary, fontSize: 13, fontWeight: '700' },
         deleteLink: { alignSelf: 'flex-start', paddingVertical: 4 },
         deleteLinkText: { color: palette.text.danger, fontSize: 12, fontWeight: '700' },
         deletePanel: { gap: 8, borderTopWidth: 1, borderColor: palette.border.default, paddingTop: 12 },
-        deleteButton: { height: 40, paddingHorizontal: 18, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.text.danger },
+        deleteButton: { maxWidth: '100%', minHeight: 44, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.text.danger },
         syncButton: { minHeight: 44, alignSelf: 'flex-start', paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg.secondary, borderWidth: 1, borderColor: palette.border.default },
         syncButtonText: { color: palette.accent.primary, fontSize: 13, fontWeight: '800' },
         syncWarning: { color: palette.text.danger },
