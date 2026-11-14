@@ -13,34 +13,17 @@ const getPendingBonus = () => useMobileLoginBonusStore.getState().pendingBonus;
 export function LoginBonusOverlay() {
     const pendingBonus = useMobileLoginBonusStore((state) => state.pendingBonus);
     const clearPendingBonus = useMobileLoginBonusStore((state) => state.clearPendingBonus);
-    const claimMessage = useMobileLoginBonusStore((state) => state.claimMessage);
-    const claimStatus = useMobileLoginBonusStore((state) => state.claimStatus);
-    const retryDailyLogin = useMobileLoginBonusStore((state) => state.retryDailyLogin);
     const { palette } = usePalette();
     const styles = createStyles(palette);
     const { active, isCurrent } = useRewardEventTimers(pendingBonus, getPendingBonus);
     const dismiss = () => { if (isCurrent()) clearPendingBonus(); };
 
-    const retryable = claimStatus === 'retryable-error' || claimStatus === 'unavailable' || claimStatus === 'rejected';
-    const banner = claimMessage ? (
-        <View style={styles.banner}>
-            <Text style={styles.bannerText}>{claimMessage}</Text>
-            {retryable && (
-                <Pressable accessibilityRole="button" onPress={() => void retryDailyLogin()} hitSlop={8}>
-                    <Text style={styles.retry}>再試行</Text>
-                </Pressable>
-            )}
-        </View>
-    ) : null;
-
-    if (!pendingBonus || !active) return banner;
+    if (!pendingBonus || !active) return null;
 
     return (
-        <>
-            {banner}
-            <Modal visible transparent animationType="fade" onRequestClose={dismiss}>
-                <Pressable accessible={false} style={styles.backdrop} onPress={dismiss}>
-                    <Pressable accessible={false} style={styles.card} onPress={(event) => event.stopPropagation()}>
+        <Modal visible transparent animationType="fade" onRequestClose={dismiss}>
+            <Pressable accessible={false} style={styles.backdrop} onPress={dismiss}>
+                <Pressable accessible={false} style={styles.card} onPress={(event) => event.stopPropagation()}>
                     <Text style={styles.title}>ログインボーナス</Text>
                     <Text style={styles.streak}>連続ログイン{pendingBonus.streak}日目</Text>
 
@@ -59,10 +42,9 @@ export function LoginBonusOverlay() {
                     <Pressable accessibilityRole="button" accessibilityLabel="ログインボーナスを閉じる" onPress={dismiss} style={styles.dismiss}>
                         <Text style={styles.hint}>タップして閉じる</Text>
                     </Pressable>
-                    </Pressable>
                 </Pressable>
-            </Modal>
-        </>
+            </Pressable>
+        </Modal>
     );
 }
 
@@ -105,24 +87,5 @@ function createStyles(palette: ThemePalette) {
         dismiss: { alignSelf: 'stretch', minHeight: 44, alignItems: 'center', justifyContent: 'center',
             marginTop: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, backgroundColor: palette.bg.secondary },
         hint: { color: palette.text.secondary, fontSize: 13 },
-        banner: {
-            position: 'absolute',
-            left: 16,
-            right: 16,
-            bottom: 84,
-            zIndex: 20,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            borderWidth: 1,
-            borderColor: palette.border.default,
-            borderRadius: 8,
-            backgroundColor: palette.bg.card,
-            paddingHorizontal: 12,
-            paddingVertical: 10,
-        },
-        bannerText: { color: palette.text.secondary, flex: 1, fontSize: 12 },
-        retry: { color: palette.accent.primary, fontSize: 12, fontWeight: '800' },
     });
 }
