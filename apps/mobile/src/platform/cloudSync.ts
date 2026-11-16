@@ -48,6 +48,7 @@ export interface CloudSyncHandle {
     flush: () => Promise<void>;
     stop: () => void;
     syncNow: () => Promise<void>;
+    resumeAfterPushAuth: () => void;
 }
 
 let cloudSyncState: CloudSyncPublicState = createInactiveCloudSyncState();
@@ -88,6 +89,8 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         if (isCurrent()) cache = restored;
     }).catch(() => { /* 保存領域が復帰すれば、全件pullからキャッシュを再構築できる。 */ });
     let pushState = getMobileCloudOutboxState();
+    // The outbox auth hook clears this failure and drains before our auth hook runs.
+    let pushAuthInterrupted = pushState.failureKinds.includes('auth-required');
     let online: boolean | null = null;
     let manualSync: Promise<void> | null = null;
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
@@ -102,6 +105,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     };
     const unsubscribeOutbox = subscribeMobileCloudOutboxState((state) => {
         pushState = state;
+        pushAuthInterrupted ||= state.failureKinds.includes('auth-required');
         publish();
     });
 
@@ -158,6 +162,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
 
     const pullNow = async (): Promise<void> => {
         if (!isCurrent() || pullState.phase === 'auth-required') return;
+        pushAuthInterrupted = false;
         pullState = { ...pullState, phase: 'pulling' };
         publish();
         try {
@@ -249,6 +254,12 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     return {
         isActive: isCurrent,
         flush: () => runner.flush(),
+        resumeAfterPushAuth: () => {
+            if (!isCurrent() || !pushAuthInterrupted || pushState.pending > 0 || pushState.inflight > 0
+                || deriveCloudSyncAvailability(pushState, online, pullState) !== 'ready') return;
+            pushAuthInterrupted = false;
+            void recoverConnection().catch(() => undefined);
+        },
         syncNow: () => {
             if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) !== 'ready') return Promise.resolve();
             if (manualSync) return manualSync;
@@ -309,14 +320,20 @@ export function registerMobileCloudSyncHooks(): () => void {
         onLogin: (userId) => {
             // Only a blocked pull needs a fresh handle on same-owner authentication.
             if (activeUserId === userId && activeHandle?.isActive()
-                && getMobileCloudSyncState().pull.phase !== 'auth-required') return;
+                && getMobileCloudSyncState().pull.phase !== 'auth-required') {
+                activeHandle.resumeAfterPushAuth();
+                return;
+            }
             activeHandle?.stop();
             activeHandle = startMobileCloudSync(userId);
             activeUserId = activeHandle ? userId : null;
         },
         onTokenRefreshed: (userId) => {
-            if (activeUserId !== userId || !activeHandle?.isActive()
-                || getMobileCloudSyncState().pull.phase !== 'auth-required') return;
+            if (activeUserId !== userId || !activeHandle?.isActive()) return;
+            if (getMobileCloudSyncState().pull.phase !== 'auth-required') {
+                activeHandle.resumeAfterPushAuth();
+                return;
+            }
             activeHandle.stop();
             activeHandle = startMobileCloudSync(userId);
             activeUserId = activeHandle ? userId : null;

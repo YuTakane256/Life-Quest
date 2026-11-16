@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin as notifyScopeLogin, notifyLogout as notifyScopeLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin as notifyScopeLogin, notifyLogout as notifyScopeLogout, notifyTokenRefreshed, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { cloudCacheKey, type CloudCache } from '@life-quest/core/cloudCache';
 import { cloudCursorKey, type PullBatch } from '@life-quest/core/cloudPull';
 import { createInactiveCloudSyncState } from '@life-quest/core/cloudSyncState';
@@ -331,6 +331,39 @@ for (const platform of [
             await notifyLogin('a'); await platform.active()!.syncNow();
             expect(platform.state().availability).toBe('ready'); expect(mocks.retry).toHaveBeenCalledTimes(1);
         });
+
+        it.each([['token refresh', notifyTokenRefreshed], ['login', notifyLogin]] as const)(
+            '%s for the same owner pulls after a blocked outbox has drained', async (_event, authenticate) => {
+                await start();
+                const handle = platform.active()!;
+                const publishPush = () => mocks.pushListeners.forEach((callback) => callback({ ...mocks.push }));
+                mocks.push.pending = 2;
+                mocks.push.failureKinds = ['auth-required'];
+                publishPush();
+                mocks.rpc.mockClear().mockResolvedValue({ data: batch('a'), error: null });
+                mocks.drain.mockResolvedValue({ retryablePending: false });
+
+                // A failed write is still pending after the first auth notification.
+                mocks.push.failureKinds = ['network'];
+                publishPush();
+                await authenticate('a'); await settle();
+                expect(mocks.rpc).not.toHaveBeenCalled();
+
+                // Only the current owner's completed retry is followed by a pull.
+                mocks.push.pending = 0;
+                mocks.push.failureKinds = [];
+                publishPush();
+                await notifyTokenRefreshed('b'); await settle();
+                expect(mocks.rpc).not.toHaveBeenCalled();
+                await authenticate('a'); await settle();
+                expect(platform.active()).toBe(handle);
+                expect(mocks.rpc).toHaveBeenCalledOnce();
+                expect(platform.state().pull.lastSuccessAt).not.toBeNull();
+
+                await authenticate('a'); await settle();
+                expect(mocks.rpc).toHaveBeenCalledOnce();
+            },
+        );
 
         it('pull-only HTTP401 waits for same-user authentication, without retrying on manual/automatic triggers', async () => {
             await start();

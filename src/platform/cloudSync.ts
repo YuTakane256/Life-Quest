@@ -71,6 +71,7 @@ export interface CloudSyncHandle {
     stop: () => void;
     /** 保留操作の送信と通常の差分pullを行う。恒久失敗は変更しない。 */
     syncNow: () => Promise<void>;
+    resumeAfterPushAuth: () => void;
 }
 
 let cloudSyncState: CloudSyncPublicState = createInactiveCloudSyncState();
@@ -195,6 +196,8 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
         if (isCurrent()) cache = restored;
     }).catch(() => { /* A full pull can rebuild the cache when storage becomes available. */ });
     let pushState = getWebCloudOutboxState();
+    // The outbox auth hook clears this failure and drains before our auth hook runs.
+    let pushAuthInterrupted = pushState.failureKinds.includes('auth-required');
     let online: boolean | null = typeof navigator === 'undefined' ? null : navigator.onLine;
     let manualSync: Promise<void> | null = null;
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
@@ -209,6 +212,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     };
     const unsubscribeOutbox = subscribeWebCloudOutboxState((state) => {
         pushState = state;
+        pushAuthInterrupted ||= state.failureKinds.includes('auth-required');
         publish();
     });
 
@@ -263,6 +267,7 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
 
     const pullNow = async (): Promise<void> => {
         if (!isCurrent() || pullState.phase === 'auth-required') return;
+        pushAuthInterrupted = false;
         pullState = { ...pullState, phase: 'pulling' };
         publish();
         try {
@@ -347,6 +352,12 @@ export function startWebCloudSync(userId: string): CloudSyncHandle | null {
     return {
         isActive: isCurrent,
         flush: () => runner.flush(),
+        resumeAfterPushAuth: () => {
+            if (!isCurrent() || !pushAuthInterrupted || pushState.pending > 0 || pushState.inflight > 0
+                || deriveCloudSyncAvailability(pushState, online, pullState) !== 'ready') return;
+            pushAuthInterrupted = false;
+            void recoverConnection().catch(() => undefined);
+        },
         syncNow: () => {
             if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) !== 'ready') return Promise.resolve();
             if (manualSync) return manualSync;
@@ -411,14 +422,20 @@ export function registerWebCloudSyncHooks(): () => void {
         onLogin: (userId) => {
             // Only a blocked pull needs a fresh handle on same-owner authentication.
             if (activeUserId === userId && activeHandle?.isActive()
-                && getWebCloudSyncState().pull.phase !== 'auth-required') return;
+                && getWebCloudSyncState().pull.phase !== 'auth-required') {
+                activeHandle.resumeAfterPushAuth();
+                return;
+            }
             activeHandle?.stop();
             activeHandle = startWebCloudSync(userId);
             activeUserId = activeHandle ? userId : null;
         },
         onTokenRefreshed: (userId) => {
-            if (activeUserId !== userId || !activeHandle?.isActive()
-                || getWebCloudSyncState().pull.phase !== 'auth-required') return;
+            if (activeUserId !== userId || !activeHandle?.isActive()) return;
+            if (getWebCloudSyncState().pull.phase !== 'auth-required') {
+                activeHandle.resumeAfterPushAuth();
+                return;
+            }
             activeHandle.stop();
             activeHandle = startWebCloudSync(userId);
             activeUserId = activeHandle ? userId : null;

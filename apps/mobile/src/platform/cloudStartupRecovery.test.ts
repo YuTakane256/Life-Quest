@@ -294,3 +294,68 @@ it('保留した親子操作があるオフライン起動から、接続の復�
         subtasks: [{ id: subtaskId, name: child.payload.p_name }] }]);
     expect(unexpected).toEqual([]);
 });
+
+it('同じ所有者のSDK更新後、401で止まった送信を再開して受信まで進む', async () => {
+    const oldToken = 'fixture-rejected-access';
+    const newToken = 'fixture-refreshed-access';
+    const user = { id: owner, aud: 'authenticated', app_metadata: {}, user_metadata: {} };
+    device.secureStorage.set(sessionKey, JSON.stringify({ user, access_token: oldToken,
+        refresh_token: 'fixture-rejected-refresh', expires_at: now.getTime() / 1000 + 3600 }));
+    device.appStorage.set(MOBILE_CLOUD_DISPLAY_OWNER_KEY, owner);
+    const parent = { ...pendingOperation, opId: parentOpId, operation: 'upsert_task', dependsOn: [],
+        payload: { p_id: taskId, p_name: '送信待ちタスク' } } satisfies OutboxOp;
+    const child = { ...pendingOperation, opId: childOpId, operation: 'upsert_subtask', dependsOn: [parentOpId],
+        payload: { p_id: subtaskId, p_task_id: taskId, p_name: '送信待ちサブタスク' } } satisfies OutboxOp;
+    device.appStorage.set(cloudOutboxKey(owner), JSON.stringify({ ops: [child, parent] }));
+
+    const requests: { name: string; bearer: string | null; key?: string }[] = [];
+    const unexpected: string[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+        if (url.origin !== endpoint) throw new TypeError('Unexpected test endpoint');
+        if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type') === 'refresh_token') {
+            return Response.json({ user, access_token: newToken, refresh_token: 'fixture-new-refresh',
+                expires_in: 3600, token_type: 'bearer' });
+        }
+        const name = url.pathname.replace('/rest/v1/rpc/', '');
+        const bearer = new Headers(init?.headers).get('Authorization');
+        const key = JSON.parse(String(init?.body ?? '{}')).p_key;
+        requests.push({ name, bearer, key });
+        if (name === 'upsert_task' && bearer === `Bearer ${oldToken}`) {
+            return Response.json({ code: 'PGRST301', message: 'JWT expired' }, { status: 401 });
+        }
+        if (name === 'upsert_task' || name === 'upsert_subtask') return Response.json({});
+        if (name === 'pull_sync_batch') {
+            if (savedOperations().length > 0) unexpected.push('pull before outbox persistence');
+            return Response.json({ next_cursor: 7, has_more: false,
+                tasks: [{ id: taskId, name: '受信したタスク', version: 6, created_at: createdAt }],
+                subtasks: [{ id: subtaskId, task_id: taskId, name: '受信したサブタスク', version: 7, created_at: createdAt }],
+            });
+        }
+        unexpected.push(name);
+        throw new TypeError('Unexpected test request');
+    });
+
+    const activated = vi.fn();
+    startMobileSyncFixture(() => registerAuthLifecycleHooks({ onLogin: activated }));
+    await vi.waitFor(() => expect(getMobileCloudSyncState().availability).toBe('auth-required'));
+    await getActiveMobileOutbox()!.flush();
+    expect(getMobileCloudSyncState().pull.phase).toBe('idle');
+    expect(savedOperations()).toMatchObject([child, { ...parent, failure: { kind: 'auth-required' } }]);
+    expect(requests).toEqual([{ name: parent.operation, bearer: `Bearer ${oldToken}`, key: parentOpId }]);
+
+    const { error } = await getMobileSupabaseClient()!.auth.refreshSession();
+    expect(error).toBeNull();
+    await vi.waitFor(() => expect(savedOperations()).toEqual([]));
+    // Realtime, foreground and network listeners have emitted no recovery events.
+    await vi.waitFor(() => expect(getMobileCloudSyncState().pull.lastSuccessAt).not.toBeNull());
+    expect(activated).toHaveBeenCalledExactlyOnceWith(owner);
+    expect(requests.slice(1)).toEqual([
+        { name: parent.operation, bearer: `Bearer ${newToken}`, key: parentOpId },
+        { name: child.operation, bearer: `Bearer ${newToken}`, key: childOpId },
+        { name: 'pull_sync_batch', bearer: `Bearer ${newToken}`, key: undefined },
+    ]);
+    expect(useMobileTaskStore.getState().tasks).toMatchObject([{ id: taskId, name: '受信したタスク',
+        subtasks: [{ id: subtaskId, name: '受信したサブタスク' }] }]);
+    expect(unexpected).toEqual([]);
+});
