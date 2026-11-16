@@ -1,20 +1,26 @@
 // @vitest-environment node
-import { expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createEmptyCloudCache, persistCloudCache } from '@life-quest/core/cloudCache';
 import { captureAuthSessionScope, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { cloudCursorKey, cloudOutboxKey } from '@life-quest/core/cloudPull';
 import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type { OutboxOp } from '@life-quest/core/syncOutbox';
 import { startAuthSessionListener } from './auth';
-import { registerMobileAuthStoreHooks } from './authStores';
-import { registerMobileOutboxHooks } from './cloudOutbox';
+import { registerMobileAuthStoreHooks, resetCloudSessionSeeded } from './authStores';
+import { getActiveMobileOutbox, registerMobileOutboxHooks } from './cloudOutbox';
 import { getMobileCloudSyncState, registerMobileCloudSyncHooks } from './cloudSync';
 import { getMobileCloudRecoveryState, MOBILE_CLOUD_DISPLAY_OWNER_KEY } from './cloudSessionRecovery';
 import { getMobileSupabaseClient, resetMobileSupabaseClient } from './supabase';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
 
+type Connectivity = { isConnected: boolean | null; isInternetReachable: boolean | null };
+
 const device = vi.hoisted(() => ({
     appStorage: new Map<string, string>(),
     secureStorage: new Map<string, string>(),
+    connection: { isConnected: true, isInternetReachable: true } as Connectivity,
+    networkListeners: new Set<(state: Connectivity) => void>(),
 }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
@@ -30,9 +36,10 @@ vi.mock('expo-secure-store', () => ({
 }));
 vi.mock('react-native', () => ({ AppState: { addEventListener: () => ({ remove() {} }) } }));
 vi.mock('@react-native-community/netinfo', () => ({ default: {
-    addEventListener: (listener: (state: { isConnected: boolean; isInternetReachable: boolean }) => void) => {
-        listener({ isConnected: true, isInternetReachable: true });
-        return () => {};
+    addEventListener: (listener: (state: Connectivity) => void) => {
+        device.networkListeners.add(listener);
+        listener(device.connection);
+        return () => { device.networkListeners.delete(listener); };
     },
 } }));
 vi.mock('expo-linking', () => ({ getInitialURL: async () => null, addEventListener: () => ({ remove() {} }) }));
@@ -57,23 +64,55 @@ const endpoint = 'http://127.0.0.1:1';
 const sessionKey = 'sb-127-auth-token';
 const now = new Date('2026-11-14T01:00:00Z');
 const createdAt = now.toISOString();
+const pendingOperation = { status: 'pending', baseVersion: null, optimisticSnapshot: null, enqueuedAt: createdAt } as const;
+const cleanups: (() => void)[] = [];
 
-it('モバイル起動時に認証通信が失敗しても、SDKの自動更新で保留した親子操作を送信して受信する', async () => {
+function startMobileSyncFixture(prepareAuthListener?: () => () => void) {
+    const client = getMobileSupabaseClient()!;
+    const channel = { on: () => channel, subscribe: () => channel };
+    vi.spyOn(client, 'channel').mockReturnValue(channel as unknown as ReturnType<typeof client.channel>);
+    vi.spyOn(client, 'removeChannel').mockResolvedValue('ok');
+    cleanups.push(registerMobileAuthStoreHooks(), registerMobileOutboxHooks(), registerMobileCloudSyncHooks());
+    if (prepareAuthListener) cleanups.push(prepareAuthListener());
+    cleanups.push(startAuthSessionListener());
+}
+
+const savedOperations = (): OutboxOp[] => JSON.parse(device.appStorage.get(cloudOutboxKey(owner))!).ops;
+
+beforeEach(async () => {
+    device.appStorage.clear();
+    device.secureStorage.clear();
+    device.connection = { isConnected: true, isInternetReachable: true };
+    device.networkListeners.clear();
     vi.useFakeTimers();
     vi.setSystemTime(now);
     vi.stubEnv('EXPO_PUBLIC_SUPABASE_URL', endpoint);
     vi.stubEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY', 'mobile-sync-fixture-anon');
+    resetCloudSessionSeeded();
+    await useMobileTaskStore.persist.rehydrate();
+});
 
+afterEach(async () => {
+    cleanups.splice(0).reverse().forEach((cleanup) => cleanup());
+    await getMobileSupabaseClient()?.auth.stopAutoRefresh();
+    resetMobileSupabaseClient();
+    resetAuthLifecycleHooks();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+});
+
+it('モバイル起動時に認証通信が失敗しても、SDKの自動更新で保留した親子操作を送信して受信する', async () => {
     const user = { id: owner, aud: 'authenticated', app_metadata: {}, user_metadata: {} };
     device.secureStorage.set(sessionKey, JSON.stringify({
         user, access_token: 'fixture-expired-access', refresh_token: 'fixture-old-refresh',
         expires_at: now.getTime() / 1000 - 1,
     }));
     device.appStorage.set(MOBILE_CLOUD_DISPLAY_OWNER_KEY, owner);
-    const operation = { status: 'pending', baseVersion: null, optimisticSnapshot: null, enqueuedAt: createdAt } as const;
-    const parent = { ...operation, opId: parentOpId, operation: 'upsert_task', dependsOn: [],
+    const parent = { ...pendingOperation, opId: parentOpId, operation: 'upsert_task', dependsOn: [],
         payload: { p_id: taskId, p_name: '保留中のタスク' } } satisfies OutboxOp;
-    const child = { ...operation, opId: childOpId, operation: 'upsert_subtask', dependsOn: [parentOpId],
+    const child = { ...pendingOperation, opId: childOpId, operation: 'upsert_subtask', dependsOn: [parentOpId],
         payload: { p_id: subtaskId, p_task_id: taskId, p_name: '保留中のサブタスク' } } satisfies OutboxOp;
     // Put the child first so FIFO alone cannot satisfy the dependency.
     device.appStorage.set(cloudOutboxKey(owner), JSON.stringify({ ops: [child, parent] }));
@@ -128,18 +167,10 @@ it('モバイル起動時に認証通信が失敗しても、SDKの自動更新�
         }
     });
 
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const savedOperations = (): OutboxOp[] => JSON.parse(device.appStorage.get(cloudOutboxKey(owner))!).ops;
-    const client = getMobileSupabaseClient()!;
-    // Stub realtime delivery; the SDK still performs auth and REST requests.
-    const channel = { on: () => channel, subscribe: () => channel };
-    vi.spyOn(client, 'channel').mockReturnValue(channel as unknown as ReturnType<typeof client.channel>);
-    vi.spyOn(client, 'removeChannel').mockResolvedValue('ok');
-    const cleanups = [registerMobileAuthStoreHooks(), registerMobileOutboxHooks(), registerMobileCloudSyncHooks()];
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const activated = vi.fn();
-    cleanups.push(registerAuthLifecycleHooks({ onLogin: activated }), startAuthSessionListener());
-
     try {
+        startMobileSyncFixture(() => registerAuthLifecycleHooks({ onLogin: activated }));
         await vi.waitFor(() => expect(getMobileCloudRecoveryState()).toBe('required'));
         expect(failedRefreshes).toBeGreaterThan(0);
         expect(successfulRefreshes).toBe(0);
@@ -174,13 +205,92 @@ it('モバイル起動時に認証通信が失敗しても、SDKの自動更新�
         expect(unexpected).toEqual([]);
     } finally {
         releaseParent();
-        cleanups.reverse().forEach((cleanup) => cleanup());
-        await client.auth.stopAutoRefresh();
-        resetMobileSupabaseClient();
-        resetAuthLifecycleHooks();
-        warn.mockRestore();
-        vi.unstubAllGlobals();
-        vi.unstubAllEnvs();
-        vi.useRealTimers();
     }
+});
+
+it('保留した親子操作があるオフライン起動から、接続の復帰通知だけで元の所有者の同期を再開する', async () => {
+    const setConnection = (online: boolean | null): void => {
+        device.connection = { isConnected: online, isInternetReachable: online };
+        device.networkListeners.forEach((listener) => listener(device.connection));
+    };
+    setConnection(false);
+    const queueKey = cloudOutboxKey(owner);
+    // Valid session on disk isolates NetInfo recovery from the SDK's token refresh.
+    const user = { id: owner, aud: 'authenticated', app_metadata: {}, user_metadata: {} };
+    device.secureStorage.set(sessionKey, JSON.stringify({ user, access_token: 'fixture-offline-owner',
+        refresh_token: 'fixture-unused-refresh', expires_at: now.getTime() / 1000 + 3600 }));
+    device.appStorage.set(MOBILE_CLOUD_DISPLAY_OWNER_KEY, owner);
+    const parent = { ...pendingOperation, opId: parentOpId, operation: 'upsert_task', dependsOn: [],
+        payload: { p_id: taskId, p_name: '端末で編集したタスク' } } satisfies OutboxOp;
+    const child = { ...pendingOperation, opId: childOpId, operation: 'upsert_subtask', dependsOn: [parentOpId],
+        payload: { p_id: subtaskId, p_task_id: taskId, p_name: '端末で追加したサブタスク' } } satisfies OutboxOp;
+    device.appStorage.set(queueKey, JSON.stringify({ ops: [child, parent] }));
+    const otherQueue = JSON.stringify({ ops: [{ ...parent, opId: 'bbfeee89-6215-453c-b2aa-f95000eecaae' }] });
+    device.appStorage.set(cloudOutboxKey(otherOwner), otherQueue);
+    device.appStorage.set(useMobileTaskStore.persist.getOptions().name!, JSON.stringify({ state: { tasks: [{
+        id: taskId, name: parent.payload.p_name, createdAt, subtasks: [{ id: subtaskId, name: child.payload.p_name, createdAt }],
+    }] } }));
+    const oldCache = createEmptyCloudCache();
+    oldCache.tasks[taskId] = { id: taskId, name: 'サーバーの古いタスク名', version: 2, created_at: createdAt };
+    await persistCloudCache(AsyncStorage, owner, oldCache);
+    await useMobileTaskStore.persist.rehydrate();
+
+    const requests: { name: string; body: Record<string, unknown>; bearer: string | null }[] = [];
+    const offlineAttempts: string[] = [];
+    const unexpected: string[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+        const rpcPath = '/rest/v1/rpc/';
+        if (url.origin !== endpoint || !url.pathname.startsWith(rpcPath)) {
+            unexpected.push(url.pathname);
+            throw new TypeError('Unexpected test endpoint');
+        }
+        const name = url.pathname.slice(rpcPath.length);
+        if (device.connection.isConnected !== true) {
+            offlineAttempts.push(name);
+            throw new TypeError('Simulated connection loss');
+        }
+        requests.push({ name, body: JSON.parse(String(init?.body ?? '{}')), bearer: new Headers(init?.headers).get('Authorization') });
+        if (name === 'upsert_task') return Response.json({ id: taskId, version: 6 });
+        if (name === 'upsert_subtask') return Response.json({ id: subtaskId, version: 7 });
+        if (name === 'pull_sync_batch') return Response.json({
+            next_cursor: 7, has_more: false,
+            tasks: [{ id: taskId, name: '受信したタスク名', version: 6, created_at: createdAt }],
+            subtasks: [{ id: subtaskId, task_id: taskId, name: child.payload.p_name, version: 7, created_at: createdAt }],
+        });
+        unexpected.push(name);
+        throw new TypeError('Unexpected test request');
+    });
+
+    startMobileSyncFixture();
+    await vi.waitFor(() => {
+        expect(getMobileCloudSyncState().availability).toBe('offline');
+        expect(offlineAttempts).toContain('upsert_task');
+    });
+    await getActiveMobileOutbox()!.flush();
+    expect(offlineAttempts.every((name) => name === 'upsert_task')).toBe(true);
+    expect(savedOperations()).toMatchObject([child, parent]);
+    expect(useMobileTaskStore.getState().tasks).toMatchObject([{ id: taskId, name: parent.payload.p_name,
+        subtasks: [{ id: subtaskId, name: child.payload.p_name }] }]);
+
+    const attempts = offlineAttempts.length;
+    setConnection(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getMobileCloudSyncState().availability).toBe('offline');
+    expect(offlineAttempts).toHaveLength(attempts);
+
+    setConnection(true);
+    await vi.waitFor(() => expect(getMobileCloudSyncState().pull.lastSuccessAt).not.toBeNull());
+    expect(getMobileCloudSyncState().availability).toBe('ready');
+    expect(requests).toEqual([
+        { name: parent.operation, bearer: 'Bearer fixture-offline-owner', body: { ...parent.payload, p_key: parentOpId } },
+        { name: child.operation, bearer: 'Bearer fixture-offline-owner', body: { ...child.payload, p_key: childOpId } },
+        { name: 'pull_sync_batch', bearer: 'Bearer fixture-offline-owner', body: { p_after_version: 0, p_max_versions: 200 } },
+    ]);
+    expect(savedOperations()).toEqual([]);
+    expect(device.appStorage.get(cloudOutboxKey(otherOwner))).toBe(otherQueue);
+    expect(device.appStorage.get(cloudCursorKey(owner))).toBe('7');
+    expect(useMobileTaskStore.getState().tasks).toMatchObject([{ id: taskId, name: '受信したタスク名',
+        subtasks: [{ id: subtaskId, name: child.payload.p_name }] }]);
+    expect(unexpected).toEqual([]);
 });
