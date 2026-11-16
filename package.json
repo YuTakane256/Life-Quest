@@ -55,11 +55,11 @@
   "dependencies": {
     "@life-quest/core": "file:packages/core",
     "@supabase/supabase-js": "^2.119.0",
-    "lucide-react": "^1.69.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "lucide-react": "^1.72.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "react-router-dom": "^7.18.5",
-    "zustand": "^5.0.16"
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
