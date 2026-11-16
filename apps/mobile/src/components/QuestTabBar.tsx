@@ -75,7 +75,10 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'stretch', minHeight: metrics.height,
         paddingHorizontal: metrics.horizontal, width: '100%', maxWidth: LAYOUT_TOKENS.page.maxWidth, alignSelf: 'center',
     },
-    item: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 4, gap: metrics.gap },
+    item: {
+        flex: 1, alignItems: 'center', paddingTop: 12, paddingBottom: 10,
+        paddingHorizontal: 4, gap: metrics.gap,
+    },
     label: { alignSelf: 'stretch', fontSize: metrics.labelSize, lineHeight: metrics.labelLineHeight, fontWeight: '500', textAlign: 'center' },
     indicator: { position: 'absolute', top: 3, width: metrics.indicatorWidth, height: metrics.indicatorHeight, borderRadius: 1 },
     badge: { position: 'absolute', top: -4, right: -8, minWidth: metrics.badgeSize, height: metrics.badgeSize, paddingHorizontal: 4, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
