@@ -89,7 +89,6 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     }).catch(() => { /* 保存領域が復帰すれば、全件pullからキャッシュを再構築できる。 */ });
     let pushState = getMobileCloudOutboxState();
     let pushAuthInterrupted = pushState.failureKinds.includes('auth-required');
-    let recoveringPushAuth = false;
     let online: boolean | null = null;
     let manualSync: Promise<void> | null = null;
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
@@ -155,7 +154,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
 
     const pullNow = async (): Promise<void> => {
         if (!isCurrent() || pullState.phase === 'auth-required') return;
-        pushAuthInterrupted = false;
+        if (pushState.pending === 0 && pushState.inflight === 0) pushAuthInterrupted = false;
         pullState = { ...pullState, phase: 'pulling' };
         publish();
         try {
@@ -177,8 +176,10 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     const recoverConnection = async (afterPushAuth = false): Promise<boolean> => {
         if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
         const { retryablePending } = await drainOutboxAndWait();
-        if (!isCurrent() || retryablePending || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
-        if (afterPushAuth && (!pushAuthInterrupted || online === false)) return false;
+        if (!isCurrent() || retryablePending) return false;
+        const availability = deriveCloudSyncAvailability(pushState, online, pullState);
+        if (availability === 'auth-required') return false;
+        if (afterPushAuth && (!pushAuthInterrupted || availability !== 'ready' || pushState.pending > 0 || pushState.inflight > 0)) return false;
         let pulled = false;
         try {
             await pullNow();
@@ -200,13 +201,12 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         pushState = state;
         pushAuthInterrupted ||= state.failureKinds.includes('auth-required');
         publish();
-        if (!isCurrent() || !pushAuthInterrupted || recoveringPushAuth || state.pending > 0 || state.inflight > 0
+        if (!isCurrent() || !pushAuthInterrupted || state.pending > 0 || state.inflight > 0
             || deriveCloudSyncAvailability(state, online, pullState) !== 'ready') return;
 
         // The last outbox notification can precede persistence, and auth notifications can overlap.
         // Join the drain before reading; consume the remembered failure only when a pull starts.
-        recoveringPushAuth = true;
-        void recoverConnection(true).catch(() => undefined).finally(() => { recoveringPushAuth = false; });
+        void recoverConnection(true).catch(() => undefined);
     });
 
     const scheduler = createInsurancePullScheduler({

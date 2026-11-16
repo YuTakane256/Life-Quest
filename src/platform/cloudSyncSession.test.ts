@@ -374,6 +374,34 @@ for (const platform of [
             },
         );
 
+        it('also pulls a second recovered write while the first recovery pull is still running', async () => {
+            await start();
+            const publishPush = () => mocks.pushListeners.forEach((callback) => callback({ ...mocks.push }));
+            const reportRecovery = () => {
+                mocks.push.pending = 1;
+                mocks.push.failureKinds = ['auth-required'];
+                publishPush();
+                mocks.push.pending = 0;
+                mocks.push.failureKinds = [];
+                publishPush();
+            };
+            const firstBatch = deferred<{ data: PullBatch; error: null }>();
+            mocks.rpc.mockReturnValueOnce(firstBatch.promise)
+                .mockResolvedValue({ data: { next_cursor: 3, has_more: false }, error: null });
+            mocks.drain.mockResolvedValue({ retryablePending: false });
+
+            reportRecovery();
+            await settle();
+            expect(mocks.rpc).toHaveBeenCalledOnce();
+            reportRecovery();
+            await settle();
+            expect(mocks.rpc).toHaveBeenCalledOnce();
+
+            firstBatch.resolve({ data: batch('a'), error: null });
+            await vi.waitFor(() => expect(mocks.values.get(cloudCursorKey('a'))).toBe('3'));
+            expect(mocks.rpc.mock.calls.map(([, params]) => params.p_after_version)).toEqual([0, 2]);
+        });
+
         it('pull-only HTTP401 waits for same-user authentication, without retrying on manual/automatic triggers', async () => {
             await start();
             mocks.rpc.mockResolvedValueOnce({ data: batch('a'), error: null });
