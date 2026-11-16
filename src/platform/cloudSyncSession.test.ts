@@ -333,31 +333,40 @@ for (const platform of [
         });
 
         it.each([['token refresh', notifyTokenRefreshed], ['login', notifyLogin]] as const)(
-            '%s for the same owner pulls after a blocked outbox has drained', async (_event, authenticate) => {
+            'pulls after a blocked outbox persists even when %s notifications overlap', async (_event, authenticate) => {
                 await start();
                 const handle = platform.active()!;
+                mocks.rpc.mockResolvedValueOnce({ data: batch('a'), error: null });
+                await handle.flush();
+                expect(mocks.values.get(cloudCursorKey('a'))).toBe('2');
                 const publishPush = () => mocks.pushListeners.forEach((callback) => callback({ ...mocks.push }));
                 mocks.push.pending = 2;
                 mocks.push.failureKinds = ['auth-required'];
                 publishPush();
                 mocks.rpc.mockClear().mockResolvedValue({ data: batch('a'), error: null });
-                mocks.drain.mockResolvedValue({ retryablePending: false });
+                const persisting = deferred<{ retryablePending: boolean }>();
+                mocks.drain.mockReturnValue(persisting.promise);
 
-                // A failed write is still pending after the first auth notification.
-                mocks.push.failureKinds = ['network'];
-                publishPush();
-                await authenticate('a'); await settle();
-                expect(mocks.rpc).not.toHaveBeenCalled();
-
-                // Only the current owner's completed retry is followed by a pull.
-                mocks.push.pending = 0;
+                // An auth notification can return while an earlier one is still replaying writes.
+                mocks.push.pending = 1;
+                mocks.push.inflight = 1;
                 mocks.push.failureKinds = [];
                 publishPush();
-                await notifyTokenRefreshed('b'); await settle();
+                await Promise.all([authenticate('a'), authenticate('a'), notifyTokenRefreshed('b')]);
+                await settle();
                 expect(mocks.rpc).not.toHaveBeenCalled();
-                await authenticate('a'); await settle();
+
+                mocks.push.pending = 0;
+                mocks.push.inflight = 0;
+                publishPush();
+                publishPush();
+                await settle();
+                expect(mocks.rpc).not.toHaveBeenCalled();
+
+                persisting.resolve({ retryablePending: false });
+                await settle();
                 expect(platform.active()).toBe(handle);
-                expect(mocks.rpc).toHaveBeenCalledOnce();
+                expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('pull_sync_batch', { p_after_version: 2, p_max_versions: 200 });
                 expect(platform.state().pull.lastSuccessAt).not.toBeNull();
 
                 await authenticate('a'); await settle();

@@ -344,11 +344,31 @@ it('同じ所有者のSDK更新後、401で止まった送信を再開して受�
     expect(savedOperations()).toMatchObject([child, { ...parent, failure: { kind: 'auth-required' } }]);
     expect(requests).toEqual([{ name: parent.operation, bearer: `Bearer ${oldToken}`, key: parentOpId }]);
 
-    const { error } = await getMobileSupabaseClient()!.auth.refreshSession();
-    expect(error).toBeNull();
-    await vi.waitFor(() => expect(savedOperations()).toEqual([]));
+    let finishSave!: () => void;
+    const allowSave = new Promise<void>((resolve) => { finishSave = resolve; });
+    const write = AsyncStorage.setItem;
+    let savingEmptyOutbox = false;
+    vi.spyOn(AsyncStorage, 'setItem').mockImplementation(async (key, value) => {
+        if (key === cloudOutboxKey(owner) && JSON.parse(value).ops.length === 0) {
+            savingEmptyOutbox = true;
+            await allowSave;
+        }
+        await write(key, value);
+    });
+
+    try {
+        const { error } = await getMobileSupabaseClient()!.auth.refreshSession();
+        expect(error).toBeNull();
+        await vi.waitFor(() => expect(savingEmptyOutbox).toBe(true));
+        expect(requests.slice(1).map(({ name }) => name)).toEqual([parent.operation, child.operation]);
+        expect(getMobileCloudSyncState().pull.phase).toBe('idle');
+    } finally {
+        finishSave();
+    }
+
     // Realtime, foreground and network listeners have emitted no recovery events.
     await vi.waitFor(() => expect(getMobileCloudSyncState().pull.lastSuccessAt).not.toBeNull());
+    expect(savedOperations()).toEqual([]);
     expect(activated).toHaveBeenCalledExactlyOnceWith(owner);
     expect(requests.slice(1)).toEqual([
         { name: parent.operation, bearer: `Bearer ${newToken}`, key: parentOpId },
