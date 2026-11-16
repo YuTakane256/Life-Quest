@@ -2,11 +2,11 @@ import { useContext, type ComponentProps } from 'react';
 import type { Tabs } from 'expo-router';
 import { BottomTabBarHeightCallbackContext } from 'expo-router/js-tabs';
 import { CheckSquare, Repeat, BarChart3, User, Map, Settings, LockKeyhole } from 'lucide-react-native';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LAYOUT_TOKENS } from '@life-quest/core/designTokens';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
-import { getTabBarHeight, getTaskBadge, shouldNavigateTab } from '../theme/layout';
+import { getTaskBadge, shouldNavigateTab } from '../theme/layout';
 import { usePalette } from '../theme/usePalette';
 import { LoginBonusNotice } from './LoginBonusNotice';
 
@@ -25,15 +25,13 @@ const metrics = LAYOUT_TOKENS.navigation;
 export function QuestTabBar({ state, emitter, navigateToTab, insets }: TabBarProps) {
     const { palette } = usePalette();
     const reportHeight = useContext(BottomTabBarHeightCallbackContext);
-    const { width, fontScale } = useWindowDimensions();
     const battleUnlocked = useMobileGameStore((store) => store.battleProgress.battleUnlocked);
     const pendingCount = useMobileTaskStore((store) => store.tasks.filter((task) => !task.completed).length);
-    const height = getTabBarHeight(width - insets.left - insets.right, fontScale);
 
     return (
         <View onLayout={(event) => reportHeight?.(event.nativeEvent.layout.height)} style={{ backgroundColor: palette.bg.secondary, borderTopColor: palette.border.default, borderTopWidth: 1, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }}>
             <LoginBonusNotice />
-            <View style={[styles.row, { height }]}>
+            <View style={styles.row}>
                 {state.routes.map((route, index) => {
                     const item = ITEMS[route.name as keyof typeof ITEMS];
                     if (!item) return null;
@@ -59,10 +57,10 @@ export function QuestTabBar({ state, emitter, navigateToTab, insets }: TabBarPro
                             {focused && <View style={[styles.indicator, { backgroundColor: palette.accent.primary }]} />}
                             <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ transform: [{ scale: focused ? metrics.activeScale : 1 }] }}>
                                 <item.Icon size={metrics.iconSize} color={color} />
+                                {locked && <LockKeyhole size={metrics.lockSize} color={color} style={styles.lock} />}
                                 {badge && <View style={[styles.badge, { backgroundColor: palette.text.danger }]}><Text allowFontScaling={false} style={styles.badgeText}>{badge}</Text></View>}
                             </View>
                             <Text style={[styles.label, { color }]}>{item.label}</Text>
-                            {locked && <LockKeyhole accessible={false} size={metrics.lockSize} color={color} style={styles.lock} />}
                         </Pressable>
                     );
                 })}
@@ -72,11 +70,15 @@ export function QuestTabBar({ state, emitter, navigateToTab, insets }: TabBarPro
 }
 
 const styles = StyleSheet.create({
-    row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: metrics.horizontal, width: '100%', maxWidth: LAYOUT_TOKENS.page.maxWidth, alignSelf: 'center' },
-    item: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 8, gap: metrics.gap },
-    label: { fontSize: metrics.labelSize, lineHeight: metrics.labelLineHeight, fontWeight: '500', textAlign: 'center' },
-    indicator: { position: 'absolute', top: -2, width: metrics.indicatorWidth, height: metrics.indicatorHeight, borderRadius: 1 },
+    // Let the tallest native text layout size the row, and stretch every hit target to that height.
+    row: {
+        flexDirection: 'row', alignItems: 'stretch', minHeight: metrics.height,
+        paddingHorizontal: metrics.horizontal, width: '100%', maxWidth: LAYOUT_TOKENS.page.maxWidth, alignSelf: 'center',
+    },
+    item: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 4, gap: metrics.gap },
+    label: { alignSelf: 'stretch', fontSize: metrics.labelSize, lineHeight: metrics.labelLineHeight, fontWeight: '500', textAlign: 'center' },
+    indicator: { position: 'absolute', top: 3, width: metrics.indicatorWidth, height: metrics.indicatorHeight, borderRadius: 1 },
     badge: { position: 'absolute', top: -4, right: -8, minWidth: metrics.badgeSize, height: metrics.badgeSize, paddingHorizontal: 4, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     badgeText: { color: 'white', fontSize: metrics.badgeFontSize, fontWeight: '700' },
-    lock: { position: 'absolute', right: 8, top: 7 },
+    lock: { position: 'absolute', right: -11, top: 0 },
 });
