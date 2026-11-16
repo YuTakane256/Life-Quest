@@ -7,7 +7,7 @@ import { cloudCursorKey, cloudOutboxKey } from '@life-quest/core/cloudPull';
 import { getGameRewardAuthorityState } from '@life-quest/core/gameRewardAuthority';
 import type { OutboxOp } from '@life-quest/core/syncOutbox';
 import { startAuthSessionListener } from './auth';
-import { registerMobileAuthStoreHooks } from './authStores';
+import { registerMobileAuthStoreHooks, resetCloudSessionSeeded } from './authStores';
 import { getActiveMobileOutbox, registerMobileOutboxHooks } from './cloudOutbox';
 import { getMobileCloudSyncState, registerMobileCloudSyncHooks } from './cloudSync';
 import { getMobileCloudRecoveryState, MOBILE_CLOUD_DISPLAY_OWNER_KEY } from './cloudSessionRecovery';
@@ -79,7 +79,7 @@ function startMobileSyncFixture(prepareAuthListener?: () => () => void) {
 
 const savedOperations = (): OutboxOp[] => JSON.parse(device.appStorage.get(cloudOutboxKey(owner))!).ops;
 
-beforeEach(() => {
+beforeEach(async () => {
     device.appStorage.clear();
     device.secureStorage.clear();
     device.connection = { isConnected: true, isInternetReachable: true };
@@ -88,6 +88,8 @@ beforeEach(() => {
     vi.setSystemTime(now);
     vi.stubEnv('EXPO_PUBLIC_SUPABASE_URL', endpoint);
     vi.stubEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY', 'mobile-sync-fixture-anon');
+    resetCloudSessionSeeded();
+    await useMobileTaskStore.persist.rehydrate();
 });
 
 afterEach(async () => {
