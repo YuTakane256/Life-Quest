@@ -1,6 +1,6 @@
 # iOSの終了・再起動を挟んだ装備合成の再送確認（2026-11-17）
 
-計画④ [#699](https://github.com/YuTakane256/Life-Quest/issues/699) のT07。対象は `a31de63b` のアプリとEdge Function。iPhone 17e（iOS 27.0）の専用シミュレーター、ローカルSupabase CLI 3.1.0、使い捨てアカウントで実施した。開発ビルドは検証専用の識別子権限をXcodeで埋め込み、標準のSecureStoreを使用した。
+計画④ [#699](https://github.com/YuTakane256/Life-Quest/issues/699) のT07。対象は `a31de63b` のアプリとEdge Function。iPhone 17e（iOS 27.0）の専用シミュレーター、ローカルSupabase CLI 3.1.0、使い捨てアカウントで実施した。開発ビルドは検証専用の識別子権限をXcodeで埋め込んだ。認証セッションは標準のSecureStore、合成の保留はAsyncStorageに保存した。
 
 ## 操作
 
