@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyLogin as notifyScopeLogin, notifyLogout as notifyScopeLogout, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
+import { notifyLogin as notifyScopeLogin, notifyLogout as notifyScopeLogout, notifyTokenRefreshed, registerAuthLifecycleHooks, resetAuthLifecycleHooks } from '@life-quest/core/authLifecycle';
 import { cloudCacheKey, type CloudCache } from '@life-quest/core/cloudCache';
 import { cloudCursorKey, type PullBatch } from '@life-quest/core/cloudPull';
 import { createInactiveCloudSyncState } from '@life-quest/core/cloudSyncState';
@@ -330,6 +330,76 @@ for (const platform of [
             for (const callback of mocks.pushListeners) callback({ ...mocks.push });
             await notifyLogin('a'); await platform.active()!.syncNow();
             expect(platform.state().availability).toBe('ready'); expect(mocks.retry).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([['token refresh', notifyTokenRefreshed], ['login', notifyLogin]] as const)(
+            'pulls after a blocked outbox persists even when %s notifications overlap', async (_event, authenticate) => {
+                await start();
+                const handle = platform.active()!;
+                mocks.rpc.mockResolvedValueOnce({ data: batch('a'), error: null });
+                await handle.flush();
+                expect(mocks.values.get(cloudCursorKey('a'))).toBe('2');
+                const publishPush = () => mocks.pushListeners.forEach((callback) => callback({ ...mocks.push }));
+                mocks.push.pending = 2;
+                mocks.push.failureKinds = ['auth-required'];
+                publishPush();
+                mocks.rpc.mockClear().mockResolvedValue({ data: batch('a'), error: null });
+                const persisting = deferred<{ retryablePending: boolean }>();
+                mocks.drain.mockReturnValue(persisting.promise);
+
+                // An auth notification can return while an earlier one is still replaying writes.
+                mocks.push.pending = 1;
+                mocks.push.inflight = 1;
+                mocks.push.failureKinds = [];
+                publishPush();
+                await Promise.all([authenticate('a'), authenticate('a'), notifyTokenRefreshed('b')]);
+                await settle();
+                expect(mocks.rpc).not.toHaveBeenCalled();
+
+                mocks.push.pending = 0;
+                mocks.push.inflight = 0;
+                publishPush();
+                publishPush();
+                await settle();
+                expect(mocks.rpc).not.toHaveBeenCalled();
+
+                persisting.resolve({ retryablePending: false });
+                await settle();
+                expect(platform.active()).toBe(handle);
+                expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('pull_sync_batch', { p_after_version: 2, p_max_versions: 200 });
+                expect(platform.state().pull.lastSuccessAt).not.toBeNull();
+
+                await authenticate('a'); await settle();
+                expect(mocks.rpc).toHaveBeenCalledOnce();
+            },
+        );
+
+        it('also pulls a second recovered write while the first recovery pull is still running', async () => {
+            await start();
+            const publishPush = () => mocks.pushListeners.forEach((callback) => callback({ ...mocks.push }));
+            const reportRecovery = () => {
+                mocks.push.pending = 1;
+                mocks.push.failureKinds = ['auth-required'];
+                publishPush();
+                mocks.push.pending = 0;
+                mocks.push.failureKinds = [];
+                publishPush();
+            };
+            const firstBatch = deferred<{ data: PullBatch; error: null }>();
+            mocks.rpc.mockReturnValueOnce(firstBatch.promise)
+                .mockResolvedValue({ data: { next_cursor: 3, has_more: false }, error: null });
+            mocks.drain.mockResolvedValue({ retryablePending: false });
+
+            reportRecovery();
+            await settle();
+            expect(mocks.rpc).toHaveBeenCalledOnce();
+            reportRecovery();
+            await settle();
+            expect(mocks.rpc).toHaveBeenCalledOnce();
+
+            firstBatch.resolve({ data: batch('a'), error: null });
+            await vi.waitFor(() => expect(mocks.values.get(cloudCursorKey('a'))).toBe('3'));
+            expect(mocks.rpc.mock.calls.map(([, params]) => params.p_after_version)).toEqual([0, 2]);
         });
 
         it('pull-only HTTP401 waits for same-user authentication, without retrying on manual/automatic triggers', async () => {

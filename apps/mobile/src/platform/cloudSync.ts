@@ -88,6 +88,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
         if (isCurrent()) cache = restored;
     }).catch(() => { /* 保存領域が復帰すれば、全件pullからキャッシュを再構築できる。 */ });
     let pushState = getMobileCloudOutboxState();
+    let pushAuthInterrupted = pushState.failureKinds.includes('auth-required');
     let online: boolean | null = null;
     let manualSync: Promise<void> | null = null;
     let pullState: CloudSyncPublicState['pull'] = { phase: 'idle', lastSuccessAt: null };
@@ -100,11 +101,6 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
             attention: deriveCloudSyncAttention(pushState, pullState),
         });
     };
-    const unsubscribeOutbox = subscribeMobileCloudOutboxState((state) => {
-        pushState = state;
-        publish();
-    });
-
     const seedStores = async (): Promise<void> => {
         if (!isCurrent()) return;
         if (!Object.values(getSeedableSections(cache)).some(Boolean)) return;
@@ -158,6 +154,7 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
 
     const pullNow = async (): Promise<void> => {
         if (!isCurrent() || pullState.phase === 'auth-required') return;
+        if (pushState.pending === 0 && pushState.inflight === 0) pushAuthInterrupted = false;
         pullState = { ...pullState, phase: 'pulling' };
         publish();
         try {
@@ -176,10 +173,13 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     };
 
     // 全ての自動トリガで、古いクラウド状態をpullする前に保留操作を送る。
-    const recoverConnection = async (): Promise<boolean> => {
+    const recoverConnection = async (afterPushAuth = false): Promise<boolean> => {
         if (!isCurrent() || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
         const { retryablePending } = await drainOutboxAndWait();
-        if (!isCurrent() || retryablePending || deriveCloudSyncAvailability(pushState, online, pullState) === 'auth-required') return false;
+        if (!isCurrent() || retryablePending) return false;
+        const availability = deriveCloudSyncAvailability(pushState, online, pullState);
+        if (availability === 'auth-required') return false;
+        if (afterPushAuth && (!pushAuthInterrupted || availability !== 'ready' || pushState.pending > 0 || pushState.inflight > 0)) return false;
         let pulled = false;
         try {
             await pullNow();
@@ -195,6 +195,18 @@ export function startMobileCloudSync(userId: string): CloudSyncHandle | null {
     // Pull fresh rows after sending, rather than reseeding an older restored cache.
     const unsubscribeTitleHydration = useMobileTitleStore.persist.onFinishHydration(() => {
         void recoverConnection().catch(() => undefined);
+    });
+
+    const unsubscribeOutbox = subscribeMobileCloudOutboxState((state) => {
+        pushState = state;
+        pushAuthInterrupted ||= state.failureKinds.includes('auth-required');
+        publish();
+        if (!isCurrent() || !pushAuthInterrupted || state.pending > 0 || state.inflight > 0
+            || deriveCloudSyncAvailability(state, online, pullState) !== 'ready') return;
+
+        // The last outbox notification can precede persistence, and auth notifications can overlap.
+        // Join the drain before reading; consume the remembered failure only when a pull starts.
+        void recoverConnection(true).catch(() => undefined);
     });
 
     const scheduler = createInsurancePullScheduler({
