@@ -1,0 +1,55 @@
+{
+  "sourceCommit": "db22dba511ec49a24df6f3c3d8b84cd75d77e166",
+  "environment": {
+    "device": "iPhone 17e",
+    "os": "iOS 27.0",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "backend": "isolated local Supabase",
+    "sessionStorage": "SecureStore",
+    "gameStorage": "AsyncStorage"
+  },
+  "beforeAcceptance": {
+    "heldBeforeUpstream": true,
+    "serverStateUnchangedThroughRestart": true,
+    "sameOwnerAndChestsOnDisk": true,
+    "newNativeProcess": true,
+    "automaticOpenPostsBeforeTap": 0,
+    "retryUsesOriginalKey": true,
+    "successfulOpenPosts": 1,
+    "receipts": 1,
+    "newItems": 1,
+    "newRevealObserved": true
+  },
+  "afterAcceptance": {
+    "successfulResponseDropped": true,
+    "pullResponsesHeldUntilTermination": true,
+    "staleUnopenedChestAndLockedBattleOnDisk": true,
+    "newNativeProcess": true,
+    "openPostsAfterRestart": 0,
+    "canonicalSyncRestoredOpenHistoryAndBattle": true,
+    "serverStateExactlyMatchesCommittedSnapshot": true,
+    "newItems": 0,
+    "revealAbsentAtVerifiedRecoveryScreens": true
+  },
+  "finalState": {
+    "openedChests": 2,
+    "openReceipts": 2,
+    "liveItems": 2,
+    "chestHistoryEntries": 2,
+    "unrelatedChestPreserved": true,
+    "unrelatedItemPreserved": true,
+    "totalXp": 220,
+    "gachaCount": 5,
+    "rewardTransactions": 1,
+    "rewardLedgerUnchanged": true
+  },
+  "verificationLimits": [
+    "iOS simulator only",
+    "controlled loopback HTTP faults",
+    "no physical Keychain or network outage test",
+    "Android and staging not run"
+  ]
+}
