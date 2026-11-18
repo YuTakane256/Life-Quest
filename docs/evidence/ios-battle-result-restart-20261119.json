@@ -1,0 +1,33 @@
+{
+  "sourceCommit": "ce3a6447c20bef8bcc52d36a6f6e972180042072",
+  "environment": {
+    "device": "iPhone 17e",
+    "os": "iOS 27.0",
+    "backend": "isolated local Supabase"
+  },
+  "beforeTermination": {
+    "resultSavedBeforeUpstream": true,
+    "upstreamResolvePosts": 0,
+    "attemptStatus": "in_progress",
+    "rewardRows": 0,
+    "totalXp": 520
+  },
+  "afterRestart": {
+    "newNativeProcess": true,
+    "sameOwnerAndSavedResult": true,
+    "automaticResolvePostsBeforeTap": 0
+  },
+  "afterManualRetry": {
+    "sameAttemptKeyAndActions": true,
+    "actionCount": 3,
+    "upstreamResolvePosts": 1,
+    "httpStatus": 200,
+    "attemptStatus": "resolved",
+    "outcome": "victory",
+    "newRewardRows": 1,
+    "rewardXp": 5,
+    "totalXp": 525,
+    "nextStage": 2,
+    "pendingRecordCleared": true
+  }
+}
