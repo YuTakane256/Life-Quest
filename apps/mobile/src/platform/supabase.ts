@@ -6,8 +6,10 @@
  * 環境変数（EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY）未設定なら
  * null を返し、アプリは従来どおり完全ローカルで動作する。
  */
-import * as SecureStore from 'expo-secure-store';
+import { secureStoreSessionAdapter } from './secureSessionStorage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+export { secureStoreSessionAdapter } from './secureSessionStorage';
 
 export interface SupabaseEnv {
     url: string;
@@ -20,17 +22,6 @@ export function readMobileSupabaseEnv(): SupabaseEnv | null {
     if (!url || !anonKey) return null;
     return { url, anonKey };
 }
-
-// SecureStoreのキーは英数と ".-_" のみ許可のため、Supabase既定キーを変換する
-function toSecureStoreKey(key: string): string {
-    return key.replace(/[^A-Za-z0-9._-]/g, '_');
-}
-
-export const secureStoreSessionAdapter = {
-    getItem: (key: string) => SecureStore.getItemAsync(toSecureStoreKey(key)),
-    setItem: (key: string, value: string) => SecureStore.setItemAsync(toSecureStoreKey(key), value),
-    removeItem: (key: string) => SecureStore.deleteItemAsync(toSecureStoreKey(key)),
-};
 
 let cachedClient: SupabaseClient | null | undefined;
 
