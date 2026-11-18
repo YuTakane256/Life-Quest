@@ -1,0 +1,34 @@
+{
+  "sourceCommit": "535e9a4704915ad5f86b3b2b6165fd6ddd941bde",
+  "environment": {
+    "device": "iPhone 17e",
+    "os": "iOS 27.0",
+    "backend": "isolated local Supabase"
+  },
+  "initial": {
+    "totalXp": 520,
+    "highestStage": 0,
+    "battleRewardRows": 0
+  },
+  "responseLoss": {
+    "resolvePosts": 1,
+    "upstreamStatus": 200,
+    "responseDropped": true,
+    "attemptStatus": "resolved",
+    "outcome": "victory",
+    "rewardXp": 5,
+    "battleRewardRows": 1,
+    "pendingMatchesRequest": true,
+    "pendingSurvivedTermination": true
+  },
+  "afterRestart": {
+    "newNativeProcess": true,
+    "successfulPull": true,
+    "resolvePosts": 0,
+    "pendingRecordCleared": true,
+    "totalXp": 525,
+    "highestStage": 1,
+    "battleRewardRows": 1,
+    "dbSnapshotUnchanged": true
+  }
+}
