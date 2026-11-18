@@ -13,12 +13,14 @@ import { getMobileCloudSyncState, registerMobileCloudSyncHooks } from './cloudSy
 import { getMobileCloudRecoveryState, MOBILE_CLOUD_DISPLAY_OWNER_KEY } from './cloudSessionRecovery';
 import { getMobileSupabaseClient, resetMobileSupabaseClient } from './supabase';
 import { useMobileTaskStore } from '../stores/useMobileTaskStore';
+import { getSecureSessionStorageState, retrySecureSessionStorage } from './secureSessionStorage';
 
 type Connectivity = { isConnected: boolean | null; isInternetReachable: boolean | null };
 
 const device = vi.hoisted(() => ({
     appStorage: new Map<string, string>(),
     secureStorage: new Map<string, string>(),
+    secureRead: vi.fn<(key: string) => Promise<string | null>>(),
     connection: { isConnected: true, isInternetReachable: true } as Connectivity,
     networkListeners: new Set<(state: Connectivity) => void>(),
 }));
@@ -30,7 +32,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getAllKeys: async () => [...device.appStorage.keys()],
 } }));
 vi.mock('expo-secure-store', () => ({
-    getItemAsync: async (key: string) => device.secureStorage.get(key) ?? null,
+    getItemAsync: (key: string) => device.secureRead(key),
     setItemAsync: async (key: string, value: string) => { device.secureStorage.set(key, value); },
     deleteItemAsync: async (key: string) => { device.secureStorage.delete(key); },
 }));
@@ -82,6 +84,7 @@ const savedOperations = (): OutboxOp[] => JSON.parse(device.appStorage.get(cloud
 beforeEach(async () => {
     device.appStorage.clear();
     device.secureStorage.clear();
+    device.secureRead.mockReset().mockImplementation(async (key) => device.secureStorage.get(key) ?? null);
     device.connection = { isConnected: true, isInternetReachable: true };
     device.networkListeners.clear();
     vi.useFakeTimers();
@@ -378,4 +381,72 @@ it('同じ所有者のSDK更新後、401で止まった送信を再開して受�
     expect(useMobileTaskStore.getState().tasks).toMatchObject([{ id: taskId, name: '受信したタスク',
         subtasks: [{ id: subtaskId, name: '受信したサブタスク' }] }]);
     expect(unexpected).toEqual([]);
+});
+
+it.each([1, 2])('起動時の%d回目の安全な保存読込に失敗しても、セッションを消さず再確認で同じ本人へ復帰する', async (failAt) => {
+    const user = { id: owner, aud: 'authenticated', app_metadata: {}, user_metadata: {} };
+    const session = JSON.stringify({ user, access_token: 'fixture-storage-access', refresh_token: 'fixture-storage-refresh',
+        expires_at: now.getTime() / 1000 + 3600 });
+    device.secureStorage.set(sessionKey, session);
+    device.appStorage.set(MOBILE_CLOUD_DISPLAY_OWNER_KEY, owner);
+    const parent = { ...pendingOperation, opId: parentOpId, operation: 'upsert_task', dependsOn: [],
+        payload: { p_id: taskId, p_name: '保留タスク' } } satisfies OutboxOp;
+    device.appStorage.set(cloudOutboxKey(owner), JSON.stringify({ ops: [parent] }));
+    const reads = new Map<string, number>();
+    let unavailable = true;
+    device.secureRead.mockImplementation(async (key) => {
+        reads.set(key, (reads.get(key) ?? 0) + 1);
+        if (key === sessionKey && reads.get(key)! >= failAt && unavailable) throw new Error('private-keychain-diagnostic');
+        return device.secureStorage.get(key) ?? null;
+    });
+    const rpcCalls: string[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+        const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+        if (url.origin !== endpoint || !url.pathname.startsWith('/rest/v1/rpc/')) throw new TypeError('Unexpected test endpoint');
+        const rpc = url.pathname.replace('/rest/v1/rpc/', '');
+        rpcCalls.push(rpc);
+        return Response.json(rpc === 'pull_sync_batch'
+            ? { next_cursor: 6, has_more: false, tasks: [{ id: taskId, name: '受信タスク', version: 6, created_at: createdAt }] }
+            : {});
+    });
+    startMobileSyncFixture();
+    try {
+        await vi.waitFor(() => expect(getSecureSessionStorageState()).toBe('blocked'));
+        expect(device.secureStorage.get(sessionKey)).toBe(session);
+        expect(device.appStorage.get(MOBILE_CLOUD_DISPLAY_OWNER_KEY)).toBe(owner);
+        let sessionSettled = false;
+        const pendingSession = getMobileSupabaseClient()!.auth.getSession().then((result) => {
+            sessionSettled = true;
+            return result;
+        });
+        await Promise.resolve();
+        expect(sessionSettled).toBe(false);
+        expect(rpcCalls).toEqual([]);
+        const [waiting] = savedOperations();
+        expect(waiting).toMatchObject({ ...parent, status: expect.stringMatching(/^(pending|inflight)$/) });
+        // The second read can follow SIGNED_IN. The storage gate still blocks the UI
+        // and the SDK waits for the session before sending any queued RPC.
+
+        retrySecureSessionStorage();
+        await vi.waitFor(() => expect(getSecureSessionStorageState()).toBe('blocked'));
+        expect(rpcCalls).toEqual([]);
+        expect(device.secureStorage.get(sessionKey)).toBe(session);
+        expect(sessionSettled).toBe(false);
+
+        unavailable = false;
+        retrySecureSessionStorage();
+        await vi.waitFor(() => expect(getMobileCloudSyncState().pull.lastSuccessAt).not.toBeNull());
+        expect((await pendingSession).data.session?.user.id).toBe(owner);
+        expect(getSecureSessionStorageState()).toBe('ready');
+        expect(captureAuthSessionScope().userId).toBe(owner);
+        expect(getMobileCloudRecoveryState()).toBe('ready');
+        expect(getGameRewardAuthorityState()).toBe('authenticated');
+        expect(savedOperations()).toEqual([]);
+        expect(device.secureStorage.get(sessionKey)).toBe(session);
+        expect(rpcCalls).toContain('upsert_task');
+    } finally {
+        unavailable = false;
+        retrySecureSessionStorage();
+        await vi.waitFor(() => expect(getSecureSessionStorageState()).toBe('ready'));
+    }
 });
