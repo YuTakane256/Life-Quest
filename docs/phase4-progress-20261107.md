@@ -1,5 +1,7 @@
 # 計画④の現在地と、完了までの残件（2026-11-07）
 
+2026-11-21追記: R1の[同期先の接続拒否を挟むiOS起動復帰](ios-sync-endpoint-outage-20261121.md)をローカルDBと専用シミュレーターで確認した。端末回線の切断とNetInfo通知だけでの復帰、実機・Android・stagingは残る。
+
 2026-11-20追記: R2の[装備合成の送出前終了](ios-synthesis-before-send-20261120.md)をiOSシミュレーターで確認した。[確定後の応答喪失](ios-synthesis-restart-20261117.md)と合わせて、合成の2つの終了条件を確認済み。物理端末・Android・stagingでの確認は残る。
 
 2026-11-19追記: R2の[確定済み戦闘の応答喪失](ios-battle-response-loss-20261119.md)もiOSシミュレーターで確認した。[送出前終了後の手動再送](ios-battle-result-restart-20261119.md)と合わせて、決着後の2つの終了条件を確認済み。戦闘途中の続行、実機・Android・stagingは引き続き確認する。

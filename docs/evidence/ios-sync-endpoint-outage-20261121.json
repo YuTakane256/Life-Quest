@@ -1,0 +1,40 @@
+{
+  "sourceCommit": "bd4195196cbef6950a3b7713a325fa1d6cd520d3",
+  "environment": {
+    "device": "iPhone 17e",
+    "os": "iOS 27.0",
+    "backend": "isolated local Supabase",
+    "fault": "closed app backend TCP port"
+  },
+  "duringOutage": {
+    "endpointRefusedConnection": true,
+    "localPendingOperations": 2,
+    "childDependsOnParent": true,
+    "serverTaskRows": 0,
+    "serverSubtaskRows": 0
+  },
+  "afterRestart": {
+    "newNativeProcess": true,
+    "endpointStillRefusedConnection": true,
+    "sameOwnerIdsPayloadsAndDependency": true,
+    "localPendingOperations": 2,
+    "serverTaskRows": 0,
+    "serverSubtaskRows": 0
+  },
+  "afterForeground": {
+    "sameProcessAsRestart": true,
+    "rpcOrder": [
+      "upsert_task",
+      "upsert_subtask",
+      "pull_sync_batch"
+    ],
+    "sameOperationAndRowIds": true,
+    "localPendingOperations": 0,
+    "serverTaskRows": 1,
+    "serverSubtaskRows": 1,
+    "bothIncomplete": true,
+    "receivedThroughChildVersion": true,
+    "totalXp": 20,
+    "rewardLedgerUnchanged": true
+  }
+}
