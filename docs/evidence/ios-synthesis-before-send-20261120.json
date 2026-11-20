@@ -1,0 +1,32 @@
+{
+  "sourceCommit": "30f7fcfd8a26197173e571bd51dbbed0b6ddbd5a",
+  "environment": {
+    "device": "iPhone 17e",
+    "os": "iOS 27.0",
+    "backend": "isolated local Supabase"
+  },
+  "beforeTermination": {
+    "materialCount": 3,
+    "serverSynthesisPosts": 0,
+    "synthesisReceipts": 0,
+    "pendingMatchesInterceptedRequest": true
+  },
+  "afterRestart": {
+    "newNativeProcess": true,
+    "sameOwnerAndSavedOperation": true,
+    "automaticSynthesisPosts": 0,
+    "dbSnapshotUnchanged": true
+  },
+  "afterManualRetry": {
+    "sameIngredientsAndRetryKey": true,
+    "serverSynthesisPosts": 1,
+    "upstreamStatus": 200,
+    "synthesisReceipts": 1,
+    "consumedMaterials": 3,
+    "createdItems": 1,
+    "resultMatchesDeviceInventory": true,
+    "pendingRecordCleared": true,
+    "totalXp": 20,
+    "rewardLedgerUnchanged": true
+  }
+}
