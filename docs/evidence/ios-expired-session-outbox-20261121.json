@@ -1,0 +1,39 @@
+{
+  "sourceCommit": "f5d0549c40bb101e26f0b8d376431e7f48a8b505",
+  "environment": {
+    "device": "iPhone 17e",
+    "os": "iOS 27.0",
+    "backend": "isolated local Supabase",
+    "configuredJwtLifetimeSeconds": 180
+  },
+  "expiration": {
+    "newNativeProcess": true,
+    "jwtExpiredBeforeRestart": true,
+    "refreshRevokedInLocalAuth": true,
+    "refreshStatus": 400,
+    "refreshErrorCode": "refresh_token_not_found",
+    "pendingOperations": 2,
+    "parentDependencyPreserved": true
+  },
+  "otherAccount": {
+    "passwordAuthenticationSucceeded": true,
+    "taskSyncRequestsDuringGate": 0,
+    "accountBTaskRows": 0,
+    "accountBSubtaskRows": 0,
+    "ownerAQueueAndDisplayUnchanged": true
+  },
+  "originalAccount": {
+    "rpcOrder": [
+      "upsert_task",
+      "upsert_subtask",
+      "pull_sync_batch"
+    ],
+    "sameOperationAndRowIds": true,
+    "pendingOperations": 0,
+    "accountATaskRows": 1,
+    "accountASubtaskRows": 1,
+    "receivedThroughChildVersion": true,
+    "totalXp": 20,
+    "bothRewardLedgersUnchanged": true
+  }
+}
