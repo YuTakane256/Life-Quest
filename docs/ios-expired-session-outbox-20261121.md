@@ -20,4 +20,4 @@
 
 [識別子を除いた照合結果](evidence/ios-expired-session-outbox-20261121.json)に結果を記録した。認証、起動復帰、DB同期の既存テストは3ファイル60件成功した。
 
-この条件では、JWTの実期限切れとAuthでの更新セッション無効化を組み合わせた。更新に成功する自然な期限切れ、更新中の通信障害、物理端末・Android・staging、Google・Appleでの再認証は引き続き確認する。
+この条件では、JWTの実期限切れとAuthでの更新セッション無効化を組み合わせた。期限切れからの自動更新と、更新要求がAuthに届く前の通信障害は[別記録](ios-auth-refresh-retry-20261122.md)で確認した。更新受理後の応答喪失、物理端末・Android・staging、Google・Appleでの再認証は引き続き確認する。
