@@ -1,0 +1,42 @@
+{
+  "sourceCommit": "4b13171b20fc387a36e9df54deb05053177dda01",
+  "environment": {
+    "device": "iPhone 17e",
+    "os": "iOS 27.0",
+    "backend": "isolated local Supabase",
+    "configuredJwtLifetimeSeconds": 180
+  },
+  "duringFault": {
+    "newNativeProcess": true,
+    "jwtExpiredBeforeRestart": true,
+    "firstRefreshAcceptedByAuth": 200,
+    "refreshTokenRotatedByAuth": true,
+    "responseDisconnectedBeforeHeaders": true,
+    "subsequentRefreshRequestsDisconnectedBeforeAuth": 43,
+    "acceptedRefreshResponsesDeliveredDuringFault": 0,
+    "configuredRefreshReuseWindowSeconds": 10,
+    "restoredAfterReuseWindow": true,
+    "syncRpcRequestsPassedThrough": 0,
+    "pendingOperations": 2,
+    "parentDependencyPreserved": true
+  },
+  "recovery": {
+    "passwordAuthenticationRequestsAfterRestart": 0,
+    "refreshStatus": 200,
+    "retriedWithOriginalRefreshToken": true,
+    "syncUsedAccessTokenFromSuccessfulRetry": true,
+    "rpcOrder": [
+      "upsert_task",
+      "upsert_subtask",
+      "pull_sync_batch"
+    ],
+    "originalOperationKeysAndRowIds": true,
+    "pendingOperations": 0,
+    "accountATaskRows": 1,
+    "accountASubtaskRows": 1,
+    "accountBTaskRows": 0,
+    "accountBSubtaskRows": 0,
+    "receivedThroughChildVersion": true,
+    "bothRewardLedgersUnchanged": true
+  }
+}
