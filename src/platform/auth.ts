@@ -229,7 +229,7 @@ export async function resendEmailVerification(email: string): Promise<AuthResult
 }
 
 /** Password changes from this form are allowed only after a recovery-link session. */
-export async function updatePasswordFromRecovery(password: string): Promise<AuthResult> {
+export async function updatePasswordFromRecovery(password: string, onUpdated?: () => void): Promise<AuthResult> {
     if (passwordRecoveryState !== 'ready' || !hasWebRecoveryGate()) {
         return { ok: false, message: 'このリンクは無効または期限切れです。パスワードを再設定してください。' };
     }
@@ -266,6 +266,7 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
         await notifyLogin(data.session.user.id);
         await flushCompletionRewardWrites();
         if (!current()) return genericAuthFailure();
+        onUpdated?.();
         setGameRewardAuthorityState('authenticated');
     }
     return { ok: true };

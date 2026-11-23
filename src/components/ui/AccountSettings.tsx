@@ -24,6 +24,8 @@ import {
 import { readWebSupabaseEnv } from '../../platform/supabase';
 
 type Mode = 'signIn' | 'signUp' | 'passwordReset';
+const PASSWORD_UPDATED_MESSAGE = 'パスワードを更新しました。新しいパスワードでログインできます。';
+let startupPasswordUpdated = false;
 
 /**
  * アカウントセクション（#503、メール認証の最小UI）。
@@ -42,7 +44,9 @@ export function AccountSettings({ protectedStartup = false }: { protectedStartup
     const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [googleOAuthState, setGoogleOAuthState] = useState(getGoogleOAuthState);
-    const [message, setMessage] = useState<string | null>(null);
+    const [message, setMessage] = useState<string | null>(() =>
+        !protectedStartup && startupPasswordUpdated ? PASSWORD_UPDATED_MESSAGE : null,
+    );
     const [authBusy, setBusy] = useState(false);
     const [deletion] = useState(() => createAccountDeletionConfirmation(deleteCurrentAccount, subscribeAccountDeletionIdentity));
     const deleteState = useSyncExternalStore(deletion.subscribe, deletion.getSnapshot);
@@ -72,6 +76,10 @@ export function AccountSettings({ protectedStartup = false }: { protectedStartup
         void refreshAccount();
         return () => { mounted.current = false; unsubscribe(); deactivate(); };
     }, [deletion, refreshAccount]);
+
+    useEffect(() => {
+        if (!protectedStartup) startupPasswordUpdated = false;
+    }, [protectedStartup]);
 
     useEffect(() => subscribePasswordRecoveryState(setRecoveryState), []);
     useEffect(() => subscribeGoogleOAuthState((state) => {
@@ -143,11 +151,14 @@ export function AccountSettings({ protectedStartup = false }: { protectedStartup
     const handleRecoveryPasswordUpdate = async () => {
         setBusy(true);
         setMessage(null);
-        const result = await updatePasswordFromRecovery(password);
+        const result = await updatePasswordFromRecovery(password, protectedStartup ? () => {
+            window.history.replaceState(null, '', '/settings');
+            startupPasswordUpdated = true;
+        } : undefined);
         if (result.ok) {
             setPassword('');
             setPasswordConfirmation('');
-            setMessage('パスワードを更新しました。新しいパスワードでログインできます。');
+            setMessage(PASSWORD_UPDATED_MESSAGE);
         } else {
             setMessage(result.message);
         }

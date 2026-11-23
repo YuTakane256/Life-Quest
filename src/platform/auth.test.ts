@@ -364,8 +364,10 @@ describe('Web auth pending reward ownership', () => {
             state.listener?.('SIGNED_IN', { user: { id: 'user-1' } });
             expect(getGameRewardAuthorityState()).toBe('resolving');
             await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
-            await expect(updatePasswordFromRecovery('secret1')).resolves.toEqual({ ok: true });
+            const onUpdated = vi.fn(() => expect(getGameRewardAuthorityState()).toBe('resolving'));
+            await expect(updatePasswordFromRecovery('secret1', onUpdated)).resolves.toEqual({ ok: true });
             expect(state.updateUser).toHaveBeenCalledWith({ password: 'secret1' });
+            expect(onUpdated).toHaveBeenCalledOnce();
             expect(getGameRewardAuthorityState()).toBe('authenticated');
         } finally {
             stop();
