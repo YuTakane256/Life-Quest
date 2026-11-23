@@ -1,0 +1,46 @@
+{
+  "sourceCommit": "f51b0e271ebdc85576f61cf03091a2d7505a0e21",
+  "environment": {
+    "browser": "Chromium",
+    "viewport": {
+      "width": 402,
+      "height": 874
+    },
+    "backend": "isolated local Supabase",
+    "configuredJwtLifetimeSeconds": 180
+  },
+  "expiredStartup": {
+    "newBrowserProcess": true,
+    "jwtExpiredBeforeRestart": true,
+    "refreshStatus": 400,
+    "refreshErrorCode": "refresh_token_not_found",
+    "displayIsolatedAfterAuthSettled": true,
+    "originalTaskDetectedInStartupDom": false,
+    "cloudCacheArchived": true,
+    "pendingOperations": 2,
+    "parentDependencyPreserved": true,
+    "syncRpcCountBeforeNextLogin": 0
+  },
+  "otherAccount": {
+    "passwordAuthenticationSucceeded": true,
+    "originalTaskVisible": false,
+    "originalQueueUnchanged": true,
+    "taskMutationRequests": 0,
+    "taskRows": 0,
+    "subtaskRows": 0
+  },
+  "originalAccount": {
+    "normalPasswordLoginSucceeded": true,
+    "taskWriteOrder": [
+      "upsert_task",
+      "upsert_subtask"
+    ],
+    "pullSucceededAfterWrites": true,
+    "originalOperationKeysAndRowIds": true,
+    "pendingOperations": 0,
+    "taskRows": 1,
+    "subtaskRows": 1,
+    "receivedThroughChildVersion": true,
+    "bothRewardLedgersUnchanged": true
+  }
+}
