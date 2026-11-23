@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { getGameRewardAuthorityState, subscribeGameRewardAuthority } from '@life-quest/core/gameRewardAuthority';
 import { getPasswordRecoveryState, subscribePasswordRecoveryState } from '../../platform/auth';
 import { useGameStore } from '../../stores/useGameStore';
+import { AccountSettings } from './AccountSettings';
 import { ThemeController } from './ThemeController';
 
 interface WebCloudStartupProps {
@@ -18,29 +19,18 @@ export function WebCloudStartup({ hasSavedCloudDisplay, children }: WebCloudStar
     useEffect(() => {
         if (released) return;
         const releaseIfReady = () => {
-            if (getGameRewardAuthorityState() !== 'resolving') {
-                setReleased(true);
-            } else if (getPasswordRecoveryState() !== 'idle') {
-                // Recovery has its own auth gate and needs the Settings form before normal sign-in.
-                if (window.location.pathname !== '/settings') {
-                    window.history.replaceState(null, '', '/settings');
-                }
-                setReleased(true);
-            }
+            if (getGameRewardAuthorityState() !== 'resolving') setReleased(true);
         };
-        const unsubscribeAuthority = subscribeGameRewardAuthority(releaseIfReady);
-        const unsubscribeRecovery = subscribePasswordRecoveryState(releaseIfReady);
+        const unsubscribe = subscribeGameRewardAuthority(releaseIfReady);
         releaseIfReady();
-        return () => {
-            unsubscribeAuthority();
-            unsubscribeRecovery();
-        };
+        return unsubscribe;
     }, [released]);
 
     return released ? children : <ProtectedCloudStartup />;
 }
 
 function ProtectedCloudStartup() {
+    const recovery = useSyncExternalStore(subscribePasswordRecoveryState, getPasswordRecoveryState);
     const storageError = useGameStore((state) => state.completionRewardError);
     return (
         <>
@@ -48,8 +38,9 @@ function ProtectedCloudStartup() {
             <main className="max-w-lg mx-auto px-5 pt-10">
                 <p role={storageError ? 'alert' : 'status'} className="text-sm mb-4"
                     style={{ color: 'var(--color-text-secondary)' }}>
-                    {storageError ?? '保存データを確認しています…'}
+                    {storageError ? '保存データを確認できませんでした。保存環境を確認して再読み込みしてください。' : '保存データを確認しています…'}
                 </p>
+                {recovery !== 'idle' && <AccountSettings protectedStartup />}
                 {storageError && (
                     <button type="button" className="rounded-lg border px-4 py-2" onClick={() => window.location.reload()}>
                         再読み込み

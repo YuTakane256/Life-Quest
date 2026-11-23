@@ -426,6 +426,22 @@ describe('Web auth pending reward ownership', () => {
         }
     });
 
+    it.each(['update', 'cancel'] as const)('起動時の再設定を %s すると古いクラウド表示を退避してから画面を戻す', async (action) => {
+        vi.stubGlobal('navigator', { locks: { request: async (_name: string, work: () => unknown) => work() } });
+        seedCloudCompletionRewardStorage(() => useGameStore.setState(sanitizeGameStoreState({ character: { totalXp: 110 } })));
+        await flushCompletionRewardWrites();
+        const stop = startAuthSessionListener();
+        try {
+            state.listener?.('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
+            await vi.waitFor(() => expect(getPasswordRecoveryState()).toBe('ready'));
+            await expect(action === 'update' ? updatePasswordFromRecovery('secret1') : cancelPasswordRecovery())
+                .resolves.toEqual({ ok: true });
+            expect(useGameStore.getState().character.totalXp).toBe(0);
+            expect(Object.keys(localStorage).filter((key) => key.startsWith(CLOUD_SESSION_RECOVERY_PREFIX))).toHaveLength(1);
+            expect(getGameRewardAuthorityState()).toBe(action === 'update' ? 'authenticated' : 'anonymous');
+        } finally { stop(); vi.unstubAllGlobals(); }
+    });
+
     it('Supabaseの生エラーをログイン画面向けに返さない', async () => {
         state.signInWithPassword.mockResolvedValueOnce({ data: { user: null }, error: new Error('User not found') } as never);
         const { signInWithEmail } = await import('./auth');

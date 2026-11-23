@@ -16,6 +16,8 @@ vi.mock('../../platform/auth', () => ({
     },
 }));
 
+vi.mock('./AccountSettings', () => ({ AccountSettings: () => <div>アカウントフォーム</div> }));
+
 vi.mock('./ThemeController', () => ({ ThemeController: () => null }));
 
 import { WebCloudStartup } from './WebCloudStartup';
@@ -75,16 +77,23 @@ it('保存データの退避に失敗した場合は画面を覆ったまま再�
     render(true);
     act(() => withoutCompletionRewardPersistence(() => useGameStore.setState({ completionRewardError: '保存エラー' })));
     expect(host.textContent).not.toContain('タスク画面');
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe('保存エラー');
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('保存データを確認できませんでした');
     expect(host.querySelector('button')?.textContent).toBe('再読み込み');
 });
 
-it('パスワード再設定の判定後は、認証完了前に既存の設定フォームへ進める', () => {
+it.each(['ready', 'invalid'] as const)('パスワード再設定が %s の間はアカウントフォームだけを表示する', (state) => {
     render(true);
     act(() => {
-        recovery.state = 'ready';
+        recovery.state = state;
         recovery.listeners.forEach((listener) => listener());
     });
-    expect(window.location.pathname).toBe('/settings');
+    expect(host.textContent).toContain('アカウントフォーム');
+    expect(host.textContent).not.toContain('タスク画面');
+    act(() => {
+        recovery.state = 'idle';
+        recovery.listeners.forEach((listener) => listener());
+        setGameRewardAuthorityState('anonymous');
+    });
     expect(host.textContent).toContain('タスク画面');
+    expect(host.textContent).not.toContain('アカウントフォーム');
 });
