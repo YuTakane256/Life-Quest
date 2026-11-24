@@ -1,0 +1,52 @@
+{
+  "sourceCommit": "fe4d5dee53d7b5274e80b15df2698e17f25708b6",
+  "environment": {
+    "device": "iPhone 17e Simulator",
+    "os": "iOS 27.0",
+    "build": "parity development with current Metro source",
+    "backend": "isolated local Supabase",
+    "configuredJwtLifetimeSeconds": 180
+  },
+  "inflight": {
+    "appSentOriginalJwtBeforeExpiry": true,
+    "firstRequestHeldBeforeReachingGateway": true,
+    "sdkRefreshedSameOwnerWhileRpcWasHeld": true,
+    "databaseObservationsUnchangedBeforeRelease": true,
+    "parentInflight": 1,
+    "dependentChildPending": 1,
+    "queueAndCursorUnchangedAcrossRefresh": true,
+    "firstRequestForwardedAfterOriginalJwtExpired": true,
+    "realExpiredJwtResponse": 401,
+    "syncUiShownWhileHeld": true
+  },
+  "recovery": {
+    "sameAppProcess": true,
+    "writes": [
+      {
+        "rpc": "upsert_task",
+        "status": 401
+      },
+      {
+        "rpc": "upsert_task",
+        "status": 200
+      },
+      {
+        "rpc": "upsert_subtask",
+        "status": 200
+      }
+    ],
+    "retryAndChildUsedRefreshedJwt": true,
+    "originalOperationKeysAndRowIds": true,
+    "postWritePullSucceeded": true,
+    "receivedThroughChildVersion": true,
+    "additionalPasswordSignIns": 0,
+    "pendingOperations": 0,
+    "originalAccountTaskRows": 1,
+    "originalAccountSubtaskRows": 1,
+    "comparisonAccountTaskRows": 0,
+    "comparisonAccountSubtaskRows": 0,
+    "bothRewardLedgersUnchanged": true,
+    "bothTasksVisible": true,
+    "settingsSynced": true
+  }
+}
