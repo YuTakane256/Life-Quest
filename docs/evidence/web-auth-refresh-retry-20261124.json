@@ -1,0 +1,47 @@
+{
+  "sourceCommit": "5af6cd47382469045d50222fc65c3fe2c9bd251d",
+  "verifiedCodeCommit": "37d6964382fca86730855462bb00b40342a9967e",
+  "environment": {
+    "browser": "Chromium",
+    "viewport": {
+      "width": 402,
+      "height": 874
+    },
+    "backend": "isolated local Supabase",
+    "configuredJwtLifetimeSeconds": 180
+  },
+  "duringFault": {
+    "newBrowserProcess": true,
+    "jwtExpiredBeforeRestart": true,
+    "refreshRequestsDisconnectedBeforeAuth": 8,
+    "browserReportedRefreshNetworkFailure": true,
+    "originalSessionRetainedForRetry": true,
+    "originallyDetectedBeforeFix": true,
+    "originalTaskDetectedInStartupDom": false,
+    "loadingVisibleBeforeIsolation": true,
+    "cloudDisplayArchived": true,
+    "pendingOperations": 2,
+    "parentDependencyPreserved": true,
+    "syncRpcCountBeforeConnectionRestored": 0
+  },
+  "recovery": {
+    "passwordSignInRequestsAfterRestart": 0,
+    "pageReloadsBeforeSyncRecovered": 0,
+    "refreshStatus": 200,
+    "syncUsedJwtFromRefreshResponse": true,
+    "taskWriteOrder": [
+      "upsert_task",
+      "upsert_subtask"
+    ],
+    "pullSucceededAfterWrites": true,
+    "originalOperationKeysAndRowIds": true,
+    "pendingOperations": 0,
+    "originalAccountTaskRows": 1,
+    "originalAccountSubtaskRows": 1,
+    "comparisonAccountTaskRows": 0,
+    "comparisonAccountSubtaskRows": 0,
+    "receivedThroughChildVersion": true,
+    "bothRewardLedgersUnchanged": true,
+    "settingsSynced": true
+  }
+}

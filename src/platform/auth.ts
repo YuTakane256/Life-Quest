@@ -229,7 +229,7 @@ export async function resendEmailVerification(email: string): Promise<AuthResult
 }
 
 /** Password changes from this form are allowed only after a recovery-link session. */
-export async function updatePasswordFromRecovery(password: string): Promise<AuthResult> {
+export async function updatePasswordFromRecovery(password: string, onUpdated?: () => void): Promise<AuthResult> {
     if (passwordRecoveryState !== 'ready' || !hasWebRecoveryGate()) {
         return { ok: false, message: 'このリンクは無効または期限切れです。パスワードを再設定してください。' };
     }
@@ -243,6 +243,12 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
     const before = await client.auth.getSession();
     if (!current() || before.error || !before.data.session) return genericAuthFailure();
     const owner = before.data.session.user.id;
+    // A cold recovery callback has no active owner to clear the saved display.
+    if (hasPersistedCloudGame()) {
+        try { await prepareWebAnonymousSession(current); }
+        catch { return genericAuthFailure(); }
+        if (!current()) return genericAuthFailure();
+    }
     const { error } = await client.auth.updateUser({ password });
     if (!current()) return genericAuthFailure();
     if (error) {
@@ -260,6 +266,7 @@ export async function updatePasswordFromRecovery(password: string): Promise<Auth
         await notifyLogin(data.session.user.id);
         await flushCompletionRewardWrites();
         if (!current()) return genericAuthFailure();
+        onUpdated?.();
         setGameRewardAuthorityState('authenticated');
     }
     return { ok: true };
@@ -274,6 +281,10 @@ export async function cancelPasswordRecovery(): Promise<AuthResult> {
     if (generation !== recoveryGeneration) return genericAuthFailure();
     suppressRecoverySignOut = true;
     try {
+        if (hasPersistedCloudGame()) {
+            await prepareWebAnonymousSession(() => generation === recoveryGeneration);
+            if (generation !== recoveryGeneration) return genericAuthFailure();
+        }
         const { error } = await client.auth.signOut({ scope: 'local' });
         if (generation !== recoveryGeneration) return genericAuthFailure();
         if (error) return { ok: false, message: 'ログアウトを完了できませんでした。接続を確認してもう一度お試しください。' };

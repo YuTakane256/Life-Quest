@@ -24,22 +24,29 @@ import {
 import { readWebSupabaseEnv } from '../../platform/supabase';
 
 type Mode = 'signIn' | 'signUp' | 'passwordReset';
+const PASSWORD_UPDATED_MESSAGE = 'パスワードを更新しました。新しいパスワードでログインできます。';
+let startupPasswordUpdated = false;
 
 /**
  * アカウントセクション（#503、メール認証の最小UI）。
  * Supabase未設定の環境では案内のみ表示し、アプリは完全ローカルで動作し続ける。
  */
-export function AccountSettings() {
+export function AccountSettings({ protectedStartup = false }: { protectedStartup?: boolean }) {
     const configured = readWebSupabaseEnv() !== null;
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [passwordConfirmation, setPasswordConfirmation] = useState('');
-    const [mode, setMode] = useState<Mode>('signIn');
+    const [mode, setMode] = useState<Mode>(() =>
+        !protectedStartup && new URLSearchParams(window.location.search).get('form') === 'password-reset'
+            ? 'passwordReset' : 'signIn',
+    );
     const [currentUser, setCurrentUser] = useState<{ userId: string; email: string | null } | null>(null);
     const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
     const [recoveryState, setRecoveryState] = useState(getPasswordRecoveryState);
     const [googleOAuthState, setGoogleOAuthState] = useState(getGoogleOAuthState);
-    const [message, setMessage] = useState<string | null>(null);
+    const [message, setMessage] = useState<string | null>(() =>
+        !protectedStartup && startupPasswordUpdated ? PASSWORD_UPDATED_MESSAGE : null,
+    );
     const [authBusy, setBusy] = useState(false);
     const [deletion] = useState(() => createAccountDeletionConfirmation(deleteCurrentAccount, subscribeAccountDeletionIdentity));
     const deleteState = useSyncExternalStore(deletion.subscribe, deletion.getSnapshot);
@@ -69,6 +76,10 @@ export function AccountSettings() {
         void refreshAccount();
         return () => { mounted.current = false; unsubscribe(); deactivate(); };
     }, [deletion, refreshAccount]);
+
+    useEffect(() => {
+        if (!protectedStartup) startupPasswordUpdated = false;
+    }, [protectedStartup]);
 
     useEffect(() => subscribePasswordRecoveryState(setRecoveryState), []);
     useEffect(() => subscribeGoogleOAuthState((state) => {
@@ -140,11 +151,14 @@ export function AccountSettings() {
     const handleRecoveryPasswordUpdate = async () => {
         setBusy(true);
         setMessage(null);
-        const result = await updatePasswordFromRecovery(password);
+        const result = await updatePasswordFromRecovery(password, protectedStartup ? () => {
+            window.history.replaceState(null, '', '/settings');
+            startupPasswordUpdated = true;
+        } : undefined);
         if (result.ok) {
             setPassword('');
             setPasswordConfirmation('');
-            setMessage('パスワードを更新しました。新しいパスワードでログインできます。');
+            setMessage(PASSWORD_UPDATED_MESSAGE);
         } else {
             setMessage(result.message);
         }
@@ -152,6 +166,11 @@ export function AccountSettings() {
     };
 
     const handleRecoveryCancel = async (nextMode: Mode = 'signIn') => {
+        if (protectedStartup) {
+            // The startup form unmounts on cancellation. Preserve its destination and
+            // the reset-email action for the regular Settings form.
+            window.history.replaceState(null, '', nextMode === 'passwordReset' ? '/settings?form=password-reset' : '/settings');
+        }
         setBusy(true);
         setMessage(null);
         const result = await cancelPasswordRecovery();
