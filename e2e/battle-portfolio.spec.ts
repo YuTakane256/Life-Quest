@@ -41,8 +41,12 @@ test('defeat permits retry and map return without awarding victory XP', async ({
     await expect(page.getByText('330 / 400', { exact: true })).toBeVisible();
 });
 
-for (const [theme, won] of [['light', true], ['dark', false]] as const) {
-    test(`${theme} battle result actions fit at 320px and 200% text`, async ({ page }, testInfo) => {
+for (const [theme, won, width, textSize] of [
+    ['light', true, 320, 200],
+    ['dark', false, 320, 200],
+    ['dark', false, 362, 125],
+] as const) {
+    test(`${theme} battle result actions fit at ${width}px and ${textSize}% text`, async ({ page }, testInfo) => {
         await installWebParityState(page, theme, undefined, 'battle');
         await page.goto('/map');
         const start = won
@@ -51,8 +55,8 @@ for (const [theme, won] of [['light', true], ['dark', false]] as const) {
         await start.click();
         await page.clock.runFor(won ? 3000 : 8000);
         await expect(page.getByRole('heading', { name: won ? '勝利！' : '敗北...', exact: true })).toBeVisible();
-        await page.setViewportSize({ width: 320, height: 568 });
-        await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+        await page.setViewportSize({ width, height: 568 });
+        await page.evaluate((percent) => { document.documentElement.style.fontSize = `${percent}%`; }, textSize);
         const primary = page.getByRole('button', { name: won ? '次へ' : 'リトライ', exact: true });
         const back = page.getByRole('button', { name: 'マップへ', exact: true });
         await back.scrollIntoViewIfNeeded();

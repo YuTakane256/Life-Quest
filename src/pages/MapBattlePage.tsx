@@ -23,7 +23,8 @@ import { useAutomaticBattle } from '../hooks/useAutomaticBattle';
 
 
 const resultCardClass = '@container rounded-xl py-5 [padding-inline:min(1.25rem,7%)] text-center animate-fade-in';
-const resultActionsClass = 'flex flex-col gap-2 @min-[13rem]:flex-row @min-[13rem]:flex-wrap';
+// Leave room for both four-character labels, button padding, and the retry icon.
+const resultActionsClass = 'flex flex-col gap-2 @min-[14.5rem]:flex-row @min-[14.5rem]:flex-wrap';
 const resultPrimaryClass = 'flex min-h-11 min-w-0 max-w-full flex-[1_1_auto] items-center justify-center gap-1 rounded-lg px-3 py-3 text-base font-medium disabled:opacity-50 disabled:cursor-not-allowed';
 const resultBackClass = 'min-h-11 min-w-0 max-w-full rounded-lg [padding-inline:min(1.25rem,8%)] py-3 text-base break-words disabled:opacity-50 disabled:cursor-not-allowed';
 
