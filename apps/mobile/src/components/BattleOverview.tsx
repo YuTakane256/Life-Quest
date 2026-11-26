@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type ScrollViewInstance } from 'react-native';
 import { ChevronRight, RotateCcw, Skull, Trophy } from 'lucide-react-native';
 import { ENEMY_IMAGE_KEYS, getMapForStage, type BattleAction } from '@life-quest/core/battle';
 import { getUnlockedBattleSkills } from '@life-quest/core/battleSkills';
@@ -27,6 +27,8 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
 }) {
     const { palette: p } = usePalette();
     const s = createStyles(p);
+    const { width, fontScale } = useWindowDimensions();
+    const stackResultActions = width < 360 || fontScale >= 1.5;
     const logRef = useRef<ScrollViewInstance>(null);
     const { actors, state } = battle;
     const ongoing = state.outcome === 'ongoing';
@@ -106,11 +108,11 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
                             <Text style={s.resendLabel}>再送</Text>
                         </Pressable>
                     )}
-                    <View style={s.resultActions}>
+                    <View style={[s.resultActions, stackResultActions && s.stackedResultActions]}>
                         <Pressable accessibilityRole="button" accessibilityLabel={victory ? result.nextLabel : 'リトライ'}
                             disabled={!result.canContinue} accessibilityState={{ disabled: !result.canContinue }}
                             onPress={() => onStart(victory ? result.nextStage : battle.stage)}
-                            style={({ pressed }) => [s.next, (!result.canContinue || pressed) && s.disabled]}>
+                            style={({ pressed }) => [s.next, !stackResultActions && s.nextInRow, (!result.canContinue || pressed) && s.disabled]}>
                             {victory ? <ChevronRight size={18} color="#fff" /> : <RotateCcw size={18} color="#fff" />}
                             <Text style={s.nextLabel}>{victory ? result.nextLabel : 'リトライ'}</Text>
                         </Pressable>
@@ -176,10 +178,12 @@ function createStyles(p: ThemePalette) {
         resend: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', marginBottom: 8 },
         resendLabel: { color: p.accent.primary, fontSize: 14, textDecorationLine: 'underline' },
         resultActions: { flexDirection: 'row', gap: 8 },
-        next: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 48, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 8, backgroundColor: p.accent.primary },
-        nextLabel: { color: '#fff', fontSize: 16, fontWeight: '500' },
-        back: { minHeight: 48, paddingHorizontal: 20, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', borderRadius: 8, backgroundColor: p.bg.secondary },
-        backLabel: { color: p.text.muted, fontSize: 16 },
+        stackedResultActions: { flexDirection: 'column' },
+        next: { flexDirection: 'row', minWidth: 0, alignItems: 'center', justifyContent: 'center', minHeight: 48, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 8, backgroundColor: p.accent.primary },
+        nextInRow: { flex: 1 },
+        nextLabel: { color: '#fff', fontSize: 16, fontWeight: '500', flexShrink: 1, textAlign: 'center' },
+        back: { minWidth: 0, flexShrink: 1, minHeight: 48, paddingHorizontal: 20, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', borderRadius: 8, backgroundColor: p.bg.secondary },
+        backLabel: { color: p.text.muted, fontSize: 16, textAlign: 'center' },
         disabled: { opacity: 0.45 },
     });
 }

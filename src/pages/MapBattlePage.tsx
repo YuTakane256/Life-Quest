@@ -22,6 +22,12 @@ import { useBattleStart } from '../hooks/useBattleStart';
 import { useAutomaticBattle } from '../hooks/useAutomaticBattle';
 
 
+const resultCardClass = '@container rounded-xl py-5 [padding-inline:min(1.25rem,7%)] text-center animate-fade-in';
+// Leave room for both four-character labels, button padding, and the retry icon.
+const resultActionsClass = 'flex flex-col gap-2 @min-[14.5rem]:flex-row @min-[14.5rem]:flex-wrap';
+const resultPrimaryClass = 'flex min-h-11 min-w-0 max-w-full flex-[1_1_auto] items-center justify-center gap-1 rounded-lg px-3 py-3 text-base font-medium disabled:opacity-50 disabled:cursor-not-allowed';
+const resultBackClass = 'min-h-11 min-w-0 max-w-full rounded-lg [padding-inline:min(1.25rem,8%)] py-3 text-base break-words disabled:opacity-50 disabled:cursor-not-allowed';
+
 function getEnemyImage(stage: number) {
     const key = ENEMY_IMAGE_KEYS[stage];
     const src = key ? getEnemyImageSrc(key) : null;
@@ -233,7 +239,7 @@ export function MapBattlePage() {
 
                 {/* 勝利ダイアログ */}
                 {battle.status === 'victory' && showVictoryDialog && (
-                    <div className="rounded-xl p-5 text-center animate-fade-in mb-4" style={{ backgroundColor: 'var(--color-bg-card)', border: '2px solid var(--color-accent-gold)' }}>
+                    <div className={`${resultCardClass} mb-4`} style={{ backgroundColor: 'var(--color-bg-card)', border: '2px solid var(--color-accent-gold)' }}>
                         <Trophy size={48} className="mx-auto mb-2" style={{ color: 'var(--color-accent-gold)' }} />
                         <h3 className="text-xl font-bold mb-1" style={{ color: 'var(--color-accent-gold)' }}>勝利！</h3>
                         {battle.rewardMode === 'cloud' ? (
@@ -253,16 +259,17 @@ export function MapBattlePage() {
                         ) : (
                             <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>{battle.enemy?.xpReward} XP を獲得！</p>
                         )}
-                        <div className="flex gap-2">
+                        <div className={resultActionsClass}>
                             <button onClick={() => void handleNextStage()}
                                 disabled={isSyncingResult || isStarting || recoveryBlocksStart}
-                                className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className={resultPrimaryClass}
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
-                                <ChevronRight size={18} /> {battle.currentStage < BATTLE_CONFIG.STAGES.length ? '次へ' : '再挑戦'}
+                                <ChevronRight size={18} className="shrink-0" aria-hidden="true" />
+                                <span className="min-w-0 break-words">{battle.currentStage < BATTLE_CONFIG.STAGES.length ? '次へ' : '再挑戦'}</span>
                             </button>
                             <button onClick={() => { resetBattle(); setShowVictoryDialog(false); }}
                                 disabled={isSyncingResult}
-                                className="px-5 py-3 rounded-lg text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                                className={resultBackClass}
                                 style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>
                                 マップへ
                             </button>
@@ -278,7 +285,7 @@ export function MapBattlePage() {
 
                 {/* 敗北ダイアログ */}
                 {battle.status === 'defeat' && (
-                    <div className="rounded-xl p-5 text-center animate-fade-in" style={{ backgroundColor: 'var(--color-bg-card)', border: '2px solid var(--color-text-danger)' }}>
+                    <div className={resultCardClass} style={{ backgroundColor: 'var(--color-bg-card)', border: '2px solid var(--color-text-danger)' }}>
                         <Skull size={48} className="mx-auto mb-2" style={{ color: 'var(--color-text-danger)' }} />
                         <h3 className="text-xl font-bold mb-1" style={{ color: 'var(--color-text-danger)' }}>敗北...</h3>
                         <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
@@ -289,16 +296,17 @@ export function MapBattlePage() {
                                 </span>
                             ) : isSyncingResult ? '結果を同期中…' : 'レベルを上げて再挑戦しましょう！'}
                         </p>
-                        <div className="flex gap-2">
+                        <div className={resultActionsClass}>
                             <button onClick={() => void startStage(battle.currentStage)}
                                 disabled={isSyncingResult || isStarting || recoveryBlocksStart}
-                                className="flex-1 py-3 rounded-lg text-base font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className={resultPrimaryClass}
                                 style={{ backgroundColor: 'var(--color-accent-primary)', color: 'white' }}>
-                                <RotateCcw size={18} /> リトライ
+                                <RotateCcw size={18} className="shrink-0" aria-hidden="true" />
+                                <span className="min-w-0 break-words">リトライ</span>
                             </button>
                             <button onClick={resetBattle}
                                 disabled={isSyncingResult}
-                                className="px-5 py-3 rounded-lg text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                                className={resultBackClass}
                                 style={{ backgroundColor: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)' }}>
                                 マップへ
                             </button>

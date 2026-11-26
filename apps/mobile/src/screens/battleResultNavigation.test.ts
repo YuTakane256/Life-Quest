@@ -56,6 +56,7 @@ vi.mock('react-native', () => {
             return createElement('div', {}, ListHeaderComponent, ...data.map((item, index) => createElement('div', { key: index }, renderItem({ item }))));
         }),
         StyleSheet: { create: <T,>(value: T) => value },
+        useWindowDimensions: () => ({ width: 402, height: 874, fontScale: 1 }),
         AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
     };
 });

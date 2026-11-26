@@ -5,12 +5,18 @@ import { createBattleEngineState, type BattleActors } from '@life-quest/core/bat
 import type { ActiveMobileBattle } from '../stores/useMobileGameStore';
 import { BattleOverview } from './BattleOverview';
 
+const dimensions = vi.hoisted(() => ({ width: 402, fontScale: 1 }));
+
 vi.mock('react-native', async () => {
     const { createElement } = await import('react');
     type Props = { children?: ReactNode; accessibilityLabel?: string; disabled?: boolean;
-        onPress?: () => void; ref?: React.Ref<HTMLDivElement> };
-    const box = ({ children, accessibilityLabel, ref }: Props) => createElement('div', { 'aria-label': accessibilityLabel, ref }, children);
-    return { View: box, ScrollView: box, Text: ({ children }: Props) => createElement('span', {}, children), Image: () => null,
+        onPress?: () => void; ref?: React.Ref<HTMLDivElement>;
+        style?: React.CSSProperties | (React.CSSProperties | false)[] };
+    const box = ({ children, accessibilityLabel, ref, style }: Props) => {
+        const { flexDirection } = Array.isArray(style) ? Object.assign({}, ...style) : style ?? {};
+        return createElement('div', { 'aria-label': accessibilityLabel, ref, style: { flexDirection } }, children);
+    };
+    return { View: box, ScrollView: box, useWindowDimensions: () => dimensions, Text: ({ children }: Props) => createElement('span', {}, children), Image: () => null,
         Pressable: ({ children, accessibilityLabel, disabled, onPress }: Props) => createElement('button', {
             'aria-label': accessibilityLabel, disabled, onClick: onPress,
         }, children), StyleSheet: { create: <T>(value: T) => value } };
@@ -35,6 +41,7 @@ function render(busy = false, resolveState: 'idle' | 'error' = 'idle') {
 const button = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks();
+    dimensions.width = 402; dimensions.fontScale = 1;
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
     battle = { stage: 1, actors, state: createBattleEngineState(actors), actions: [], battleAttemptId: null, rewardMode: 'local' };
 });
@@ -61,6 +68,18 @@ describe('Mobile戦闘中の操作をWebに揃える', () => {
         battle.state.outcome = outcome; render(); expect(button('強撃')).toBeNull();
         act(() => button(outcome === 'victory' ? '次へ' : 'リトライ')!.click());
         expect(start).toHaveBeenCalledWith(outcome === 'victory' ? 2 : 1);
+        act(() => button('マップへ')!.click()); expect(map).toHaveBeenCalledTimes(1);
+    });
+    it.each([
+        [402, 1, 'row'],
+        [320, 1, 'column'],
+        [390, 1.6, 'column'],
+    ])('uses %s pt at font scale %s for the result actions', (width, fontScale, direction) => {
+        dimensions.width = width; dimensions.fontScale = fontScale;
+        battle.state.outcome = 'defeat'; render();
+        const retry = button('リトライ')!;
+        expect(retry.parentElement?.style.flexDirection).toBe(direction);
+        act(() => retry.click()); expect(start).toHaveBeenCalledWith(1);
         act(() => button('マップへ')!.click()); expect(map).toHaveBeenCalledTimes(1);
     });
     it('未同期の勝利では次戦/マップを止め、同じ結果の再送を維持する', () => {
