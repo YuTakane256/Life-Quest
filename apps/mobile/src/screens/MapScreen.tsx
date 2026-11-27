@@ -1,7 +1,7 @@
 import { blocksBattleStart } from '@life-quest/core/battleResultRecovery';
 import { battleResultRecovery } from '../platform/battleResultRecovery';
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LAYOUT_TOKENS, type ThemePalette } from '@life-quest/core/designTokens';
 import { TAB_SCREEN_EDGES } from '../theme/layout';
@@ -38,6 +38,9 @@ export default function MapScreen() {
 
     const { palette } = usePalette();
     const styles = useMemo(() => createStyles(palette), [palette]);
+    const { width, fontScale } = useWindowDimensions();
+    const compactMap = width < 360 || fontScale >= 1.5;
+    const areaColumns = fontScale >= 2.4 ? 1 : compactMap ? 2 : 4;
 
     const [selectedMapId, setSelectedMapId] = useState(() => getMapForStage(battleProgress.currentStage).id);
     const [notice, setNotice] = useState<string | null>(null);
@@ -122,7 +125,7 @@ export default function MapScreen() {
                             )}
                             {!activeBattle && (battleProgress.battleUnlocked ? (
                                 <MapOverview selectedMap={selectedArea} maxClearedStage={battleProgress.maxClearedStage}
-                                    battleUnlocked={battleProgress.battleUnlocked} onSelect={setSelectedMapId} />
+                                    battleUnlocked={battleProgress.battleUnlocked} areaColumns={areaColumns} onSelect={setSelectedMapId} />
                             ) : (
                                 <View style={styles.lockedMap}>
                                     <Text style={styles.lockedIcon}>🔒</Text>
@@ -165,6 +168,7 @@ export default function MapScreen() {
                             maxClearedStage={battleProgress.maxClearedStage}
                             battleUnlocked={battleProgress.battleUnlocked}
                             busy={busy || recoveryBlocksStart}
+                            stacked={compactMap}
                             onStart={() => void handleStart(item.stage)}
                         />
                     )}
