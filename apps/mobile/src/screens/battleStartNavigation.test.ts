@@ -8,7 +8,10 @@ import RootLayout from '../../app/_layout';
 import MapScreen from './MapScreen';
 import { useMobileGameStore } from '../stores/useMobileGameStore';
 
-const mocks = vi.hoisted(() => ({ route: 'map', auth: vi.fn(), start: vi.fn(), resolve: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    route: 'map', auth: vi.fn(), start: vi.fn(), resolve: vi.fn(),
+    dimensions: { width: 402, height: 874, fontScale: 1 },
+}));
 vi.mock('../platform/auth', () => ({ getBattleAuthState: mocks.auth, getGameAuthState: mocks.auth,
     startAuthSessionListener: () => () => {}, startMobileAuthLinkListener: () => () => {} }));
 vi.mock('../platform/battleCloud', () => ({ startCloudBattleAttempt: mocks.start, resolveCloudBattleAttempt: mocks.resolve }));
@@ -36,8 +39,13 @@ vi.mock('expo-router', () => ({
     useFocusEffect: (callback: () => void | (() => void)) => useEffect(callback, [callback]),
 }));
 vi.mock('react-native', () => {
-    type Props = { children?: ReactNode; accessibilityLabel?: string; onPress?: () => void; disabled?: boolean; ref?: React.Ref<HTMLDivElement> };
-    const box = ({ children, accessibilityLabel, ref }: Props) => createElement('div', { 'aria-label': accessibilityLabel, ref }, children);
+    type LayoutStyle = Pick<React.CSSProperties, 'flexDirection' | 'flexWrap'>;
+    type Props = { children?: ReactNode; accessibilityLabel?: string; onPress?: () => void; disabled?: boolean;
+        ref?: React.Ref<HTMLDivElement>; style?: LayoutStyle | (LayoutStyle | false)[] };
+    const box = ({ children, accessibilityLabel, ref, style }: Props) => {
+        const { flexDirection, flexWrap } = Array.isArray(style) ? Object.assign({}, ...style) : style ?? {};
+        return createElement('div', { 'aria-label': accessibilityLabel, ref, style: { flexDirection, flexWrap } }, children);
+    };
     return { View: box, ScrollView: box, Text: ({ children }: Props) => createElement('span', {}, children), Image: () => null,
         Pressable: ({ children, accessibilityLabel, onPress, disabled }: Props) => createElement('button', { 'aria-label': accessibilityLabel, onClick: onPress, disabled }, children),
         FlatList: forwardRef(({ data, ListHeaderComponent, renderItem }: { data: unknown[]; ListHeaderComponent: ReactNode; renderItem: (props: { item: unknown }) => ReactNode }, ref) => {
@@ -45,7 +53,7 @@ vi.mock('react-native', () => {
             return createElement('div', {}, ListHeaderComponent, ...data.map((item, index) => createElement('div', { key: index }, renderItem({ item }))));
         }),
         StyleSheet: { create: <T,>(value: T) => value },
-        useWindowDimensions: () => ({ width: 402, height: 874, fontScale: 1 }),
+        useWindowDimensions: () => mocks.dimensions,
         AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
     };
 });
@@ -69,6 +77,7 @@ const startLabel = 'ステージ 1 スタート';
 const retryLabel = 'バトル開始を再試行する';
 beforeEach(async () => {
     resetAuthLifecycleHooks(); await notifyLogin('a'); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.useFakeTimers(); vi.clearAllMocks();
+    Object.assign(mocks.dimensions, { width: 402, height: 874, fontScale: 1 });
     mocks.auth.mockResolvedValue({ kind: 'authenticated', userId: 'a' }); mocks.start.mockImplementation(async (stage: number) => attempt('started', stage)); mocks.resolve.mockResolvedValue({ outcome: 'victory', granted: false });
     useMobileGameStore.setState({ ...createInitialGameStateSnapshot(), hasHydrated: true, activeBattle: null,
         lastLevelUp: null, battleProgress: { battleUnlocked: true, currentStage: 1, maxClearedStage: 0 } });
@@ -77,6 +86,24 @@ beforeEach(async () => {
 afterEach(async () => { if (mounted) await act(async () => root.unmount()); host.remove(); resetAuthLifecycleHooks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('Mobile battle starts through the real root layout and map with a navigation stub', () => {
+    it.each([
+        [402, 1, 'row', '', 'row'],
+        [320, 1, 'row', 'wrap', 'column'],
+        [390, 1.8, 'row', 'wrap', 'column'],
+        [390, 2.6, 'column', '', 'column'],
+    ])('lays out the map at %d pt and font scale %d, preserving stage controls', async (width, fontScale, areaDirection, areaWrap, stageDirection) => {
+        Object.assign(mocks.dimensions, { width, fontScale });
+        await render();
+        const areas = button('草原エリア')!.parentElement!;
+        expect(areas.style.flexDirection).toBe(areaDirection);
+        expect(areas.style.flexWrap).toBe(areaWrap);
+        expect(button('古城エリア（未開放）')?.disabled).toBe(true);
+        expect(button(startLabel)?.parentElement?.style.flexDirection).toBe(stageDirection);
+        expect(button('ステージ 2 スタート')).toBeUndefined();
+        await click(startLabel);
+        expect(mocks.start).toHaveBeenCalledTimes(1);
+        expect(mocks.start.mock.calls[0][0]).toBe(1);
+    });
     it('keeps the failed stage/key after screen remount and retries only explicitly', async () => {
         mocks.start.mockRejectedValueOnce(new TypeError('lost response')); await render(); await click(startLabel);
         expect(button(retryLabel)).toBeTruthy(); await render('tasks'); await render(); expect(button(retryLabel)).toBeTruthy();
