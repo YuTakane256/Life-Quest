@@ -28,7 +28,7 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
     const { palette: p } = usePalette();
     const s = createStyles(p);
     const { width, fontScale } = useWindowDimensions();
-    const stackResultActions = width < 360 || fontScale >= 1.5;
+    const compactBattle = width < 360 || fontScale >= 1.5;
     const logRef = useRef<ScrollViewInstance>(null);
     const { actors, state } = battle;
     const ongoing = state.outcome === 'ongoing';
@@ -41,22 +41,30 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
     return (
         <View>
             <Text style={s.title} accessibilityRole="header">⚔️ {getMapForStage(battle.stage).name} — ステージ {battle.stage}: {actors.enemy.name}</Text>
-            <View style={s.actors}>
-                <View style={s.actorCard}>
-                    <View style={[s.portrait, { backgroundColor: p.accent.primary,
+            <View style={[s.actors, compactBattle && s.column]}>
+                <View style={[s.actorCard, compactBattle && s.wideActorCard]}>
+                    <View style={[s.portrait, compactBattle && s.smallPortrait, { backgroundColor: p.accent.primary,
                         experimental_backgroundImage: `linear-gradient(135deg, ${p.accent.primary}, ${p.accent.secondary})` }]}>
                         <Image source={AVATAR_IMAGES[avatar]} style={s.heroImage} resizeMode="cover" accessibilityLabel={actors.playerName} />
                     </View>
-                    <Text style={s.actorName} numberOfLines={1}>{actors.playerName} <Text style={s.level}>Lv.{actors.playerLevel}</Text></Text>
-                    <BattleHp label={`${actors.playerName} のHP`} current={state.playerHp} max={actors.player.maxHp} enemy={false} palette={p} />
-                </View>
-                <View style={s.actorCard}>
-                    <View style={s.portrait}>
-                        {enemyImage ? <Image source={enemyImage} style={s.enemyImage} resizeMode="contain" accessibilityLabel={actors.enemy.name} />
-                            : <Text style={s.unknownEnemy}>❓</Text>}
+                    <View style={compactBattle && s.actorDetails}>
+                        <Text style={[s.actorName, compactBattle && s.startAligned]} numberOfLines={compactBattle ? undefined : 1}>
+                            {actors.playerName} <Text style={s.level}>Lv.{actors.playerLevel}</Text>
+                        </Text>
+                        <BattleHp label={`${actors.playerName} のHP`} current={state.playerHp} max={actors.player.maxHp}
+                            enemy={false} compact={compactBattle} palette={p} />
                     </View>
-                    <Text style={[s.actorName, s.enemyName]}>{actors.enemy.name}</Text>
-                    <BattleHp label={`${actors.enemy.name} のHP`} current={state.enemyHp} max={actors.enemy.maxHp} enemy palette={p} />
+                </View>
+                <View style={[s.actorCard, compactBattle && s.wideActorCard]}>
+                    <View style={[s.portrait, compactBattle && s.smallPortrait]}>
+                        {enemyImage ? <Image source={enemyImage} style={s.enemyImage} resizeMode="contain" accessibilityLabel={actors.enemy.name} />
+                            : <Text style={s.unknownEnemy} allowFontScaling={false}>❓</Text>}
+                    </View>
+                    <View style={compactBattle && s.actorDetails}>
+                        <Text style={[s.actorName, s.enemyName, compactBattle && s.startAligned]}>{actors.enemy.name}</Text>
+                        <BattleHp label={`${actors.enemy.name} のHP`} current={state.enemyHp} max={actors.enemy.maxHp}
+                            enemy compact={compactBattle} palette={p} />
+                    </View>
                 </View>
             </View>
 
@@ -66,7 +74,7 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
                         <Text style={s.smallHeading} accessibilityRole="header">スキル</Text>
                         {state.guardTurnsRemaining > 0 && <Text style={s.guard}>防御 {state.guardTurnsRemaining}T</Text>}
                     </View>
-                    <View style={s.skillRow}>
+                    <View style={[s.skillRow, compactBattle && s.column]}>
                         {skills.map((skill) => {
                             const cooldown = state.skillCooldowns[skill.id] ?? 0;
                             const disabled = busy || cooldown > 0;
@@ -75,14 +83,19 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
                                 <Pressable key={skill.id} accessibilityRole="button" accessibilityLabel={`${skill.name}${cooldown > 0 ? ` クールダウン${cooldown}` : ''}`}
                                     accessibilityHint={skill.description} accessibilityState={{ disabled }} disabled={disabled}
                                     onPress={() => onAction({ type: 'skill', skillId: skill.id })}
-                                    style={({ pressed }) => [s.skill, { borderColor: cooldown > 0 ? p.border.default : tone }, (disabled || pressed) && s.disabled]}>
-                                    <Text style={s.skillEmoji}>{skill.type === 'damage' ? '⚔️' : skill.type === 'heal' ? '💚' : '🛡️'}</Text>
-                                    <Text style={[s.skillName, { color: cooldown > 0 ? p.text.muted : tone }]}>{skill.name}</Text>
-                                    <Text style={s.cooldown}>{cooldown > 0 ? `あと${cooldown}T` : '使用可'}</Text>
+                                    style={({ pressed }) => [s.skill, compactBattle && s.wideSkill,
+                                        { borderColor: cooldown > 0 ? p.border.default : tone }, (disabled || pressed) && s.disabled]}>
+                                    <Text style={s.skillEmoji} allowFontScaling={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                                        {skill.type === 'damage' ? '⚔️' : skill.type === 'heal' ? '💚' : '🛡️'}
+                                    </Text>
+                                    <View style={[s.skillDetails, compactBattle && s.wideSkillDetails]}>
+                                        <Text style={[s.skillName, compactBattle && s.startAligned, { color: cooldown > 0 ? p.text.muted : tone }]}>{skill.name}</Text>
+                                        <Text style={s.cooldown}>{cooldown > 0 ? `あと${cooldown}T` : '使用可'}</Text>
+                                    </View>
                                 </Pressable>
                             );
                         })}
-                        {Array.from({ length: Math.max(0, 3 - skills.length) }, (_, index) => (
+                        {!compactBattle && Array.from({ length: Math.max(0, 3 - skills.length) }, (_, index) => (
                             <View key={`locked-skill-slot-${index}`} style={s.skillSlot} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
                         ))}
                     </View>
@@ -108,11 +121,11 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
                             <Text style={s.resendLabel}>再送</Text>
                         </Pressable>
                     )}
-                    <View style={[s.resultActions, stackResultActions && s.stackedResultActions]}>
+                    <View style={[s.resultActions, compactBattle && s.column]}>
                         <Pressable accessibilityRole="button" accessibilityLabel={victory ? result.nextLabel : 'リトライ'}
                             disabled={!result.canContinue} accessibilityState={{ disabled: !result.canContinue }}
                             onPress={() => onStart(victory ? result.nextStage : battle.stage)}
-                            style={({ pressed }) => [s.next, !stackResultActions && s.nextInRow, (!result.canContinue || pressed) && s.disabled]}>
+                            style={({ pressed }) => [s.next, !compactBattle && s.nextInRow, (!result.canContinue || pressed) && s.disabled]}>
                             {victory ? <ChevronRight size={18} color="#fff" /> : <RotateCcw size={18} color="#fff" />}
                             <Text style={s.nextLabel}>{victory ? result.nextLabel : 'リトライ'}</Text>
                         </Pressable>
@@ -127,13 +140,13 @@ export function BattleOverview({ battle, avatar, busy, resolveState, granted, on
     );
 }
 
-function BattleHp({ label, current, max, enemy, palette: p }: { label: string; current: number; max: number; enemy: boolean; palette: ThemePalette }) {
+function BattleHp({ label, current, max, enemy, compact, palette: p }: { label: string; current: number; max: number; enemy: boolean; compact: boolean; palette: ThemePalette }) {
     const s = createStyles(p);
     const hp = getHpDisplayState(current, max);
     const a11y = getHpBarA11y(current, max);
     return (
-        <View style={s.hpRow}>
-            <View style={s.hpTrack} accessibilityRole={a11y.max > 0 ? 'progressbar' : undefined} accessibilityLabel={label}
+        <View style={[s.hpRow, compact && s.hpColumn]}>
+            <View style={[s.hpTrack, compact && s.fullHpTrack]} accessibilityRole={a11y.max > 0 ? 'progressbar' : undefined} accessibilityLabel={label}
                 accessibilityValue={a11y.max > 0 ? { min: 0, max: a11y.max, now: a11y.current, text: a11y.text } : undefined}>
                 <View style={[s.hpFill, { width: `${hp.ratio * 100}%`, backgroundColor: enemy || hp.ratio <= 0.3 ? p.text.danger : p.accent.emerald }]} />
             </View>
@@ -144,10 +157,15 @@ function BattleHp({ label, current, max, enemy, palette: p }: { label: string; c
 
 function createStyles(p: ThemePalette) {
     return StyleSheet.create({
+        column: { flexDirection: 'column' },
+        startAligned: { textAlign: 'auto' },
         title: { color: p.text.primary, fontSize: 20, lineHeight: 28, fontWeight: '700', marginBottom: 16 },
         actors: { flexDirection: 'row', gap: 16, marginBottom: 16 },
         actorCard: { flex: 1, minWidth: 0, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: p.border.default, backgroundColor: p.bg.card },
+        wideActorCard: { flex: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
+        actorDetails: { flex: 1, minWidth: 0 },
         portrait: { width: 112, maxWidth: '100%', aspectRatio: 1, alignSelf: 'center', borderRadius: 8, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: p.bg.secondary, marginBottom: 8 },
+        smallPortrait: { flexShrink: 0, width: 64, marginBottom: 0 },
         heroImage: { width: '100%', height: '100%' },
         enemyImage: { width: 96, maxWidth: '100%', aspectRatio: 1 },
         unknownEnemy: { fontSize: 48 },
@@ -155,7 +173,9 @@ function createStyles(p: ThemePalette) {
         level: { color: p.accent.gold },
         enemyName: { color: p.text.danger },
         hpRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+        hpColumn: { flexDirection: 'column', alignItems: 'stretch', gap: 2 },
         hpTrack: { flex: 1, height: 12, borderRadius: 999, overflow: 'hidden', backgroundColor: p.bg.secondary },
+        fullHpTrack: { flex: 0 },
         hpFill: { height: '100%', borderRadius: 999 },
         hpNumber: { color: p.text.primary, fontSize: 14, lineHeight: 20, fontWeight: '700', minWidth: 40, textAlign: 'right' },
         skillsCard: { backgroundColor: p.bg.card, borderColor: p.border.default, borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 16 },
@@ -165,6 +185,9 @@ function createStyles(p: ThemePalette) {
         skillRow: { flexDirection: 'row', gap: 8 },
         skillSlot: { flex: 1, minWidth: 0 },
         skill: { flex: 1, minWidth: 0, minHeight: 64, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, gap: 4, justifyContent: 'center', alignItems: 'center', borderWidth: 1, backgroundColor: p.bg.secondary },
+        wideSkill: { flex: 0, flexDirection: 'row', gap: 10, paddingHorizontal: 12 },
+        skillDetails: { alignItems: 'center', gap: 4, minWidth: 0 },
+        wideSkillDetails: { flex: 1, alignItems: 'flex-start' },
         skillEmoji: { fontSize: 16 },
         skillName: { fontSize: 11, lineHeight: 14, fontWeight: '700', textAlign: 'center' },
         cooldown: { color: p.text.muted, fontSize: 10 },
@@ -178,7 +201,6 @@ function createStyles(p: ThemePalette) {
         resend: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', marginBottom: 8 },
         resendLabel: { color: p.accent.primary, fontSize: 14, textDecorationLine: 'underline' },
         resultActions: { flexDirection: 'row', gap: 8 },
-        stackedResultActions: { flexDirection: 'column' },
         next: { flexDirection: 'row', minWidth: 0, alignItems: 'center', justifyContent: 'center', minHeight: 48, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 8, backgroundColor: p.accent.primary },
         nextInRow: { flex: 1 },
         nextLabel: { color: '#fff', fontSize: 16, fontWeight: '500', flexShrink: 1, textAlign: 'center' },

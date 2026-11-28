@@ -9,14 +9,14 @@ const dimensions = vi.hoisted(() => ({ width: 402, fontScale: 1 }));
 
 vi.mock('react-native', async () => {
     const { createElement } = await import('react');
-    type Props = { children?: ReactNode; accessibilityLabel?: string; disabled?: boolean;
+    type Props = { children?: ReactNode; accessibilityLabel?: string; disabled?: boolean; numberOfLines?: number;
         onPress?: () => void; ref?: React.Ref<HTMLDivElement>;
         style?: React.CSSProperties | (React.CSSProperties | false)[] };
     const box = ({ children, accessibilityLabel, ref, style }: Props) => {
         const { flexDirection } = Array.isArray(style) ? Object.assign({}, ...style) : style ?? {};
         return createElement('div', { 'aria-label': accessibilityLabel, ref, style: { flexDirection } }, children);
     };
-    return { View: box, ScrollView: box, useWindowDimensions: () => dimensions, Text: ({ children }: Props) => createElement('span', {}, children), Image: () => null,
+    return { View: box, ScrollView: box, useWindowDimensions: () => dimensions, Text: ({ children, numberOfLines }: Props) => createElement('span', { 'data-lines': numberOfLines }, children), Image: () => null,
         Pressable: ({ children, accessibilityLabel, disabled, onPress }: Props) => createElement('button', {
             'aria-label': accessibilityLabel, disabled, onClick: onPress,
         }, children), StyleSheet: { create: <T>(value: T) => value } };
@@ -59,6 +59,25 @@ describe('Mobile戦闘中の操作をWebに揃える', () => {
         expect(button('強撃 クールダウン2')?.disabled).toBe(true);
         act(() => button('強撃 クールダウン2')!.click()); expect(action).not.toHaveBeenCalled();
         render(true); expect(button('防御態勢')?.disabled).toBe(true);
+    });
+    it.each([
+        [402, 1, 'row', 'row', '1'],
+        [320, 1, 'column', 'column', null],
+        [390, 1.6, 'column', 'column', null],
+        [390, 2.8, 'column', 'column', null],
+    ])('lays out skills and HP at %d pt and font scale %d', (width, fontScale, skillsDirection, hpDirection, nameLines) => {
+        dimensions.width = width; dimensions.fontScale = fontScale;
+        battle.actors = { ...actors, playerName: '星を巡る旅団の見習い冒険者' };
+        battle.state.skillCooldowns.first_aid = 2;
+        render();
+        const attack = button('強撃')!;
+        const hp = host.querySelector('[aria-label="星を巡る旅団の見習い冒険者 のHP"]')!.parentElement!;
+        expect(attack.parentElement?.style.flexDirection).toBe(skillsDirection);
+        expect(hp.style.flexDirection).toBe(hpDirection);
+        expect(hp.previousElementSibling?.getAttribute('data-lines')).toBe(nameLines);
+        expect(button('応急手当 クールダウン2')?.disabled).toBe(true);
+        act(() => button('防御態勢')!.click());
+        expect(action).toHaveBeenCalledExactlyOnceWith({ type: 'skill', skillId: 'guard_stance' });
     });
     it('レベルに応じて解放されるスキルだけ表示する', () => {
         battle.actors = { ...actors, playerLevel: 1 }; render();
